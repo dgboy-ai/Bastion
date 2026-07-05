@@ -50,13 +50,14 @@ def mock_store_memory(
         agent_id=agent_id,
         memory_type=memory_type,
         content=content,
-        embedding=[0.0] * 1536,
+        embedding=[0.0] * 1024,
         metadata=meta,
         previous_hash=prev_hash,
         cryptographic_hash=crypto_hash,
         created_at=now,
         expires_at=expires_at,
         access_count=0,
+        importance_score=5.0,
     )
 
     _agent_data[agent_id].append(record.to_dict())
@@ -91,13 +92,41 @@ def mock_search_memory(
             expires_dt = datetime.fromisoformat(expires)
             if expires_dt <= now:
                 continue
+
+        created = r.get("created_at")
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        hours_elapsed = (now - created).total_seconds() / 3600
+
+        importance = float(r.get("importance_score", 5.0))
+        r["_decay_score"] = importance / (1.0 + 0.01 * hours_elapsed)
         valid.append(r)
 
+    valid.sort(key=lambda x: x["_decay_score"], reverse=True)
+
     results = []
-    for r in valid[-k:]:
+    for r in valid[:k]:
         results.append(MemoryRecord.from_dict(r))
 
     return results
+
+
+def mock_reinforce(agent_id: str, memory_id: str, success: bool = True) -> dict:
+    records = _agent_data.get(agent_id, [])
+    for r in records:
+        if r.get("memory_id") == memory_id:
+            base = float(r.get("importance_score", 5.0))
+            boost = 0.1 + (1.0 if success else 0.0)
+            new_imp = min(base + boost, 10.0)
+            r["importance_score"] = new_imp
+            r["access_count"] = r.get("access_count", 0) + 1
+            return {
+                "status": "reinforced",
+                "memory_id": memory_id,
+                "importance_score": new_imp,
+                "delta": round(new_imp - base, 2),
+            }
+    return {"status": "not_found"}
 
 
 def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]:

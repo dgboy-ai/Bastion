@@ -52,7 +52,7 @@ def _hash_fallback_embed(text: str) -> list[float]:
 _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
     "metadata, previous_hash, cryptographic_hash, "
-    "created_at, expires_at, access_count"
+    "created_at, expires_at, access_count, importance_score"
 )
 
 
@@ -84,6 +84,11 @@ class BastionMemory:
         if self._mock:
             return _mock.mock_store_memory(self.agent_id, memory_type, content, metadata, expires_in_seconds)
         return self._store_real(memory_type, content, metadata, expires_in_seconds)
+
+    def reinforce(self, memory_id: str, success: bool = True) -> dict:
+        if self._mock:
+            return _mock.mock_reinforce(self.agent_id, memory_id, success)
+        return self._reinforce_real(memory_id, success)
 
     def search(
         self,
@@ -220,8 +225,9 @@ class BastionMemory:
             cur.execute(
                 """
                 INSERT INTO agent_memory
-                    (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash, expires_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
+                     expires_at, importance_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0)
                 RETURNING memory_id, created_at
                 """,
                 (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
@@ -248,6 +254,7 @@ class BastionMemory:
                 cryptographic_hash=crypto_hash,
                 created_at=row[1],
                 expires_at=expires_dt,
+                importance_score=5.0,
             )
 
     def _search_real(
@@ -259,26 +266,36 @@ class BastionMemory:
     ) -> list[MemoryRecord]:
         query_vector = self._embed(query)
         query_vector_str = json.dumps(query_vector)
-        max_distance = 1.0 - threshold
+        decay_rate = 0.01
 
         with self._conn.cursor() as cur:
             if memory_type:
                 cur.execute(
-                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    f"SELECT {_MEMORY_COLS}, "
+                    "(1.0 - (embedding <=> %s::vector)) * importance_score / "
+                    "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                    "FROM agent_memory "
                     "WHERE agent_id = %s AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
-                    "AND embedding <=> %s::vector <= %s "
-                    "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (self.agent_id, memory_type, query_vector_str, max_distance, query_vector_str, k),
+                    "ORDER BY decay_score DESC LIMIT %s",
+                    (query_vector_str, decay_rate, self.agent_id, memory_type, k),
                 )
             else:
                 cur.execute(
-                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    f"SELECT {_MEMORY_COLS}, "
+                    "(1.0 - (embedding <=> %s::vector)) * importance_score / "
+                    "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                    "FROM agent_memory "
                     "WHERE agent_id = %s AND (expires_at IS NULL OR expires_at > now()) "
-                    "AND embedding <=> %s::vector <= %s "
-                    "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (self.agent_id, query_vector_str, max_distance, query_vector_str, k),
+                    "ORDER BY decay_score DESC LIMIT %s",
+                    (query_vector_str, decay_rate, self.agent_id, k),
                 )
-            return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+            rows = cur.fetchall()
+            results = []
+            for r in rows:
+                decay = float(r[-1])
+                if decay >= threshold * 0.1:
+                    results.append(MemoryRecord.from_row(r[:-1]))
+            return results[:k]
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
         import psycopg
@@ -418,6 +435,36 @@ class BastionMemory:
             "count_a": len(state_a),
             "count_b": len(state_b),
         }
+
+    def _reinforce_real(self, memory_id: str, success: bool) -> dict:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT importance_score, access_count FROM agent_memory "
+                "WHERE memory_id = %s AND agent_id = %s",
+                (memory_id, self.agent_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"status": "not_found"}
+
+            base_imp = float(row[0]) or 5.0
+            boost = 0.1  # small reinforcement for access
+            if success:
+                boost += 1.0  # positive outcome reinforcement
+            new_imp = min(base_imp + boost, 10.0)
+
+            cur.execute(
+                "UPDATE agent_memory SET importance_score = %s, access_count = access_count + 1 "
+                "WHERE memory_id = %s AND agent_id = %s",
+                (new_imp, memory_id, self.agent_id),
+            )
+            self._conn.commit()
+            return {
+                "status": "reinforced",
+                "memory_id": memory_id,
+                "importance_score": new_imp,
+                "delta": round(new_imp - base_imp, 2),
+            }
 
     def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
         triples: list[tuple[str, str, str, str, float]] = []

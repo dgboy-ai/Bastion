@@ -10,6 +10,7 @@ export interface MemoryRecord {
   createdAt: string;
   expiresAt: string | null;
   accessCount: number;
+  importanceScore: number;
 }
 
 export interface CheckpointState {

@@ -13,6 +13,7 @@ interface StoredRecord extends Record<string, unknown> {
   createdAt: string;
   expiresAt: string | null;
   accessCount: number;
+  importanceScore: number;
 }
 
 interface StoredAudit extends Record<string, unknown> {
@@ -61,6 +62,7 @@ export function mockStoreMemory(
     createdAt: now,
     expiresAt,
     accessCount: 0,
+    importanceScore: 5.0,
   };
 
   records.push(record as StoredRecord);
@@ -94,7 +96,14 @@ export function mockSearchMemory(
     return new Date(r.expiresAt) > now;
   });
 
-  return valid.slice(-k);
+  const scored = valid.map((r) => {
+    const created = new Date(r.createdAt);
+    const hours = (now.getTime() - created.getTime()) / 3600000;
+    const importance = r.importanceScore ?? 5.0;
+    return { record: r, score: importance / (1.0 + 0.01 * hours) };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, k).map((s) => s.record);
 }
 
 export function mockGetMemoryAtTime(agentId: string, timestamp: string): MemoryRecord[] {
@@ -136,6 +145,21 @@ export function mockHeal(agentId: string): Record<string, unknown> {
 
 export function mockResolveConflict(factA: string, factB: string, _context: string): string {
   return `Merged: ${factA} and ${factB}`;
+}
+
+export function mockReinforce(agentId: string, memoryId: string, success: boolean = true): Record<string, unknown> {
+  const records = agentData.get(agentId) || [];
+  for (const r of records) {
+    if (r.memoryId === memoryId) {
+      const base = r.importanceScore ?? 5.0;
+      const boost = 0.1 + (success ? 1.0 : 0.0);
+      const newImp = Math.min(base + boost, 10.0);
+      r.importanceScore = newImp;
+      r.accessCount = (r.accessCount ?? 0) + 1;
+      return { status: "reinforced", memory_id: memoryId, importance_score: newImp, delta: Math.round((newImp - base) * 100) / 100 };
+    }
+  }
+  return { status: "not_found" };
 }
 
 export function mockQueryWithCache(

@@ -41,6 +41,13 @@ export class BastionMemory {
     return this._storeReal(memoryType, content, metadata, expiresInSeconds);
   }
 
+  reinforce(memoryId: string, success: boolean = true): Promise<Record<string, unknown>> {
+    if (this._mock) {
+      return Promise.resolve(mock.mockReinforce(this.agentId, memoryId, success));
+    }
+    return this._reinforceReal(memoryId, success);
+  }
+
   search(
     query: string,
     k: number = 5,
@@ -246,10 +253,30 @@ export class BastionMemory {
       createdAt: r.created_at instanceof Date ? (r.created_at as Date).toISOString() : String(r.created_at),
       expiresAt: r.expires_at ? (r.expires_at instanceof Date ? (r.expires_at as Date).toISOString() : String(r.expires_at)) : null,
       accessCount: Number(r.access_count ?? 0),
+      importanceScore: r.importance_score ? Number(r.importance_score) : 5.0,
     };
   }
 
   // ── Real-mode implementations ─────────────────────────────────────────────────
+
+  private async _reinforceReal(memoryId: string, success: boolean): Promise<Record<string, unknown>> {
+    const rows = await this._query(
+      `SELECT importance_score, access_count FROM agent_memory
+       WHERE memory_id = $1 AND agent_id = $2`,
+      [memoryId, this.agentId],
+    ) as Array<{ importance_score: string; access_count: string }>;
+    if (!rows.length) return { status: "not_found" };
+
+    const baseImp = Number(rows[0].importance_score) || 5.0;
+    const boost = 0.1 + (success ? 1.0 : 0.0);
+    const newImp = Math.min(baseImp + boost, 10.0);
+
+    await this._query(
+      "UPDATE agent_memory SET importance_score = $1, access_count = access_count + 1 WHERE memory_id = $2 AND agent_id = $3",
+      [newImp, memoryId, this.agentId],
+    );
+    return { status: "reinforced", memory_id: memoryId, importance_score: newImp, delta: Math.round((newImp - baseImp) * 100) / 100 };
+  }
 
   private async _storeReal(
     memoryType: string,
@@ -269,8 +296,9 @@ export class BastionMemory {
     }
     const rows = await this._query(
       `INSERT INTO agent_memory
-        (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
+         expires_at, importance_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 5.0)
        RETURNING memory_id, created_at`,
       [this.agentId, memoryType, content, JSON.stringify(embedding), JSON.stringify(meta),
        prevHash, cryptoHash, expiresAt],
@@ -296,6 +324,7 @@ export class BastionMemory {
       createdAt: row.created_at,
       expiresAt,
       accessCount: 0,
+      importanceScore: 5.0,
     };
   }
 

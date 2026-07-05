@@ -262,4 +262,46 @@ describe("BastionMemory (TypeScript)", () => {
     assert.ok((statsA.entities as number) > 0);
     assert.ok((statsB.entities as number) > 0);
   });
+
+  it("store sets default importance score", async () => {
+    reset();
+    const mem = new BastionMemory("ts-imp", undefined, true);
+    const record = await mem.store("fact", "Test imp");
+    assert.equal(record.importanceScore, 5.0);
+  });
+
+  it("reinforce increases importance score", async () => {
+    reset();
+    const mem = new BastionMemory("ts-reinf", undefined, true);
+    const record = await mem.store("fact", "Reinforce me");
+    const result = await mem.reinforce(record.memoryId, true);
+    assert.equal(result.status, "reinforced");
+    assert.ok((result.importance_score as number) > 5.0);
+  });
+
+  it("reinforce not found returns not_found", async () => {
+    reset();
+    const mem = new BastionMemory("ts-reinf-nf", undefined, true);
+    const result = await mem.reinforce("nonexistent", true);
+    assert.equal(result.status, "not_found");
+  });
+
+  it("reinforce small boost on access without success", async () => {
+    reset();
+    const mem = new BastionMemory("ts-reinf-access", undefined, true);
+    const record = await mem.store("fact", "Access me");
+    const result = await mem.reinforce(record.memoryId, false);
+    assert.ok((result.delta as number) < 1.0);
+  });
+
+  it("reinforce caps at 10.0", async () => {
+    reset();
+    const mem = new BastionMemory("ts-reinf-cap", undefined, true);
+    const record = await mem.store("fact", "Cap me");
+    for (let i = 0; i < 20; i++) {
+      await mem.reinforce(record.memoryId, true);
+    }
+    const result = await mem.reinforce(record.memoryId, true);
+    assert.ok((result.importance_score as number) <= 10.0);
+  });
 });

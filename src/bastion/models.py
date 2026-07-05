@@ -19,6 +19,7 @@ class MemoryRecord:
         created_at: datetime | None = None,
         expires_at: datetime | None = None,
         access_count: int = 0,
+        importance_score: float = 5.0,
     ):
         self.memory_id = memory_id or str(uuid.uuid4())
         self.agent_id = agent_id
@@ -31,6 +32,7 @@ class MemoryRecord:
         self.created_at = created_at or datetime.now(timezone.utc)
         self.expires_at = expires_at
         self.access_count = access_count
+        self.importance_score = importance_score
 
     @classmethod
     def from_row(cls, row: tuple) -> MemoryRecord:
@@ -55,6 +57,7 @@ class MemoryRecord:
             created_at=row[8],
             expires_at=row[9],
             access_count=int(row[10]) if row[10] is not None else 0,
+            importance_score=float(row[11]) if row[11] is not None else 5.0,
         )
 
     @classmethod
@@ -77,6 +80,7 @@ class MemoryRecord:
             created_at=created_at,
             expires_at=expires_at,
             access_count=d.get("access_count", 0),
+            importance_score=d.get("importance_score", 5.0),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -92,6 +96,7 @@ class MemoryRecord:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "access_count": self.access_count,
+            "importance_score": self.importance_score,
         }
 
     def __repr__(self) -> str:
