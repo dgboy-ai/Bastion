@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
 import uuid
@@ -11,6 +12,41 @@ from typing import Any
 
 from bastion import mock as _mock
 from bastion.models import AuditEntry, ClusterInfo, MemoryRecord
+
+# Bedrock embedding config
+_BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
+_EMBED_DIM = 1024  # Titan V2 output dimension
+_bedrock_client = None
+
+
+def _get_bedrock_client():
+    """Lazily initialize the Bedrock runtime client."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        try:
+            import boto3
+            region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "ap-south-1"))
+            _bedrock_client = boto3.client("bedrock-runtime", region_name=region)
+        except Exception:
+            _bedrock_client = None
+    return _bedrock_client
+
+
+def _hash_fallback_embed(text: str) -> list[float]:
+    """
+    Deterministic hash-based embedding for local development / mock mode.
+    Produces a unit-normalized 1024-dim vector derived from the text SHA256.
+    Ensures cosine similarity is meaningful (same text = same vector).
+    """
+    digest = hashlib.sha256(text.encode()).digest()  # 32 bytes
+    # Tile to 1024 dimensions (32 * 32 = 1024)
+    raw = []
+    for _ in range(32):
+        for byte in digest:
+            raw.append(float(byte) / 127.5 - 1.0)  # normalise to [-1, 1]
+    # L2-normalise so cosine similarity works correctly
+    norm = math.sqrt(sum(v * v for v in raw)) or 1.0
+    return [v / norm for v in raw]
 
 _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
@@ -353,7 +389,28 @@ class BastionMemory:
         }
 
     def _embed(self, text: str) -> list[float]:
-        return [0.0] * 1536
+        """
+        Generate a 1024-dim embedding using AWS Bedrock Titan Embed Text V2.
+        Falls back to a deterministic hash-based vector if Bedrock is unavailable
+        (no AWS credentials, local development, or BASTION_MOCK mode).
+        """
+        client = _get_bedrock_client()
+        if client is None:
+            return _hash_fallback_embed(text)
+
+        try:
+            body = json.dumps({"inputText": text, "dimensions": _EMBED_DIM, "normalize": True})
+            response = client.invoke_model(
+                modelId=_BEDROCK_MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            result = json.loads(response["body"].read())
+            return result["embedding"]
+        except Exception:
+            # Graceful degradation: fall back to hash embedding rather than crashing
+            return _hash_fallback_embed(text)
 
     def __enter__(self):
         return self

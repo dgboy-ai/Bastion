@@ -17,3 +17,4 @@ __pycache__/
 *.db
 *.sqlite
 bastion-memory-*.tgz
+.opencode/AGENTS.md
