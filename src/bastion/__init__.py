@@ -1,4 +1,5 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
+from bastion.agent import BastionAgent, AgentCheckpoint, MemoryConsolidator, redact_pii
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory
 from bastion.models import (
@@ -13,6 +14,10 @@ from bastion.models import (
 from bastion.telemetry import TracedBastionMemory
 
 __all__ = [
+    "BastionAgent",
+    "AgentCheckpoint",
+    "MemoryConsolidator",
+    "redact_pii",
     "BastionMemory",
     "TracedBastionMemory",
     "MemoryRecord",
