@@ -21,7 +21,7 @@ interface StoredAudit extends Record<string, unknown> {
   workflowId: string;
   action: string;
   details: Record<string, unknown>;
-  recordedAt: string;
+  timestamp: string;
 }
 
 const agentData = new Map<string, StoredRecord[]>();
@@ -54,7 +54,7 @@ export function mockStoreMemory(
     agentId,
     memoryType,
     content,
-    embedding: new Array(1536).fill(0),
+    embedding: new Array(1024).fill(0),
     metadata: meta,
     previousHash: prevHash,
     cryptographicHash: cryptoHash,
@@ -70,7 +70,7 @@ export function mockStoreMemory(
     workflowId: crypto.randomUUID(),
     action: "memory_store",
     details: { memoryType, contentPreview: content.slice(0, 100) },
-    recordedAt: now,
+    timestamp: now,
   });
 
   return record;
@@ -110,7 +110,7 @@ export function mockGetAudit(agentId: string): AuditEntry[] {
     workflowId: e.workflowId,
     action: e.action,
     details: e.details,
-    recordedAt: e.recordedAt,
+    timestamp: e.timestamp,
   }));
 }
 
@@ -128,7 +128,7 @@ export function mockHeal(agentId: string): Record<string, unknown> {
     workflowId: crypto.randomUUID(),
     action: "heal",
     details: { recordsBefore: before, recordsAfter: after, pruned: before - after },
-    recordedAt: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
   });
 
   return { agentId, recordsBefore: before, recordsAfter: after, pruned: before - after };

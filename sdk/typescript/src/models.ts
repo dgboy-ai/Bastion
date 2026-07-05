@@ -34,7 +34,7 @@ export interface AuditEntry {
   workflowId: string;
   action: string;
   details: Record<string, unknown>;
-  recordedAt: string;
+  timestamp: string;
 }
 
 export interface ClusterInfo {
