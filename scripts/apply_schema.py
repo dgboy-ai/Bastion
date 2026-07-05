@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 import psycopg
 
 conn_str = sys.argv[1]
