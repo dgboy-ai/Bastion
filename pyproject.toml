@@ -24,6 +24,26 @@ otel = [
     "opentelemetry-api>=1.25",
     "opentelemetry-sdk>=1.25",
 ]
+mcp = [
+    "mcp>=1.0",
+]
+langchain = [
+    "langchain>=0.3",
+]
+crewai = [
+    "crewai>=0.100",
+]
+llamaindex = [
+    "llama-index>=0.12",
+]
+all = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "mcp>=1.0",
+    "langchain>=0.3",
+    "crewai>=0.100",
+    "llama-index>=0.12",
+]
 
 [tool.ruff]
 line-length = 120
