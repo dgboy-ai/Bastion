@@ -161,19 +161,14 @@ class BastionMemory:
                  expires_dt.isoformat() if expires_dt else None),
             )
             row = cur.fetchone()
-            self._conn.commit()
 
             workflow_id = str(uuid.uuid4())
-            with self._conn.cursor() as cur2:
-                cur2.execute(
-                    """
-                    INSERT INTO agent_audit (agent_id, workflow_id, action, details)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (self.agent_id, workflow_id, "memory_store",
-                     json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
-                )
-                self._conn.commit()
+            cur.execute(
+                "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                (self.agent_id, workflow_id, "memory_store",
+                 json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
+            )
+            self._conn.commit()
 
             return MemoryRecord(
                 memory_id=str(row[0]),
