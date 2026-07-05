@@ -165,7 +165,7 @@ CREATE TABLE agent_memory (
     agent_id         STRING NOT NULL,
     memory_type      STRING NOT NULL, -- 'fact','task','preference','learned'
     content          TEXT NOT NULL,
-    embedding        VECTOR(1536) NOT NULL,
+    embedding        VECTOR(1024) NOT NULL,
     metadata         JSONB,
     previous_hash    STRING,
     cryptographic_hash STRING NOT NULL, -- SHA256(content + metadata + previous_hash)
@@ -173,7 +173,7 @@ CREATE TABLE agent_memory (
     expires_at       TIMESTAMPTZ,
     access_count     INT DEFAULT 0,
     INDEX idx_memory_agent (agent_id),
-    INVERTED INDEX idx_memory_embedding (embedding) USING C-SPANN WITH (dim=1536)
+    INVERTED INDEX idx_memory_embedding (embedding) USING C-SPANN WITH (dim=1024)
 );
 ```
 

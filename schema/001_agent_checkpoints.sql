@@ -16,5 +16,8 @@ CREATE TABLE agent_checkpoints (
     INDEX idx_idempotency (idempotency_key) WHERE idempotency_key IS NOT NULL
 );
 
--- CREATE CHANGEFEED FOR TABLE agent_checkpoints INTO 'kafka://...' WITH updated, resolved, on_error=pause;
--- Changefeed will be configured when CDC sink is provisioned (Week 2)
+-- CDC Changefeed: Streams every checkpoint write to downstream processors (Lambda, anomaly detection)
+-- Used for real-time memory health monitoring, self-healing triggers, and audit trail
+CREATE CHANGEFEED FOR TABLE agent_checkpoints
+  INTO 'function://cdc_handler'
+  WITH updated, resolved, on_error=resume, initial_scan='no';

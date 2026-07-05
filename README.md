@@ -63,7 +63,7 @@ Bastion bridges the gap between transactional databases, vector indexing, and ag
 | Language | Package Name | Status | Real DB Driver |
 | :--- | :--- | :--- | :--- |
 | **Python** | `bastion-memory` | `v0.1.0` (72 tests passed) | `psycopg` (Production Ready) |
-| **TypeScript** | `bastion-memory` | `v0.1.0` (14 tests passed) | `pg` (Production Ready) |
+| **TypeScript** | `bastion-memory` | `v0.1.0` (32 tests passed) | `pg` (Production Ready) |
 
 ---
 

@@ -1,0 +1,4 @@
+# Lambda CDC Handler dependencies
+# For local development and testing
+psycopg[binary]>=3.1
+boto3>=1.34

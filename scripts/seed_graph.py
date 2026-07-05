@@ -35,8 +35,8 @@ mem2_id = str(uuid.uuid4())
 mem3_id = str(uuid.uuid4())
 mem4_id = str(uuid.uuid4())
 
-# Create a mock 1536-dimension vector embedding string representation
-mock_emb = "[" + ",".join(["0.0"] * 1536) + "]"
+# Create a mock 1024-dimension vector embedding string representation
+mock_emb = "[" + ",".join(["0.0"] * 1024) + "]"
 
 # 1. Seed Source Agent Memories with SHA256 chain signatures
 memories = [

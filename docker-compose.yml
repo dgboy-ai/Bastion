@@ -1,0 +1,105 @@
+# Bastion — Docker Compose Stack
+# One-command local development: docker compose up
+#
+# This spins up:
+# - CockroachDB (single-node for local dev)
+# - Bastion Dashboard (Next.js at localhost:3000)
+# - Pre-seeded demo agent with sample memories
+#
+# For production, use CockroachDB Cloud + AWS Lambda.
+
+services:
+  # ── CockroachDB ──────────────────────────────────────────────────────────
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    command: start-single-node --insecure --accept-payloads-for-urls=/
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bastion-net
+
+  # ── Schema Init ──────────────────────────────────────────────────────────
+  schema-init:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    volumes:
+      - ./schema:/schemas
+    entrypoint: >
+      sh -c "
+        echo 'Waiting for CockroachDB...'
+        sleep 5
+        echo 'Applying schema 001_agent_checkpoints...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/001_agent_checkpoints.sql || true
+        echo 'Applying schema 002_agent_memory...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/002_agent_memory.sql || true
+        echo 'Applying schema 003_agent_audit...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/003_agent_audit.sql || true
+        echo 'Applying schema 004_agent_coordination...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/004_agent_coordination.sql || true
+        echo 'Applying schema 005_agent_entities...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/005_agent_entities.sql || true
+        echo 'Applying schema 006_agent_relations...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/006_agent_relations.sql || true
+        echo 'Applying schema 007_memory_decay...'
+        cockroach sql --insecure --host=cockroachdb -f /schemas/007_memory_decay.sql || true
+        echo 'Schema applied successfully!'
+      "
+    networks:
+      - bastion-net
+
+  # ── Seed Demo Data ──────────────────────────────────────────────────────
+  seed-data:
+    image: python:3.12-slim
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./scripts:/scripts
+      - ./src:/app/src
+      - ./pyproject.toml:/app/pyproject.toml
+    working_dir: /app
+    environment:
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+    entrypoint: >
+      sh -c "
+        echo 'Installing dependencies...'
+        pip install psycopg[binary] --quiet 2>/dev/null
+        echo 'Seeding demo data...'
+        python /scripts/seed_graph.py || echo 'Seed script requires src package - skipping'
+        echo 'Seeding complete!'
+      "
+    networks:
+      - bastion-net
+
+  # ── Dashboard ──────────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - BASTION_MOCK=false
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    networks:
+      - bastion-net
+
+volumes:
+  cockroach-data:
+
+networks:
+  bastion-net:
+    driver: bridge

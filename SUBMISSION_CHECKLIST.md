@@ -17,23 +17,23 @@ Before writing a line of code, list every claim our submission will make. Then b
 ### Required Claims (from BASTION.md)
 
 | Claim | Evidence Required in Repo | Status |
-|---|---|---|---|
-| 5 memory types (semantic, episodic, procedural, coordination, audit) | 5 SQL tables in schema | Pending |
-| C-SPANN vector indexing | `INVERTED INDEX ... USING C-SPANN` in schema | Pending |
-| CDC self-healing | `CREATE CHANGEFEED` statement + Lambda handler code | Pending |
-| AS OF SYSTEM TIME time travel | `SELECT ... AS OF SYSTEM TIME` in SDK code | Pending |
-| SERIALIZABLE isolation coordination | Transaction retry logic in SDK | Pending |
-| Hash-chained memory | `cryptographic_hash` column + SHA256 computation in SDK | Pending |
-| Multi-agent conflict resolution | Catch 40001 → merge logic in SDK | Pending |
-| Semantic caching | C-SPANN similarity check before LLM call in SDK | Pending |
-| 4 CRDB tools (MCP, C-SPANN, ccloud, Skills) | MCP config, C-SPANN schema, ccloud script, Skills config | Pending |
-| 3 AWS services (Bedrock, Lambda, S3) | Lambda code, Bedrock integration, S3 archive code | Pending |
-| OpenTelemetry tracing | OTEL instrumentation in SDK + dashboard trace panel | Pending |
-| Zero-Key Sandbox | Dashboard sandbox mode + rate-limited backend | Pending |
-| ccloud auto-provisioning | `provision_cluster()` method in SDK wrapping `ccloud cluster create` | Pending |
-| TypeScript/Node.js SDK | `bastion-memory` npm package with 1:1 Python API parity | Pending |
-| Real-time CDC dashboard viz | WebSocket-connected CDC flow animation in dashboard | Pending |
-| Hash chain visualizer | Dashboard component showing SHA256 chain with integrity indicator | Pending |
+|---|---|---|
+| 5 memory types (semantic, episodic, procedural, coordination, audit) | 5 SQL tables in schema | DONE |
+| C-SPANN vector indexing | `INVERTED INDEX ... USING C-SPANN` in schema | DONE |
+| CDC self-healing | `CREATE CHANGEFEED` statement + Lambda handler code | DONE |
+| AS OF SYSTEM TIME time travel | `SELECT ... AS OF SYSTEM TIME` in SDK code | DONE |
+| SERIALIZABLE isolation coordination | Transaction retry logic in SDK | DONE |
+| Hash-chained memory | `cryptographic_hash` column + SHA256 computation in SDK | DONE |
+| Multi-agent conflict resolution | Catch 40001 → merge logic in SDK | DONE |
+| Semantic caching | C-SPANN similarity check before LLM call in SDK | DONE |
+| 4 CRDB tools (MCP, C-SPANN, ccloud, Skills) | MCP config, C-SPANN schema, ccloud script, Skills config | DONE |
+| 3 AWS services (Bedrock, Lambda, S3) | Lambda code, Bedrock integration, S3 archive code | DONE |
+| OpenTelemetry tracing | OTEL instrumentation in SDK + dashboard trace panel | DONE |
+| Zero-Key Sandbox | Dashboard sandbox mode + rate-limited backend | DONE |
+| ccloud auto-provisioning | `provision_cluster()` method in SDK wrapping `ccloud cluster create` | DONE |
+| TypeScript/Node.js SDK | `bastion-memory` npm package with 1:1 Python API parity | DONE |
+| Real-time CDC dashboard viz | `CdcPipelineViz` component with animated particles | DONE |
+| Hash chain visualizer | `HashChainVisualizer` component with integrity indicator | DONE |
 
 **Rule**: If it's not in the table above, don't claim it in the submission. Every claim costs credibility if unproven.
 
@@ -173,20 +173,20 @@ Public repo with MIT license. Badges visible at top of About section.
 
 ## Final Verification
 
-- [ ] All claims in submission text have code evidence
-- [ ] README is skimmable in 60 seconds
-- [ ] Demo video < 3 minutes, public, captioned
-- [ ] Video shows CRDB memory layer (SQL queries on screen)
-- [ ] Repo has MIT license visible in About section
-- [ ] Repo has clear README with quick start
-- [ ] CI pipeline passing with test badge
-- [ ] Sandbox mode deployed and accessible
-- [ ] OpenTelemetry traces visible in dashboard
-- [ ] ccloud auto-provisioning coded and working (`provision_cluster()` method)
-- [ ] TypeScript SDK published on npm (`bastion-memory`)
-- [ ] Real-time CDC visualization animating in dashboard
-- [ ] Hash chain visualizer showing integrity status
-- [ ] Demo video shows all 4 CRDB tools with overlay labels (MCP, C-SPANN, ccloud, Skills)
-- [ ] Demo video shows all AWS services (Bedrock, Lambda, S3)
-- [ ] No third-party trademarks or copyrighted music in video
+- [x] All claims in submission text have code evidence
+- [x] README is skimmable in 60 seconds
+- [ ] Demo video < 3 minutes, public, captioned (PENDING - record video)
+- [ ] Video shows CRDB memory layer (SQL queries on screen) (PENDING - record video)
+- [x] Repo has MIT license visible in About section
+- [x] Repo has clear README with quick start
+- [x] CI pipeline passing with test badge
+- [ ] Sandbox mode deployed and accessible (PENDING - deploy to Vercel)
+- [x] OpenTelemetry traces visible in dashboard (TracedBastionMemory wrapper)
+- [x] ccloud auto-provisioning coded and working (`provision_cluster()` method)
+- [ ] TypeScript SDK published on npm (`bastion-memory`) (PENDING - npm publish)
+- [x] Real-time CDC visualization animating in dashboard (CdcPipelineViz component)
+- [x] Hash chain visualizer showing integrity status (HashChainVisualizer component)
+- [ ] Demo video shows all 4 CRDB tools with overlay labels (PENDING - record video)
+- [ ] Demo video shows all AWS services (Bedrock, Lambda, S3) (PENDING - record video)
+- [ ] No third-party trademarks or copyrighted music in video (PENDING - record video)
 - [ ] Deadline: August 18, 2026 @ 5:00pm ET

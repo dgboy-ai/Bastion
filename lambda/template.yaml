@@ -1,0 +1,99 @@
+# AWS SAM Template for Bastion CDC Lambda Handler
+# Deploy: sam build && sam deploy --guided
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Bastion CDC Handler - Self-healing memory pipeline for AI agents
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.12
+    Environment:
+      Variables:
+        BASTION_CONN: !Ref BastionConnString
+        BASTION_S3_BUCKET: !Ref ArchiveBucket
+        BASTION_ALERT_TOPIC: !Ref AlertTopicArn
+        BASTION_CIRCUIT_BREAKER_THRESHOLD: "5"
+        BASTION_CIRCUIT_BREAKER_WINDOW: "300"
+
+Parameters:
+  BastionConnString:
+    Type: String
+    Description: CockroachDB connection string
+    NoEcho: true
+  ArchiveBucket:
+    Type: String
+    Default: bastion-memory-archives
+    Description: S3 bucket for memory snapshots
+  AlertTopicArn:
+    Type: String
+    Default: ""
+    Description: SNS topic ARN for alerts (optional)
+
+Resources:
+  CdcHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: cdc_handler.handler
+      CodeUri: .
+      Description: Receives CockroachDB CDC changefeed events and performs hash chain verification, anomaly detection, and self-healing
+      Events:
+        CdcEndpoint:
+          Type: HttpApi
+          Properties:
+            Path: /cdc
+            Method: POST
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ArchiveBucket
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+      Architectures:
+        - x86_64
+
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: cdc_handler.health_check
+      CodeUri: .
+      Description: Health check endpoint for CDC handler monitoring
+      Events:
+        HealthEndpoint:
+          Type: HttpApi
+          Properties:
+            Path: /cdc/health
+            Method: GET
+
+  ArchiveBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ArchiveBucket
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveTransition
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: bastion-memory-alerts
+      DisplayName: Bastion Memory Alerts
+
+Outputs:
+  CdcEndpoint:
+    Description: CDC event receiver endpoint
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc"
+  HealthEndpoint:
+    Description: Health check endpoint
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc/health"
+  ArchiveBucketName:
+    Description: S3 bucket for memory snapshots
+    Value: !Ref ArchiveBucket
+  AlertTopicArn:
+    Description: SNS topic for alerts
+    Value: !Ref AlertTopic

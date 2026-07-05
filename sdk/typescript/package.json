@@ -20,7 +20,8 @@
     "typescript": "^5.8"
   },
   "optionalDependencies": {
-    "pg": "^8.13"
+    "pg": "^8.13",
+    "@aws-sdk/client-bedrock-runtime": "^3.600"
   },
   "keywords": [
     "cockroachdb",
