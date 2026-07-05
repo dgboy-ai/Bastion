@@ -1,12 +1,16 @@
+import os
+import sys
 import uuid
 
 import psycopg
 
-CONN = (
-    "postgresql://divyansh:7_GfcNnRnL6UaflljIzOIw@"
-    "bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud:26257/"
-    "defaultdb?sslmode=verify-full"
-)
+# Retrieve database connection URI from environment configuration to prevent leaks
+CONN = os.environ.get("BASTION_CONN") or os.environ.get("DATABASE_URL")
+
+if not CONN:
+    print("ERROR: Environment variable BASTION_CONN or DATABASE_URL is not set.")
+    print("Please set BASTION_CONN before executing this script.")
+    sys.exit(1)
 
 conn = psycopg.connect(CONN)
 cur = conn.cursor()
