@@ -337,21 +337,26 @@ export class BastionMemory {
     const embedding = await this._embed(query);
     const embJson = JSON.stringify(embedding);
 
-    let sql = `SELECT *, embedding <=> $2::vector(1024) AS _dist
+    const kExtra = k * 3;
+    let sql = `SELECT *, embedding <=> $2::vector(1024) AS _dist,
+                     (1.0 - (embedding <=> $2::vector(1024))) * importance_score /
+                     (1.0 + 0.01 * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS _score
                FROM agent_memory
                WHERE agent_id = $1
                  AND (expires_at IS NULL OR expires_at > now())
-               ORDER BY embedding <=> $2::vector(1024) ASC
+               ORDER BY _score DESC
                LIMIT $3`;
-    const params: unknown[] = [this.agentId, embJson, k];
+    const params: unknown[] = [this.agentId, embJson, kExtra];
 
     if (memoryType) {
-      sql = `SELECT *, embedding <=> $3::vector(1024) AS _dist
+      sql = `SELECT *, embedding <=> $3::vector(1024) AS _dist,
+                     (1.0 - (embedding <=> $3::vector(1024))) * importance_score /
+                     (1.0 + 0.01 * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS _score
              FROM agent_memory
              WHERE agent_id = $1
                AND memory_type = $2
                AND (expires_at IS NULL OR expires_at > now())
-             ORDER BY embedding <=> $3::vector(1024) ASC
+             ORDER BY _score DESC
              LIMIT $4`;
       params.splice(1, 0, memoryType);
     }
@@ -363,7 +368,7 @@ export class BastionMemory {
       if (dist > (1 - threshold)) continue;
       results.push(this._rowToRecord(r));
     }
-    return results;
+    return results.slice(0, k);
   }
 
   private async _getAtTimeReal(agentId: string, timestamp: string): Promise<MemoryRecord[]> {
