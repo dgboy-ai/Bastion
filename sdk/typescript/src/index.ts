@@ -1,7 +1,7 @@
 import * as mock from "./mock";
-import { MemoryRecord, AuditEntry, ClusterInfo } from "./models";
+import { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord } from "./models";
 
-export { MemoryRecord, AuditEntry, ClusterInfo } from "./models";
+export { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord } from "./models";
 export { reset } from "./mock";
 
 function isMockMode(mock?: boolean): boolean {

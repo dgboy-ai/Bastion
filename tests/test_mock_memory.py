@@ -261,3 +261,41 @@ def test_detect_anomalies_size_spike():
     alerts = memory.detect_anomalies()
     types = [a["type"] for a in alerts]
     assert "size_spike" in types
+
+
+def test_from_row_parses_embedding_string():
+    from datetime import datetime, timezone
+    record = MemoryRecord.from_row((
+        "test-id", "agent-1", "fact", "content",
+        "[0.1, 0.2, 0.3]",  # VECTOR returned as JSON string
+        {"source": "test"}, "prev-hash", "crypto-hash",
+        datetime.now(timezone.utc), None, 5,
+    ))
+    assert record.memory_id == "test-id"
+    assert record.embedding == [0.1, 0.2, 0.3]
+    assert record.metadata == {"source": "test"}
+    assert record.access_count == 5
+
+
+def test_from_row_parses_embedding_list():
+    from datetime import datetime, timezone
+    record = MemoryRecord.from_row((
+        "test-id", "agent-1", "fact", "content",
+        [0.1, 0.2, 0.3],
+        {"source": "test"}, "prev-hash", "crypto-hash",
+        datetime.now(timezone.utc), None, 0,
+    ))
+    assert record.embedding == [0.1, 0.2, 0.3]
+    assert record.access_count == 0
+
+
+def test_from_row_null_values():
+    record = MemoryRecord.from_row((
+        "test-id", "agent-1", "fact", "content",
+        None, None, None, "crypto-hash",
+        None, None, None,
+    ))
+    assert record.embedding == []
+    assert record.metadata == {}
+    assert record.previous_hash is None
+    assert record.access_count == 0

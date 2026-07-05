@@ -147,7 +147,7 @@ class BastionMemory:
         embedding = self._embed(content)
         embedding_str = json.dumps(embedding)
         now = datetime.now(timezone.utc)
-        expires_at = (now + timedelta(seconds=expires_in_seconds)).isoformat() if expires_in_seconds else None
+        expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
 
         with self._conn.cursor() as cur:
             cur.execute(
@@ -158,7 +158,7 @@ class BastionMemory:
                 RETURNING memory_id, created_at
                 """,
                 (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
-                 expires_at),
+                 expires_dt.isoformat() if expires_dt else None),
             )
             row = cur.fetchone()
             self._conn.commit()
@@ -185,6 +185,7 @@ class BastionMemory:
                 previous_hash=prev_hash,
                 cryptographic_hash=crypto_hash,
                 created_at=row[1],
+                expires_at=expires_dt,
             )
 
     def _search_real(
@@ -259,7 +260,7 @@ class BastionMemory:
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at < now()",
+                "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
                 (agent_id,),
             )
             self._conn.commit()

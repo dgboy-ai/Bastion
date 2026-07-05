@@ -34,18 +34,27 @@ class MemoryRecord:
 
     @classmethod
     def from_row(cls, row: tuple) -> MemoryRecord:
+        embedding_raw = row[4]
+        if embedding_raw is not None:
+            if isinstance(embedding_raw, str):
+                import json
+                embedding = json.loads(embedding_raw)
+            else:
+                embedding = list(embedding_raw)
+        else:
+            embedding = []
         return cls(
             memory_id=str(row[0]),
             agent_id=str(row[1]),
             memory_type=str(row[2]),
             content=str(row[3]),
-            embedding=list(row[4]) if row[4] else [],
+            embedding=embedding,
             metadata=dict(row[5]) if row[5] else {},
             previous_hash=str(row[6]) if row[6] else None,
             cryptographic_hash=str(row[7]),
             created_at=row[8],
             expires_at=row[9],
-            access_count=int(row[10]) if row[10] else 0,
+            access_count=int(row[10]) if row[10] is not None else 0,
         )
 
     @classmethod
