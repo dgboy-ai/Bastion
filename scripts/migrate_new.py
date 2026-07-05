@@ -1,5 +1,5 @@
 import os
-import sys
+
 import psycopg
 
 CONN = "postgresql://divyansh:7_GfcNnRnL6UaflljIzOIw@bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"

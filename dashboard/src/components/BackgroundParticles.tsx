@@ -57,8 +57,8 @@ export default function BackgroundParticles() {
     resize();
     window.addEventListener("resize", resize);
 
-    const MAX_PARTICLES = 30;
-    const NUM_ORBS = 3;
+    const MAX_PARTICLES = 45;
+    const NUM_ORBS = 5;
 
     function spawnParticle(): Particle {
       return {
@@ -66,8 +66,8 @@ export default function BackgroundParticles() {
         y: h + 10,
         vx: (Math.random() - 0.5) * 0.15,
         vy: -(0.15 + Math.random() * 0.25),
-        size: 0.8 + Math.random() * 1.5,
-        alpha: 0.15 + Math.random() * 0.25,
+        size: 0.8 + Math.random() * 1.8,
+        alpha: 0.2 + Math.random() * 0.3,
         life: 0,
         maxLife: 200 + Math.random() * 300,
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -88,8 +88,8 @@ export default function BackgroundParticles() {
       orbsRef.current.push({
         x: w * (0.1 + Math.random() * 0.8),
         y: h * (0.1 + Math.random() * 0.8),
-        r: 80 + Math.random() * 120,
-        alpha: 0.01 + Math.random() * 0.015,
+        r: 120 + Math.random() * 150,
+        alpha: 0.025 + Math.random() * 0.03,
         color: COLORS[i % COLORS.length],
         phase: Math.random() * Math.PI * 2,
         speed: 0.05 + Math.random() * 0.05,

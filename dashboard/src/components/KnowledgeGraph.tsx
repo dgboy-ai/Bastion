@@ -37,69 +37,63 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
-    // Create defs for filters and markers
     const defs = svg.append("defs");
 
-    // Glowing filters for node types
-    const createGlowFilter = (id: string, color: string) => {
-      const filter = defs.append("filter")
-        .attr("id", id)
-        .attr("x", "-50%")
-        .attr("y", "-50%")
-        .attr("width", "200%")
-        .attr("height", "200%");
-      filter.append("feGaussianBlur").attr("stdDeviation", "5").attr("result", "blur");
-      filter.append("feMerge").selectAll("feMergeNode")
-        .data(["blur", "SourceGraphic"])
-        .enter().append("feMergeNode")
-        .attr("in", d => d);
+    // Smooth Radial Gradient Glows for Node Core and Halo
+    const createGlowGradients = (id: string, color: string) => {
+      const g = defs.append("radialGradient").attr("id", `radial-${id}`);
+      g.append("stop").attr("offset", "0%").attr("stop-color", color).attr("stop-opacity", 1);
+      g.append("stop").attr("offset", "60%").attr("stop-color", color).attr("stop-opacity", 0.7);
+      g.append("stop").attr("offset", "100%").attr("stop-color", color).attr("stop-opacity", 0);
+
+      const filter = defs.append("filter").attr("id", `filter-${id}`).attr("x", "-30%").attr("y", "-30%").attr("width", "160%").attr("height", "160%");
+      filter.append("feGaussianBlur").attr("stdDeviation", "4").attr("result", "blur");
     };
 
-    createGlowFilter("glow-sunset", "var(--accent-sunset)");
-    createGlowFilter("glow-breeze", "var(--accent-breeze)");
-    createGlowFilter("glow-dusk", "var(--accent-dusk)");
+    createGlowGradients("sunset", "var(--accent-sunset)");
+    createGlowGradients("breeze", "var(--accent-breeze)");
+    createGlowGradients("dusk", "var(--accent-dusk)");
 
-    // Arrow markers for relation paths
+    // Arrow markers for clean curved line endpoints (offset refX slightly)
     const createMarker = (id: string, color: string) => {
       defs.append("marker")
         .attr("id", id)
         .attr("viewBox", "0 -5 10 10")
-        .attr("refX", 26)
-        .attr("refY", 0)
-        .attr("markerWidth", 5)
-        .attr("markerHeight", 5)
+        .attr("refX", 36) // Offset to sit outside the larger node rim
+        .attr("refY", -1.5)
+        .attr("markerWidth", 5.5)
+        .attr("markerHeight", 5.5)
         .attr("orient", "auto")
         .append("path")
-        .attr("d", "M0,-5L10,0L0,5")
-        .attr("fill", color);
+        .attr("d", "M0,-4L8,0L0,4")
+        .attr("fill", color)
+        .attr("opacity", 0.5);
     };
 
     createMarker("arrow-sunset", "var(--accent-sunset)");
     createMarker("arrow-breeze", "var(--accent-breeze)");
     createMarker("arrow-dusk", "var(--accent-dusk)");
 
-    // Draw background grid in SVG canvas
-    const gridPattern = defs.append("pattern")
-      .attr("id", "svg-grid")
-      .attr("width", 50)
-      .attr("height", 50)
-      .attr("patternUnits", "userSpaceOnUse");
-
-    gridPattern.append("circle")
-      .attr("cx", 2)
-      .attr("cy", 2)
-      .attr("r", 1)
-      .attr("fill", "rgba(255, 255, 255, 0.05)");
+    // Grid coordinates background pattern
+    defs.append("pattern")
+      .attr("id", "grid")
+      .attr("width", 40)
+      .attr("height", 40)
+      .attr("patternUnits", "userSpaceOnUse")
+      .append("path")
+      .attr("d", "M 40 0 L 0 0 0 40")
+      .attr("fill", "none")
+      .attr("stroke", "rgba(255, 255, 255, 0.015)")
+      .attr("stroke-width", 0.5);
 
     svg.append("rect")
       .attr("width", "100%")
       .attr("height", "100%")
-      .attr("fill", "url(#svg-grid)");
+      .attr("fill", "url(#grid)");
 
-    // Group container for zoom and drag
     const container = svg.append("g");
 
-    // Add zoom/pan controls
+    // Pan & Zoom controls
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.3, 3])
       .on("zoom", (event) => {
@@ -107,53 +101,34 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
       });
     svg.call(zoom);
 
-    // Increase simulation forces to push nodes apart and prevent overlapping text
+    // Dynamic layout constraints
     const simulation = d3.forceSimulation<Node>(nodes)
-      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(220))
-      .force("charge", d3.forceManyBody().strength(-600))
+      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(240))
+      .force("charge", d3.forceManyBody().strength(-850))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(70));
+      .force("collision", d3.forceCollide().radius(85));
 
-    // Render relationship paths
+    // Render connection edges (links)
     const linkGroup = container.append("g").attr("class", "links");
-    
-    // Draw links (active flow lines)
+
+    // Curved edge lines to avoid intersecting labels
     const link = linkGroup
       .selectAll("path")
       .data(links)
       .enter()
       .append("path")
-      .attr("class", "link-line")
-      .attr("id", (d, i) => `linkpath-${i}`)
-      .attr("stroke", (d) => {
-        if (d.type === "works_on" || d.type === "building") return "var(--accent-breeze)";
-        if (d.type === "collaborates" || d.type === "loves") return "var(--accent-sunset)";
-        return "var(--accent-dusk)";
-      })
-      .attr("stroke-width", (d) => Math.max(2, d.confidence * 4))
       .attr("fill", "none")
+      .attr("stroke", (d) => {
+        if (d.type === "works_on" || d.type === "building") return "rgba(0, 240, 255, 0.15)";
+        if (d.type === "collaborates" || d.type === "loves") return "rgba(255, 115, 0, 0.15)";
+        return "rgba(139, 92, 246, 0.15)";
+      })
+      .attr("stroke-width", 2)
       .attr("marker-end", (d) => {
         if (d.type === "works_on" || d.type === "building") return "url(#arrow-breeze)";
         if (d.type === "collaborates" || d.type === "loves") return "url(#arrow-sunset)";
         return "url(#arrow-dusk)";
       });
-
-    // Render edge labels using svg textPaths aligned nicely along links
-    const linkText = container.append("g")
-      .selectAll("text")
-      .data(links)
-      .enter()
-      .append("text")
-      .attr("font-family", "var(--font-mono)")
-      .attr("font-size", "10px")
-      .attr("letter-spacing", "1px")
-      .attr("dy", -6)
-      .append("textPath")
-      .attr("xlink:href", (d, i) => `#linkpath-${i}`)
-      .style("text-anchor", "middle")
-      .attr("startOffset", "50%")
-      .attr("fill", "var(--mute)")
-      .text(d => d.type.toUpperCase());
 
     // Render node groups
     const node = container.append("g")
@@ -172,52 +147,68 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
         onNodeClick(d);
       });
 
-    // Hover state halos / circles
+    // Node glows (Outer bounds)
+    node.append("circle")
+      .attr("r", 42)
+      .attr("fill", (d) => {
+        if (d.type === "person" || d.type === "user") return "url(#radial-breeze)";
+        if (d.type === "technology" || d.type === "project") return "url(#radial-sunset)";
+        return "url(#radial-dusk)";
+      })
+      .attr("opacity", 0.4);
+
+    // Distinct thin outer rim circle
     node.append("circle")
       .attr("r", 22)
-      .attr("fill", "rgba(3, 4, 6, 0.95)")
+      .attr("fill", "none")
       .attr("stroke", (d) => {
         if (d.type === "person" || d.type === "user") return "var(--accent-breeze)";
         if (d.type === "technology" || d.type === "project") return "var(--accent-sunset)";
         return "var(--accent-dusk)";
       })
-      .attr("stroke-width", 2)
-      .style("filter", (d) => {
-        if (d.type === "person" || d.type === "user") return "url(#glow-breeze)";
-        if (d.type === "technology" || d.type === "project") return "url(#glow-sunset)";
-        return "url(#glow-dusk)";
-      })
-      .style("cursor", "pointer");
+      .attr("stroke-width", 1.25)
+      .attr("opacity", 0.45);
 
     // Inner core circle for depth
     node.append("circle")
-      .attr("r", 9)
+      .attr("r", 12)
       .attr("fill", (d) => {
-        if (d.type === "person" || d.type === "user") return "var(--accent-breeze)";
-        if (d.type === "technology" || d.type === "project") return "var(--accent-sunset)";
-        return "var(--accent-dusk)";
+        if (d.type === "person" || d.type === "user") return "rgba(0, 240, 255, 0.95)";
+        if (d.type === "technology" || d.type === "project") return "rgba(255, 106, 0, 0.95)";
+        return "rgba(139, 92, 246, 0.95)";
       })
-      .style("opacity", 0.9)
-      .style("pointer-events", "none");
+      .attr("stroke", "#020305")
+      .attr("stroke-width", 2)
+      .style("cursor", "pointer");
 
-    // Node label labels (under the node circle, clean)
+    // Sleek display labels below nodes
     node.append("text")
-      .attr("dy", 42)
+      .attr("dy", 38)
       .attr("text-anchor", "middle")
       .attr("fill", "var(--ink)")
-      .attr("font-family", "var(--font-display)")
-      .attr("font-size", "11px")
-      .attr("font-weight", "500")
-      .attr("letter-spacing", "0.5px")
-      .style("text-shadow", "0 2px 6px rgba(0,0,0,0.9)")
-      .text(d => d.name.toUpperCase());
+      .attr("font-family", "var(--font-sans)")
+      .attr("font-size", "12px")
+      .attr("font-weight", "600")
+      .attr("letter-spacing", "-0.2px")
+      .style("pointer-events", "none")
+      .style("text-shadow", "0 2px 4px rgba(0,0,0,0.8)")
+      .text(d => d.name);
 
-    // Update positions on each tick
+    // Intersecting link mapping & position calculation
     simulation.on("tick", () => {
+      // Calculate arc curves for link elements
       link.attr("d", (d) => {
         const s = d.source as Node;
         const t = d.target as Node;
-        return `M ${s.x || 0} ${s.y || 0} L ${t.x || 0} ${t.y || 0}`;
+        const sx = s.x || 0;
+        const sy = s.y || 0;
+        const tx = t.x || 0;
+        const ty = t.y || 0;
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const dr = Math.sqrt(dx * dx + dy * dy);
+        // Returns slightly curved arc lines so labels don't collide
+        return `M${sx},${sy}A${dr * 1.25},${dr * 1.25} 0 0,1 ${tx},${ty}`;
       });
 
       node.attr("transform", d => `translate(${d.x || 0},${d.y || 0})`);

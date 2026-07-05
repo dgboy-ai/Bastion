@@ -75,9 +75,18 @@ export default function LogsPage() {
         </div>
       )}
 
+      {/* Styled Data Table with Fixed Column Groups */}
       <div className="panel">
         <div className="table-container">
           <table className="data-table">
+            <colgroup>
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "42%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "12%" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Type</th>
@@ -85,7 +94,7 @@ export default function LogsPage() {
                 <th>Importance</th>
                 <th>Accesses</th>
                 <th>Created At</th>
-                <th>Cryptographic Hash</th>
+                <th>Hash</th>
               </tr>
             </thead>
             <tbody>
@@ -103,19 +112,29 @@ export default function LogsPage() {
                         {m.memoryType}
                       </span>
                     </td>
-                    <td style={{ maxWidth: "400px", wordBreak: "break-word" }}>
+                    <td style={{ wordBreak: "break-word", paddingRight: "16px", color: "var(--ink)" }}>
                       {m.content}
                     </td>
-                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--accent-sunset-soft)" }}>
+                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--accent-sunset)" }}>
                       {m.importanceScore.toFixed(1)}
                     </td>
                     <td style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
                       {m.accessCount}
                     </td>
-                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--body)" }}>
                       {new Date(m.createdAt).toLocaleString()}
                     </td>
-                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--mute)", maxWidth: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <td 
+                      style={{ 
+                        fontFamily: "var(--font-mono)", 
+                        fontSize: "11px", 
+                        color: "var(--mute)", 
+                        overflow: "hidden", 
+                        textOverflow: "ellipsis", 
+                        whiteSpace: "nowrap" 
+                      }}
+                      title={m.cryptographicHash}
+                    >
                       {m.cryptographicHash}
                     </td>
                   </tr>
