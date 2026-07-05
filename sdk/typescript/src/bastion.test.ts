@@ -145,4 +145,47 @@ describe("BastionMemory (TypeScript)", () => {
     assert.equal(info.status, "created");
     assert.ok(info.connectionString.includes("cockroachlabs.cloud"));
   });
+
+  it("search excludes expired records", async () => {
+    reset();
+    const memory = new BastionMemory("ttl-ts", undefined, true);
+    await memory.store("fact", "Permanent record");
+    await memory.store("fact", "Expired record", {}, 0);
+    const results = await memory.search("record");
+    assert.ok(results.some((r) => r.content.includes("Permanent")));
+    assert.ok(!results.some((r) => r.content.includes("Expired")));
+  });
+
+  it("heal prunes expired records", async () => {
+    reset();
+    const memory = new BastionMemory("heal-ts", undefined, true);
+    await memory.store("fact", "Keep this");
+    await memory.store("fact", "Expiring", {}, 0);
+    const result = await memory.heal();
+    assert.equal(result.pruned, 1);
+    assert.equal(result.recordsAfter, 1);
+  });
+
+  it("detectAnomalies returns empty for clean state", async () => {
+    reset();
+    const memory = new BastionMemory("anomaly-clean-ts", undefined, true);
+    const alerts = await memory.detectAnomalies();
+    assert.equal(alerts.length, 0);
+  });
+
+  it("getAtTime before all records returns empty", async () => {
+    reset();
+    const memory = new BastionMemory("before-ts", undefined, true);
+    await memory.store("fact", "Later memory");
+    const early = new Date(Date.UTC(2020, 0, 1)).toISOString();
+    const results = await memory.getAtTime(early);
+    assert.equal(results.length, 0);
+  });
+
+  it("resolveConflict with context", async () => {
+    reset();
+    const memory = new BastionMemory("ctx-ts", undefined, true);
+    const result = await memory.resolveConflict("Fact A", "Fact B", "User prefers A");
+    assert.ok(result.includes("Fact"));
+  });
 });

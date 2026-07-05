@@ -47,7 +47,7 @@ export function mockStoreMemory(
   const meta = metadata || {};
   const cryptoHash = computeHash(content, meta, prevHash);
   const now = new Date().toISOString();
-  const expiresAt = expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000).toISOString() : null;
+  const expiresAt = expiresInSeconds !== undefined && expiresInSeconds !== null ? new Date(Date.now() + expiresInSeconds * 1000).toISOString() : null;
 
   const record: MemoryRecord = {
     memoryId: crypto.randomUUID(),

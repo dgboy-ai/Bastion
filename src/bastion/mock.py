@@ -35,7 +35,7 @@ def mock_store_memory(
     meta = metadata or {}
     crypto_hash = _compute_hash(content, meta, prev_hash)
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds else None
+    expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
 
     record = MemoryRecord(
         memory_id=str(uuid.uuid4()),
@@ -81,7 +81,7 @@ def mock_search_memory(
         expires = r.get("expires_at")
         if expires and isinstance(expires, str):
             expires_dt = datetime.fromisoformat(expires)
-            if expires_dt < now:
+            if expires_dt <= now:
                 continue
         valid.append(r)
 
@@ -133,7 +133,7 @@ def mock_heal(agent_id: str) -> dict[str, Any]:
         expires = r.get("expires_at")
         if expires:
             expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
-            if expires_dt < now:
+            if expires_dt <= now:
                 continue
         valid.append(r)
 

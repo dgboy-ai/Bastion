@@ -205,3 +205,59 @@ def test_diff_records_added():
     assert result["count_b"] == 1
     assert len(result["added"]) == 1
     assert result["added"][0]["content"] == "Added after"
+
+
+def test_store_with_expires_in_seconds_sets_expires_at():
+    memory = BastionMemory(agent_id="ttl-set", mock=True)
+    record = memory.store("fact", "Expiring memory", expires_in_seconds=3600)
+    assert record.expires_at is not None
+    delta = record.expires_at - record.created_at
+    assert abs(delta.total_seconds() - 3600) < 1
+
+
+def test_search_excludes_expired_records():
+    memory = BastionMemory(agent_id="ttl-expiry", mock=True)
+    memory.store("fact", "Permanent record")
+    memory.store("fact", "Expired record", expires_in_seconds=0)
+    results = memory.search("record")
+    assert all("Permanent" in r.content for r in results)
+    assert not any("Expired" in r.content for r in results)
+
+
+def test_heal_prunes_expired_records():
+    memory = BastionMemory(agent_id="heal-prune", mock=True)
+    memory.store("fact", "Keep this")
+    memory.store("fact", "Expiring soon", expires_in_seconds=0)
+    result = memory.heal()
+    assert result["pruned"] == 1
+    assert result["records_after"] == 1
+
+
+def test_search_returns_empty_when_no_records():
+    memory = BastionMemory(agent_id="no-records", mock=True)
+    results = memory.search("anything")
+    assert results == []
+
+
+def test_get_at_time_before_all_records():
+    memory = BastionMemory(agent_id="before-all", mock=True)
+    memory.store("fact", "Future memory")
+    early = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+    results = memory.get_at_time(timestamp=early)
+    assert len(results) == 0
+
+
+def test_resolve_conflict_with_context():
+    memory = BastionMemory(agent_id="conflict-ctx", mock=True)
+    result = memory.resolve_conflict("Fact A", "Fact B", context="User prefers A")
+    assert "Fact" in result
+    assert "A" in result or "B" in result
+
+
+def test_detect_anomalies_size_spike():
+    memory = BastionMemory(agent_id="spike", mock=True)
+    for i in range(12):
+        memory.store("fact", f"Record {i}")
+    alerts = memory.detect_anomalies()
+    types = [a["type"] for a in alerts]
+    assert "size_spike" in types
