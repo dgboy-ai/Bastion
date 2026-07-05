@@ -1,0 +1,23 @@
+{
+  "name": "bastion-memory",
+  "version": "0.1.0",
+  "description": "Crash-proof memory for AI agents on CockroachDB",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test src/**/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.8",
+    "tsx": "^4.19",
+    "@types/node": "^22"
+  },
+  "optionalDependencies": {
+    "pg": "^8.13"
+  },
+  "keywords": ["cockroachdb", "memory", "ai", "agent", "crdb", "vector"]
+}
