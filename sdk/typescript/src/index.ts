@@ -1,8 +1,8 @@
 import * as mock from "./mock";
-import { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord } from "./models";
+import { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, EntityRecord, MemoryRecord, RelationRecord } from "./models";
 
-export { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord } from "./models";
-export { reset } from "./mock";
+export { AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, EntityRecord, MemoryRecord, RelationRecord } from "./models";
+export { mockStoreWithGraph, mockGraphQuery, mockGraphAtTime, mockGraphStats, reset } from "./mock";
 
 function isMockMode(mock?: boolean): boolean {
   if (mock !== undefined) return mock;
@@ -118,6 +118,42 @@ export class BastionMemory {
       return Promise.resolve(mock.mockProvisionCluster(name, region, provider));
     }
     return this._provisionClusterReal(name, region, provider);
+  }
+
+  storeWithGraph(
+    content: string,
+    metadata?: Record<string, unknown>,
+    expiresInSeconds?: number | null,
+  ): Promise<[MemoryRecord, EntityRecord[], RelationRecord[]]> {
+    if (this._mock) {
+      return Promise.resolve(mock.mockStoreWithGraph(this.agentId, content, metadata, expiresInSeconds));
+    }
+    return this._storeWithGraphReal(content, metadata, expiresInSeconds);
+  }
+
+  graphQuery(
+    startEntity: string,
+    relationPath?: string[],
+    hops: number = 2,
+  ): Promise<Record<string, unknown>[]> {
+    if (this._mock) {
+      return Promise.resolve(mock.mockGraphQuery(this.agentId, startEntity, relationPath, hops));
+    }
+    return this._graphQueryReal(startEntity, relationPath, hops);
+  }
+
+  graphAtTime(timestamp: string, entity?: string): Promise<Record<string, unknown>> {
+    if (this._mock) {
+      return Promise.resolve(mock.mockGraphAtTime(this.agentId, timestamp, entity));
+    }
+    return this._graphAtTimeReal(timestamp, entity);
+  }
+
+  graphStats(): Promise<Record<string, unknown>> {
+    if (this._mock) {
+      return Promise.resolve(mock.mockGraphStats(this.agentId));
+    }
+    return this._graphStatsReal();
   }
 
   async close(): Promise<void> {
@@ -392,6 +428,169 @@ export class BastionMemory {
       count_a: stateA.length,
       count_b: stateB.length,
     };
+  }
+
+  private async _storeWithGraphReal(
+    content: string,
+    metadata?: Record<string, unknown>,
+    expiresInSeconds?: number | null,
+  ): Promise<[MemoryRecord, EntityRecord[], RelationRecord[]]> {
+    const record = await this._storeReal("fact", content, metadata, expiresInSeconds);
+    const entities: EntityRecord[] = [];
+    const relations: RelationRecord[] = [];
+    const rows = await this._query(
+      `SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at
+       FROM agent_entities WHERE agent_id = $1 ORDER BY created_at DESC`,
+      [this.agentId],
+    ) as Array<Record<string, unknown>>;
+    for (const r of rows) {
+      entities.push({
+        entityId: String(r.entity_id),
+        agentId: String(r.agent_id),
+        entityType: String(r.entity_type),
+        name: String(r.name),
+        attributes: (r.attributes as Record<string, unknown>) || {},
+        validFrom: r.valid_from instanceof Date ? (r.valid_from as Date).toISOString() : String(r.valid_from),
+        validUntil: r.valid_until ? (r.valid_until instanceof Date ? (r.valid_until as Date).toISOString() : String(r.valid_until)) : null,
+        createdAt: r.created_at instanceof Date ? (r.created_at as Date).toISOString() : String(r.created_at),
+      });
+    }
+    return [record, entities, relations];
+  }
+
+  private async _graphQueryReal(
+    startEntity: string,
+    relationPath?: string[],
+    hops: number = 2,
+  ): Promise<Record<string, unknown>[]> {
+    const entityRows = await this._query(
+      "SELECT entity_id FROM agent_entities WHERE agent_id = $1 AND name = $2 LIMIT 1",
+      [this.agentId, startEntity],
+    ) as Array<{ entity_id: string }>;
+    if (!entityRows.length) return [];
+    const startId = entityRows[0].entity_id;
+
+    const found: Record<string, unknown>[] = [];
+    const visited = new Set<string>();
+    const queue: Array<[string, number]> = [[startId, 0]];
+
+    while (queue.length) {
+      const [eid, depth] = queue.shift()!;
+      if (depth >= hops || visited.has(eid)) continue;
+      visited.add(eid);
+
+      let sql = `SELECT r.relation_type, r.confidence, r.source_memory_id,
+                        e.name AS target_name, e.entity_id AS target_id
+                 FROM agent_relations r
+                 JOIN agent_entities e ON r.target_entity_id = e.entity_id
+                 WHERE r.source_entity_id = $1`;
+      const params: unknown[] = [eid];
+      if (relationPath && relationPath.length) {
+        const placeholders = relationPath.map((_, i) => `$${i + 2}`).join(", ");
+        sql += ` AND r.relation_type IN (${placeholders})`;
+        params.push(...relationPath);
+      }
+      const rows = await this._query(sql, params) as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        found.push({
+          source: startEntity,
+          target: String(row.target_name),
+          relation: String(row.relation_type),
+          confidence: Number(row.confidence),
+          depth: depth + 1,
+        });
+        queue.push([String(row.target_id), depth + 1]);
+      }
+    }
+    return found;
+  }
+
+  private async _graphAtTimeReal(timestamp: string, entity?: string): Promise<Record<string, unknown>> {
+    let sql: string;
+    const params: unknown[] = [this.agentId];
+    if (entity) {
+      sql = `SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at
+             FROM agent_entities AS OF SYSTEM TIME $2
+             WHERE agent_id = $1 AND name = $3`;
+      params.push(timestamp, entity);
+    } else {
+      sql = `SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at
+             FROM agent_entities AS OF SYSTEM TIME $2
+             WHERE agent_id = $1`;
+      params.push(timestamp);
+    }
+    const entityRows = await this._query(sql, params) as Array<Record<string, unknown>>;
+    const entities = entityRows.map((r) => ({
+      entityId: String(r.entity_id),
+      agentId: String(r.agent_id),
+      entityType: String(r.entity_type),
+      name: String(r.name),
+      attributes: (r.attributes as Record<string, unknown>) || {},
+      validFrom: r.valid_from instanceof Date ? (r.valid_from as Date).toISOString() : String(r.valid_from),
+      validUntil: r.valid_until ? (r.valid_until instanceof Date ? (r.valid_until as Date).toISOString() : String(r.valid_until)) : null,
+      createdAt: r.created_at instanceof Date ? (r.created_at as Date).toISOString() : String(r.created_at),
+    }));
+
+    let relations: Record<string, unknown>[] = [];
+    if (entities.length) {
+      const ids = entities.map((e) => e.entityId);
+      const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
+      const relRows = await this._query(
+        `SELECT relation_id, agent_id, source_entity_id, target_entity_id,
+                relation_type, confidence, valid_from, valid_until, source_memory_id, created_at
+         FROM agent_relations WHERE source_entity_id IN (${placeholders})
+         OR target_entity_id IN (${placeholders})`,
+        [...ids, ...ids],
+      ) as Array<Record<string, unknown>>;
+      relations = relRows.map((r) => ({
+        relationId: String(r.relation_id),
+        agentId: String(r.agent_id),
+        sourceEntityId: String(r.source_entity_id),
+        targetEntityId: String(r.target_entity_id),
+        relationType: String(r.relation_type),
+        confidence: Number(r.confidence),
+        validFrom: r.valid_from instanceof Date ? (r.valid_from as Date).toISOString() : String(r.valid_from),
+        validUntil: r.valid_until ? (r.valid_until instanceof Date ? (r.valid_until as Date).toISOString() : String(r.valid_until)) : null,
+        sourceMemoryId: r.source_memory_id ? String(r.source_memory_id) : null,
+        createdAt: r.created_at instanceof Date ? (r.created_at as Date).toISOString() : String(r.created_at),
+      }));
+    }
+
+    return { agent_id: this.agentId, timestamp, entities, relations };
+  }
+
+  private async _graphStatsReal(): Promise<Record<string, unknown>> {
+    const entityRows = await this._query(
+      "SELECT COUNT(*) AS cnt FROM agent_entities WHERE agent_id = $1",
+      [this.agentId],
+    ) as Array<{ cnt: string }>;
+    const entityCount = Number(entityRows[0].cnt);
+
+    const relRows = await this._query(
+      `SELECT COUNT(*) AS cnt FROM agent_relations r
+       JOIN agent_entities e ON r.source_entity_id = e.entity_id
+       WHERE e.agent_id = $1`,
+      [this.agentId],
+    ) as Array<{ cnt: string }>;
+    const relationCount = Number(relRows[0].cnt);
+
+    const typeRows = await this._query(
+      "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = $1 ORDER BY entity_type",
+      [this.agentId],
+    ) as Array<{ entity_type: string }>;
+    const entityTypes = typeRows.map((r) => r.entity_type);
+
+    const orphanRows = await this._query(
+      `SELECT COUNT(*) AS cnt FROM agent_entities e
+       WHERE e.agent_id = $1 AND NOT EXISTS (
+         SELECT 1 FROM agent_relations r
+         WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id
+       )`,
+      [this.agentId],
+    ) as Array<{ cnt: string }>;
+    const orphans = Number(orphanRows[0].cnt);
+
+    return { entities: entityCount, relations: relationCount, orphans, entity_types: entityTypes };
   }
 
   private async _provisionClusterReal(_name: string, _region: string, _provider: string): Promise<ClusterInfo> {

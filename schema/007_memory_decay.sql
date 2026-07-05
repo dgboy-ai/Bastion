@@ -1,0 +1,1 @@
+ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS importance_score FLOAT DEFAULT 5.0;

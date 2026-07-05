@@ -188,4 +188,78 @@ describe("BastionMemory (TypeScript)", () => {
     const result = await memory.resolveConflict("Fact A", "Fact B", "User prefers A");
     assert.ok(result.includes("Fact"));
   });
+
+  it("storeWithGraph creates entities and relations", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph", undefined, true);
+    const [record, entities, relations] = await memory.storeWithGraph("Alice builds Bastion");
+    assert.ok(record.content.length > 0);
+    assert.ok(entities.length >= 2, "should have alice + bastion");
+    assert.ok(relations.length >= 1, "should have builds relation");
+  });
+
+  it("graphQuery finds multi-hop relations", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-q", undefined, true);
+    await memory.storeWithGraph("Alice uses Postgres");
+    const results = await memory.graphQuery("alice", undefined, 2);
+    assert.ok(results.length > 0);
+  });
+
+  it("graphQuery with relation path filter", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-path", undefined, true);
+    await memory.storeWithGraph("Bob builds Bastion and Bob loves Go");
+    const results = await memory.graphQuery("bob", ["loves"]);
+    assert.ok(results.length > 0);
+    assert.ok(results.every((r: any) => r.relation === "loves"));
+  });
+
+  it("graphQuery unknown entity returns empty list", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-unknown", undefined, true);
+    const results = await memory.graphQuery("nobody");
+    assert.equal(results.length, 0);
+  });
+
+  it("graphAtTime returns snapshot", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-time", undefined, true);
+    await memory.storeWithGraph("Charlie owns Bastion");
+    const future = new Date(Date.now() + 3600000).toISOString();
+    const snapshot = await memory.graphAtTime(future);
+    assert.ok(Array.isArray(snapshot.entities));
+    assert.ok(Array.isArray(snapshot.relations));
+  });
+
+  it("graphAtTime with entity filter", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-time-e", undefined, true);
+    await memory.storeWithGraph("Dave manages Bastion");
+    const now = new Date().toISOString();
+    const snapshot = await memory.graphAtTime(now, "dave");
+    assert.ok(snapshot.entities.some((e: any) => e.name === "dave"));
+  });
+
+  it("graphStats returns counts", async () => {
+    reset();
+    const memory = new BastionMemory("ts-graph-stats", undefined, true);
+    await memory.storeWithGraph("Eve builds Bastion and uses Postgres");
+    const stats = await memory.graphStats();
+    assert.ok((stats.entities as number) > 0);
+    assert.ok((stats.relations as number) > 0);
+    assert.ok(Array.isArray(stats.entity_types));
+  });
+
+  it("graphRespects agent isolation", async () => {
+    reset();
+    const memA = new BastionMemory("ts-iso-a", undefined, true);
+    const memB = new BastionMemory("ts-iso-b", undefined, true);
+    await memA.storeWithGraph("Frank builds X");
+    await memB.storeWithGraph("Grace builds Y");
+    const statsA = await memA.graphStats();
+    const statsB = await memB.graphStats();
+    assert.ok((statsA.entities as number) > 0);
+    assert.ok((statsB.entities as number) > 0);
+  });
 });

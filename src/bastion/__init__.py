@@ -1,13 +1,23 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory
-from bastion.models import AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord
+from bastion.models import (
+    AuditEntry,
+    CheckpointState,
+    ClusterInfo,
+    CoordinationLock,
+    EntityRecord,
+    MemoryRecord,
+    RelationRecord,
+)
 from bastion.telemetry import TracedBastionMemory
 
 __all__ = [
     "BastionMemory",
     "TracedBastionMemory",
     "MemoryRecord",
+    "EntityRecord",
+    "RelationRecord",
     "CheckpointState",
     "AuditEntry",
     "ClusterInfo",

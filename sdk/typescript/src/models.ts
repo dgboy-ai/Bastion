@@ -45,6 +45,30 @@ export interface ClusterInfo {
   status: string;
 }
 
+export interface EntityRecord {
+  entityId: string;
+  agentId: string;
+  entityType: string;
+  name: string;
+  attributes: Record<string, unknown>;
+  validFrom: string;
+  validUntil: string | null;
+  createdAt: string;
+}
+
+export interface RelationRecord {
+  relationId: string;
+  agentId: string;
+  sourceEntityId: string;
+  targetEntityId: string;
+  relationType: string;
+  confidence: number;
+  validFrom: string;
+  validUntil: string | null;
+  sourceMemoryId: string | null;
+  createdAt: string;
+}
+
 export interface CoordinationLock {
   lockId: string;
   agentId: string;

@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import uuid
 from collections.abc import Callable
@@ -11,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from bastion import mock as _mock
-from bastion.models import AuditEntry, ClusterInfo, MemoryRecord
+from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, RelationRecord
 
 # Bedrock embedding config
 _BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
@@ -162,6 +163,36 @@ class BastionMemory:
             region=region,
             status="created",
         )
+
+    def store_with_graph(
+        self,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        expires_in_seconds: int | None = None,
+    ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
+        if self._mock:
+            return _mock.mock_store_with_graph(self.agent_id, content, metadata, expires_in_seconds)
+        return self._store_with_graph_real(content, metadata, expires_in_seconds)
+
+    def graph_query(
+        self,
+        start_entity: str,
+        relation_path: list[str] | None = None,
+        hops: int = 2,
+    ) -> list[dict[str, Any]]:
+        if self._mock:
+            return _mock.mock_graph_query(self.agent_id, start_entity, relation_path, hops)
+        return self._graph_query_real(start_entity, relation_path, hops)
+
+    def graph_at_time(self, timestamp: str, entity: str | None = None) -> dict[str, Any]:
+        if self._mock:
+            return _mock.mock_graph_at_time(self.agent_id, timestamp, entity)
+        return self._graph_at_time_real(timestamp, entity)
+
+    def graph_stats(self) -> dict[str, Any]:
+        if self._mock:
+            return _mock.mock_graph_stats(self.agent_id)
+        return self._graph_stats_real()
 
     def close(self):
         if self._conn and not self._conn.closed:
@@ -387,6 +418,215 @@ class BastionMemory:
             "count_a": len(state_a),
             "count_b": len(state_b),
         }
+
+    def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
+        triples: list[tuple[str, str, str, str, float]] = []
+        patterns = [
+            (r"(\w+)\s+is\s+a\s+(\w+)", "is_a", "entity_type"),
+            (r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", "is", "attribute"),
+            (r"(\w+)\s+loves\s+(\w+)", "loves", "relation"),
+            (r"(\w+)\s+likes\s+(\w+)", "likes", "relation"),
+            (r"(\w+)\s+uses\s+(\w+)", "uses", "relation"),
+            (r"(\w+)\s+builds\s+(\w+)", "builds", "relation"),
+            (r"(\w+)\s+works\s+on\s+(\w+)", "works_on", "relation"),
+            (r"(\w+)\s+created\s+(\w+)", "created", "relation"),
+            (r"(\w+)\s+owns\s+(\w+)", "owns", "relation"),
+            (r"(\w+)\s+manages\s+(\w+)", "manages", "relation"),
+            (r"(\w+)\s+reports\s+to\s+(\w+)", "reports_to", "relation"),
+            (r"(\w+)\s+belongs\s+to\s+(\w+)", "belongs_to", "relation"),
+        ]
+        for pattern, rel_type, kind in patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                src, tgt = match.group(1).lower(), match.group(2).lower()
+                triples.append((src, tgt, rel_type, kind, 1.0))
+        return triples
+
+    def _store_with_graph_real(
+        self,
+        content: str,
+        metadata: dict[str, Any] | None,
+        expires_in_seconds: int | None,
+    ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
+        record = self._store_real("fact", content, metadata, expires_in_seconds)
+        triples = self._extract_triples(content)
+        created_entities: list[EntityRecord] = []
+        created_relations: list[RelationRecord] = []
+
+        for src_name, tgt_name, rel_type, kind, confidence in triples:
+            if kind == "entity_type":
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                        "VALUES (%s, %s, %s, now()) RETURNING entity_id",
+                        (self.agent_id, tgt_name, src_name),
+                    )
+                    str(cur.fetchone()[0])
+                    self._conn.commit()
+            else:
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                        "VALUES (%s, 'person', %s, now()) "
+                        "ON CONFLICT DO NOTHING RETURNING entity_id",
+                        (self.agent_id, src_name),
+                    )
+                    src_row = cur.fetchone()
+                    eid_src = str(src_row[0]) if src_row else self._ensure_entity_id(cur, src_name)
+
+                    cur.execute(
+                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                        "VALUES (%s, 'concept', %s, now()) "
+                        "ON CONFLICT DO NOTHING RETURNING entity_id",
+                        (self.agent_id, tgt_name),
+                    )
+                    tgt_row = cur.fetchone()
+                    eid_tgt = str(tgt_row[0]) if tgt_row else self._ensure_entity_id(cur, tgt_name)
+
+                    cur.execute(
+                        "INSERT INTO agent_relations (agent_id, source_entity_id, target_entity_id, "
+                        "relation_type, confidence, source_memory_id) VALUES (%s, %s, %s, %s, %s, %s) "
+                        "RETURNING relation_id",
+                        (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record.memory_id),
+                    )
+                    self._conn.commit()
+
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at "
+                "FROM agent_entities WHERE agent_id = %s ORDER BY created_at DESC",
+                (self.agent_id,),
+            )
+            for r in cur.fetchall():
+                created_entities.append(EntityRecord.from_row(r))
+
+        return record, created_entities, created_relations
+
+    def _ensure_entity_id(self, cur, name: str) -> str:
+        cur.execute("SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s", (self.agent_id, name))
+        row = cur.fetchone()
+        return str(row[0]) if row else ""
+
+    def _graph_query_real(
+        self,
+        start_entity: str,
+        relation_path: list[str] | None,
+        hops: int,
+    ) -> list[dict[str, Any]]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
+                (self.agent_id, start_entity),
+            )
+            row = cur.fetchone()
+            if not row:
+                return []
+            start_id = str(row[0])
+
+            found: list[dict[str, Any]] = []
+            visited: set[str] = set()
+            queue: list[tuple[str, int]] = [(start_id, 0)]
+
+            while queue:
+                eid, depth = queue.pop(0)
+                if depth >= hops or eid in visited:
+                    continue
+                visited.add(eid)
+
+                rel_type_filter = ""
+                params: list[Any] = [eid]
+                if relation_path:
+                    placeholders = ", ".join(f"${i+2}" for i in range(len(relation_path)))
+                    rel_type_filter = f"AND r.relation_type IN ({placeholders})"
+                    params.extend(relation_path)
+
+                cur.execute(
+                    f"SELECT r.relation_type, r.confidence, r.source_memory_id, "
+                    f"e.name AS target_name, e.entity_id AS target_id "
+                    f"FROM agent_relations r JOIN agent_entities e ON r.target_entity_id = e.entity_id "
+                    f"WHERE r.source_entity_id = $1 {rel_type_filter}",
+                    params,
+                )
+                for rel_row in cur.fetchall():
+                    found.append({
+                        "source": start_entity,
+                        "target": str(rel_row[3]),
+                        "relation": str(rel_row[0]),
+                        "confidence": float(rel_row[1]),
+                        "depth": depth + 1,
+                    })
+                    queue.append((str(rel_row[4]), depth + 1))
+            return found
+
+    def _graph_at_time_real(self, timestamp: str, entity: str | None) -> dict[str, Any]:
+        import psycopg
+        conn2 = psycopg.connect(self._conn_str)
+        try:
+            with conn2.cursor() as cur:
+                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
+
+                if entity:
+                    cur.execute(
+                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                        "valid_from, valid_until, created_at "
+                        "FROM agent_entities WHERE agent_id = %s AND name = %s",
+                        (self.agent_id, entity),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                        "valid_from, valid_until, created_at "
+                        "FROM agent_entities WHERE agent_id = %s",
+                        (self.agent_id,),
+                    )
+                entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
+
+                entity_ids = tuple(e["entity_id"] for e in entities)
+                if entity_ids:
+                    cur.execute(
+                        "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
+                        "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
+                        "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
+                        (entity_ids, entity_ids),
+                    )
+                    relations = [dict(zip(
+                        ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
+                         "relation_type", "confidence", "valid_from", "valid_until",
+                         "source_memory_id", "created_at"], r
+                    )) for r in cur.fetchall()]
+                else:
+                    relations = []
+
+                return {"agent_id": self.agent_id, "timestamp": timestamp,
+                        "entities": entities, "relations": relations}
+        finally:
+            conn2.close()
+
+    def _graph_stats_real(self) -> dict[str, Any]:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,))
+            entity_count = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM agent_relations r "
+                        "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
+                        (self.agent_id,))
+            relation_count = cur.fetchone()[0]
+
+            cur.execute(
+                "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = %s ORDER BY entity_type",
+                (self.agent_id,),
+            )
+            entity_types = [r[0] for r in cur.fetchall()]
+
+            cur.execute(
+                "SELECT COUNT(*) FROM agent_entities e WHERE e.agent_id = %s "
+                "AND NOT EXISTS (SELECT 1 FROM agent_relations r "
+                "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
+                (self.agent_id,),
+            )
+            orphans = cur.fetchone()[0]
+
+            return {"entities": entity_count, "relations": relation_count,
+                    "orphans": orphans, "entity_types": entity_types}
 
     def _embed(self, text: str) -> list[float]:
         """

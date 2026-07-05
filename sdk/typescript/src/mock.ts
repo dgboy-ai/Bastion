@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { MemoryRecord, AuditEntry, ClusterInfo } from "./models";
+import { MemoryRecord, AuditEntry, ClusterInfo, EntityRecord, RelationRecord } from "./models";
 
 interface StoredRecord extends Record<string, unknown> {
   memoryId: string;
@@ -200,7 +200,194 @@ export function mockProvisionCluster(name: string, region: string = "us-east1", 
   };
 }
 
+const entities = new Map<string, Array<Record<string, unknown>>>();
+const relations: Array<Record<string, unknown>> = [];
+
+function extractTriples(text: string): Array<[string, string, string, string, number]> {
+  const triples: Array<[string, string, string, string, number]> = [];
+  const patternDefs: Array<{ rx: RegExp; type: string }> = [
+    { rx: /(\w+)\s+is\s+a\s+(\w+)/gi, type: "is_a" },
+    { rx: /(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})/gi, type: "is" },
+    { rx: /(\w+)\s+loves\s+(\w+)/gi, type: "loves" },
+    { rx: /(\w+)\s+likes\s+(\w+)/gi, type: "likes" },
+    { rx: /(\w+)\s+uses\s+(\w+)/gi, type: "uses" },
+    { rx: /(\w+)\s+builds\s+(\w+)/gi, type: "builds" },
+    { rx: /(\w+)\s+works\s+on\s+(\w+)/gi, type: "works_on" },
+    { rx: /(\w+)\s+created\s+(\w+)/gi, type: "created" },
+    { rx: /(\w+)\s+owns\s+(\w+)/gi, type: "owns" },
+    { rx: /(\w+)\s+manages\s+(\w+)/gi, type: "manages" },
+    { rx: /(\w+)\s+reports\s+to\s+(\w+)/gi, type: "reports_to" },
+    { rx: /(\w+)\s+belongs\s+to\s+(\w+)/gi, type: "belongs_to" },
+  ];
+  const typeMap: Record<string, string> = {
+    is_a: "entity_type", loves: "relation", likes: "relation", uses: "relation",
+    builds: "relation", works_on: "relation", created: "relation", owns: "relation",
+    manages: "relation", reports_to: "relation", belongs_to: "relation",
+  };
+  for (const { rx, type: relType } of patternDefs) {
+    const kind = typeMap[relType] || "relation";
+    for (const match of text.matchAll(rx)) {
+      triples.push([match[1].toLowerCase(), match[2].toLowerCase(), relType, kind, 1.0]);
+    }
+  }
+  return triples;
+}
+
+function ensureEntity(agentId: string, name: string, entityType: string = "concept"): string {
+  if (!entities.has(agentId)) entities.set(agentId, []);
+  const list = entities.get(agentId)!;
+  const existing = list.find((e) => e.name === name);
+  if (existing) return String(existing.entity_id);
+  const eid = crypto.randomUUID();
+  list.push({
+    entity_id: eid, agent_id: agentId, entity_type: entityType, name,
+    attributes: {}, valid_from: new Date().toISOString(), valid_until: null,
+    created_at: new Date().toISOString(),
+  });
+  return eid;
+}
+
+export function mockStoreWithGraph(
+  agentId: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+  expiresInSeconds?: number | null,
+): [MemoryRecord, EntityRecord[], RelationRecord[]] {
+  const record = mockStoreMemory(agentId, "fact", content, metadata, expiresInSeconds);
+  const triples = extractTriples(content);
+  const createdEntities: EntityRecord[] = [];
+  const createdRelations: RelationRecord[] = [];
+
+  for (const [srcName, tgtName, relType, kind] of triples) {
+    if (kind === "entity_type") {
+      ensureEntity(agentId, srcName, tgtName);
+    } else {
+      const eidSrc = ensureEntity(agentId, srcName, "person");
+      const eidTgt = ensureEntity(agentId, tgtName, "concept");
+      const rel: Record<string, unknown> = {
+        relation_id: crypto.randomUUID(), agent_id: agentId,
+        source_entity_id: eidSrc, target_entity_id: eidTgt,
+        relation_type: relType, confidence: 1.0,
+        valid_from: new Date().toISOString(), valid_until: null,
+        source_memory_id: record.memoryId,
+        created_at: new Date().toISOString(),
+      };
+      relations.push(rel);
+    }
+  }
+
+  const seenEnts = new Set<string>();
+  for (const e of entities.get(agentId) || []) {
+    const id = String(e.entity_id);
+    if (!seenEnts.has(id)) {
+      seenEnts.add(id);
+      createdEntities.push({
+        entityId: id,
+        agentId: String(e.agent_id),
+        entityType: String(e.entity_type),
+        name: String(e.name),
+        attributes: (e.attributes as Record<string, unknown>) || {},
+        validFrom: String(e.valid_from),
+        validUntil: e.valid_until ? String(e.valid_until) : null,
+        createdAt: String(e.created_at),
+      });
+    }
+  }
+  const seenRels = new Set<string>();
+  for (const r of relations) {
+    const id = String(r.relation_id);
+    if (!seenRels.has(id)) {
+      seenRels.add(id);
+      createdRelations.push({
+        relationId: id,
+        agentId: String(r.agent_id),
+        sourceEntityId: String(r.source_entity_id),
+        targetEntityId: String(r.target_entity_id),
+        relationType: String(r.relation_type),
+        confidence: Number(r.confidence),
+        validFrom: String(r.valid_from),
+        validUntil: r.valid_until ? String(r.valid_until) : null,
+        sourceMemoryId: r.source_memory_id ? String(r.source_memory_id) : null,
+        createdAt: String(r.created_at),
+      });
+    }
+  }
+  return [record, createdEntities, createdRelations];
+}
+
+export function mockGraphQuery(
+  agentId: string,
+  startEntity: string,
+  relationPath?: string[],
+  hops: number = 2,
+): Record<string, unknown>[] {
+  const entList = entities.get(agentId) || [];
+  const start = entList.find((e) => e.name === startEntity);
+  if (!start) return [];
+
+  const found: Record<string, unknown>[] = [];
+  const visited = new Set<string>();
+  const queue: Array<[string, number]> = [[String(start.entity_id), 0]];
+
+  while (queue.length) {
+    const [eid, depth] = queue.shift()!;
+    if (depth >= hops || visited.has(eid)) continue;
+    visited.add(eid);
+
+    for (const rel of relations) {
+      if (String(rel.source_entity_id) !== eid) continue;
+      if (relationPath && !relationPath.includes(String(rel.relation_type))) continue;
+      const target = entList.find((e) => e.entity_id === rel.target_entity_id);
+      if (target) {
+        found.push({
+          source: startEntity,
+          target: target.name,
+          relation: rel.relation_type,
+          confidence: rel.confidence,
+          depth: depth + 1,
+        });
+        queue.push([String(target.entity_id), depth + 1]);
+      }
+    }
+  }
+  return found;
+}
+
+export function mockGraphAtTime(agentId: string, timestamp: string, entity?: string): Record<string, unknown> {
+  const target = new Date(timestamp);
+  let ents = entities.get(agentId) || [];
+  if (entity) ents = ents.filter((e) => e.name === entity);
+  const validEntities = ents.filter((e) => {
+    const vf = new Date(String(e.valid_from));
+    const vu = e.valid_until ? new Date(String(e.valid_until)) : null;
+    return vf <= target && (!vu || vu > target);
+  });
+  return {
+    agent_id: agentId, timestamp,
+    entities: validEntities,
+    relations: relations.filter((r) =>
+      validEntities.some((e) => e.entity_id === r.source_entity_id)
+    ),
+  };
+}
+
+export function mockGraphStats(agentId: string): Record<string, unknown> {
+  const ents = entities.get(agentId) || [];
+  const connected = new Set([
+    ...relations.map((r) => String(r.source_entity_id)),
+    ...relations.map((r) => String(r.target_entity_id)),
+  ]);
+  return {
+    entities: ents.length,
+    relations: relations.length,
+    orphans: ents.filter((e) => !connected.has(String(e.entity_id))).length,
+    entity_types: [...new Set(ents.map((e) => String(e.entity_type)))],
+  };
+}
+
 export function reset(): void {
   agentData.clear();
   auditLog.length = 0;
+  entities.clear();
+  relations.length = 0;
 }

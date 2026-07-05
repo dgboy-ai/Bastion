@@ -7,7 +7,15 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from bastion.models import AuditEntry, CheckpointState, ClusterInfo, CoordinationLock, MemoryRecord
+from bastion.models import (
+    AuditEntry,
+    CheckpointState,
+    ClusterInfo,
+    CoordinationLock,
+    EntityRecord,
+    MemoryRecord,
+    RelationRecord,
+)
 
 _agent_data: dict[str, list[dict[str, Any]]] = {}
 _audit_log: list[dict[str, Any]] = []
@@ -276,8 +284,176 @@ def mock_diff(agent_id: str, timestamp_a: str, timestamp_b: str) -> dict:
     }
 
 
+_entities: dict[str, list[dict[str, Any]]] = {}
+_relations: list[dict[str, Any]] = []
+
+
+def _extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
+    triples: list[tuple[str, str, str, str, float]] = []
+    patterns = [
+        (r"(\w+)\s+is\s+a\s+(\w+)", "is_a", "entity_type"),
+        (r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", "is", "attribute"),
+        (r"(\w+)\s+loves\s+(\w+)", "loves", "relation"),
+        (r"(\w+)\s+likes\s+(\w+)", "likes", "relation"),
+        (r"(\w+)\s+uses\s+(\w+)", "uses", "relation"),
+        (r"(\w+)\s+builds\s+(\w+)", "builds", "relation"),
+        (r"(\w+)\s+works\s+on\s+(\w+)", "works_on", "relation"),
+        (r"(\w+)\s+created\s+(\w+)", "created", "relation"),
+        (r"(\w+)\s+owns\s+(\w+)", "owns", "relation"),
+        (r"(\w+)\s+manages\s+(\w+)", "manages", "relation"),
+        (r"(\w+)\s+reports\s+to\s+(\w+)", "reports_to", "relation"),
+        (r"(\w+)\s+belongs\s+to\s+(\w+)", "belongs_to", "relation"),
+    ]
+    import re
+    for pattern, rel_type, kind in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            src, tgt = match.group(1).lower(), match.group(2).lower()
+            triples.append((src, tgt, rel_type, kind, 1.0))
+    return triples
+
+
+def _ensure_entity(agent_id: str, name: str, entity_type: str = "concept") -> str:
+    if agent_id not in _entities:
+        _entities[agent_id] = []
+    for e in _entities[agent_id]:
+        if e["name"] == name:
+            return e["entity_id"]
+    eid = str(uuid.uuid4())
+    _entities[agent_id].append({
+        "entity_id": eid,
+        "agent_id": agent_id,
+        "entity_type": entity_type,
+        "name": name,
+        "attributes": {},
+        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_until": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return eid
+
+
+def mock_store_with_graph(
+    agent_id: str,
+    content: str,
+    metadata: dict[str, Any] | None = None,
+    expires_in_seconds: int | None = None,
+) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
+    record = mock_store_memory(agent_id, "fact", content, metadata, expires_in_seconds)
+    triples = _extract_triples(content)
+    created_entities: list[EntityRecord] = []
+    created_relations: list[RelationRecord] = []
+
+    for src_name, tgt_name, rel_type, kind, confidence in triples:
+        if kind == "entity_type":
+            eid = _ensure_entity(agent_id, src_name, tgt_name)
+        else:
+            eid_src = _ensure_entity(agent_id, src_name, "person" if kind == "relation" else "concept")
+            eid_tgt = _ensure_entity(agent_id, tgt_name, "concept")
+            rel = RelationRecord(
+                agent_id=agent_id,
+                source_entity_id=eid_src,
+                target_entity_id=eid_tgt,
+                relation_type=rel_type,
+                confidence=confidence,
+                source_memory_id=record.memory_id,
+            )
+            _relations.append(rel.to_dict())
+            created_relations.append(rel)
+
+    for eid in _entities.get(agent_id, []):
+        created_entities.append(EntityRecord.from_row((
+            eid["entity_id"], eid["agent_id"], eid["entity_type"],
+            eid["name"], eid["attributes"], eid["valid_from"],
+            eid["valid_until"], eid["created_at"],
+        )))
+
+    deduped = {e.entity_id: e for e in created_entities}
+    return record, list(deduped.values()), created_relations
+
+
+def mock_graph_query(
+    agent_id: str,
+    start_entity: str,
+    relation_path: list[str] | None = None,
+    hops: int = 2,
+) -> list[dict[str, Any]]:
+    entities = {e["name"]: e for e in _entities.get(agent_id, [])}
+    start = entities.get(start_entity)
+    if not start:
+        return []
+
+    found: list[dict[str, Any]] = []
+    visited: set[str] = set()
+    queue: list[tuple[str, int]] = [(start["entity_id"], 0)]
+
+    while queue:
+        eid, depth = queue.pop(0)
+        if depth >= hops or eid in visited:
+            continue
+        visited.add(eid)
+
+        for rel in _relations:
+            if rel["source_entity_id"] != eid:
+                continue
+            if relation_path and rel["relation_type"] not in relation_path:
+                continue
+            target = None
+            for e in _entities.get(agent_id, []):
+                if e["entity_id"] == rel["target_entity_id"]:
+                    target = e
+                    break
+            if target:
+                found.append({
+                    "source": start_entity,
+                    "target": target["name"],
+                    "relation": rel["relation_type"],
+                    "confidence": rel["confidence"],
+                    "depth": depth + 1,
+                })
+                queue.append((target["entity_id"], depth + 1))
+    return found
+
+
+def mock_graph_at_time(agent_id: str, timestamp: str, entity: str | None = None) -> dict[str, Any]:
+    target = datetime.fromisoformat(timestamp)
+    ents = _entities.get(agent_id, [])
+    if entity:
+        ents = [e for e in ents if e["name"] == entity]
+    valid_entities = []
+    for e in ents:
+        vf = datetime.fromisoformat(e["valid_from"]) if isinstance(e["valid_from"], str) else e["valid_from"]
+        vu_raw = e.get("valid_until")
+        vu = datetime.fromisoformat(vu_raw) if isinstance(vu_raw, str) and vu_raw else None
+        if vf <= target and (vu is None or vu > target):
+            valid_entities.append(e)
+    return {
+        "agent_id": agent_id,
+        "timestamp": timestamp,
+        "entities": valid_entities,
+        "relations": [
+            r for r in _relations
+            if any(e["entity_id"] == r["source_entity_id"] for e in valid_entities)
+        ],
+    }
+
+
+def mock_graph_stats(agent_id: str) -> dict[str, Any]:
+    ents = _entities.get(agent_id, [])
+    {e["entity_id"] for e in ents}
+    connected = {r["source_entity_id"] for r in _relations} | {r["target_entity_id"] for r in _relations}
+    orphans = [e for e in ents if e["entity_id"] not in connected]
+    return {
+        "entities": len(ents),
+        "relations": len(_relations),
+        "orphans": len(orphans),
+        "entity_types": list({e["entity_type"] for e in ents}),
+    }
+
+
 def reset():
     _agent_data.clear()
     _audit_log.clear()
     _checkpoints.clear()
     _coordination_locks.clear()
+    _entities.clear()
+    _relations.clear()

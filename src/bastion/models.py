@@ -201,6 +201,93 @@ class ClusterInfo:
         }
 
 
+class EntityRecord:
+    def __init__(
+        self,
+        entity_id: str | None = None,
+        agent_id: str = "",
+        entity_type: str = "concept",
+        name: str = "",
+        attributes: dict[str, Any] | None = None,
+        valid_from: datetime | None = None,
+        valid_until: datetime | None = None,
+        created_at: datetime | None = None,
+    ):
+        self.entity_id = entity_id or str(uuid.uuid4())
+        self.agent_id = agent_id
+        self.entity_type = entity_type
+        self.name = name
+        self.attributes = attributes or {}
+        self.valid_from = valid_from or datetime.now(timezone.utc)
+        self.valid_until = valid_until
+        self.created_at = created_at or datetime.now(timezone.utc)
+
+    @classmethod
+    def from_row(cls, row: tuple) -> EntityRecord:
+        return cls(
+            entity_id=str(row[0]),
+            agent_id=str(row[1]),
+            entity_type=str(row[2]),
+            name=str(row[3]),
+            attributes=dict(row[4]) if row[4] else {},
+            valid_from=row[5],
+            valid_until=row[6],
+            created_at=row[7],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entity_id": self.entity_id,
+            "agent_id": self.agent_id,
+            "entity_type": self.entity_type,
+            "name": self.name,
+            "attributes": self.attributes,
+            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
+            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class RelationRecord:
+    def __init__(
+        self,
+        relation_id: str | None = None,
+        agent_id: str = "",
+        source_entity_id: str = "",
+        target_entity_id: str = "",
+        relation_type: str = "",
+        confidence: float = 1.0,
+        valid_from: datetime | None = None,
+        valid_until: datetime | None = None,
+        source_memory_id: str | None = None,
+        created_at: datetime | None = None,
+    ):
+        self.relation_id = relation_id or str(uuid.uuid4())
+        self.agent_id = agent_id
+        self.source_entity_id = source_entity_id
+        self.target_entity_id = target_entity_id
+        self.relation_type = relation_type
+        self.confidence = confidence
+        self.valid_from = valid_from or datetime.now(timezone.utc)
+        self.valid_until = valid_until
+        self.source_memory_id = source_memory_id
+        self.created_at = created_at or datetime.now(timezone.utc)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "relation_id": self.relation_id,
+            "agent_id": self.agent_id,
+            "source_entity_id": self.source_entity_id,
+            "target_entity_id": self.target_entity_id,
+            "relation_type": self.relation_type,
+            "confidence": self.confidence,
+            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
+            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
+            "source_memory_id": self.source_memory_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class CoordinationLock:
     def __init__(
         self,
