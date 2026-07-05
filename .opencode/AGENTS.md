@@ -21,6 +21,7 @@ Python 3.13.11, Node 24.14.0, npm 11.9.0, psycopg3, CockroachDB Serverless v25.4
 ## CRDB Cluster
 - Name: `bastion-memory`
 - Region: AWS ap-south-1 (Mumbai)
+- Connection: postgresql://<REVOKED>:<REVOKED>@<REVOKED>/defaultdb?sslmode=verify-full
 - URL: https://cockroachlabs.cloud/cluster/21aba470-cd4d-4e98-998c-e75bbcdabb98/overview
 
 ## Status
