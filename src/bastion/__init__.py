@@ -14,6 +14,7 @@ from bastion.models import (
     MessageRecord,
     RelationRecord,
 )
+from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.telemetry import TracedBastionMemory
 
 __all__ = [
@@ -44,4 +45,7 @@ __all__ = [
     "BastionShortTermMemory",
     "BastionVectorStore",
     "create_server",
+    "groq_chat",
+    "groq_merge",
+    "groq_query",
 ]
