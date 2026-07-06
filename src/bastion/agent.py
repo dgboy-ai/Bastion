@@ -24,11 +24,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 import re
 import uuid
-from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from bastion.memory import BastionMemory
@@ -283,7 +281,7 @@ class BastionAgent:
                 )
 
         # 2. Store user message
-        user_record = self.memory.store(
+        self.memory.store(
             "user_message",
             user_message,
             metadata={

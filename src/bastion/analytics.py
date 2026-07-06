@@ -21,9 +21,8 @@ Usage:
 
 from __future__ import annotations
 
-import json
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from bastion.memory import BastionMemory
@@ -271,7 +270,7 @@ class MemoryAnalytics:
         # Content quality
         content_lengths = [len(m.content) for m in all_memories]
         avg_length = sum(content_lengths) / len(content_lengths) if content_lengths else 0
-        empty_count = sum(1 for l in content_lengths if l == 0)
+        empty_count = sum(1 for length in content_lengths if length == 0)
 
         # Metadata coverage
         with_metadata = sum(1 for m in all_memories if m.metadata)

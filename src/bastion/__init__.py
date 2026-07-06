@@ -1,5 +1,5 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
-from bastion.agent import BastionAgent, AgentCheckpoint, MemoryConsolidator, redact_pii
+from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, redact_pii
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory
 from bastion.models import (

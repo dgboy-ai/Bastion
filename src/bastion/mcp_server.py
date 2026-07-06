@@ -276,7 +276,6 @@ def _handle_tool_call(
 
 async def _run_stdio():
     """Run the MCP server over stdio transport (for Claude Code, Cursor, etc.)."""
-    import anyio
     from mcp.server.stdio import stdio_server
 
     server, _memory = create_server()
