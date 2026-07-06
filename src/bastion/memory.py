@@ -1065,27 +1065,43 @@ class BastionMemory:
     def _embed(self, text: str) -> list[float]:
         """
         Generate a 1024-dim embedding using AWS Bedrock Titan Embed Text V2.
+        Retries up to 3 times with exponential backoff on ThrottlingException.
         Falls back to a deterministic hash-based vector if Bedrock is unavailable
-        (no AWS credentials, local development, or BASTION_MOCK mode).
+        (no AWS credentials, network error, or BASTION_MOCK mode).
         """
+        import random
+        import time
+
         client = _get_bedrock_client()
         if client is None:
             return _hash_fallback_embed(text)
 
-        try:
-            body = json.dumps({"inputText": text, "dimensions": _EMBED_DIM, "normalize": True})
-            response = client.invoke_model(
-                modelId=_BEDROCK_MODEL_ID,
-                body=body,
-                contentType="application/json",
-                accept="application/json",
-            )
-            result: Any = json.loads(response["body"].read())
-            embedding: list[float] = result["embedding"]
-            return embedding
-        except Exception:
-            logger.exception("Bedrock embedding failed, falling back to hash")
-            return _hash_fallback_embed(text)
+        body = json.dumps({"inputText": text, "dimensions": _EMBED_DIM, "normalize": True})
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.invoke_model(
+                    modelId=_BEDROCK_MODEL_ID,
+                    body=body,
+                    contentType="application/json",
+                    accept="application/json",
+                )
+                result: Any = json.loads(response["body"].read())
+                embedding: list[float] = result["embedding"]
+                return embedding
+            except Exception as exc:
+                exc_name = type(exc).__name__
+                # Retry on throttling / service unavailable with exponential backoff + jitter
+                if attempt < max_retries and exc_name in ("ThrottlingException", "ServiceUnavailableException"):
+                    sleep_secs = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        "Bedrock throttled (attempt %d/%d), retrying in %.1fs",
+                        attempt + 1, max_retries, sleep_secs,
+                    )
+                    time.sleep(sleep_secs)
+                    continue
+                logger.exception("Bedrock embedding failed after %d attempts, falling back to hash", attempt + 1)
+                return _hash_fallback_embed(text)
 
     def __enter__(self):
         return self

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import KnowledgeGraph from "@/components/KnowledgeGraph";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import TrustRing from "@/components/TrustRing";
+import PoisoningAlerts from "@/components/PoisoningAlerts";
+import DriftChart from "@/components/DriftChart";
 
 interface Node {
   id: string;
@@ -51,6 +54,20 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  const [trustSummary, setTrustSummary] = useState<{
+    totalMemories: number;
+    avgTrustScore: number;
+    trustLevelDistribution: Record<number, number>;
+    poisoningDistribution: Record<string, number>;
+    dangerousMemories: number;
+  } | null>(null);
+  const [trustAlerts, setTrustAlerts] = useState<{ severity: string; risk: string; count: number }[]>([]);
+  const [trustLoading, setTrustLoading] = useState(false);
+  const [driftData, setDriftData] = useState<{
+    latest: { overall_drift_score: number; status: string; top_drift_signals: string[]; recommendation: string } | null;
+    timeSeries: { score: number; timestamp: string; status: string }[];
+  } | null>(null);
+  const [driftLoading, setDriftLoading] = useState(false);
 
   // Fetch graph layout nodes
   useEffect(() => {
@@ -78,30 +95,54 @@ export default function GraphPage() {
     fetchGraphData();
   }, [sliderVal]);
 
-  // Fetch memory audit path when an entity is clicked
+  // Fetch memory audit path + trust data when an entity is clicked
   useEffect(() => {
     let cancelled = false;
 
     async function fetchEntityMemories() {
       if (!selectedNode) {
-        if (!cancelled) setEntityMemories([]);
+        if (!cancelled) {
+          setEntityMemories([]);
+          setTrustSummary(null);
+          setTrustAlerts([]);
+          setDriftData(null);
+        }
         return;
       }
 
       const entityId = selectedNode.id;
 
+      setTrustLoading(true);
+      setDriftLoading(true);
       try {
-        const res = await fetch(`/api/entity-memories?entity_id=${entityId}`);
-        if (!res.ok) {
-          throw new Error("Failed to fetch entity audit trail");
-        }
-        const data = await res.json();
+        const [memRes, trustRes, driftRes] = await Promise.all([
+          fetch(`/api/entity-memories?entity_id=${entityId}`),
+          fetch(`/api/trust?entity_id=${encodeURIComponent(entityId)}&limit=50`),
+          fetch("/api/drift?limit=50"),
+        ]);
+
+        if (!memRes.ok) throw new Error("Failed to fetch entity audit trail");
+
+        const memData = await memRes.json();
+        const trustData = trustRes.ok ? await trustRes.json() : null;
+        const driftRaw = driftRes.ok ? await driftRes.json() : null;
+
         if (!cancelled) {
-          setEntityMemories(data.memories || []);
+          setEntityMemories(memData.memories || []);
+          setTrustSummary(trustData?.summary ?? null);
+          setTrustAlerts(trustData?.alerts ?? []);
+          if (driftRaw) {
+            setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
+          }
         }
       } catch (err) {
         if (!cancelled) {
-          console.error("Failed to load entity memories:", err);
+          console.error("Failed to load entity data:", err);
+        }
+      } finally {
+        if (!cancelled) {
+          setTrustLoading(false);
+          setDriftLoading(false);
         }
       }
     }
@@ -133,6 +174,8 @@ export default function GraphPage() {
         <div className="welcome-title">Temporal Graph Explorer</div>
         <div className="welcome-subtitle">Interactive visualization of the agent&apos;s memory graph. Click nodes to inspect local connections and blockchain cryptographic history.</div>
       </div>
+
+      {selectedNode && <PoisoningAlerts alerts={trustAlerts} />}
 
       {error && (
         <div className="alert-box medium" style={{ marginBottom: "12px" }}>
@@ -234,16 +277,44 @@ export default function GraphPage() {
                 </button>
               </div>
 
-              {/* Node statistics */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", borderRadius: "6px", padding: "10px", display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontSize: "8px", color: "var(--mute)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>Read Accesses</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink)", marginTop: "2px" }}>24 pings</span>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", borderRadius: "6px", padding: "10px", display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontSize: "8px", color: "var(--mute)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>Decay Rate</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--accent-sunset)", marginTop: "2px" }}>-0.05/hr</span>
-                </div>
+              {/* Trust Assessment Ring */}
+              <div style={{ borderTop: "1px solid var(--glass-border)", paddingTop: "16px" }}>
+                <span className="kpi-label" style={{ fontSize: "9px", marginBottom: "12px", display: "block" }}>Memory Trust Assessment</span>
+                {trustLoading ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "160px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                    LOADING TRUST DATA...
+                  </div>
+                ) : trustSummary ? (
+                  <TrustRing
+                    trustLevelDistribution={trustSummary.trustLevelDistribution}
+                    avgTrustScore={trustSummary.avgTrustScore}
+                    totalMemories={trustSummary.totalMemories}
+                    dangerousMemories={trustSummary.dangerousMemories}
+                  />
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "160px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                    NO MEMORY TRUST DATA
+                  </div>
+                )}
+              </div>
+
+              {/* Agent Stability Index */}
+              <div style={{ borderTop: "1px solid var(--glass-border)", paddingTop: "16px" }}>
+                <span className="kpi-label" style={{ fontSize: "9px", marginBottom: "12px", display: "block" }}>Agent Stability Index</span>
+                {driftLoading ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                    LOADING DRIFT DATA...
+                  </div>
+                ) : (
+                  <DriftChart
+                    timeSeries={driftData?.timeSeries ?? []}
+                    overallScore={driftData?.latest?.overall_drift_score ?? 0}
+                    status={driftData?.latest?.status ?? "HEALTHY"}
+                    topSignals={driftData?.latest?.top_drift_signals ?? []}
+                    recommendation={driftData?.latest?.recommendation ?? ""}
+                    loading={driftData === null}
+                  />
+                )}
               </div>
 
               {/* Attributes and metadata details */}

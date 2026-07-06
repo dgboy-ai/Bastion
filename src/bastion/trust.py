@@ -66,9 +66,7 @@ def compute_trust_score(
     score *= level_map.get(trust_level, 0.5)
 
     if overwrite_count > 3:
-        rapid = overwrite_count > 3
-        if rapid:
-            flags.append("RAPID_OVERWRITE")
+        flags.append("RAPID_OVERWRITE")
 
     if overwrite_count > 5:
         score *= 0.5
@@ -104,7 +102,7 @@ def compute_trust_score(
         trust_score=round(score, 4),
         trust_level=TrustLevel(trust_level),
         hash_chain_intact=hash_ok,
-        conflict_rate=overwrite_count / max(overwrite_count, 1),
+        conflict_rate=min(overwrite_count / 10.0, 1.0),
         age_penalty=age_penalty,
         source_provenance=source_provenance,
         poisoning_risk=poisoning_risk,

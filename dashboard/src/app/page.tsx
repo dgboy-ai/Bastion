@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import TrustRing from "@/components/TrustRing";
+import PoisoningAlerts from "@/components/PoisoningAlerts";
+import DriftChart from "@/components/DriftChart";
 
 interface Stats {
   memories: number;
@@ -37,20 +40,43 @@ export default function OverviewPage() {
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<"memories" | "cognitive" | null>(null);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
+  const [trustSummary, setTrustSummary] = useState<{
+    totalMemories: number;
+    avgTrustScore: number;
+    trustLevelDistribution: Record<number, number>;
+    poisoningDistribution: Record<string, number>;
+    dangerousMemories: number;
+  } | null>(null);
+  const [trustAlerts, setTrustAlerts] = useState<{ severity: string; risk: string; count: number }[]>([]);
+  const [driftData, setDriftData] = useState<{
+    latest: { overall_drift_score: number; status: string; top_drift_signals: string[]; recommendation: string } | null;
+    timeSeries: { score: number; timestamp: string; status: string }[];
+  } | null>(null);
 
   useEffect(() => {
     async function fetchData() {
       const startTime = performance.now();
       try {
-        const statsRes = await fetch("/api/stats");
+        const [statsRes, trustRes, driftRes] = await Promise.all([
+          fetch("/api/stats"),
+          fetch("/api/trust?limit=100"),
+          fetch("/api/drift?limit=50"),
+        ]);
 
         if (!statsRes.ok) {
           throw new Error("Failed to fetch dashboard telemetry");
         }
 
         const statsData = await statsRes.json();
+        const trustData = trustRes.ok ? await trustRes.json() : null;
+        const driftRaw = driftRes.ok ? await driftRes.json() : null;
 
         setStats(statsData);
+        setTrustSummary(trustData?.summary ?? null);
+        setTrustAlerts(trustData?.alerts ?? []);
+        if (driftRaw) {
+          setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
+        }
         setError(null);
         
         // Calculate real fetch latency from CockroachDB api call
@@ -455,6 +481,43 @@ export default function OverviewPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Trust Assessment Panel */}
+          <div className="panel" style={{ padding: "16px 20px" }}>
+            <div className="panel-header" style={{ marginBottom: "10px", paddingBottom: "8px" }}>
+              <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Memory Trust Score</span>
+            </div>
+            <PoisoningAlerts alerts={trustAlerts} />
+            <div style={{ marginTop: "12px" }}>
+              {trustSummary ? (
+                <TrustRing
+                  trustLevelDistribution={trustSummary.trustLevelDistribution}
+                  avgTrustScore={trustSummary.avgTrustScore}
+                  totalMemories={trustSummary.totalMemories}
+                  dangerousMemories={trustSummary.dangerousMemories}
+                />
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "120px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                  NO TRUST DATA
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Drift Detection Panel */}
+          <div className="panel" style={{ padding: "16px 20px" }}>
+            <div className="panel-header" style={{ marginBottom: "10px", paddingBottom: "8px" }}>
+              <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Agent Stability Index</span>
+            </div>
+            <DriftChart
+              timeSeries={driftData?.timeSeries ?? []}
+              overallScore={driftData?.latest?.overall_drift_score ?? 0}
+              status={driftData?.latest?.status ?? "HEALTHY"}
+              topSignals={driftData?.latest?.top_drift_signals ?? []}
+              recommendation={driftData?.latest?.recommendation ?? ""}
+              loading={driftData === null}
+            />
           </div>
 
         </div>
