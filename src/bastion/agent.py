@@ -251,7 +251,7 @@ class BastionAgent:
 
         # Initialize memory backend
         effective_agent_id = f"{self.namespace}:{agent_id}" if namespace else agent_id
-        self.memory = BastionMemory(effective_agent_id, connection_string, mock=mock)
+        self.memory = BastionMemory(effective_agent_id, connection_string=connection_string, mock=mock)
 
         # Initialize consolidation
         self._consolidator: MemoryConsolidator | None = None

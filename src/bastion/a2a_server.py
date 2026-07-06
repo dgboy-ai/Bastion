@@ -108,11 +108,11 @@ def create_a2a_server(
         sep = "&" if "?" in conn else "?"
         conn = f"{conn}{sep}connect_timeout=10"
     try:
-        memory = BastionMemory(agent_id, conn, mock=_mock)
+        memory = BastionMemory(agent_id, connection_string=conn, mock=_mock)
     except Exception:
         logger.exception("Failed to create BastionMemory with real DB, falling back to mock",
                          extra={"agent_id": agent_id})
-        memory = BastionMemory(agent_id, "", mock=True)
+        memory = BastionMemory(agent_id, mock=True)
 
     skill_map = {
         "memory_store": "store",

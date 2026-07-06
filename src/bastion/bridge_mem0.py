@@ -50,7 +50,7 @@ class BastionMem0Bridge:
         mock: bool | None = None,
         infer_fn: Callable[[str], list[dict[str, str]]] | None = None,
     ):
-        self._memory = BastionMemory(agent_id, connection_string, mock=mock)
+        self._memory = BastionMemory(agent_id, connection_string=connection_string, mock=mock)
         self._agent_id = agent_id
         self._infer_fn = infer_fn
 

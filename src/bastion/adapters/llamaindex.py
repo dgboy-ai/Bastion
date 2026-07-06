@@ -12,7 +12,7 @@ class BastionVectorStore:
     is_embedding_query: bool = False
 
     def __init__(self, agent_id: str, connection_string: str | None = None, mock: bool = False):
-        self.bastion = BastionMemory(agent_id, connection_string, mock=mock)
+        self.bastion = BastionMemory(agent_id, connection_string=connection_string, mock=mock)
 
     def add(self, nodes: Sequence[dict[str, Any]]) -> list[MemoryRecord]:
         results = []

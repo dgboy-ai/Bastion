@@ -201,7 +201,7 @@ def create_server(connection_string: str | None = None, mock: bool | None = None
 
     conn = connection_string or os.environ.get("BASTION_CONN", "")
     is_mock = mock if mock is not None else (not conn)
-    memory = BastionMemory("mcp-agent", conn, mock=is_mock)
+    memory = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
     tools = _get_tools()
     server = Server("bastion-memory")

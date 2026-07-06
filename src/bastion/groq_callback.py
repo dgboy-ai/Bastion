@@ -5,7 +5,7 @@ from typing import Any
 
 from bastion.models import MemoryRecord
 
-_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 _HAS_GROQ: bool = False
 _client: Any = None
 
