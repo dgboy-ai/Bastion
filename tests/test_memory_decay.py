@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bastion import BastionMemory, MemoryRecord
 
@@ -70,7 +70,7 @@ def test_importance_score_in_from_dict():
         "metadata": {},
         "previous_hash": None,
         "cryptographic_hash": "hash",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "expires_at": None,
         "access_count": 3,
         "importance_score": 8.5,

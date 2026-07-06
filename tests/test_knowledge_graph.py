@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from bastion import BastionMemory, EntityRecord, RelationRecord
 
@@ -57,7 +57,7 @@ def test_graph_query_unknown_entity_returns_empty():
 def test_graph_at_time_returns_snapshot():
     memory = BastionMemory(agent_id="graph-time", mock=True)
     memory.store_with_graph("Eve works on Bastion")
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     snapshot = memory.graph_at_time(timestamp=future)
     assert "entities" in snapshot
     assert "relations" in snapshot
@@ -67,7 +67,7 @@ def test_graph_at_time_returns_snapshot():
 def test_graph_at_time_with_entity_filter():
     memory = BastionMemory(agent_id="graph-time-entity", mock=True)
     memory.store_with_graph("Frank manages infrastructure")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     snapshot = memory.graph_at_time(timestamp=now, entity="frank")
     assert len(snapshot["entities"]) > 0
     assert any(e["name"] == "frank" for e in snapshot["entities"])

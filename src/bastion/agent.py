@@ -27,8 +27,9 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, MemoryRecord
@@ -135,7 +136,7 @@ class MemoryConsolidator:
             return
 
         # Keep the oldest memory, update its importance
-        oldest = min(group, key=lambda m: m.created_at or datetime.max.replace(tzinfo=timezone.utc))
+        oldest = min(group, key=lambda m: m.created_at or datetime.max.replace(tzinfo=UTC))
 
         # Boost importance based on duplicate count (more duplicates = more important)
         for _ in range(len(group) - 1):
@@ -289,7 +290,7 @@ class BastionAgent:
             user_message,
             metadata={
                 "role": "user",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -308,7 +309,7 @@ class BastionAgent:
             response,
             metadata={
                 "role": "assistant",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "context_count": len(context),
             },
         )
@@ -381,7 +382,7 @@ class BastionAgent:
             checkpoint_id=str(uuid.uuid4()),
             agent_id=self.agent_id,
             state_hash=state_hash,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             memory_count=len(all_memories),
             metadata={
                 "conversation_turns": len(self._conversation_history),
@@ -461,7 +462,7 @@ class BastionAgent:
         data = {
             "agent_id": self.agent_id,
             "namespace": self.namespace,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "memory_count": len(all_memories),
             "memories": [m.to_dict() for m in all_memories],
         }
@@ -474,7 +475,10 @@ class BastionAgent:
     def start_consolidation(self):
         """Start the background memory consolidation process."""
         if self._consolidator:
-            asyncio.create_task(self._consolidator.run())
+            try:
+                asyncio.create_task(self._consolidator.run())
+            except RuntimeError:
+                logger.warning("No running event loop, consolidation not started")
 
     def stop_consolidation(self):
         """Stop the background memory consolidation process."""

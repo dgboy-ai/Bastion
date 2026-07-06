@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bastion import AuditEntry, BastionMemory, ClusterInfo, MemoryRecord
 
@@ -56,7 +56,7 @@ def test_search_by_memory_type():
 
 def test_get_at_time():
     memory = BastionMemory(agent_id="time-test", mock=True)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     memory.store("fact", "Memory after timestamp")
     results = memory.get_at_time(timestamp=now, agent_id="time-test")
     assert len(results) == 0
@@ -99,7 +99,7 @@ def test_provision_cluster():
 
 
 def test_memory_record_to_dict():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     record = MemoryRecord(
         memory_id="test-id",
         agent_id="test-agent",
@@ -189,7 +189,7 @@ def test_detect_anomalies_fact_turnover():
 
 def test_diff_empty():
     memory = BastionMemory(agent_id="diff-empty", mock=True)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     result = memory.diff(now, now)
     assert result["count_a"] == 0
     assert result["count_b"] == 0
@@ -197,9 +197,9 @@ def test_diff_empty():
 
 def test_diff_records_added():
     memory = BastionMemory(agent_id="diff-add", mock=True)
-    before = datetime.now(timezone.utc).isoformat()
+    before = datetime.now(UTC).isoformat()
     memory.store("fact", "Added after")
-    after = datetime.now(timezone.utc).isoformat()
+    after = datetime.now(UTC).isoformat()
     result = memory.diff(before, after)
     assert result["count_a"] == 0
     assert result["count_b"] == 1
@@ -242,7 +242,7 @@ def test_search_returns_empty_when_no_records():
 def test_get_at_time_before_all_records():
     memory = BastionMemory(agent_id="before-all", mock=True)
     memory.store("fact", "Future memory")
-    early = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+    early = datetime(2020, 1, 1, tzinfo=UTC).isoformat()
     results = memory.get_at_time(timestamp=early)
     assert len(results) == 0
 
@@ -264,12 +264,12 @@ def test_detect_anomalies_size_spike():
 
 
 def test_from_row_parses_embedding_string():
-    from datetime import datetime, timezone
+    from datetime import datetime
     record = MemoryRecord.from_row((
         "test-id", "agent-1", "fact", "content",
         "[0.1, 0.2, 0.3]",  # VECTOR returned as JSON string
         {"source": "test"}, "prev-hash", "crypto-hash",
-        datetime.now(timezone.utc), None, 5, 5.0,
+        datetime.now(UTC), None, 5, 5.0,
     ))
     assert record.memory_id == "test-id"
     assert record.embedding == [0.1, 0.2, 0.3]
@@ -278,12 +278,12 @@ def test_from_row_parses_embedding_string():
 
 
 def test_from_row_parses_embedding_list():
-    from datetime import datetime, timezone
+    from datetime import datetime
     record = MemoryRecord.from_row((
         "test-id", "agent-1", "fact", "content",
         [0.1, 0.2, 0.3],
         {"source": "test"}, "prev-hash", "crypto-hash",
-        datetime.now(timezone.utc), None, 0, 5.0,
+        datetime.now(UTC), None, 0, 5.0,
     ))
     assert record.embedding == [0.1, 0.2, 0.3]
     assert record.access_count == 0

@@ -13,7 +13,7 @@ export const pool = new Pool({
   },
 });
 
-export async function query(text: string, params?: any[]) {
+export async function query(text: string, params?: unknown[]) {
   const start = Date.now();
   const res = await pool.query(text, params);
   const duration = Date.now() - start;

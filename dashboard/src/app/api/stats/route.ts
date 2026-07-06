@@ -113,8 +113,8 @@ export async function GET() {
         details: row.details || {},
       })),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to fetch stats:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

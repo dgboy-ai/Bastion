@@ -7,13 +7,13 @@ interface Node {
   id: string;
   name: string;
   type: string;
-  attributes: any;
+  attributes: Record<string, unknown>;
 }
 
 interface Link {
   id: string;
-  source: any;
-  target: any;
+  source: string | Node;
+  target: string | Node;
   type: string;
   confidence: number;
 }
@@ -65,9 +65,9 @@ export default function GraphPage() {
         }
         const data = await res.json();
         
-        setNodes(data.nodes.map((n: any) => ({ ...n })));
-        setLinks(data.links.map((l: any) => ({ ...l })));
-      } catch (err: any) {
+        setNodes(data.nodes as Node[]);
+        setLinks(data.links as Link[]);
+      } catch (err: unknown) {
         setError(err.message);
       } finally {
         setLoading(false);
@@ -79,27 +79,34 @@ export default function GraphPage() {
 
   // Fetch memory audit path when an entity is clicked
   useEffect(() => {
-    if (!selectedNode) {
-      setEntityMemories([]);
-      return;
-    }
-
-    const entityId = selectedNode.id;
+    let cancelled = false;
 
     async function fetchEntityMemories() {
+      if (!selectedNode) {
+        if (!cancelled) setEntityMemories([]);
+        return;
+      }
+
+      const entityId = selectedNode.id;
+
       try {
         const res = await fetch(`/api/entity-memories?entity_id=${entityId}`);
         if (!res.ok) {
           throw new Error("Failed to fetch entity audit trail");
         }
         const data = await res.json();
-        setEntityMemories(data.memories || []);
+        if (!cancelled) {
+          setEntityMemories(data.memories || []);
+        }
       } catch (err) {
-        console.error("Failed to load entity memories:", err);
+        if (!cancelled) {
+          console.error("Failed to load entity memories:", err);
+        }
       }
     }
 
     fetchEntityMemories();
+    return () => { cancelled = true; };
   }, [selectedNode]);
 
   const handleCopyId = () => {
@@ -123,7 +130,7 @@ export default function GraphPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <div>
         <div className="welcome-title">Temporal Graph Explorer</div>
-        <div className="welcome-subtitle">Interactive visualization of the agent's memory graph. Click nodes to inspect local connections and blockchain cryptographic history.</div>
+        <div className="welcome-subtitle">Interactive visualization of the agent&apos;s memory graph. Click nodes to inspect local connections and blockchain cryptographic history.</div>
       </div>
 
       {error && (
@@ -322,7 +329,7 @@ export default function GraphPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--mute)", textAlign: "center", gap: "8px" }}>
               <div style={{ fontSize: "24px" }}>🕸️</div>
-              <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>Select a node in the graph map to inspect properties & cryptographic transaction logs.</span>
+              <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>Select a node in the graph map to inspect properties &amp; cryptographic transaction logs.</span>
             </div>
           )}
         </div>

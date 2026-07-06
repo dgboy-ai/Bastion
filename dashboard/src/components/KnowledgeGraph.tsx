@@ -7,7 +7,7 @@ interface Node extends d3.SimulationNodeDatum {
   id: string;
   name: string;
   type: string;
-  attributes: any;
+  attributes: Record<string, unknown>;
 }
 
 interface Link extends d3.SimulationLinkDatum<Node> {

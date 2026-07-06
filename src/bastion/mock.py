@@ -4,7 +4,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bastion.models import (
@@ -14,6 +14,7 @@ from bastion.models import (
     CoordinationLock,
     EntityRecord,
     MemoryRecord,
+    MessageRecord,
     RelationRecord,
 )
 
@@ -21,11 +22,20 @@ _agent_data: dict[str, list[dict[str, Any]]] = {}
 _audit_log: list[dict[str, Any]] = []
 _checkpoints: list[dict[str, Any]] = []
 _coordination_locks: list[dict[str, Any]] = []
+_messages: list[dict[str, Any]] = []
+_namespace_map: dict[str, set[str]] = {}
 
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
     raw = content + json.dumps(metadata, sort_keys=True) + (previous_hash or "")
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def mock_register_namespace(agent_id: str, namespace: str):
+    """Register an agent as belonging to a namespace for shared-scope search."""
+    if namespace not in _namespace_map:
+        _namespace_map[namespace] = set()
+    _namespace_map[namespace].add(agent_id)
 
 
 def mock_store_memory(
@@ -42,7 +52,7 @@ def mock_store_memory(
     prev_hash = records[-1]["cryptographic_hash"] if records else None
     meta = metadata or {}
     crypto_hash = _compute_hash(content, meta, prev_hash)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
 
     record = MemoryRecord(
@@ -79,12 +89,20 @@ def mock_search_memory(
     k: int = 5,
     threshold: float = 0.8,
     memory_type: str | None = None,
+    namespace_scope: str = "own",
 ) -> list[MemoryRecord]:
-    records = _agent_data.get(agent_id, [])
+    if namespace_scope == "shared":
+        agent_ids = _namespace_map.get(agent_id, {agent_id})
+        records = []
+        for aid in agent_ids:
+            recs = _agent_data.get(aid, [])
+            records.extend(recs)
+    else:
+        records = _agent_data.get(agent_id, [])
     if memory_type:
         records = [r for r in records if r["memory_type"] == memory_type]
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     valid = []
     for r in records:
         expires = r.get("expires_at")
@@ -95,8 +113,12 @@ def mock_search_memory(
 
         created = r.get("created_at")
         if isinstance(created, str):
-            created = datetime.fromisoformat(created)
-        hours_elapsed = (now - created).total_seconds() / 3600
+            created_dt = datetime.fromisoformat(created)
+        elif created is None:
+            created_dt = now
+        else:
+            created_dt = created
+        hours_elapsed = (now - created_dt).total_seconds() / 3600
 
         importance = float(r.get("importance_score", 5.0))
         r["_decay_score"] = importance / (1.0 + 0.01 * hours_elapsed)
@@ -127,6 +149,46 @@ def mock_reinforce(agent_id: str, memory_id: str, success: bool = True) -> dict:
                 "delta": round(new_imp - base, 2),
             }
     return {"status": "not_found"}
+
+
+def mock_broadcast(sender_agent_id: str, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
+    record = MessageRecord(
+        namespace=namespace,
+        sender_agent_id=sender_agent_id,
+        event_type=event_type,
+        payload=payload or {},
+    )
+    _messages.append(record.to_dict())
+    return record
+
+
+def mock_poll_messages(namespace: str) -> list[MessageRecord]:
+    now = datetime.now(UTC)
+    unread = []
+    for m in _messages:
+        expires = m.get("expires_at")
+        if isinstance(expires, str):
+            expires_dt = datetime.fromisoformat(expires)
+            if expires_dt <= now:
+                continue
+        if m.get("namespace") == namespace and not m.get("read"):
+            m["read"] = True
+            record_data = dict(m)
+            for ts_field in ("created_at", "expires_at"):
+                if isinstance(record_data.get(ts_field), str):
+                    try:
+                        record_data[ts_field] = datetime.fromisoformat(record_data[ts_field])
+                    except (ValueError, TypeError):
+                        record_data[ts_field] = None
+            unread.append(MessageRecord(**record_data))
+    return unread
+
+
+def mock_get_memory_by_id(agent_id: str, memory_id: str) -> MemoryRecord | None:
+    for rec in _agent_data.get(agent_id, []):
+        if rec.get("memory_id") == memory_id:
+            return MemoryRecord.from_dict(rec)
+    return None
 
 
 def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]:
@@ -164,7 +226,7 @@ def mock_heal(agent_id: str) -> dict[str, Any]:
     records = _agent_data.get(agent_id, [])
     before = len(records)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     valid = []
     for r in records:
         expires = r.get("expires_at")
@@ -196,7 +258,7 @@ def mock_resolve_conflict(fact_a: str, fact_b: str, context: str) -> str:
     return f"Merged: {fact_a} and {fact_b}"
 
 
-def mock_provision_cluster(name: str, region: str = "us-east1", provider: str = "aws") -> ClusterInfo:  # noqa: ARG001
+def mock_provision_cluster(name: str, region: str = "us-east1", provider: str = "aws") -> ClusterInfo:
     return ClusterInfo(
         cluster_id=f"bastion-{name}-{uuid.uuid4().hex[:8]}",
         connection_string=(
@@ -254,7 +316,7 @@ def mock_query_with_cache(
     query: str,
     llm_callback: Callable[[str], str],
     memory_type: str = "semantic_cache",
-    threshold: float = 0.97,  # noqa: ARG001
+    threshold: float = 0.97,
 ) -> tuple[str, dict]:
     records = _agent_data.get(agent_id, [])
     for r in reversed(records):
@@ -346,7 +408,7 @@ def _ensure_entity(agent_id: str, name: str, entity_type: str = "concept") -> st
         _entities[agent_id] = []
     for e in _entities[agent_id]:
         if e["name"] == name:
-            return e["entity_id"]
+            return str(e["entity_id"])
     eid = str(uuid.uuid4())
     _entities[agent_id].append({
         "entity_id": eid,
@@ -354,9 +416,9 @@ def _ensure_entity(agent_id: str, name: str, entity_type: str = "concept") -> st
         "entity_type": entity_type,
         "name": name,
         "attributes": {},
-        "valid_from": datetime.now(timezone.utc).isoformat(),
+        "valid_from": datetime.now(UTC).isoformat(),
         "valid_until": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     })
     return eid
 
@@ -374,7 +436,7 @@ def mock_store_with_graph(
 
     for src_name, tgt_name, rel_type, kind, confidence in triples:
         if kind == "entity_type":
-            eid = _ensure_entity(agent_id, src_name, tgt_name)
+            _ensure_entity(agent_id, src_name, tgt_name)  # entity created, relation deferred
         else:
             eid_src = _ensure_entity(agent_id, src_name, "person" if kind == "relation" else "concept")
             eid_tgt = _ensure_entity(agent_id, tgt_name, "concept")
@@ -389,11 +451,11 @@ def mock_store_with_graph(
             _relations.append(rel.to_dict())
             created_relations.append(rel)
 
-    for eid in _entities.get(agent_id, []):
+    for eid_dict in _entities.get(agent_id, []):
         created_entities.append(EntityRecord.from_row((
-            eid["entity_id"], eid["agent_id"], eid["entity_type"],
-            eid["name"], eid["attributes"], eid["valid_from"],
-            eid["valid_until"], eid["created_at"],
+            eid_dict["entity_id"], eid_dict["agent_id"], eid_dict["entity_type"],
+            eid_dict["name"], eid_dict["attributes"], eid_dict["valid_from"],
+            eid_dict["valid_until"], eid_dict["created_at"],
         )))
 
     deduped = {e.entity_id: e for e in created_entities}
@@ -486,3 +548,5 @@ def reset():
     _coordination_locks.clear()
     _entities.clear()
     _relations.clear()
+    _messages.clear()
+    _namespace_map.clear()

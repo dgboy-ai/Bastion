@@ -2,6 +2,14 @@
 
 import { useEffect, useState, useRef } from "react";
 
+interface AuditRecord {
+  id?: string;
+  action: string;
+  agent_id?: string;
+  details?: Record<string, unknown>;
+  recordedAt?: string;
+}
+
 interface PipelineEvent {
   id: string;
   type: "write" | "cdc" | "lambda" | "memory" | "anomaly";
@@ -38,7 +46,7 @@ export default function CdcPipelineViz({ refreshInterval = 2000 }: CdcPipelineVi
         // Generate pipeline events from audit data
         const audits = data.recentAudits || [];
         const newEvents: PipelineEvent[] = audits.slice(0, 5).map(
-          (audit: any, idx: number) => ({
+          (audit: AuditRecord, idx: number) => ({
             id: audit.id || `evt-${idx}`,
             type: audit.action.includes("store")
               ? "write"

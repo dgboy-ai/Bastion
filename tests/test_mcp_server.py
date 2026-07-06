@@ -1,4 +1,6 @@
 
+from datetime import UTC
+
 import pytest
 
 from bastion.mcp_server import _get_tools, _handle_tool_call, create_server
@@ -86,8 +88,8 @@ def test_handle_tool_memory_search_with_type_filter(memory):
 
 def test_handle_tool_memory_timetravel(memory):
     _handle_tool_call(memory, "memory_store", {"content": "Future memory"})
-    from datetime import datetime, timezone
-    future = datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+    future = datetime.now(UTC).isoformat()
     results = _handle_tool_call(memory, "memory_timetravel", {"timestamp": future})
     assert len(results) > 0
 

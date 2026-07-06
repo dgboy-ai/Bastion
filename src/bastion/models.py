@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
@@ -29,7 +29,7 @@ class MemoryRecord:
         self.metadata = metadata or {}
         self.previous_hash = previous_hash
         self.cryptographic_hash = cryptographic_hash
-        self.created_at = created_at or datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(UTC)
         self.expires_at = expires_at
         self.access_count = access_count
         self.importance_score = importance_score
@@ -131,7 +131,7 @@ class CheckpointState:
         self.token_cost = token_cost
         self.status = status
         self.health_score = health_score
-        self.created_at = created_at or datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(UTC)
         self.completed_at = completed_at
         self.region = region
 
@@ -168,7 +168,7 @@ class AuditEntry:
         self.workflow_id = workflow_id
         self.action = action
         self.details = details or {}
-        self.recorded_at = recorded_at or datetime.now(timezone.utc)
+        self.recorded_at = recorded_at or datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -223,9 +223,9 @@ class EntityRecord:
         self.entity_type = entity_type
         self.name = name
         self.attributes = attributes or {}
-        self.valid_from = valid_from or datetime.now(timezone.utc)
+        self.valid_from = valid_from or datetime.now(UTC)
         self.valid_until = valid_until
-        self.created_at = created_at or datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(UTC)
 
     @classmethod
     def from_row(cls, row: tuple) -> EntityRecord:
@@ -273,10 +273,10 @@ class RelationRecord:
         self.target_entity_id = target_entity_id
         self.relation_type = relation_type
         self.confidence = confidence
-        self.valid_from = valid_from or datetime.now(timezone.utc)
+        self.valid_from = valid_from or datetime.now(UTC)
         self.valid_until = valid_until
         self.source_memory_id = source_memory_id
-        self.created_at = created_at or datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -308,7 +308,7 @@ class CoordinationLock:
         self.agent_id = agent_id
         self.resource = resource
         self.lock_type = lock_type
-        self.acquired_at = acquired_at or datetime.now(timezone.utc)
+        self.acquired_at = acquired_at or datetime.now(UTC)
         self.expires_at = expires_at
         self.payload = payload or {}
 
@@ -321,4 +321,38 @@ class CoordinationLock:
             "acquired_at": self.acquired_at.isoformat() if self.acquired_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "payload": self.payload,
+        }
+
+
+class MessageRecord:
+    def __init__(
+        self,
+        message_id: str | None = None,
+        namespace: str = "",
+        sender_agent_id: str = "",
+        event_type: str = "",
+        payload: dict[str, Any] | None = None,
+        created_at: datetime | None = None,
+        expires_at: datetime | None = None,
+        read: bool = False,
+    ):
+        self.message_id = message_id or str(uuid.uuid4())
+        self.namespace = namespace
+        self.sender_agent_id = sender_agent_id
+        self.event_type = event_type
+        self.payload = payload or {}
+        self.created_at = created_at or datetime.now(UTC)
+        self.expires_at = expires_at or (datetime.now(UTC) + timedelta(hours=1))
+        self.read = read
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "message_id": self.message_id,
+            "namespace": self.namespace,
+            "sender_agent_id": self.sender_agent_id,
+            "event_type": self.event_type,
+            "payload": self.payload,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "read": self.read,
         }

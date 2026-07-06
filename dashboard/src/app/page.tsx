@@ -19,22 +19,13 @@ interface Stats {
     id: string;
     action: string;
     recordedAt: string;
-    details: any;
+    details: Record<string, unknown>;
   }>;
-}
-
-interface Anomaly {
-  id: string;
-  type: string;
-  severity: string;
-  detail: string;
-  timestamp: string;
 }
 
 export default function OverviewPage() {
   const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
-  const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; time: string; value: string } | null>(null);
@@ -51,30 +42,23 @@ export default function OverviewPage() {
     async function fetchData() {
       const startTime = performance.now();
       try {
-        const [statsRes, anomaliesRes] = await Promise.all([
-          fetch("/api/stats"),
-          fetch("/api/anomalies"),
-        ]);
+        const statsRes = await fetch("/api/stats");
 
-        if (!statsRes.ok || !anomaliesRes.ok) {
+        if (!statsRes.ok) {
           throw new Error("Failed to fetch dashboard telemetry");
         }
 
         const statsData = await statsRes.json();
-        const anomaliesData = await anomaliesRes.json();
 
         setStats(statsData);
-        setAnomalies(anomaliesData.alerts || []);
         setError(null);
         
         // Calculate real fetch latency from CockroachDB api call
         const endTime = performance.now();
         setQueryLatency(Math.round(endTime - startTime));
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Telemetry fetch error:", err);
-        if (loading) {
-          setError(err.message);
-        }
+        setError((err as Error).message);
       } finally {
         setLoading(false);
       }
@@ -84,7 +68,7 @@ export default function OverviewPage() {
 
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
-  }, [loading]);
+  }, []);
 
   if (loading) {
     return (
@@ -156,7 +140,7 @@ export default function OverviewPage() {
       {/* Welcome Greeting & Subtext */}
       <div>
         <div className="welcome-title">Hello Divyansh! 👋</div>
-        <div className="welcome-subtitle">Here's what's happening with your agent's memory ledger today. Click cards and filters to inspect.</div>
+        <div className="welcome-subtitle">Here&apos;s what&apos;s happening with your agent&apos;s memory ledger today. Click cards and filters to inspect.</div>
       </div>
 
       {/* Row 1: KPI Stats Grid (1.3fr), Memory Type Mix (1fr), and Curve chart (1fr) side-by-side */}

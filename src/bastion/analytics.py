@@ -22,8 +22,8 @@ Usage:
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from bastion.memory import BastionMemory
 
@@ -41,7 +41,7 @@ class MemoryAnalytics:
         """Generate a comprehensive analytics report."""
         return {
             "agent_id": self.memory.agent_id,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "summary": self.summary(),
             "health_score": self.health_score(),
             "growth": self.growth_analysis(),
@@ -70,7 +70,7 @@ class MemoryAnalytics:
         avg_importance = sum(importance_scores) / len(importance_scores) if importance_scores else 0.0
 
         # Calculate average age
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ages = []
         for m in all_memories:
             if m.created_at:
@@ -90,7 +90,7 @@ class MemoryAnalytics:
     def health_score(self) -> int:
         """
         Calculate memory health score (0-100).
-        
+
         Factors:
         - Memory count (too few = bad, too many = bad)
         - Importance distribution (should be balanced)
@@ -145,7 +145,7 @@ class MemoryAnalytics:
         if not all_memories:
             return {"hourly": [], "daily": [], "trend": "stable"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Hourly breakdown (last 24 hours)
         hourly_counts = [0] * 24
@@ -229,7 +229,7 @@ class MemoryAnalytics:
         if not all_memories:
             return {"avg_decay_rate": 0, "memories_at_risk": 0, "decay_curve": []}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         decay_data = []
 
         for mem in all_memories:
@@ -245,8 +245,8 @@ class MemoryAnalytics:
                     "at_risk": decayed_score < 2.0,
                 })
 
-        # Calculate statistics
-        avg_decay = sum(d["decayed_score"] for d in decay_data) / len(decay_data) if decay_data else 0
+        scores: list[float] = [cast(float, d["decayed_score"]) for d in decay_data]
+        avg_decay = sum(scores) / len(scores) if scores else 0.0
         memories_at_risk = sum(1 for d in decay_data if d["at_risk"])
 
         return {
@@ -288,7 +288,7 @@ class MemoryAnalytics:
 
     def _check_hash_chain(self, memories: list) -> bool:
         """Verify hash chain integrity."""
-        sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=timezone.utc))
+        sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
         prev_hash = None
         for mem in sorted_memories:
             if mem.previous_hash != prev_hash:
@@ -299,10 +299,10 @@ class MemoryAnalytics:
     def memory_flow(self) -> dict[str, Any]:
         """Analyze memory flow patterns (what's being stored vs retrieved)."""
         audit_entries = self.memory.audit()
-        
+
         store_count = sum(1 for e in audit_entries if "store" in e.action)
         search_count = sum(1 for e in audit_entries if "search" in e.action)
-        
+
         return {
             "total_operations": len(audit_entries),
             "store_operations": store_count,

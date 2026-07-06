@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
     let entitiesSql = "SELECT entity_id, name, entity_type, attributes FROM agent_entities";
     let relationsSql = "SELECT relation_id, source_entity_id, target_entity_id, relation_type, confidence FROM agent_relations";
-    let params: any[] = [];
+    const params: unknown[] = [];
 
     if (asOf) {
       // Validate that asOf looks like a timestamp or relative interval
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ nodes, links });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to fetch graph data:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

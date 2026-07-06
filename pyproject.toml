@@ -19,6 +19,10 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.5",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.0",
+    "anyio>=4.0",
 ]
 otel = [
     "opentelemetry-api>=1.25",
@@ -36,6 +40,17 @@ crewai = [
 llamaindex = [
     "llama-index>=0.12",
 ]
+a2a = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.0",
+    "anyio>=4.0",
+]
+kms = [
+    "cryptography>=42.0",
+    "google-cloud-kms>=2.20",
+]
+bridge = []
 all = [
     "opentelemetry-api>=1.25",
     "opentelemetry-sdk>=1.25",
@@ -43,6 +58,12 @@ all = [
     "langchain>=0.3",
     "crewai>=0.100",
     "llama-index>=0.12",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.0",
+    "anyio>=4.0",
+    "cryptography>=42.0",
+    "google-cloud-kms>=2.20",
 ]
 
 [tool.ruff]
@@ -50,7 +71,18 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N"]
+select = ["E", "F", "I", "N", "W", "UP", "ASYNC", "B", "SIM", "TID", "RUF100"]
+ignore = [
+    "B904",  # raise-within-try — not always applicable
+    "SIM108", # use-if-expression — readability > brevity
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

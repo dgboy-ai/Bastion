@@ -3,7 +3,7 @@ import { query } from "@/lib/db";
 
 export async function GET() {
   try {
-    const alerts: any[] = [];
+    const alerts: Record<string, unknown>[] = [];
     
     // Check total memory size
     const countRes = await query("SELECT COUNT(*) as count FROM agent_memory");
@@ -37,8 +37,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ alerts });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to detect anomalies:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

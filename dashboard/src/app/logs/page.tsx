@@ -7,7 +7,7 @@ interface Memory {
   agentId: string;
   memoryType: string;
   content: string;
-  metadata: any;
+  metadata: Record<string, unknown>;
   previousHash: string | null;
   cryptographicHash: string;
   importanceScore: number;
@@ -33,7 +33,7 @@ export default function LogsPage() {
         }
         const data = await res.json();
         setMemories(data.memories || []);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError(err.message);
       } finally {
         setLoading(false);

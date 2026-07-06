@@ -111,7 +111,6 @@ export default function SqlExplainer({
   queryType,
   agentId = "demo-agent",
   timestamp,
-  memoryId,
   onClose,
 }: SqlExplainerProps) {
   const [copied, setCopied] = useState(false);
@@ -221,8 +220,6 @@ export default function SqlExplainer({
           >
             <code>
               {filledSql.split("\n").map((line, i) => {
-                // Syntax highlighting
-                let colored = line;
                 if (line.trim().startsWith("--")) {
                   return (
                     <div key={i} style={{ color: "var(--accent-emerald)", opacity: 0.7 }}>

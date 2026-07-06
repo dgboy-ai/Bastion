@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -88,7 +88,7 @@ class TestBastionAgent:
         assert agent.namespace == "project-x"
 
     def test_chat_stores_memories(self, agent):
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("Hello, my name is Alice")
         )
         assert response is not None
@@ -99,7 +99,7 @@ class TestBastionAgent:
         assert len(memories) > 0
 
     def test_chat_returns_response(self, agent):
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("What is CockroachDB?")
         )
         assert isinstance(response, str)
@@ -111,14 +111,14 @@ class TestBastionAgent:
         agent.memory.store("fact", "Alice prefers Python")
 
         # Chat should find relevant context
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("What does Alice do?")
         )
         assert response is not None
 
     def test_chat_with_pii_redaction(self):
         agent = BastionAgent("pii-test", mock=True, enable_pii_redaction=True)
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("My email is john@example.com")
         )
         assert response is not None
@@ -127,7 +127,7 @@ class TestBastionAgent:
 
     def test_chat_without_pii_redaction(self):
         agent = BastionAgent("no-pii", mock=True, enable_pii_redaction=False)
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("My email is john@example.com")
         )
         assert response is not None
@@ -150,7 +150,7 @@ class TestBastionAgent:
 
     def test_get_memory_at_time(self, agent):
         agent.memory.store("fact", "Memory before")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         agent.memory.store("fact", "Memory after")
 
         results = agent.get_memory_at_time(now)
@@ -175,9 +175,9 @@ class TestBastionAgent:
         assert isinstance(anomalies, list)
 
     def test_diff_memory(self, agent):
-        before = datetime.now(timezone.utc).isoformat()
+        before = datetime.now(UTC).isoformat()
         agent.memory.store("fact", "Added after")
-        after = datetime.now(timezone.utc).isoformat()
+        after = datetime.now(UTC).isoformat()
 
         diff = agent.diff_memory(before, after)
         assert "added" in diff or "count_a" in diff
@@ -232,10 +232,10 @@ class TestBastionAgent:
         assert len(data["memories"]) > 0
 
     def test_conversation_history(self, agent):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             agent.chat("First message")
         )
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             agent.chat("Second message")
         )
         history = agent.get_conversation_history()
@@ -254,7 +254,7 @@ class TestBastionAgent:
             return f"Custom response to: {prompt}"
 
         agent = BastionAgent("llm-test", mock=True, llm_callback=my_llm)
-        response = asyncio.get_event_loop().run_until_complete(
+        response = asyncio.run(
             agent.chat("Test prompt")
         )
         assert response == "Custom response to: Test prompt"
@@ -268,7 +268,7 @@ class TestAgentCheckpoint:
             checkpoint_id="cp-123",
             agent_id="test-agent",
             state_hash="abc123",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             memory_count=42,
         )
         assert checkpoint.checkpoint_id == "cp-123"
@@ -279,7 +279,7 @@ class TestAgentCheckpoint:
             checkpoint_id="cp-123",
             agent_id="test-agent",
             state_hash="abc123",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             memory_count=42,
             metadata={"key": "value"},
         )

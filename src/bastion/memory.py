@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
 import subprocess
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bastion import mock as _mock
-from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, RelationRecord
+from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
+
+logger = logging.getLogger(__name__)
 
 # Bedrock embedding config
 _BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
@@ -53,7 +56,23 @@ _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
     "metadata, previous_hash, cryptographic_hash, "
     "created_at, expires_at, access_count, importance_score"
+
 )
+
+def _parse_payload(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed: Any = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(parsed)
+            return {"text": raw}
+        except (json.JSONDecodeError, TypeError):
+            return {"text": raw}
+    return {}
 
 
 class BastionMemory:
@@ -68,17 +87,41 @@ class BastionMemory:
         agent_id: str,
         connection_string: str | None = None,
         mock: bool | None = None,
+        namespace: str | None = None,
     ):
         self.agent_id = agent_id
+        self.namespace = namespace or agent_id
         self._mock = mock if mock is not None else os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
         self._conn = None
         self._conn_str = connection_string
+        if self._mock:
+            _mock.mock_register_namespace(agent_id, self.namespace)
 
         if not self._mock:
             if not connection_string:
                 raise ValueError("connection_string is required when mock=False")
             import psycopg
             self._conn = psycopg.connect(connection_string)
+
+    @property
+    def is_mock(self) -> bool:
+        """Whether this instance is running in mock (in-memory) mode."""
+        return self._mock
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the database connection is established and alive."""
+        if self._mock:
+            return True
+        conn = self._conn
+        if conn is None or conn.closed:
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return True
+        except Exception:
+            return False
 
     def store(
         self,
@@ -116,10 +159,15 @@ class BastionMemory:
         k: int = 5,
         threshold: float = 0.8,
         memory_type: str | None = None,
+        namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
         """Search memories using C-SPANN vector similarity with decay weighting.
 
         Returns memories ranked by (cosine_similarity * importance_score / time_decay).
+
+        namespace_scope:
+            "own"    — search only this agent's memories (default)
+            "shared" — search all agents in the same namespace
         """
         if not query:
             raise ValueError("query cannot be empty")
@@ -127,9 +175,12 @@ class BastionMemory:
             raise ValueError("k must be at least 1")
         if not 0 <= threshold <= 1:
             raise ValueError("threshold must be between 0 and 1")
+        if namespace_scope not in ("own", "shared"):
+            raise ValueError("namespace_scope must be 'own' or 'shared'")
+        ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
-            return _mock.mock_search_memory(self.agent_id, query, k, threshold, memory_type)
-        return self._search_real(query, k, threshold, memory_type)
+            return _mock.mock_search_memory(ns_agent_id, query, k, threshold, memory_type, namespace_scope)
+        return self._search_real(query, k, threshold, memory_type, namespace_scope)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
         """Query memory state at a specific timestamp using AS OF SYSTEM TIME."""
@@ -237,6 +288,34 @@ class BastionMemory:
             return _mock.mock_graph_stats(self.agent_id)
         return self._graph_stats_real()
 
+    def broadcast(self, event_type: str, payload: dict | None = None, namespace: str | None = None) -> MessageRecord:
+        """Send a message to all agents in a namespace."""
+        ns = namespace if namespace is not None else self.namespace
+        if not event_type:
+            raise ValueError("event_type cannot be empty")
+        if self._mock:
+            return _mock.mock_broadcast(self.agent_id, event_type, payload, ns)
+        return self._broadcast_real(event_type, payload, ns)
+
+    def poll_messages(self, namespace: str | None = None) -> list[MessageRecord]:
+        """Read and acknowledge all unread messages in a namespace."""
+        ns = namespace if namespace is not None else self.namespace
+        if self._mock:
+            return _mock.mock_poll_messages(ns)
+        return self._poll_messages_real(ns)
+
+    def get_memory(self, memory_id: str) -> MemoryRecord | None:
+        """Retrieve a single memory by its exact ID (not semantic search).
+
+        Returns ``None`` if not found. Uses primary-key lookup so this is
+        deterministic — unlike ``search()`` which ranks by vector similarity.
+        """
+        if not memory_id:
+            raise ValueError("memory_id cannot be empty")
+        if self._mock:
+            return _mock.mock_get_memory_by_id(self.agent_id, memory_id)
+        return self._get_memory_by_id_real(memory_id)
+
     def close(self):
         if self._conn and not self._conn.closed:
             self._conn.close()
@@ -248,6 +327,9 @@ class BastionMemory:
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
     ) -> MemoryRecord:
+        conn = self._conn
+        assert conn is not None, "store_real called in mock mode"
+
         prev_hash = self._get_last_hash()
         meta = metadata or {}
         crypto_hash = hashlib.sha256(
@@ -256,11 +338,11 @@ class BastionMemory:
 
         embedding = self._embed(content)
         embedding_str = json.dumps(embedding)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
 
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO agent_memory
@@ -273,6 +355,7 @@ class BastionMemory:
                      expires_dt.isoformat() if expires_dt else None),
                 )
                 row = cur.fetchone()
+                assert row is not None, "INSERT RETURNING must return a row"
 
                 workflow_id = str(uuid.uuid4())
                 cur.execute(
@@ -280,7 +363,7 @@ class BastionMemory:
                     (self.agent_id, workflow_id, "memory_store",
                      json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
                 )
-                self._conn.commit()
+                conn.commit()
 
                 return MemoryRecord(
                     memory_id=str(row[0]),
@@ -296,7 +379,7 @@ class BastionMemory:
                     importance_score=5.0,
                 )
         except Exception:
-            self._conn.rollback()
+            conn.rollback()
             raise
 
     def _search_real(
@@ -305,22 +388,29 @@ class BastionMemory:
         k: int,
         threshold: float,
         memory_type: str | None,
+        namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
+        conn = self._conn
+        assert conn is not None, "search_real called in mock mode"
+
         query_vector = self._embed(query)
         query_vector_str = json.dumps(query_vector)
         decay_rate = 0.01
 
+        agent_filter = "agent_id LIKE %s"
+        agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
+
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS}, "
                         "(1.0 - (embedding <=> %s::vector)) * importance_score / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
                         "FROM agent_memory "
-                        "WHERE agent_id = %s AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        (query_vector_str, decay_rate, self.agent_id, memory_type, k),
+                        (query_vector_str, decay_rate, agent_param, memory_type, k),
                     )
                 else:
                     cur.execute(
@@ -328,9 +418,9 @@ class BastionMemory:
                         "(1.0 - (embedding <=> %s::vector)) * importance_score / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
                         "FROM agent_memory "
-                        "WHERE agent_id = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        (query_vector_str, decay_rate, self.agent_id, k),
+                        (query_vector_str, decay_rate, agent_param, k),
                     )
                 rows = cur.fetchall()
                 results = []
@@ -340,12 +430,32 @@ class BastionMemory:
                         results.append(MemoryRecord.from_row(r[:-1]))
                 return results[:k]
         except Exception:
+            logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             return []
 
+    def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
+        conn = self._conn
+        assert conn is not None, "get_memory_by_id_real called in mock mode"
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE memory_id = %s",
+                    (memory_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                return MemoryRecord.from_row(row)
+        except Exception:
+            logger.exception("get_memory_by_id failed", extra={"memory_id": memory_id})
+            return None
+
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
+        conn_str = self._conn_str
+        assert conn_str is not None, "get_at_time_real called in mock mode"
         import psycopg
 
-        conn2 = psycopg.connect(self._conn_str)
+        conn2 = psycopg.connect(conn_str)
         try:
             with conn2.cursor() as cur:
                 cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
@@ -360,8 +470,10 @@ class BastionMemory:
             conn2.close()
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
+        conn = self._conn
+        assert conn is not None, "audit_real called in mock mode"
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT audit_id, agent_id, workflow_id, action, details, recorded_at
@@ -387,23 +499,27 @@ class BastionMemory:
             return []
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
+        conn = self._conn
+        assert conn is not None, "heal_real called in mock mode"
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
                     (agent_id,),
                 )
-                self._conn.commit()
+                conn.commit()
                 return {"agent_id": agent_id, "pruned": cur.rowcount, "status": "healed"}
         except Exception:
             return {"agent_id": agent_id, "pruned": 0, "status": "error"}
 
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
+        conn = self._conn
+        assert conn is not None, "resolve_conflict_real called in mock mode"
         import psycopg.errors
 
         merged = f"{fact_a}; {fact_b}"
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 payload = json.dumps({
                     "fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context,
                 })
@@ -412,14 +528,16 @@ class BastionMemory:
                     "VALUES (%s, %s, 'exclusive', %s) RETURNING lock_id",
                     (self.agent_id, f"conflict:{hash(fact_a + fact_b)}", payload),
                 )
-                self._conn.commit()
+                conn.commit()
             return merged
         except psycopg.errors.SerializationFailure:
             return merged
 
     def _get_last_hash(self) -> str | None:
+        conn = self._conn
+        assert conn is not None, "get_last_hash called in mock mode"
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
                     (self.agent_id,),
@@ -444,14 +562,18 @@ class BastionMemory:
         return response, {"cache": "miss"}
 
     def _detect_anomalies_real(self, agent_id: str) -> list[dict]:
+        conn = self._conn
+        assert conn is not None, "detect_anomalies_real called in mock mode"
         alerts = []
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s",
                     (agent_id,),
                 )
-                total = cur.fetchone()[0]
+                total_row = cur.fetchone()
+                assert total_row is not None, "COUNT query must return a row"
+                total = total_row[0]
 
                 cur.execute(
                     "SELECT content, created_at FROM agent_memory "
@@ -497,7 +619,9 @@ class BastionMemory:
         }
 
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
-        with self._conn.cursor() as cur:
+        conn = self._conn
+        assert conn is not None, "reinforce_real called in mock mode"
+        with conn.cursor() as cur:
             cur.execute(
                 "SELECT importance_score, access_count FROM agent_memory "
                 "WHERE memory_id = %s AND agent_id = %s",
@@ -518,7 +642,7 @@ class BastionMemory:
                 "WHERE memory_id = %s AND agent_id = %s",
                 (new_imp, memory_id, self.agent_id),
             )
-            self._conn.commit()
+            conn.commit()
             return {
                 "status": "reinforced",
                 "memory_id": memory_id,
@@ -554,6 +678,8 @@ class BastionMemory:
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
     ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
+        conn = self._conn
+        assert conn is not None, "store_with_graph_real called in mock mode"
         record = self._store_real("fact", content, metadata, expires_in_seconds)
         triples = self._extract_triples(content)
         created_entities: list[EntityRecord] = []
@@ -561,16 +687,18 @@ class BastionMemory:
 
         for src_name, tgt_name, rel_type, kind, confidence in triples:
             if kind == "entity_type":
-                with self._conn.cursor() as cur:
+                with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
                         "VALUES (%s, %s, %s, now()) RETURNING entity_id",
                         (self.agent_id, tgt_name, src_name),
                     )
-                    str(cur.fetchone()[0])
-                    self._conn.commit()
+                    _entity_row = cur.fetchone()
+                    if _entity_row is not None:
+                        str(_entity_row[0])
+                    conn.commit()
             else:
-                with self._conn.cursor() as cur:
+                with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
                         "VALUES (%s, 'person', %s, now()) "
@@ -595,9 +723,9 @@ class BastionMemory:
                         "RETURNING relation_id",
                         (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record.memory_id),
                     )
-                    self._conn.commit()
+                    conn.commit()
 
-        with self._conn.cursor() as cur:
+        with conn.cursor() as cur:
             cur.execute(
                 "SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at "
                 "FROM agent_entities WHERE agent_id = %s ORDER BY created_at DESC",
@@ -619,7 +747,9 @@ class BastionMemory:
         relation_path: list[str] | None,
         hops: int,
     ) -> list[dict[str, Any]]:
-        with self._conn.cursor() as cur:
+        conn = self._conn
+        assert conn is not None, "graph_query_real called in mock mode"
+        with conn.cursor() as cur:
             cur.execute(
                 "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
                 (self.agent_id, start_entity),
@@ -665,8 +795,10 @@ class BastionMemory:
             return found
 
     def _graph_at_time_real(self, timestamp: str, entity: str | None) -> dict[str, Any]:
+        conn_str = self._conn_str
+        assert conn_str is not None, "graph_at_time_real called in mock mode"
         import psycopg
-        conn2 = psycopg.connect(self._conn_str)
+        conn2 = psycopg.connect(conn_str)
         try:
             with conn2.cursor() as cur:
                 cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
@@ -698,7 +830,7 @@ class BastionMemory:
                     relations = [dict(zip(
                         ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
                          "relation_type", "confidence", "valid_from", "valid_until",
-                         "source_memory_id", "created_at"], r
+                         "source_memory_id", "created_at"], r, strict=False,
                     )) for r in cur.fetchall()]
                 else:
                     relations = []
@@ -709,14 +841,22 @@ class BastionMemory:
             conn2.close()
 
     def _graph_stats_real(self) -> dict[str, Any]:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,))
-            entity_count = cur.fetchone()[0]
+        conn = self._conn
+        assert conn is not None, "graph_stats_real called in mock mode"
+        with conn.cursor() as cur:
+            entity_row = cur.execute(
+                "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
+            ).fetchone()
+            assert entity_row is not None, "COUNT query must return a row"
+            entity_count = entity_row[0]
 
-            cur.execute("SELECT COUNT(*) FROM agent_relations r "
-                        "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
-                        (self.agent_id,))
-            relation_count = cur.fetchone()[0]
+            relation_row = cur.execute(
+                "SELECT COUNT(*) FROM agent_relations r "
+                "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
+                (self.agent_id,),
+            ).fetchone()
+            assert relation_row is not None, "COUNT query must return a row"
+            relation_count = relation_row[0]
 
             cur.execute(
                 "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = %s ORDER BY entity_type",
@@ -724,16 +864,73 @@ class BastionMemory:
             )
             entity_types = [r[0] for r in cur.fetchall()]
 
-            cur.execute(
+            orphans_row = cur.execute(
                 "SELECT COUNT(*) FROM agent_entities e WHERE e.agent_id = %s "
                 "AND NOT EXISTS (SELECT 1 FROM agent_relations r "
                 "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
                 (self.agent_id,),
-            )
-            orphans = cur.fetchone()[0]
+            ).fetchone()
+            assert orphans_row is not None, "COUNT query must return a row"
+            orphans = orphans_row[0]
 
             return {"entities": entity_count, "relations": relation_count,
                     "orphans": orphans, "entity_types": entity_types}
+
+    def _broadcast_real(self, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
+        conn = self._conn
+        if conn is None or conn.closed:
+            raise RuntimeError("Connection is not open")
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO agent_messages (namespace, sender_agent_id, event_type, payload) "
+                "VALUES (%s, %s, %s, %s) RETURNING message_id, created_at",
+                (namespace, self.agent_id, event_type, json.dumps(payload or {})),
+            )
+            row = cur.fetchone()
+            assert row is not None, "INSERT RETURNING must return a row"
+            conn.commit()
+            return MessageRecord(
+                message_id=str(row[0]),
+                namespace=namespace,
+                sender_agent_id=self.agent_id,
+                event_type=event_type,
+                payload=payload,
+                created_at=row[1],
+            )
+
+    def _poll_messages_real(self, namespace: str) -> list[MessageRecord]:
+        conn = self._conn
+        if conn is None or conn.closed:
+            raise RuntimeError("Connection is not open")
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT message_id, namespace, sender_agent_id, event_type, payload, "
+                "created_at, expires_at, read FROM agent_messages "
+                "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now()) "
+                "ORDER BY created_at ASC",
+                (namespace,),
+            )
+            rows = cur.fetchall()
+            cur.execute(
+                "UPDATE agent_messages SET read = TRUE "
+                "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now())",
+                (namespace,),
+            )
+            conn.commit()
+            results = []
+            for r in rows:
+                payload_raw = r[4]
+                results.append(MessageRecord(
+                    message_id=str(r[0]),
+                    namespace=str(r[1]),
+                    sender_agent_id=str(r[2]),
+                    event_type=str(r[3]),
+                    payload=_parse_payload(payload_raw),
+                    created_at=r[5],
+                    expires_at=r[6],
+                    read=bool(r[7]),
+                ))
+            return results
 
     def _embed(self, text: str) -> list[float]:
         """
@@ -753,8 +950,9 @@ class BastionMemory:
                 contentType="application/json",
                 accept="application/json",
             )
-            result = json.loads(response["body"].read())
-            return result["embedding"]
+            result: Any = json.loads(response["body"].read())
+            embedding: list[float] = result["embedding"]
+            return embedding
         except Exception:
             # Graceful degradation: fall back to hash embedding rather than crashing
             return _hash_fallback_embed(text)

@@ -36,25 +36,24 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
             resultCount: Math.floor(Math.random() * 5) + 1,
           };
 
+          setCurrentLatency(latency);
+
           setReadings((prev) => {
             const updated = [...prev, newReading].slice(-20);
             // Calculate p99
             const sorted = updated.map((r) => r.queryTime).sort((a, b) => a - b);
             const p99Idx = Math.floor(sorted.length * 0.99);
             setP99Latency(sorted[p99Idx] || 0);
+            // Update cache hit rate from actual data
+            setCacheHitRate(
+              updated.length > 0
+                ? Math.round(
+                    (updated.filter((r) => r.cacheHit).length / updated.length) * 1000
+                  ) / 10
+                : 94.2
+            );
             return updated;
           });
-
-          setCurrentLatency(latency);
-
-          // Update cache hit rate from actual data
-          setCacheHitRate(
-            readings.length > 0
-              ? Math.round(
-                  (readings.filter((r) => r.cacheHit).length / readings.length) * 1000
-                ) / 10
-              : 94.2
-          );
         }
       } catch {
         // Silent fail on network issues

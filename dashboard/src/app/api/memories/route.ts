@@ -10,7 +10,7 @@ export async function GET(request: Request) {
       SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, created_at, expires_at, access_count
       FROM agent_memory
     `;
-    let params: any[] = [];
+    const params: unknown[] = [];
 
     if (search) {
       sql += " WHERE content ILIKE $1 OR memory_type ILIKE $1";
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ memories });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to fetch memories:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

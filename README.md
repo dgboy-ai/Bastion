@@ -143,7 +143,7 @@ python examples/full_demo.py
 BASTION_MOCK=true python examples/benchmark.py
 
 # Tests
-python -m pytest --tb=short -q    # 166 tests
+python -m pytest --tb=short -q    # 250+ tests
 ```
 
 ---
