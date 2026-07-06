@@ -95,6 +95,7 @@ class BastionMemory:
         connection_string: str | None = None,
         mock: bool | None = None,
         namespace: str | None = None,
+        compliance_mode: str | None = None,
     ):
         self.agent_id = agent_id
         self.namespace = namespace or agent_id
@@ -102,6 +103,7 @@ class BastionMemory:
         self._conn: Any = None
         self._tt_conn: Any = None
         self._conn_str = connection_string
+        self.compliance_mode = compliance_mode
         if self._mock:
             _mock.mock_register_namespace(agent_id, self.namespace)
 

@@ -1,6 +1,8 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
 from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, redact_pii
+from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
+from bastion.dba import AutonomousDBA
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.mcp_server import create_server
@@ -25,6 +27,11 @@ __all__ = [
     "MemoryConsolidator",
     "redact_pii",
     "BastionMemory",
+    "ComplianceMode",
+    "ComplianceReporter",
+    "IETFAATRecord",
+    "VerifiableUnlearning",
+    "AutonomousDBA",
     "TracedBastionMemory",
     "CRDTMemory",
     "VectorClock",
