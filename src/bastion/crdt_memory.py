@@ -381,10 +381,9 @@ class ORSet:
                 all_rem_before = all(self._memory._extract_clock(r).happens_before(ac) for r in rem_records)
                 if has_concurrent or all_rem_before:
                     result.add(elem)
-                    continue
-                # If add happens-before all removes, element stays removed
-                if all(ac.happens_before(self._memory._extract_clock(r)) for r in rem_records):
-                    break
+                    break  # Add-wins: one valid add is enough
+                # If this add happens-before all removes, check the next add
+                # (a later re-add may win)
 
         return result
 

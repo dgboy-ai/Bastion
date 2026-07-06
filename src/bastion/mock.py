@@ -124,7 +124,23 @@ def mock_search_memory(
         r["_decay_score"] = importance / (1.0 + 0.01 * hours_elapsed)
         valid.append(r)
 
-    valid.sort(key=lambda x: x["_decay_score"], reverse=True)
+    # Score by text relevance: simple word-overlap scoring to simulate semantic search
+    query_words = set(query.lower().split()) if query else set()
+    for r in valid:
+        content_words = set(r.get("content", "").lower().split())
+        if query_words:
+            overlap = len(query_words & content_words)
+            r["_text_score"] = overlap / max(len(query_words), 1)
+        else:
+            r["_text_score"] = 0.0
+        # Combined score: text relevance * decay
+        r["_combined_score"] = r["_text_score"] * r["_decay_score"]
+
+    valid.sort(key=lambda x: x["_combined_score"], reverse=True)
+
+    # Filter by threshold: remove results with zero text relevance
+    if query_words:
+        valid = [r for r in valid if r["_text_score"] >= threshold * 0.1]
 
     results = []
     for r in valid[:k]:
