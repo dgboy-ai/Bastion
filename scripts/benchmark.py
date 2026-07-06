@@ -22,13 +22,11 @@ import hashlib
 import json
 import sys
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent / "src"))
 
-from bastion import BastionMemory, BastionAgent, redact_pii
-
+from bastion import BastionAgent, BastionMemory, redact_pii
 
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
@@ -130,7 +128,7 @@ def bench_time_travel_accuracy() -> dict:
     mem = _create_fresh_memory("time-travel-acc")
 
     mem.store("fact", "State at T1")
-    t1 = datetime.now(timezone.utc)
+    _t1 = datetime.now(timezone.utc)
     time.sleep(0.05)
     mem.store("fact", "State at T2")
     t2 = datetime.now(timezone.utc)
@@ -346,7 +344,10 @@ def bench_graph_at_time() -> dict:
         "passed": has_entities and has_relations,
         "latency_ms": 0,
         "accuracy": 100.0 if (has_entities and has_relations) else 0.0,
-        "details": f"Snapshot entities: {len(snapshot.get('entities', []))}, Relations: {len(snapshot.get('relations', []))}",
+        "details": (
+            f"Entities: {len(snapshot.get('entities', []))}, "
+            f"Relations: {len(snapshot.get('relations', []))}"
+        ),
     }
 
 
@@ -471,8 +472,6 @@ def bench_memory_heal() -> dict:
 
     time.sleep(0.1)
     result = mem.heal()
-
-    pruned = result.get("pruned", 0) > 0 or result.get("records_before", 0) > result.get("records_after", 0)
 
     return {
         "name": "Memory Healing",

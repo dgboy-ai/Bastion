@@ -123,10 +123,7 @@ class TestBastionAgent:
         )
         assert response is not None
 
-        # Check that PII was redacted in memory
-        memories = agent.search_memory("john@example.com")
-        # PII should be redacted, so exact email shouldn't be found
-        # (mock mode may not fully implement this)
+        # PII should be redacted in memory (mock mode may not fully implement this)
 
     def test_chat_without_pii_redaction(self):
         agent = BastionAgent("no-pii", mock=True, enable_pii_redaction=False)
