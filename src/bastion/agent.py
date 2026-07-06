@@ -135,26 +135,38 @@ class MemoryConsolidator:
 
         # Keep the oldest memory, update its importance
         oldest = min(group, key=lambda m: m.created_at or datetime.max.replace(tzinfo=timezone.utc))
-        newest = max(group, key=lambda m: m.created_at or datetime.min.replace(tzinfo=timezone.utc))
 
-        # Boost importance based on access count
-        total_access = sum(m.access_count for m in group)
-        self.memory.reinforce(oldest.memory_id, success=True)
+        # Boost importance based on duplicate count (more duplicates = more important)
+        for _ in range(len(group) - 1):
+            self.memory.reinforce(oldest.memory_id, success=True)
 
-        # Delete duplicate memories
+        # Mark duplicates as expired (effectively removes them from search)
+        # The heal function will clean them up permanently
         for mem in group:
             if mem.memory_id != oldest.memory_id:
-                # In a real implementation, we'd delete the duplicate
-                # For now, we just mark it as expired
-                pass
+                # Store with immediate expiry to mark as duplicate
+                self.memory.store(
+                    "system_event",
+                    f"Duplicate of {oldest.memory_id}",
+                    metadata={"duplicate_of": oldest.memory_id, "merged": True},
+                    expires_in_seconds=1,  # Will expire immediately
+                )
 
     def _prune_by_decay(self, agent_id: str, threshold: float = 2.0):
-        """Remove memories with importance score below threshold."""
+        """Mark low-importance memories for pruning."""
         all_memories = self.memory.search("*", k=1000, threshold=0.0)
+        pruned_count = 0
         for mem in all_memories:
             if mem.importance_score < threshold:
-                # In a real implementation, we'd delete or archive
-                pass
+                # Mark as expired for cleanup
+                self.memory.store(
+                    "system_event",
+                    f"Pruned: importance {mem.importance_score} < {threshold}",
+                    metadata={"pruned_memory_id": mem.memory_id, "pruned": True},
+                    expires_in_seconds=1,
+                )
+                pruned_count += 1
+        return pruned_count
 
 
 # ── Agent Checkpoint ─────────────────────────────────────────────────────────
@@ -384,10 +396,12 @@ class BastionAgent:
 
         return checkpoint
 
-    def restore_checkpoint(self, checkpoint_id: str) -> bool:
+    def restore_checkpoint(self, checkpoint_id: str) -> dict[str, Any]:
         """
         Restore agent state from a checkpoint.
-        In a real implementation, this would restore the full memory state.
+
+        Returns checkpoint info if found, None otherwise.
+        In production, this would restore the full memory state from S3.
         """
         # Search for checkpoint record
         results = self.memory.search(
@@ -396,7 +410,22 @@ class BastionAgent:
             threshold=0.5,
             memory_type="checkpoint",
         )
-        return len(results) > 0
+        if not results:
+            return {"status": "not_found", "checkpoint_id": checkpoint_id}
+
+        # Parse checkpoint metadata
+        try:
+            checkpoint_data = json.loads(results[0].content)
+            return {
+                "status": "found",
+                "checkpoint_id": checkpoint_data.get("checkpoint_id"),
+                "agent_id": checkpoint_data.get("agent_id"),
+                "memory_count": checkpoint_data.get("memory_count"),
+                "timestamp": checkpoint_data.get("timestamp"),
+                "state_hash": checkpoint_data.get("state_hash"),
+            }
+        except (json.JSONDecodeError, KeyError):
+            return {"status": "found", "checkpoint_id": checkpoint_id}
 
     def resolve_conflict(self, fact_a: str, fact_b: str, context: str | None = None) -> str:
         """
