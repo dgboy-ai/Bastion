@@ -92,6 +92,10 @@ class BastionMemory:
         Embeds content via Bedrock Titan V2, inserts into C-SPANN indexed
         agent_memory table, and chains to previous memory via SHA-256 hash.
         """
+        if not content:
+            raise ValueError("content cannot be empty")
+        if not memory_type:
+            raise ValueError("memory_type cannot be empty")
         if self._mock:
             return _mock.mock_store_memory(self.agent_id, memory_type, content, metadata, expires_in_seconds)
         return self._store_real(memory_type, content, metadata, expires_in_seconds)
@@ -117,6 +121,12 @@ class BastionMemory:
 
         Returns memories ranked by (cosine_similarity * importance_score / time_decay).
         """
+        if not query:
+            raise ValueError("query cannot be empty")
+        if k < 1:
+            raise ValueError("k must be at least 1")
+        if not 0 <= threshold <= 1:
+            raise ValueError("threshold must be between 0 and 1")
         if self._mock:
             return _mock.mock_search_memory(self.agent_id, query, k, threshold, memory_type)
         return self._search_real(query, k, threshold, memory_type)
@@ -344,41 +354,49 @@ class BastionMemory:
                     (agent_id,),
                 )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception:
+            return []
         finally:
             conn2.close()
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT audit_id, agent_id, workflow_id, action, details, recorded_at
-                FROM agent_audit
-                WHERE agent_id = %s
-                ORDER BY recorded_at DESC
-                LIMIT 100
-                """,
-                (agent_id,),
-            )
-            results = []
-            for r in cur.fetchall():
-                results.append(AuditEntry(
-                    audit_id=str(r[0]),
-                    agent_id=str(r[1]),
-                    workflow_id=str(r[2]),
-                    action=str(r[3]),
-                    details=dict(r[4]) if r[4] else {},
-                    recorded_at=r[5],
-                ))
-            return results
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT audit_id, agent_id, workflow_id, action, details, recorded_at
+                    FROM agent_audit
+                    WHERE agent_id = %s
+                    ORDER BY recorded_at DESC
+                    LIMIT 100
+                    """,
+                    (agent_id,),
+                )
+                results = []
+                for r in cur.fetchall():
+                    results.append(AuditEntry(
+                        audit_id=str(r[0]),
+                        agent_id=str(r[1]),
+                        workflow_id=str(r[2]),
+                        action=str(r[3]),
+                        details=dict(r[4]) if r[4] else {},
+                        recorded_at=r[5],
+                    ))
+                return results
+        except Exception:
+            return []
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
-                (agent_id,),
-            )
-            self._conn.commit()
-            return {"agent_id": agent_id, "pruned": cur.rowcount, "status": "healed"}
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
+                    (agent_id,),
+                )
+                self._conn.commit()
+                return {"agent_id": agent_id, "pruned": cur.rowcount, "status": "healed"}
+        except Exception:
+            return {"agent_id": agent_id, "pruned": 0, "status": "error"}
 
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
         import psycopg.errors
@@ -400,13 +418,16 @@ class BastionMemory:
             return merged
 
     def _get_last_hash(self) -> str | None:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
-                (self.agent_id,),
-            )
-            row = cur.fetchone()
-            return str(row[0]) if row else None
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (self.agent_id,),
+                )
+                row = cur.fetchone()
+                return str(row[0]) if row else None
+        except Exception:
+            return None
 
     def _query_with_cache_real(
         self,
@@ -424,35 +445,39 @@ class BastionMemory:
 
     def _detect_anomalies_real(self, agent_id: str) -> list[dict]:
         alerts = []
-        with self._conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s",
-                (agent_id,),
-            )
-            total = cur.fetchone()[0]
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                total = cur.fetchone()[0]
 
-            cur.execute(
-                "SELECT content, created_at FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 50",
-                (agent_id,),
-            )
-            rows = cur.fetchall()
+                cur.execute(
+                    "SELECT content, created_at FROM agent_memory "
+                    "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 50",
+                    (agent_id,),
+                )
+                rows = cur.fetchall()
 
-        contents = [r[0] for r in rows]
-        if len(contents) != len(set(contents)):
-            alerts.append({
-                "type": "fact_turnover",
-                "severity": "medium",
-                "detail": "Duplicate content detected in recent memory",
-                "agent_id": agent_id,
-            })
+            contents = [r[0] for r in rows]
+            if len(contents) != len(set(contents)):
+                alerts.append({
+                    "type": "fact_turnover",
+                    "severity": "medium",
+                    "detail": "Duplicate content detected in recent memory",
+                    "agent_id": agent_id,
+                })
 
-        if total > 100:
-            alerts.append({
-                "type": "size_spike",
-                "severity": "info",
-                "detail": f"Memory count ({total}) exceeds 100 records",
-                "agent_id": agent_id,
-            })
+            if total > 100:
+                alerts.append({
+                    "type": "size_spike",
+                    "severity": "info",
+                    "detail": f"Memory count ({total}) exceeds 100 records",
+                    "agent_id": agent_id,
+                })
+        except Exception:
+            pass
 
         return alerts
 
