@@ -58,12 +58,13 @@ class SerializationRetryEngine:
 
         for attempt in range(self.max_retries + 1):
             try:
-                with conn.transaction(isolation=isolation):
-                    with conn.cursor() as cur:
-                        result = operation(cur)
-                        self._total_successes += 1
-                        return result
+                with conn.cursor() as cur:
+                    result = operation(cur)
+                    conn.commit()
+                    self._total_successes += 1
+                    return result
             except Exception as e:
+                conn.rollback()
                 error_str = str(e)
                 is_serialization = (
                     "40001" in error_str
@@ -75,7 +76,6 @@ class SerializationRetryEngine:
                     raise
 
                 last_error = e
-                self._retry_count += 1
                 self._total_retries += 1
 
                 delay = self._compute_delay(attempt)

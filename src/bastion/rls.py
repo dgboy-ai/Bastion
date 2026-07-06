@@ -67,7 +67,10 @@ class RowLevelSecurity:
     def set_agent_context(self, agent_id: str) -> None:
         """Set the current agent context for RLS filtering."""
         with self.conn.cursor() as cur:
-            cur.execute(f"SET LOCAL app.current_agent_id = '{agent_id}'")
+            cur.execute(
+                "SET LOCAL app.current_agent_id = %s",
+                (agent_id,),
+            )
 
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
