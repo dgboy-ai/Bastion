@@ -25,8 +25,6 @@ import uuid
 from collections import defaultdict, deque
 from typing import Any
 
-from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
-from a2a.types.a2a_pb2 import AgentCapabilities, AgentCard, AgentSkill
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -123,6 +121,9 @@ def create_a2a_server(
     }
 
     # -- A2A Agent Card ---------------------------------------------------
+
+    from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
+    from a2a.types.a2a_pb2 import AgentCapabilities, AgentCard, AgentSkill
 
     agent_card = AgentCard(
         name="Bastion Memory Agent",
