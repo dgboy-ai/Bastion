@@ -9,7 +9,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -51,9 +51,9 @@ class TestHashChainVerification:
         h3 = _compute_hash("Third memory", {}, h2)
 
         rows = [
-            ("id1", "First memory", {}, None, h1, datetime.now(timezone.utc)),
-            ("id2", "Second memory", {}, h1, h2, datetime.now(timezone.utc)),
-            ("id3", "Third memory", {}, h2, h3, datetime.now(timezone.utc)),
+            ("id1", "First memory", {}, None, h1, datetime.now(UTC)),
+            ("id2", "Second memory", {}, h1, h2, datetime.now(UTC)),
+            ("id3", "Third memory", {}, h2, h3, datetime.now(UTC)),
         ]
 
         mock_cursor = MagicMock()
@@ -74,9 +74,9 @@ class TestHashChainVerification:
 
         # Third memory has wrong previous_hash (should be h2)
         rows = [
-            ("id1", "First memory", {}, None, h1, datetime.now(timezone.utc)),
-            ("id2", "Second memory", {}, h1, h2, datetime.now(timezone.utc)),
-            ("id3", "Third memory", {}, "wrong_hash", "fake_hash", datetime.now(timezone.utc)),
+            ("id1", "First memory", {}, None, h1, datetime.now(UTC)),
+            ("id2", "Second memory", {}, h1, h2, datetime.now(UTC)),
+            ("id3", "Third memory", {}, "wrong_hash", "fake_hash", datetime.now(UTC)),
         ]
 
         mock_cursor = MagicMock()
@@ -107,7 +107,7 @@ class TestAnomalyDetection:
     def test_size_spike_detected(self):
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (150,)  # > 100
-        mock_cursor.fetchall.return_value = [("content", datetime.now(timezone.utc), "hash")] * 10
+        mock_cursor.fetchall.return_value = [("content", datetime.now(UTC), "hash")] * 10
         mock_conn = MagicMock()
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -122,9 +122,9 @@ class TestAnomalyDetection:
         mock_cursor.fetchone.return_value = (5,)
         # Duplicate content in recent memories
         mock_cursor.fetchall.return_value = [
-            ("same content", datetime.now(timezone.utc), "h1"),
-            ("same content", datetime.now(timezone.utc), "h2"),
-            ("unique content", datetime.now(timezone.utc), "h3"),
+            ("same content", datetime.now(UTC), "h1"),
+            ("same content", datetime.now(UTC), "h2"),
+            ("unique content", datetime.now(UTC), "h3"),
         ] * 5
         mock_conn = MagicMock()
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)

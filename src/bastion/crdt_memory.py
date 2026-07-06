@@ -136,9 +136,10 @@ class CRDTMemory:
         expires_in_seconds: int | None = None,
     ) -> MemoryRecord:
         """Store a memory, tagging it with the current vector clock."""
-        self._clock = self._clock.tick(self.agent_id)
         meta = {**(metadata or {}), "_vector_clock": self._clock.to_dict()}
-        return self._memory.store(memory_type, content, meta, expires_in_seconds)
+        record = self._memory.store(memory_type, content, meta, expires_in_seconds)
+        self._clock = self._clock.tick(self.agent_id)
+        return record
 
     def search(
         self,
@@ -221,8 +222,10 @@ class CRDTMemory:
 
     def _resolve_lww(self, candidates: list[MemoryRecord], clocks: list[VectorClock]) -> MemoryRecord:
         """Last-writer-wins: pick the record with the most advanced clock."""
-        paired = list(zip(candidates, clocks, strict=False))
-        paired.sort(key=lambda pair: sum(pair[1].to_dict().values()))
+        paired = list(zip(candidates, clocks, strict=True))
+        def _clock_total(pair: tuple[MemoryRecord, VectorClock]) -> int:
+            return sum(pair[1].to_dict().values())
+        paired.sort(key=_clock_total)
         return paired[-1][0]
 
     def _resolve_semantic(

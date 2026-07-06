@@ -12,11 +12,12 @@ streams events to this handler in real-time.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 try:
@@ -125,7 +126,7 @@ def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
         "agent_id": agent_id,
         "chain_length": len(rows),
         "breaks": breaks,
-        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "verified_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -166,7 +167,7 @@ def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
                 "severity": "medium",
                 "detail": "Duplicate content detected in recent memory",
                 "agent_id": agent_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
 
         # Check for size spike (>100 memories)
@@ -176,7 +177,7 @@ def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
                 "severity": "info",
                 "detail": f"Memory count ({total}) exceeds 100 records",
                 "agent_id": agent_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
 
         # Check for rapid writes (>20 in last minute)
@@ -192,7 +193,7 @@ def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
                 "severity": "high",
                 "detail": f"{recent_count} memories written in last minute",
                 "agent_id": agent_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             })
 
     return alerts
@@ -203,7 +204,7 @@ def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
 def create_snapshot(agent_id: str, conn) -> dict[str, Any]:
     """Create a point-in-time snapshot of agent memory state."""
     s3 = boto3.client("s3")
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     with conn.cursor() as cur:
         cur.execute(
@@ -424,10 +425,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     except Exception as e:
         _record_failure()
-        try:
+        with contextlib.suppress(Exception):
             conn.close()
-        except Exception:
-            pass
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)}),
@@ -447,6 +446,6 @@ def health_check(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "failure_count": _failure_count,
                 "open_until": _circuit_open_until,
             },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }),
     }

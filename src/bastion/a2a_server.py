@@ -239,11 +239,19 @@ def create_a2a_server(
         version = request.headers.get("a2a-version", "")
         return version == _A2A_VERSION
 
+    # -- Authentication ----------------------------------------------------
+
+    _api_key = os.environ.get("BASTION_API_KEY", "")
+
     # -- Middleware --------------------------------------------------------
 
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
         nonlocal _metrics_requests_total, _metrics_durations, _metrics_rate_limit_hits
+        if _api_key and request.url.path not in ("/healthz", "/readyz"):
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != _api_key:
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
         request.state.request_id = request_id
 

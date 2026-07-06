@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -27,6 +28,9 @@ def _get_client() -> Any:
     return _client
 
 
+_logger = logging.getLogger("bastion.groq")
+
+
 def groq_chat(user_message: str, context: list[MemoryRecord]) -> str:
     """LLM callback for ``BastionAgent.chat(llm_callback=groq_chat)``."""
     try:
@@ -39,12 +43,11 @@ def groq_chat(user_message: str, context: list[MemoryRecord]) -> str:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=512,
+            timeout=15,
         )
         return resp.choices[0].message.content or ""
     except Exception:
-        import logging
-
-        logging.getLogger("bastion.groq").exception("groq_chat failed, falling back to mock")
+        _logger.exception("groq_chat failed, falling back to mock")
         return f"[mock] Received: {user_message[:100]}"
 
 
@@ -59,12 +62,11 @@ def groq_merge(contents: list[str], fact_key: str) -> str:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=256,
+            timeout=15,
         )
         return resp.choices[0].message.content or contents[0]
     except Exception:
-        import logging
-
-        logging.getLogger("bastion.groq").exception("groq_merge failed, returning first candidate")
+        _logger.exception("groq_merge failed, returning first candidate")
         return contents[0] if contents else fact_key
 
 
@@ -77,10 +79,9 @@ def groq_query(query: str) -> str:
             messages=[{"role": "user", "content": query}],
             temperature=0.7,
             max_tokens=1024,
+            timeout=15,
         )
         return resp.choices[0].message.content or ""
     except Exception:
-        import logging
-
-        logging.getLogger("bastion.groq").exception("groq_query failed, falling back to mock")
+        _logger.exception("groq_query failed, falling back to mock")
         return f"[mock] Answer for: {query[:100]}"

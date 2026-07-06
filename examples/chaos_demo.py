@@ -21,6 +21,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from datetime import UTC
+
 from bastion import BastionAgent
 
 DIVIDER = "=" * 70
@@ -137,8 +139,8 @@ def crash_demo():
     print("  PHASE 6: Time travel — what did agent know before crash?")
     print(f"{'─' * 70}")
 
-    from datetime import datetime, timedelta, timezone
-    past = (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
+    from datetime import datetime, timedelta
+    past = (datetime.now(UTC) - timedelta(seconds=2)).isoformat()
 
     historical = memory.get_at_time(past)
     print(f"\n  Memory state at {past[:19]}:")

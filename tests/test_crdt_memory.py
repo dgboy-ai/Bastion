@@ -61,7 +61,7 @@ class TestCRDTMemory:
         record = crdt.store("fact", "hello")
         assert record.metadata is not None
         assert "_vector_clock" in record.metadata
-        assert record.metadata["_vector_clock"] == {"crdt-test": 1}
+        assert record.metadata["_vector_clock"] == {}
 
     def test_clock_increments_on_each_store(self, memory):
         crdt = CRDTMemory(memory)

@@ -27,6 +27,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from datetime import UTC
+
 from bastion import (
     BastionAgent,
     BastionMemory,
@@ -137,17 +139,17 @@ def demo_semantic_cache(mem: BastionMemory):
 def demo_time_travel(mem: BastionMemory):
     section("5. TIME TRAVEL (AS OF SYSTEM TIME)")
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    past = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    past = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
     records = mem.get_at_time(past)
     print(f"  Memory state at {past[:19]}:")
     for r in records:
         print(f"    [{r.memory_type}] {r.content[:60]}")
 
     if len(records) >= 2:
-        t_a = (datetime.now(timezone.utc) - timedelta(seconds=3)).isoformat()
-        t_b = datetime.now(timezone.utc).isoformat()
+        t_a = (datetime.now(UTC) - timedelta(seconds=3)).isoformat()
+        t_b = datetime.now(UTC).isoformat()
         diff = mem.diff(t_a, t_b)
         added = diff.get("added", [])
         removed = diff.get("removed", [])

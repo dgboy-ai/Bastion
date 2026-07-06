@@ -279,14 +279,17 @@ async def _run_stdio():
     """Run the MCP server over stdio transport (for Claude Code, Cursor, etc.)."""
     from mcp.server.stdio import stdio_server
 
-    server, _memory = create_server()
+    server, memory = create_server()
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+        try:
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+        finally:
+            memory.close()
 
 
 def main():

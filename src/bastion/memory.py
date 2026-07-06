@@ -33,9 +33,12 @@ def _get_bedrock_client():
             if _bedrock_client is None:
                 try:
                     import boto3
+                    from botocore.config import Config as BotoConfig
                     region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "ap-south-1"))
-                    _bedrock_client = boto3.client("bedrock-runtime", region_name=region)
+                    _bedrock_cfg = BotoConfig(read_timeout=10, connect_timeout=10)
+                    _bedrock_client = boto3.client("bedrock-runtime", region_name=region, config=_bedrock_cfg)
                 except Exception:
+                    logger.exception("Failed to create Bedrock client")
                     _bedrock_client = None
     return _bedrock_client
 
@@ -126,6 +129,7 @@ class BastionMemory:
                 cur.execute("SELECT 1")
             return True
         except Exception:
+            logger.exception("is_connected check failed")
             return False
 
     def store(
@@ -415,6 +419,7 @@ class BastionMemory:
                 return result
         except Exception:
             conn.rollback()
+            logger.exception("store failed, rolled back transaction")
             raise
 
     def _search_real(
@@ -522,11 +527,11 @@ class BastionMemory:
         conn_str = self._conn_str
         if conn_str is None:
             raise RuntimeError("get_at_time_real called without a database connection")
-        import psycopg
 
         if self._tt_conn is None or self._tt_conn.closed:
+            import psycopg
             self._tt_conn = psycopg.connect(conn_str)
-        with self._tt_conn, self._tt_conn.cursor() as cur:
+        with self._tt_conn.cursor() as cur:
             cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
             cur.execute(
                 f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
@@ -585,7 +590,6 @@ class BastionMemory:
         conn = self._conn
         if conn is None:
             raise RuntimeError("resolve_conflict_real called without a database connection")
-        import psycopg.errors
 
         merged = f"{fact_a}; {fact_b}"
         try:
@@ -603,7 +607,8 @@ class BastionMemory:
                 )
                 conn.commit()
             return merged
-        except psycopg.errors.SerializationFailure:
+        except Exception:
+            logger.exception("resolve_conflict failed, returning naive merge")
             return merged
 
     def _get_last_hash(self) -> str | None:
@@ -769,12 +774,9 @@ class BastionMemory:
                 with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                        "VALUES (%s, %s, %s, now()) RETURNING entity_id",
+                        "VALUES (%s, %s, %s, now())",
                         (self.agent_id, tgt_name, src_name),
                     )
-                    _entity_row = cur.fetchone()
-                    if _entity_row is not None:
-                        str(_entity_row[0])
                     conn.commit()
             else:
                 with conn.cursor() as cur:
@@ -818,7 +820,10 @@ class BastionMemory:
     def _ensure_entity_id(self, cur, name: str) -> str:
         cur.execute("SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s", (self.agent_id, name))
         row = cur.fetchone()
-        return str(row[0]) if row else ""
+        if row is None:
+            logger.warning("Entity not found after upsert", extra={"agent_id": self.agent_id, "name": name})
+            return ""
+        return str(row[0])
 
     def _graph_query_real(
         self,
@@ -882,7 +887,7 @@ class BastionMemory:
 
         if self._tt_conn is None or self._tt_conn.closed:
             self._tt_conn = psycopg.connect(conn_str)
-        with self._tt_conn, self._tt_conn.cursor() as cur:
+        with self._tt_conn.cursor() as cur:
             cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
 
             if entity:
@@ -929,6 +934,7 @@ class BastionMemory:
                 "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
             ).fetchone()
             if entity_row is None:
+                logger.error("COUNT query for entities returned no row")
                 raise RuntimeError("COUNT query for entities did not return a row")
             entity_count = entity_row[0]
 
@@ -938,6 +944,7 @@ class BastionMemory:
                 (self.agent_id,),
             ).fetchone()
             if relation_row is None:
+                logger.error("COUNT query for relations returned no row")
                 raise RuntimeError("COUNT query for relations did not return a row")
             relation_count = relation_row[0]
 
@@ -954,6 +961,7 @@ class BastionMemory:
                 (self.agent_id,),
             ).fetchone()
             if orphans_row is None:
+                logger.error("COUNT query for orphans returned no row")
                 raise RuntimeError("COUNT query for orphans did not return a row")
             orphans = orphans_row[0]
 
@@ -993,15 +1001,17 @@ class BastionMemory:
                 "SELECT message_id, namespace, sender_agent_id, event_type, payload, "
                 "created_at, expires_at, read FROM agent_messages "
                 "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now()) "
-                "ORDER BY created_at ASC",
+                "ORDER BY created_at ASC "
+                "FOR UPDATE SKIP LOCKED",
                 (namespace,),
             )
             rows = cur.fetchall()
-            cur.execute(
-                "UPDATE agent_messages SET read = TRUE "
-                "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now())",
-                (namespace,),
-            )
+            if rows:
+                cur.execute(
+                    "UPDATE agent_messages SET read = TRUE "
+                    "WHERE message_id = ANY(%s)",
+                    (tuple(r[0] for r in rows),),
+                )
             conn.commit()
             results = []
             for r in rows:
@@ -1040,7 +1050,7 @@ class BastionMemory:
             embedding: list[float] = result["embedding"]
             return embedding
         except Exception:
-            # Graceful degradation: fall back to hash embedding rather than crashing
+            logger.exception("Bedrock embedding failed, falling back to hash")
             return _hash_fallback_embed(text)
 
     def __enter__(self):

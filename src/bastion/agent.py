@@ -281,7 +281,6 @@ class BastionAgent:
                 self.memory.store(
                     "system_event",
                     f"PII redacted: {[r['type'] for r in redactions]}",
-                    metadata={"redactions": redactions},
                 )
 
         # 2. Store user message

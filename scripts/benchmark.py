@@ -22,7 +22,7 @@ import hashlib
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent / "src"))
 
@@ -101,7 +101,7 @@ def bench_temporal_filtering() -> dict:
     mem = _create_fresh_memory("temporal-filter")
 
     mem.store("fact", "Memory from the past")
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     time.sleep(0.05)
     mem.store("fact", "Memory from the future")
 
@@ -128,10 +128,10 @@ def bench_time_travel_accuracy() -> dict:
     mem = _create_fresh_memory("time-travel-acc")
 
     mem.store("fact", "State at T1")
-    _t1 = datetime.now(timezone.utc)
+    _t1 = datetime.now(UTC)
     time.sleep(0.05)
     mem.store("fact", "State at T2")
-    t2 = datetime.now(timezone.utc)
+    t2 = datetime.now(UTC)
     time.sleep(0.05)
     mem.store("fact", "State at T3")
 
@@ -329,7 +329,7 @@ def bench_graph_at_time() -> dict:
     mem = _create_fresh_memory("graph-time")
 
     mem.store_with_graph("Alice works on ProjectX")
-    t1 = datetime.now(timezone.utc)
+    t1 = datetime.now(UTC)
     time.sleep(0.05)
     mem.store_with_graph("Alice uses Python")
 
