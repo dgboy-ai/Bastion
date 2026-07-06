@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from bastion.mcp_server import TOOLS, _handle_tool_call, create_server
+from bastion.mcp_server import _get_tools, _handle_tool_call, create_server
 
 
 @pytest.fixture(autouse=True)
@@ -24,8 +24,9 @@ def test_create_server_returns_server_and_memory():
 
 
 def test_tools_list_has_six_tools():
-    assert len(TOOLS) == 6
-    tool_names = [t.name for t in TOOLS]
+    tools = _get_tools()
+    assert len(tools) == 6
+    tool_names = [t.name for t in tools]
     assert "memory_search" in tool_names
     assert "memory_store" in tool_names
     assert "memory_timetravel" in tool_names
@@ -35,7 +36,8 @@ def test_tools_list_has_six_tools():
 
 
 def test_tool_schemas_are_valid():
-    for tool in TOOLS:
+    tools = _get_tools()
+    for tool in tools:
         assert "type" in tool.inputSchema
         assert tool.inputSchema["type"] == "object"
         assert "properties" in tool.inputSchema
@@ -127,7 +129,8 @@ def test_handle_tool_unknown(memory):
 
 
 def test_tool_descriptions_are_meaningful():
-    for tool in TOOLS:
+    tools = _get_tools()
+    for tool in tools:
         assert len(tool.description) > 50, f"{tool.name} description too short"
         desc_lower = tool.description.lower()
         # Must mention CockroachDB, memory, or agent
