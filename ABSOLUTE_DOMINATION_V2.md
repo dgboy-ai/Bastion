@@ -186,6 +186,99 @@ Operational tooling + Production-readiness signals + Clear architecture + Measur
 8. Architecture decisions recorded in README
 9. Estimated work remaining is small
 10. Honest about gaps with mitigation plan
+
+---
+
+## THE PROTOCOL LANDSCAPE (MCP + A2A + Event Sourcing)
+
+### MCP (Model Context Protocol) — Agent ↔ Tool/Context
+
+**What it is:** Open standard for connecting AI applications to external systems. Like USB-C for AI.
+
+**Why it matters:**
+- Supported by: Claude, ChatGPT, VS Code, Cursor, MCPJam
+- Standardizes tool exposure for agents
+- Bastion already has MCP server with 6 tools
+
+**Bastion's MCP Tools:**
+1. `memory_search` — Semantic vector search via C-SPANN
+2. `memory_store` — Store with hash chain integrity
+3. `memory_timetravel` — AS OF SYSTEM TIME queries
+4. `memory_audit` — Append-only audit log
+5. `memory_heal` — CDC-triggered self-healing
+6. `resolve_conflict` — SERIALIZABLE coordination
+
+**Key insight:** MCP is the "USB-C of AI" — every major editor supports it. Bastion's MCP server is already production-ready.
+
+### A2A (Agent-to-Agent Protocol) — Agent ↔ Agent
+
+**What it is:** Google's open protocol for agent interoperability. 50+ partners including Atlassian, Box, Cohere, Intuit, LangChain, MongoDB, PayPal, Salesforce, SAP, ServiceNow.
+
+**Why it matters:**
+- Enables agents to discover each other's capabilities
+- Agents negotiate tasks across organizational boundaries
+- Built on HTTP, SSE, JSON-RPC (existing standards)
+- Secure by default with enterprise-grade auth
+
+**How A2A works:**
+1. **Capability Discovery** — Agents advertise via "Agent Card" (JSON)
+2. **Task Management** — Client agent tasks remote agent
+3. **Collaboration** — Messages, replies, artifacts
+4. **UX Negotiation** — Format negotiation for content
+
+**Bastion's A2A Integration:**
+- `a2a_server.py` already implements A2A
+- Agent Cards expose memory capabilities
+- Agents discover each other's memory schemas
+- Cross-organizational memory sharing
+
+**The killer demo:** Two agents from different organizations discover each other via A2A, share memory context, and collaborate on a task — all backed by CockroachDB.
+
+### Event Sourcing — Agent ↔ State
+
+**What it is:** Immutable event log that captures every state transition. Enables replay, audit, and temporal queries.
+
+**Why it matters for AI agents:**
+- Complete audit trail of every decision
+- Replay any agent state at any historical moment
+- Debug failures by replaying the event stream
+- Compliance with EU AI Act Article 12
+
+**Bastion's Event Sourcing:**
+- `agent_checkpoints` table stores every action
+- `agent_audit` table provides immutable history
+- `AS OF SYSTEM TIME` enables temporal queries
+- CDC changefeeds stream events in real-time
+
+### The Protocol Stack (2026-2028)
+
+```
+┌─────────────────────────────────────────┐
+│  Application Layer                      │
+│  (Bastion Memory SDK)                   │
+├─────────────────────────────────────────┤
+│  Protocol Layer                         │
+│  MCP (Agent ↔ Tool) + A2A (Agent ↔ Agent)│
+├─────────────────────────────────────────┤
+│  State Layer                            │
+│  Event Sourcing + CQRS                  │
+├─────────────────────────────────────────┤
+│  Storage Layer                          │
+│  CockroachDB (C-SPANN, CDC, AS OF TIME) │
+└─────────────────────────────────────────┘
+```
+
+**Bastion sits at the Application Layer, using all three protocols underneath.**
+
+### Market Adoption (2026-2028)
+
+| Protocol | Adoption | Key Players |
+|----------|----------|-------------|
+| MCP | Universal | Anthropic, OpenAI, VS Code, Cursor |
+| A2A | Enterprise | Google, Microsoft, AWS, 50+ partners |
+| Event Sourcing | Compliance | Financial, healthcare, regulated industries |
+
+**Bastion's advantage:** We're the only memory layer that implements all three protocols natively. This is the "picks and shovels" play — every agent system needs this infrastructure.
 Operational tooling + Production-readiness signals + Clear architecture + Measurable metrics
 ```
 
