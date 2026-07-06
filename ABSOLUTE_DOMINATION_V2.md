@@ -210,29 +210,21 @@ Operational tooling + Production-readiness signals + Clear architecture + Measur
 
 **Key insight:** MCP is the "USB-C of AI" — every major editor supports it. Bastion's MCP server is already production-ready.
 
-### A2A (Agent-to-Agent Protocol) — Agent ↔ Agent
-
-**What it is:** Google's open protocol for agent interoperability. 50+ partners including Atlassian, Box, Cohere, Intuit, LangChain, MongoDB, PayPal, Salesforce, SAP, ServiceNow.
-
-**Why it matters:**
-- Enables agents to discover each other's capabilities
-- Agents negotiate tasks across organizational boundaries
-- Built on HTTP, SSE, JSON-RPC (existing standards)
-- Secure by default with enterprise-grade auth
-
-**How A2A works:**
-1. **Capability Discovery** — Agents advertise via "Agent Card" (JSON)
-2. **Task Management** — Client agent tasks remote agent
-3. **Collaboration** — Messages, replies, artifacts
-4. **UX Negotiation** — Format negotiation for content
+### Key Features (From A2A Spec)
+- **Standardized Communication:** JSON-RPC 2.0 over HTTP(S)
+- **Agent Discovery:** Via "Agent Cards" detailing capabilities
+- **Flexible Interaction:** Synchronous, streaming (SSE), asynchronous push notifications
+- **Rich Data Exchange:** Text, files, structured JSON
+- **Enterprise-Ready:** Security, authentication, observability
+- **SDKs:** Python, Go, JS, Java, .NET, Rust
 
 **Bastion's A2A Integration:**
-- `a2a_server.py` already implements A2A
+- `a2a_server.py` implements A2A protocol
 - Agent Cards expose memory capabilities
-- Agents discover each other's memory schemas
+- 6 MCP tools for agent memory operations
 - Cross-organizational memory sharing
 
-**The killer demo:** Two agents from different organizations discover each other via A2A, share memory context, and collaborate on a task — all backed by CockroachDB.
+**The killer demo:** Two agents discover each other via A2A, share memory context, collaborate on a task — all backed by CockroachDB.
 
 ### Event Sourcing — Agent ↔ State
 
@@ -279,69 +271,67 @@ Operational tooling + Production-readiness signals + Clear architecture + Measur
 | Event Sourcing | Compliance | Financial, healthcare, regulated industries |
 
 **Bastion's advantage:** We're the only memory layer that implements all three protocols natively. This is the "picks and shovels" play — every agent system needs this infrastructure.
-Operational tooling + Production-readiness signals + Clear architecture + Measurable metrics
-```
-
-### Judge Psychology
-- "If I see unusual and fresh approach... if I see the fire in their eyes" — Maria Yarotska
-- "Rehashed ideas aren't interesting" — Warren Marusiak
-- "Specificity builds credibility" — when judges can trace exactly how your system works
-
-### 3-Minute Demo Structure
-```
-0:00-0:10 — HOOK: "Your AI agent has amnesia"
-0:10-0:30 — PROBLEM: Show agent losing context
-0:30-1:00 — SOLUTION: Show agent with Bastion surviving crash
-1:00-1:30 — DEEPER: Show concurrent agents without conflicts
-1:30-2:00 — COST: Show semantic caching saving money
-2:00-2:30 — SECURITY: Show hash chain detecting tampering
-2:30-3:00 — FUTURE: "Bastion — the memory layer agents deserve"
-```
 
 ---
 
-## ORCHESTRATION TRENDS (2026-2028)
+## AGENTIC ENGINEERING TRENDS (2026-2028)
 
-### Framework Evolution
-- **LangGraph**: Production default (6.17M monthly downloads, lowest latency)
-- **CrewAI**: Fastest to MVP (2-4 weeks), role-based
-- **AutoGen/Microsoft Agent Framework**: Best for conversational scenarios
+### What's Hot Now (July 2026)
+1. **MCP adoption exploding** — Every major AI tool supports it (Claude, ChatGPT, VS Code, Cursor)
+2. **A2A going mainstream** — 24.7k GitHub stars, 2.5k forks, 50+ enterprise partners
+3. **LangGraph dominating** — 6.17M monthly downloads, production default
+4. **CrewAI fastest growing** — 60% Fortune 500 exploration
+5. **Event sourcing for agents** — Compliance + audit trail + replay
+6. **CRDT for multi-agent coordination** — Conflict-free collaboration
+7. **OpenTelemetry for agents** — 2026 observability standard
+8. **Semantic caching** — 40-90% token cost reduction
 
-### Production Patterns
-1. **Router** — Classify → specialized agent
-2. **Planner-Executor** — Decompose → execute
-3. **Tool-Using Agent** — Single agent with toolbox
-4. **Critic-Verifier Loop** — Produce → verify → iterate
-5. **Manager-Worker** — Delegate → report
-6. **Swarm/Parallel** — Multiple agents, judge picks best
+### What Will Be Important (2027-2028)
+1. **Agent-to-Agent interoperability** — A2A becomes the standard
+2. **Memory as infrastructure** — Not application code, but managed service
+3. **Compliance-first design** — EU AI Act enforces Aug 2, 2026
+4. **Cost optimization** — Token budgets, model routing, caching
+5. **Security by design** — OWASP Top 10 for Agentic Apps
+6. **Multi-region agent memory** — Global distributed state
+7. **Agent observability** — OpenTelemetry traces, drift detection
+8. **Schema evolution** — Agents modify their own memory schemas
 
-### Protocol Stack (2026-2028)
-- **MCP**: Agent ↔ Tool/Context (Anthropic, Linux Foundation)
-- **A2A**: Agent ↔ Agent (Google, 150+ orgs)
-- **Event Sourcing**: Agent ↔ State (audit trails, temporal queries)
-
-### Market Size
-- AI Agents: $52.62B by 2030
-- ModelOps: $29.5B by 2029
-- AI Security: $35.50B by 2031
+### Market Projections
+- AI Agents: $52.62B by 2030 (46.3% CAGR)
+- ModelOps: $29.5B by 2029 (40.2% CAGR)
+- AI Security: $35.50B by 2031 (26.5% CAGR)
+- MCP ecosystem: Universal adoption by 2027
+- A2A ecosystem: 1000+ enterprise partners by 2028
 
 ---
 
 ## FRONTEND STRATEGY (2026-2028 Trends)
 
-### What's Trending
+### What's Hot in Developer Tool UIs
 1. **Dark mode with accent colors** — xAI-inspired (we have this)
 2. **Real-time data visualization** — WebSocket feeds, animated charts
 3. **Interactive dashboards** — Drill-down, filtering, time-range
 4. **Command palettes** — Quick actions, keyboard shortcuts
 5. **Minimal chrome** — Content-first, minimal navigation
+6. **AI-native interfaces** — Chat-based interaction with tools
+7. **Collaborative editing** — Multi-user real-time state
 
 ### Bastion Dashboard Priorities
-1. Real-time CDC pipeline visualization
-2. Hash chain visualizer
-3. Cost savings widget
-4. Drift detection chart
-5. Knowledge graph explorer
+1. Real-time CDC pipeline visualization (animated particles)
+2. Hash chain visualizer (integrity status)
+3. Cost savings widget ($ saved counter)
+4. Drift detection chart (ECG-style)
+5. Knowledge graph explorer (D3.js force-directed)
+6. MCP server status panel
+7. A2A agent discovery list
+
+### Technical Stack (Best Practices 2026)
+- **Framework:** Next.js 16 (App Router)
+- **Styling:** Tailwind CSS + shadcn/ui
+- **Charts:** D3.js + Recharts
+- **State:** React Server Components + client hooks
+- **Data:** Server Components for DB queries, Client Components for interactivity
+- **Deployment:** Vercel (zero-config)
 
 ---
 
