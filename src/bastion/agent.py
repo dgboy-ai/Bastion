@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -31,6 +32,8 @@ from typing import Any, Callable
 
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, MemoryRecord
+
+logger = logging.getLogger("bastion.agent")
 
 # ── PII Patterns ─────────────────────────────────────────────────────────────
 
@@ -82,7 +85,7 @@ class MemoryConsolidator:
             try:
                 await self._consolidate()
             except Exception as e:
-                print(f"Consolidation error: {e}")
+                logger.error(f"Consolidation error: {e}")
             await asyncio.sleep(self.interval)
 
     def stop(self):
@@ -107,7 +110,7 @@ class MemoryConsolidator:
         # 4. Detect anomalies
         anomalies = self.memory.detect_anomalies(agent_id)
         if anomalies:
-            print(f"Anomalies detected: {len(anomalies)}")
+            logger.warning(f"Anomalies detected: {len(anomalies)}")
 
     def _find_duplicates(self, agent_id: str) -> list[list[MemoryRecord]]:
         """Find groups of duplicate or near-duplicate memories."""

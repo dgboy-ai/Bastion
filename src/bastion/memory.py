@@ -57,6 +57,12 @@ _MEMORY_COLS = (
 
 
 class BastionMemory:
+    """Core memory engine for CockroachDB-backed agent memory.
+
+    Provides semantic search via C-SPANN vector indexing, cryptographic hash
+    chain integrity, AS OF SYSTEM TIME queries, and SERIALIZABLE coordination.
+    """
+
     def __init__(
         self,
         agent_id: str,
@@ -81,11 +87,21 @@ class BastionMemory:
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
     ) -> MemoryRecord:
+        """Store a memory with automatic hash chain linking.
+
+        Embeds content via Bedrock Titan V2, inserts into C-SPANN indexed
+        agent_memory table, and chains to previous memory via SHA-256 hash.
+        """
         if self._mock:
             return _mock.mock_store_memory(self.agent_id, memory_type, content, metadata, expires_in_seconds)
         return self._store_real(memory_type, content, metadata, expires_in_seconds)
 
     def reinforce(self, memory_id: str, success: bool = True) -> dict:
+        """Reinforce a memory's importance score.
+
+        Successful reinforcement adds 1.1 to importance (0.1 access + 1.0 success).
+        Failed reinforcement adds only 0.1. Score capped at 10.0.
+        """
         if self._mock:
             return _mock.mock_reinforce(self.agent_id, memory_id, success)
         return self._reinforce_real(memory_id, success)
@@ -97,29 +113,37 @@ class BastionMemory:
         threshold: float = 0.8,
         memory_type: str | None = None,
     ) -> list[MemoryRecord]:
+        """Search memories using C-SPANN vector similarity with decay weighting.
+
+        Returns memories ranked by (cosine_similarity * importance_score / time_decay).
+        """
         if self._mock:
             return _mock.mock_search_memory(self.agent_id, query, k, threshold, memory_type)
         return self._search_real(query, k, threshold, memory_type)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
+        """Query memory state at a specific timestamp using AS OF SYSTEM TIME."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_get_memory_at_time(agent_id, timestamp)
         return self._get_at_time_real(agent_id, timestamp)
 
     def audit(self, agent_id: str | None = None) -> list[AuditEntry]:
+        """Retrieve the append-only audit log for an agent."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_get_audit(agent_id)
         return self._audit_real(agent_id)
 
     def heal(self, agent_id: str | None = None) -> dict[str, Any]:
+        """Trigger memory self-healing: prune expired records and compact storage."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_heal(agent_id)
         return self._heal_real(agent_id)
 
     def resolve_conflict(self, fact_a: str, fact_b: str, context: str | None = None) -> str:
+        """Resolve conflicting memories via SERIALIZABLE isolation and LLM merge."""
         if self._mock:
             return _mock.mock_resolve_conflict(fact_a, fact_b, context or "")
         return self._resolve_conflict_real(fact_a, fact_b, context or "")
@@ -131,17 +155,20 @@ class BastionMemory:
         memory_type: str = "semantic_cache",
         threshold: float = 0.97,
     ) -> tuple[str, dict]:
+        """Semantic caching: return cached result if similar query exists, else call LLM."""
         if self._mock:
             return _mock.mock_query_with_cache(self.agent_id, query, llm_callback, memory_type, threshold)
         return self._query_with_cache_real(query, llm_callback, memory_type, threshold)
 
     def detect_anomalies(self, agent_id: str | None = None) -> list[dict]:
+        """Detect memory anomalies: fact turnover, size spikes, rapid forgetting."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_detect_anomalies(agent_id)
         return self._detect_anomalies_real(agent_id)
 
     def diff(self, timestamp_a: str, timestamp_b: str, agent_id: str | None = None) -> dict:
+        """Compare memory state between two timestamps, showing added and removed memories."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_diff(agent_id, timestamp_a, timestamp_b)
@@ -153,6 +180,7 @@ class BastionMemory:
         region: str = "us-east1",
         provider: str = "aws",
     ) -> ClusterInfo:
+        """Auto-provision a CockroachDB cluster via ccloud CLI."""
         if self._mock:
             return _mock.mock_provision_cluster(name, region, provider)
 
