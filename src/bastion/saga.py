@@ -72,26 +72,36 @@ class SagaMemoryManager:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Record an operation within a saga."""
-        saga = self._active_sagas.get(saga_id)
-        if saga:
-            saga.add_operation(op_type, memory_id, content, metadata)
-
-    def commit_saga(self, saga_id: str) -> dict[str, Any]:
-        """Mark a saga as successfully completed."""
+        """Record an operation within a saga.
+        
+        Raises ValueError if saga not found.
+        """
         saga = self._active_sagas.get(saga_id)
         if not saga:
-            return {"error": f"Saga {saga_id} not found"}
+            raise ValueError(f"Saga {saga_id} not found")
+        saga.add_operation(op_type, memory_id, content, metadata)
+
+    def commit_saga(self, saga_id: str) -> dict[str, Any]:
+        """Mark a saga as successfully completed.
+        
+        Raises ValueError if saga not found.
+        """
+        saga = self._active_sagas.get(saga_id)
+        if not saga:
+            raise ValueError(f"Saga {saga_id} not found")
 
         saga.status = "committed"
         saga.completed_at = datetime.now(UTC)
         return saga.to_dict()
 
     def rollback_saga(self, saga_id: str) -> dict[str, Any]:
-        """Rollback all operations in a saga."""
+        """Rollback all operations in a saga.
+        
+        Raises ValueError if saga not found.
+        """
         saga = self._active_sagas.get(saga_id)
         if not saga:
-            return {"error": f"Saga {saga_id} not found"}
+            raise ValueError(f"Saga {saga_id} not found")
 
         rolled_back = 0
         for op in reversed(saga.operations):

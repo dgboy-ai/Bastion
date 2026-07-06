@@ -34,7 +34,6 @@ class SerializationRetryEngine:
         self.base_delay_ms = base_delay_ms
         self.max_delay_ms = max_delay_ms
         self.jitter_factor = jitter_factor
-        self._retry_count = 0
         self._total_retries = 0
         self._total_successes = 0
 

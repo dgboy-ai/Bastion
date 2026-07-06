@@ -65,7 +65,10 @@ class RowLevelSecurity:
             return {"status": "error", "error": str(e)}
 
     def set_agent_context(self, agent_id: str) -> None:
-        """Set the current agent context for RLS filtering."""
+        """Set the current agent context for RLS filtering.
+        
+        Must be called within an active transaction.
+        """
         with self.conn.cursor() as cur:
             cur.execute(
                 "SET LOCAL app.current_agent_id = %s",
@@ -75,16 +78,19 @@ class RowLevelSecurity:
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
         try:
+            self.conn.autocommit = False
             with self.conn.cursor() as cur:
                 self.set_agent_context(agent_id)
                 cur.execute("SELECT COUNT(*) FROM agent_memory")
                 count = cur.fetchone()[0]
-                return {
-                    "agent_id": agent_id,
-                    "visible_memories": count,
-                    "rls_active": True,
-                }
+            self.conn.commit()
+            return {
+                "agent_id": agent_id,
+                "visible_memories": count,
+                "rls_active": True,
+            }
         except Exception as e:
+            self.conn.rollback()
             return {
                 "agent_id": agent_id,
                 "rls_active": False,

@@ -7,8 +7,6 @@ agent response latency under 2ms.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import re
 from datetime import UTC, datetime
@@ -92,6 +90,7 @@ class CognitiveFirewall:
         """Verify hash chain integrity for an agent's memories."""
         memories = self.memory.search("*", k=1000, threshold=0.0)
         agent_memories = [m for m in memories if m.agent_id == agent_id]
+        agent_memories.sort(key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
 
         broken_links = 0
         for i in range(1, len(agent_memories)):
