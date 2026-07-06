@@ -249,41 +249,45 @@ class BastionMemory:
         now = datetime.now(timezone.utc)
         expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO agent_memory
-                    (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
-                     expires_at, importance_score)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0)
-                RETURNING memory_id, created_at
-                """,
-                (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
-                 expires_dt.isoformat() if expires_dt else None),
-            )
-            row = cur.fetchone()
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO agent_memory
+                        (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
+                         expires_at, importance_score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0)
+                    RETURNING memory_id, created_at
+                    """,
+                    (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
+                     expires_dt.isoformat() if expires_dt else None),
+                )
+                row = cur.fetchone()
 
-            workflow_id = str(uuid.uuid4())
-            cur.execute(
-                "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                (self.agent_id, workflow_id, "memory_store",
-                 json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
-            )
-            self._conn.commit()
+                workflow_id = str(uuid.uuid4())
+                cur.execute(
+                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                    (self.agent_id, workflow_id, "memory_store",
+                     json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
+                )
+                self._conn.commit()
 
-            return MemoryRecord(
-                memory_id=str(row[0]),
-                agent_id=self.agent_id,
-                memory_type=memory_type,
-                content=content,
-                embedding=embedding,
-                metadata=meta,
-                previous_hash=prev_hash,
-                cryptographic_hash=crypto_hash,
-                created_at=row[1],
-                expires_at=expires_dt,
-                importance_score=5.0,
-            )
+                return MemoryRecord(
+                    memory_id=str(row[0]),
+                    agent_id=self.agent_id,
+                    memory_type=memory_type,
+                    content=content,
+                    embedding=embedding,
+                    metadata=meta,
+                    previous_hash=prev_hash,
+                    cryptographic_hash=crypto_hash,
+                    created_at=row[1],
+                    expires_at=expires_dt,
+                    importance_score=5.0,
+                )
+        except Exception:
+            self._conn.rollback()
+            raise
 
     def _search_real(
         self,
@@ -296,34 +300,37 @@ class BastionMemory:
         query_vector_str = json.dumps(query_vector)
         decay_rate = 0.01
 
-        with self._conn.cursor() as cur:
-            if memory_type:
-                cur.execute(
-                    f"SELECT {_MEMORY_COLS}, "
-                    "(1.0 - (embedding <=> %s::vector)) * importance_score / "
-                    "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
-                    "FROM agent_memory "
-                    "WHERE agent_id = %s AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
-                    "ORDER BY decay_score DESC LIMIT %s",
-                    (query_vector_str, decay_rate, self.agent_id, memory_type, k),
-                )
-            else:
-                cur.execute(
-                    f"SELECT {_MEMORY_COLS}, "
-                    "(1.0 - (embedding <=> %s::vector)) * importance_score / "
-                    "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
-                    "FROM agent_memory "
-                    "WHERE agent_id = %s AND (expires_at IS NULL OR expires_at > now()) "
-                    "ORDER BY decay_score DESC LIMIT %s",
-                    (query_vector_str, decay_rate, self.agent_id, k),
-                )
-            rows = cur.fetchall()
-            results = []
-            for r in rows:
-                decay = float(r[-1])
-                if decay >= threshold * 0.1:
-                    results.append(MemoryRecord.from_row(r[:-1]))
-            return results[:k]
+        try:
+            with self._conn.cursor() as cur:
+                if memory_type:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS}, "
+                        "(1.0 - (embedding <=> %s::vector)) * importance_score / "
+                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                        "FROM agent_memory "
+                        "WHERE agent_id = %s AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY decay_score DESC LIMIT %s",
+                        (query_vector_str, decay_rate, self.agent_id, memory_type, k),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS}, "
+                        "(1.0 - (embedding <=> %s::vector)) * importance_score / "
+                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                        "FROM agent_memory "
+                        "WHERE agent_id = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY decay_score DESC LIMIT %s",
+                        (query_vector_str, decay_rate, self.agent_id, k),
+                    )
+                rows = cur.fetchall()
+                results = []
+                for r in rows:
+                    decay = float(r[-1])
+                    if decay >= threshold:
+                        results.append(MemoryRecord.from_row(r[:-1]))
+                return results[:k]
+        except Exception:
+            return []
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
         import psycopg
