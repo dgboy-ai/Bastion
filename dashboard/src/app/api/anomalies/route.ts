@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 
 export async function GET() {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json({ alerts: [], mock: true });
+  }
+
   try {
     const alerts: Record<string, unknown>[] = [];
     

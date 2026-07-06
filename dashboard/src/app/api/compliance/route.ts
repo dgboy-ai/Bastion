@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 
 export async function GET(request: Request) {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json({
+      report_id: "mock",
+      agent_id: "mock-agent",
+      generated_at: new Date().toISOString(),
+      period: { start: "mock", end: "mock" },
+      summary: { total_operations: 0, operations_by_type: {} },
+      compliance_status: { framework: "EU AI Act Article 12", status: "MOCK_MODE" },
+      art12_requirements: { automatic_event_recording: true, tamper_evident_logs: true, traceability: true, human_oversight_verification: true, post_market_monitoring: true },
+      recent_audit_trail: [],
+      mock: true,
+    });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get("agent_id") || "e2e-test-agent";

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 
 export async function GET(request: Request) {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json({ entities: [], relations: [], mock: true });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const asOf = searchParams.get("as_of");

@@ -1,7 +1,37 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
+
+// Mock data for when database is not available
+function getMockStats() {
+  return {
+    alerts: [],
+    memories: 0,
+    entities: 0,
+    relations: 0,
+    auditLogs: 0,
+    conflicts: 0,
+    avgImportance: "0.00",
+    decayCurve: [
+      { label: "24h ago", value: 0 },
+      { label: "18h ago", value: 0 },
+      { label: "12h ago", value: 0 },
+      { label: "6h ago", value: 0 },
+      { label: "Now", value: 0 },
+    ],
+    hourlyGrowth: [0, 0, 0, 0, 0, 0, 0, 0],
+    topRecalls: [],
+    cacheHitPct: "0.0",
+    recentAudits: [],
+    mock: true,
+  };
+}
 
 export async function GET() {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json(getMockStats());
+  }
+
   try {
     const memoryCountRes = await query("SELECT COUNT(*) as count FROM agent_memory");
     const entityCountRes = await query("SELECT COUNT(*) as count FROM agent_entities");

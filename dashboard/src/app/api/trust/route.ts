@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 
 function computeTrustScore(row: Record<string, unknown>) {
   const trustLevel = (row.trust_level ?? 2) as number;
@@ -47,6 +47,16 @@ function computeTrustScore(row: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json({
+      summary: { totalMemories: 0, avgTrustScore: 0, trustLevelDistribution: {}, poisoningDistribution: {}, dangerousMemories: 0 },
+      alerts: [],
+      memories: [],
+      mock: true,
+    });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const entityId = searchParams.get("entity_id");

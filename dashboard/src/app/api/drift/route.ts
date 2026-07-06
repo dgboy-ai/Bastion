@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 
 const DRIFT_DIMENSIONS = [
   "memory_access_pattern",
@@ -23,6 +23,15 @@ interface DriftRow {
 }
 
 export async function GET(request: Request) {
+  // If no database connection, return mock data
+  if (!pool) {
+    return NextResponse.json({
+      latest: null,
+      timeSeries: [],
+      mock: true,
+    });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get("agent_id");
