@@ -185,7 +185,7 @@ Add to your editor config (Cursor, Claude Code, VS Code):
 ## Test Results
 
 ```
-166 passed, 0 failed
+290 passed, 0 failed
 ├── test_memory.py        — Store, search, hash chain, time travel
 ├── test_agent.py         — Agent loop, PII detection, checkpointing
 ├── test_mcp_server.py    — MCP tools, schemas, descriptions
@@ -194,6 +194,10 @@ Add to your editor config (Cursor, Claude Code, VS Code):
 ├── test_analytics.py     — Health scores, growth, topics, quality
 ├── test_knowledge_graph.py — Entity extraction, traversal
 ├── test_telemetry.py     — OpenTelemetry span verification
+├── test_crdt_memory.py   — CRDT conflict resolution
+├── test_drift.py         — Behavioral drift detection
+├── test_trust.py         — Trust scoring and poisoning detection
+├── test_compliance.py    — EU AI Act compliance reporting
 ├── adapters/             — LangChain, CrewAI, LlamaIndex adapters
 └── sdk/typescript/       — TypeScript SDK tests
 ```
