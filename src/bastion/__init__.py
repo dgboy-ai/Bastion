@@ -4,6 +4,7 @@ from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA
 from bastion.drift import BehavioralDriftDetector, DriftReport
+from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory
@@ -18,6 +19,9 @@ from bastion.models import (
     MessageRecord,
     RelationRecord,
 )
+from bastion.retry import SerializationRetryEngine
+from bastion.rls import RowLevelSecurity
+from bastion.saga import SagaBoundary, SagaMemoryManager
 from bastion.telemetry import TracedBastionMemory
 from bastion.trust import TrustLevel, TrustReport, compute_trust_score
 
@@ -32,6 +36,11 @@ __all__ = [
     "IETFAATRecord",
     "VerifiableUnlearning",
     "AutonomousDBA",
+    "CognitiveFirewall",
+    "SerializationRetryEngine",
+    "RowLevelSecurity",
+    "SagaBoundary",
+    "SagaMemoryManager",
     "TracedBastionMemory",
     "CRDTMemory",
     "VectorClock",
