@@ -202,7 +202,8 @@ class LocalKMS(KMSInterface):
         key = self.generate_key()
         tmp = key_path + ".tmp"
         try:
-            with open(tmp, "w") as f:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 f.write(key.hex())
             os.replace(tmp, key_path)
         except OSError as exc:

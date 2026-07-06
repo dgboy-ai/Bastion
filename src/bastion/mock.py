@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ _checkpoints: list[dict[str, Any]] = []
 _coordination_locks: list[dict[str, Any]] = []
 _messages: list[dict[str, Any]] = []
 _namespace_map: dict[str, set[str]] = {}
+_lock = threading.Lock()
 
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
@@ -33,9 +35,10 @@ def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> st
 
 def mock_register_namespace(agent_id: str, namespace: str):
     """Register an agent as belonging to a namespace for shared-scope search."""
-    if namespace not in _namespace_map:
-        _namespace_map[namespace] = set()
-    _namespace_map[namespace].add(agent_id)
+    with _lock:
+        if namespace not in _namespace_map:
+            _namespace_map[namespace] = set()
+        _namespace_map[namespace].add(agent_id)
 
 
 def mock_store_memory(
@@ -45,12 +48,13 @@ def mock_store_memory(
     metadata: dict[str, Any] | None = None,
     expires_in_seconds: int | None = None,
 ) -> MemoryRecord:
-    if agent_id not in _agent_data:
-        _agent_data[agent_id] = []
+    with _lock:
+        if agent_id not in _agent_data:
+            _agent_data[agent_id] = []
 
-    records = _agent_data[agent_id]
-    prev_hash = records[-1]["cryptographic_hash"] if records else None
-    meta = metadata or {}
+        records = _agent_data[agent_id]
+        prev_hash = records[-1]["cryptographic_hash"] if records else None
+        meta = metadata or {}
     crypto_hash = _compute_hash(content, meta, prev_hash)
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None

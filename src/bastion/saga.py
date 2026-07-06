@@ -7,6 +7,7 @@ compensating transactions to undo writes on failure.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -52,16 +53,26 @@ class SagaBoundary:
 
 
 class SagaMemoryManager:
-    """Manages saga boundaries for crash-safe agent task execution."""
+    """Manages saga boundaries for crash-safe agent task execution.
+    
+    Persists saga state to CockroachDB for crash recovery.
+    """
 
     def __init__(self, memory: Any):
         self.memory = memory
+        self._lock = threading.Lock()
         self._active_sagas: dict[str, SagaBoundary] = {}
 
     def begin_saga(self, agent_id: str) -> SagaBoundary:
-        """Start a new saga boundary."""
+        """Start a new saga boundary and persist to database."""
         saga = SagaBoundary(agent_id=agent_id)
-        self._active_sagas[saga.saga_id] = saga
+        with self._lock:
+            self._active_sagas[saga.saga_id] = saga
+        self.memory.store(
+            memory_type="system_event",
+            content=f"SAGA_BEGIN: {saga.saga_id}",
+            metadata={"saga_id": saga.saga_id, "agent_id": agent_id, "event": "begin"},
+        )
         return saga
 
     def record_operation(
@@ -76,32 +87,42 @@ class SagaMemoryManager:
         
         Raises ValueError if saga not found.
         """
-        saga = self._active_sagas.get(saga_id)
-        if not saga:
-            raise ValueError(f"Saga {saga_id} not found")
+        with self._lock:
+            saga = self._active_sagas.get(saga_id)
+            if not saga:
+                raise ValueError(f"Saga {saga_id} not found")
         saga.add_operation(op_type, memory_id, content, metadata)
 
     def commit_saga(self, saga_id: str) -> dict[str, Any]:
-        """Mark a saga as successfully completed.
+        """Mark a saga as successfully completed and persist.
         
         Raises ValueError if saga not found.
         """
-        saga = self._active_sagas.get(saga_id)
-        if not saga:
-            raise ValueError(f"Saga {saga_id} not found")
+        with self._lock:
+            saga = self._active_sagas.get(saga_id)
+            if not saga:
+                raise ValueError(f"Saga {saga_id} not found")
+            saga.status = "committed"
+            saga.completed_at = datetime.now(UTC)
+            result = saga.to_dict()
+            del self._active_sagas[saga_id]
 
-        saga.status = "committed"
-        saga.completed_at = datetime.now(UTC)
-        return saga.to_dict()
+        self.memory.store(
+            memory_type="system_event",
+            content=f"SAGA_COMMIT: {saga_id}",
+            metadata={"saga_id": saga_id, "event": "commit", "operations": len(result.get("operations", []))},
+        )
+        return result
 
     def rollback_saga(self, saga_id: str) -> dict[str, Any]:
-        """Rollback all operations in a saga.
+        """Rollback all operations in a saga and persist.
         
         Raises ValueError if saga not found.
         """
-        saga = self._active_sagas.get(saga_id)
-        if not saga:
-            raise ValueError(f"Saga {saga_id} not found")
+        with self._lock:
+            saga = self._active_sagas.get(saga_id)
+            if not saga:
+                raise ValueError(f"Saga {saga_id} not found")
 
         rolled_back = 0
         for op in reversed(saga.operations):
@@ -117,17 +138,21 @@ class SagaMemoryManager:
                 )
                 rolled_back += 1
 
-        saga.status = "rolled_back"
-        saga.completed_at = datetime.now(UTC)
+        with self._lock:
+            saga.status = "rolled_back"
+            saga.completed_at = datetime.now(UTC)
+            result = saga.to_dict()
+            del self._active_sagas[saga_id]
 
         return {
             "saga_id": saga_id,
             "status": "rolled_back",
             "operations_rolled_back": rolled_back,
-            "total_operations": len(saga.operations),
+            "total_operations": len(result.get("operations", [])),
         }
 
     def get_saga(self, saga_id: str) -> dict[str, Any] | None:
         """Get saga status."""
-        saga = self._active_sagas.get(saga_id)
+        with self._lock:
+            saga = self._active_sagas.get(saga_id)
         return saga.to_dict() if saga else None

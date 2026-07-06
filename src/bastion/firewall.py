@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,10 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class CognitiveFirewall:
-    """Validates agent actions asynchronously via CDC events."""
+    """Thread-safe CDC Cognitive Firewall for agent validation."""
 
     def __init__(self, memory: Any):
         self.memory = memory
+        self._lock = threading.Lock()
         self._blocked_agents: set[str] = set()
         self._violation_count = 0
 
@@ -72,8 +74,9 @@ class CognitiveFirewall:
         blocked = any(v["severity"] == "critical" for v in violations)
 
         if blocked:
-            self._blocked_agents.add(agent_id)
-            self._violation_count += 1
+            with self._lock:
+                self._blocked_agents.add(agent_id)
+                self._violation_count += 1
 
         return {
             "safe": is_safe,
@@ -88,7 +91,7 @@ class CognitiveFirewall:
         agent_id: str,
     ) -> dict[str, Any]:
         """Verify hash chain integrity for an agent's memories."""
-        memories = self.memory.search("*", k=1000, threshold=0.0)
+        memories = self.memory.list_all()
         agent_memories = [m for m in memories if m.agent_id == agent_id]
         agent_memories.sort(key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
 
@@ -111,8 +114,8 @@ class CognitiveFirewall:
 
     def get_stats(self) -> dict[str, Any]:
         """Return firewall statistics."""
-        return {
-            "blocked_agents": len(self._blocked_agents),
-            "total_violations": self._violation_count,
-            "blocked_agent_ids": list(self._blocked_agents),
-        }
+        with self._lock:
+            return {
+                "blocked_agents": len(self._blocked_agents),
+                "total_violations": self._violation_count,
+            }

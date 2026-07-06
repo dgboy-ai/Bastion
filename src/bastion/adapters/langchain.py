@@ -18,8 +18,8 @@ class BastionChatMessageHistory:
         ]
 
     def load_memory(self, k: int = 10) -> Sequence[dict[str, Any]]:
-        results = self.bastion.list_all()[:k]
-        return [r.to_dict() for r in results]
+        results = self.bastion.list_all()
+        return [r.to_dict() for r in results[:k]]
 
     def clear(self) -> None:
         self.bastion.heal()

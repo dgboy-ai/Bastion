@@ -77,6 +77,7 @@ class RowLevelSecurity:
 
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
+        prev_autocommit = self.conn.autocommit
         try:
             self.conn.autocommit = False
             with self.conn.cursor() as cur:
@@ -96,3 +97,5 @@ class RowLevelSecurity:
                 "rls_active": False,
                 "error": str(e),
             }
+        finally:
+            self.conn.autocommit = prev_autocommit

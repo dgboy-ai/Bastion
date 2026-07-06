@@ -1,11 +1,13 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
 from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, redact_pii
+from bastion.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
 from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
+from bastion.limiter import RequestLimiter
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory
 from bastion.merkle import MerkleHashChain, MerkleTree
@@ -19,6 +21,7 @@ from bastion.models import (
     MessageRecord,
     RelationRecord,
 )
+from bastion.pool import ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
 from bastion.saga import SagaBoundary, SagaMemoryManager
@@ -41,6 +44,11 @@ __all__ = [
     "RowLevelSecurity",
     "SagaBoundary",
     "SagaMemoryManager",
+    "ConnectionPool",
+    "CircuitBreaker",
+    "CircuitBreakerOpenError",
+    "CircuitState",
+    "RequestLimiter",
     "TracedBastionMemory",
     "CRDTMemory",
     "VectorClock",

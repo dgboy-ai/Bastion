@@ -143,9 +143,10 @@ class VerifiableUnlearning:
         memory_ids: list[str],
     ) -> dict[str, Any]:
         """Generate a cryptographic receipt for deleted memories."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0, agent_id=agent_id)
-        before_hashes = [m.cryptographic_hash for m in all_memories if m.memory_id not in memory_ids]
-        deleted_hashes = [m.cryptographic_hash for m in all_memories if m.memory_id in memory_ids]
+        all_memories = self.memory.list_all()
+        agent_memories = [m for m in all_memories if m.agent_id == agent_id]
+        before_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id not in memory_ids]
+        deleted_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids]
 
         old_root = self._compute_merkle_root(before_hashes)
 
@@ -156,8 +157,9 @@ class VerifiableUnlearning:
                 metadata={"tombstone": True, "original_memory_id": mid, "compliance": "gdpr_art17"},
             )
 
-        after_memories = self.memory.search("*", k=10000, threshold=0.0, agent_id=agent_id)
-        after_hashes = [m.cryptographic_hash for m in after_memories]
+        after_memories = self.memory.list_all()
+        after_agent_memories = [m for m in after_memories if m.agent_id == agent_id]
+        after_hashes = [m.cryptographic_hash for m in after_agent_memories]
         new_root = self._compute_merkle_root(after_hashes)
 
         return {

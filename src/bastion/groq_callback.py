@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any
 
 from bastion.models import MemoryRecord
@@ -9,23 +10,27 @@ from bastion.models import MemoryRecord
 _GROQ_MODEL = os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 _HAS_GROQ: bool = False
 _client: Any = None
+_client_lock = threading.Lock()
 
 
 def _get_client() -> Any:
     global _client, _HAS_GROQ
     if _client is not None:
         return _client
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY not set")
-    try:
-        from groq import Groq
+    with _client_lock:
+        if _client is not None:
+            return _client
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY not set")
+        try:
+            from groq import Groq
 
-        _client = Groq(api_key=api_key)
-        _HAS_GROQ = True
-    except ImportError:
-        raise RuntimeError("groq library not installed (pip install groq)") from None
-    return _client
+            _client = Groq(api_key=api_key)
+            _HAS_GROQ = True
+        except ImportError:
+            raise RuntimeError("groq library not installed (pip install groq)") from None
+        return _client
 
 
 _logger = logging.getLogger("bastion.groq")

@@ -40,6 +40,11 @@ class AutonomousDBA:
         if not self.cluster_id:
             return {"error": "No cluster_id configured", "slow_queries": []}
 
+        # Security: Validate cluster_id to prevent argument injection
+        import re
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+            return {"error": "Invalid cluster_id format", "slow_queries": []}
+
         try:
             sql = (
                 "SELECT key, count, max_total_time, max_service_latency "
@@ -73,6 +78,11 @@ class AutonomousDBA:
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
+        # Security: Validate cluster_id
+        import re
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+            return {"error": "Invalid cluster_id format"}
+
         try:
             cmd = ["ccloud", "cluster", "describe", self.cluster_id, "-o", "json"]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -87,6 +97,11 @@ class AutonomousDBA:
         """Trigger scale-up via ccloud CLI."""
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
+
+        # Security: Validate cluster_id
+        import re
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+            return {"error": "Invalid cluster_id format"}
 
         now = datetime.now(UTC)
         if self._last_scale_time:

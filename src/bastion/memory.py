@@ -97,11 +97,14 @@ class BastionMemory:
         namespace: str | None = None,
         compliance_mode: str | None = None,
     ):
+        import threading
         self.agent_id = agent_id
         self.namespace = namespace or agent_id
         self._mock = mock if mock is not None else os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
         self._conn: Any = None
+        self._conn_lock = threading.Lock()
         self._tt_conn: Any = None
+        self._tt_lock = threading.Lock()
         self._conn_str = connection_string
         self.compliance_mode = compliance_mode
         if self._mock:
@@ -278,9 +281,18 @@ class BastionMemory:
         if self._mock:
             return _mock.mock_provision_cluster(name, region, provider)
 
+        # Security: Validate inputs to prevent argument injection
+        import re
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', name):
+            raise ValueError(f"Invalid cluster name: {name!r}")
+        if not re.match(r'^[a-z][a-z0-9-]{0,30}$', region):
+            raise ValueError(f"Invalid region: {region!r}")
+        if not re.match(r'^[a-z]+$', provider):
+            raise ValueError(f"Invalid provider: {provider!r}")
+
         result = subprocess.run(
             ["ccloud", "cluster", "create", name, "--provider", provider, "--region", region],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=120,
         )
         data = json.loads(result.stdout)
         return ClusterInfo(
@@ -411,8 +423,11 @@ class BastionMemory:
 
         try:
             with conn.cursor() as cur:
-                trust_level = int(meta.pop("_trust_level", 2))
-                source_prov = str(meta.pop("_source_provenance", "agent_direct"))
+                # Security: Never trust user-supplied trust levels or provenance
+                trust_level = 2  # Default MEDIUM trust
+                source_prov = "agent_direct"
+                meta.pop("_trust_level", None)
+                meta.pop("_source_provenance", None)
                 cur.execute(
                     """
                     INSERT INTO agent_memory
@@ -506,9 +521,9 @@ class BastionMemory:
                     if decay >= threshold:
                         results.append(MemoryRecord.from_row(r[:-1]))
                 return results[:k]
-        except Exception:
+        except Exception as e:
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
-            return []
+            raise RuntimeError(f"Search failed for agent {self.agent_id}: {e}") from e
 
     def _list_all_real(
         self,
@@ -537,9 +552,9 @@ class BastionMemory:
                         (agent_param,),
                     )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
-        except Exception:
+        except Exception as e:
             logger.exception("list_all query failed", extra={"agent_id": self.agent_id})
-            return []
+            raise RuntimeError(f"List all failed for agent {self.agent_id}: {e}") from e
 
     def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
         conn = self._conn
@@ -555,25 +570,34 @@ class BastionMemory:
                 if row is None:
                     return None
                 return MemoryRecord.from_row(row)
-        except Exception:
+        except Exception as e:
             logger.exception("get_memory_by_id failed", extra={"memory_id": memory_id})
-            return None
+            raise RuntimeError(f"Failed to get memory {memory_id}: {e}") from e
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
         conn_str = self._conn_str
         if conn_str is None:
             raise RuntimeError("get_at_time_real called without a database connection")
 
-        if self._tt_conn is None or self._tt_conn.closed:
-            import psycopg
-            self._tt_conn = psycopg.connect(conn_str)
-        with self._tt_conn.cursor() as cur:
-            cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
-            cur.execute(
-                f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
-                (agent_id,),
-            )
-            return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        with self._tt_lock:
+            if self._tt_conn is None or self._tt_conn.closed:
+                import psycopg
+                self._tt_conn = psycopg.connect(conn_str)
+            conn = self._tt_conn
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
+                    (agent_id,),
+                )
+                results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
+            conn.commit()
+            return results
+        except Exception:
+            conn.rollback()
+            raise
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
         conn = self._conn
@@ -602,9 +626,9 @@ class BastionMemory:
                         recorded_at=r[5],
                     ))
                 return results
-        except Exception:
+        except Exception as e:
             logger.exception("audit query failed", extra={"agent_id": agent_id})
-            return []
+            raise RuntimeError(f"Audit query failed for agent {agent_id}: {e}") from e
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
         conn = self._conn
@@ -643,9 +667,9 @@ class BastionMemory:
                 )
                 conn.commit()
             return merged
-        except Exception:
-            logger.exception("resolve_conflict failed, returning naive merge")
-            return merged
+        except Exception as e:
+            logger.exception("resolve_conflict failed")
+            raise RuntimeError(f"Conflict resolution failed: {e}") from e
 
     def _get_last_hash(self) -> str | None:
         conn = self._conn
@@ -659,9 +683,9 @@ class BastionMemory:
                 )
                 row = cur.fetchone()
                 return str(row[0]) if row else None
-        except Exception:
+        except Exception as e:
             logger.exception("get_last_hash query failed")
-            return None
+            raise RuntimeError(f"Failed to get last hash: {e}") from e
 
     def _query_with_cache_real(
         self,
@@ -716,8 +740,9 @@ class BastionMemory:
                     "detail": f"Memory count ({total}) exceeds 100 records",
                     "agent_id": agent_id,
                 })
-        except Exception:
+        except Exception as e:
             logger.exception("Anomaly detection query failed", extra={"agent_id": agent_id})
+            raise RuntimeError(f"Anomaly detection failed for agent {agent_id}: {e}") from e
 
         return alerts
 
@@ -857,8 +882,7 @@ class BastionMemory:
         cur.execute("SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s", (self.agent_id, name))
         row = cur.fetchone()
         if row is None:
-            logger.warning("Entity not found after upsert", extra={"agent_id": self.agent_id, "name": name})
-            return ""
+            raise ValueError(f"Entity '{name}' not found for agent {self.agent_id}")
         return str(row[0])
 
     def _graph_query_real(
@@ -919,47 +943,55 @@ class BastionMemory:
         conn_str = self._conn_str
         if conn_str is None:
             raise RuntimeError("graph_at_time_real called without a database connection")
-        import psycopg
 
-        if self._tt_conn is None or self._tt_conn.closed:
-            self._tt_conn = psycopg.connect(conn_str)
-        with self._tt_conn.cursor() as cur:
-            cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
+        with self._tt_lock:
+            if self._tt_conn is None or self._tt_conn.closed:
+                import psycopg
+                self._tt_conn = psycopg.connect(conn_str)
+            conn = self._tt_conn
 
-            if entity:
-                cur.execute(
-                    "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                    "valid_from, valid_until, created_at "
-                    "FROM agent_entities WHERE agent_id = %s AND name = %s",
-                    (self.agent_id, entity),
-                )
-            else:
-                cur.execute(
-                    "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                    "valid_from, valid_until, created_at "
-                    "FROM agent_entities WHERE agent_id = %s",
-                    (self.agent_id,),
-                )
-            entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
 
-            entity_ids = tuple(e["entity_id"] for e in entities)
-            if entity_ids:
-                cur.execute(
-                    "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
-                    "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
-                    "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
-                    (entity_ids, entity_ids),
-                )
-                relations = [dict(zip(
-                    ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
-                     "relation_type", "confidence", "valid_from", "valid_until",
-                     "source_memory_id", "created_at"], r, strict=True,
-                )) for r in cur.fetchall()]
-            else:
-                relations = []
+                if entity:
+                    cur.execute(
+                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                        "valid_from, valid_until, created_at "
+                        "FROM agent_entities WHERE agent_id = %s AND name = %s",
+                        (self.agent_id, entity),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                        "valid_from, valid_until, created_at "
+                        "FROM agent_entities WHERE agent_id = %s",
+                        (self.agent_id,),
+                    )
+                entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
 
+                entity_ids = tuple(e["entity_id"] for e in entities)
+                if entity_ids:
+                    cur.execute(
+                        "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
+                        "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
+                        "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
+                        (entity_ids, entity_ids),
+                    )
+                    relations = [dict(zip(
+                        ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
+                         "relation_type", "confidence", "valid_from", "valid_until",
+                         "source_memory_id", "created_at"], r, strict=True,
+                    )) for r in cur.fetchall()]
+                else:
+                    relations = []
+
+            conn.commit()
             return {"agent_id": self.agent_id, "timestamp": timestamp,
                     "entities": entities, "relations": relations}
+        except Exception:
+            conn.rollback()
+            raise
 
     def _graph_stats_real(self) -> dict[str, Any]:
         conn = self._conn

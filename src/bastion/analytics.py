@@ -39,21 +39,23 @@ class MemoryAnalytics:
 
     def full_report(self) -> dict[str, Any]:
         """Generate a comprehensive analytics report."""
+        all_memories = self.memory.list_all()
         return {
             "agent_id": self.memory.agent_id,
             "generated_at": datetime.now(UTC).isoformat(),
-            "summary": self.summary(),
-            "health_score": self.health_score(),
-            "growth": self.growth_analysis(),
-            "topics": self.topic_distribution(),
-            "decay": self.decay_analysis(),
-            "quality": self.quality_metrics(),
+            "summary": self.summary(all_memories),
+            "health_score": self.health_score(all_memories),
+            "growth": self.growth_analysis(all_memories),
+            "topics": self.topic_distribution(all_memories),
+            "decay": self.decay_analysis(all_memories),
+            "quality": self.quality_metrics(all_memories),
             "anomalies": self.memory.detect_anomalies(),
         }
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self, all_memories: list | None = None) -> dict[str, Any]:
         """Get memory summary statistics."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {
                 "total_memories": 0,
@@ -87,7 +89,7 @@ class MemoryAnalytics:
             "newest_memory": max((m.created_at for m in all_memories if m.created_at), default=None),
         }
 
-    def health_score(self) -> int:
+    def health_score(self, all_memories: list | None = None) -> int:
         """
         Calculate memory health score (0-100).
 
@@ -97,7 +99,8 @@ class MemoryAnalytics:
         - Age distribution (should have mix of old and new)
         - Duplicate rate (should be low)
         """
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return 0
 
@@ -139,9 +142,10 @@ class MemoryAnalytics:
 
         return max(0, min(100, score))
 
-    def growth_analysis(self) -> dict[str, Any]:
+    def growth_analysis(self, all_memories: list | None = None) -> dict[str, Any]:
         """Analyze memory growth over time."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {"hourly": [], "daily": [], "trend": "stable"}
 
@@ -184,9 +188,10 @@ class MemoryAnalytics:
             "total_7d": sum(daily_counts),
         }
 
-    def topic_distribution(self) -> dict[str, Any]:
+    def topic_distribution(self, all_memories: list | None = None) -> dict[str, Any]:
         """Analyze what topics the agent knows about."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {"topics": {}, "top_topics": []}
 
@@ -223,9 +228,10 @@ class MemoryAnalytics:
             "unique_words": len(word_counts),
         }
 
-    def decay_analysis(self) -> dict[str, Any]:
+    def decay_analysis(self, all_memories: list | None = None) -> dict[str, Any]:
         """Analyze memory importance decay patterns."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {"avg_decay_rate": 0, "memories_at_risk": 0, "decay_curve": []}
 
@@ -256,9 +262,10 @@ class MemoryAnalytics:
             "decay_curve": decay_data[:20],  # Sample for visualization
         }
 
-    def quality_metrics(self) -> dict[str, Any]:
+    def quality_metrics(self, all_memories: list | None = None) -> dict[str, Any]:
         """Assess memory quality metrics."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {
                 "avg_content_length": 0,
@@ -310,9 +317,10 @@ class MemoryAnalytics:
             "store_to_search_ratio": round(store_count / max(search_count, 1), 2),
         }
 
-    def importance_distribution(self) -> dict[str, Any]:
+    def importance_distribution(self, all_memories: list | None = None) -> dict[str, Any]:
         """Analyze importance score distribution."""
-        all_memories = self.memory.list_all()
+        if all_memories is None:
+            all_memories = self.memory.list_all()
         if not all_memories:
             return {"distribution": {}, "percentiles": {}}
 
