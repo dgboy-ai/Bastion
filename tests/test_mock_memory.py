@@ -270,6 +270,7 @@ def test_from_row_parses_embedding_string():
         "[0.1, 0.2, 0.3]",  # VECTOR returned as JSON string
         {"source": "test"}, "prev-hash", "crypto-hash",
         datetime.now(UTC), None, 5, 5.0,
+        2, "agent_direct", 0,
     ))
     assert record.memory_id == "test-id"
     assert record.embedding == [0.1, 0.2, 0.3]
@@ -284,6 +285,7 @@ def test_from_row_parses_embedding_list():
         [0.1, 0.2, 0.3],
         {"source": "test"}, "prev-hash", "crypto-hash",
         datetime.now(UTC), None, 0, 5.0,
+        2, "agent_direct", 0,
     ))
     assert record.embedding == [0.1, 0.2, 0.3]
     assert record.access_count == 0
@@ -356,6 +358,7 @@ def test_from_row_null_values():
         "test-id", "agent-1", "fact", "content",
         None, None, None, "crypto-hash",
         None, None, None, None,
+        None, None, None,
     ))
     assert record.embedding == []
     assert record.metadata == {}

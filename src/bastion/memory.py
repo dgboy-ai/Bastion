@@ -62,8 +62,8 @@ def _hash_fallback_embed(text: str) -> list[float]:
 _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
     "metadata, previous_hash, cryptographic_hash, "
-    "created_at, expires_at, access_count, importance_score"
-
+    "created_at, expires_at, access_count, importance_score, "
+    "trust_level, source_provenance, overwrite_count"
 )
 
 def _parse_payload(raw: Any) -> dict[str, Any]:
@@ -335,6 +335,36 @@ class BastionMemory:
             return _mock.mock_poll_messages(ns)
         return self._poll_messages_real(ns)
 
+    def trust_report(self, memory_id: str) -> dict[str, Any]:
+        from bastion.trust import compute_trust_score
+
+        record = self.get_memory(memory_id)
+        if record is None:
+            return {"memory_id": memory_id, "error": "not_found"}
+        report = compute_trust_score(
+            memory_id=record.memory_id,
+            content=record.content,
+            metadata=record.metadata,
+            previous_hash=record.previous_hash,
+            cryptographic_hash=record.cryptographic_hash,
+            trust_level=getattr(record, "trust_level", 2),
+            source_provenance=getattr(record, "source_provenance", "agent_direct"),
+            overwrite_count=getattr(record, "overwrite_count", 0),
+            created_at=record.created_at,
+            last_accessed_at=None,
+        )
+        return {
+            "memory_id": report.memory_id,
+            "trust_score": report.trust_score,
+            "trust_level": report.trust_level,
+            "hash_chain_intact": report.hash_chain_intact,
+            "conflict_rate": report.conflict_rate,
+            "age_penalty": report.age_penalty,
+            "source_provenance": report.source_provenance,
+            "poisoning_risk": report.poisoning_risk,
+            "flags": report.flags,
+        }
+
     def get_memory(self, memory_id: str) -> MemoryRecord | None:
         """Retrieve a single memory by its exact ID (not semantic search).
 
@@ -379,16 +409,18 @@ class BastionMemory:
 
         try:
             with conn.cursor() as cur:
+                trust_level = int(meta.pop("_trust_level", 2))
+                source_prov = str(meta.pop("_source_provenance", "agent_direct"))
                 cur.execute(
                     """
                     INSERT INTO agent_memory
                         (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
-                         expires_at, importance_score)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0)
+                         expires_at, importance_score, trust_level, source_provenance)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s)
                     RETURNING memory_id, created_at
                     """,
                     (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
-                     expires_dt.isoformat() if expires_dt else None),
+                     expires_dt.isoformat() if expires_dt else None, trust_level, source_prov),
                 )
                 row = cur.fetchone()
                 if row is None:
@@ -415,6 +447,8 @@ class BastionMemory:
                     created_at=row_map["created_at"],
                     expires_at=expires_dt,
                     importance_score=5.0,
+                    trust_level=trust_level,
+                    source_provenance=source_prov,
                 )
                 return result
         except Exception:

@@ -8,6 +8,7 @@ _MEMORY_FIELDS = [
     "memory_id", "agent_id", "memory_type", "content", "embedding",
     "metadata", "previous_hash", "cryptographic_hash",
     "created_at", "expires_at", "access_count", "importance_score",
+    "trust_level", "source_provenance", "overwrite_count",
 ]
 
 
@@ -26,6 +27,9 @@ class MemoryRecord:
         expires_at: datetime | None = None,
         access_count: int = 0,
         importance_score: float = 5.0,
+        trust_level: int = 2,
+        source_provenance: str = "agent_direct",
+        overwrite_count: int = 0,
     ):
         self.memory_id = memory_id or str(uuid.uuid4())
         self.agent_id = agent_id
@@ -39,6 +43,9 @@ class MemoryRecord:
         self.expires_at = expires_at
         self.access_count = access_count
         self.importance_score = importance_score
+        self.trust_level = trust_level
+        self.source_provenance = source_provenance
+        self.overwrite_count = overwrite_count
 
     @classmethod
     def from_row(cls, row: tuple | dict) -> MemoryRecord:
@@ -60,6 +67,9 @@ class MemoryRecord:
         expires_at = vals.get("expires_at")
         access_count = vals.get("access_count", 0)
         importance_score = vals.get("importance_score", 5.0)
+        trust_level = int(vals.get("trust_level", 2)) if vals.get("trust_level") is not None else 2
+        source_provenance = str(vals.get("source_provenance", "agent_direct"))
+        overwrite_count = int(vals.get("overwrite_count", 0)) if vals.get("overwrite_count") is not None else 0
         if embedding_raw is not None:
             if isinstance(embedding_raw, str):
                 import json
@@ -81,6 +91,9 @@ class MemoryRecord:
             expires_at=expires_at,
             access_count=int(access_count) if access_count is not None else 0,
             importance_score=float(importance_score) if importance_score is not None else 5.0,
+            trust_level=trust_level,
+            source_provenance=source_provenance,
+            overwrite_count=overwrite_count,
         )
 
     @classmethod
@@ -104,6 +117,9 @@ class MemoryRecord:
             expires_at=expires_at,
             access_count=d.get("access_count", 0),
             importance_score=d.get("importance_score", 5.0),
+            trust_level=int(d.get("trust_level", 2)),
+            source_provenance=str(d.get("source_provenance", "agent_direct")),
+            overwrite_count=int(d.get("overwrite_count", 0)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,6 +136,9 @@ class MemoryRecord:
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "access_count": self.access_count,
             "importance_score": self.importance_score,
+            "trust_level": self.trust_level,
+            "source_provenance": self.source_provenance,
+            "overwrite_count": self.overwrite_count,
         }
 
     def __repr__(self) -> str:

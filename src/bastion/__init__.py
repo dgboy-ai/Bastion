@@ -16,6 +16,7 @@ from bastion.models import (
     RelationRecord,
 )
 from bastion.telemetry import TracedBastionMemory
+from bastion.trust import TrustLevel, TrustReport, compute_trust_score
 
 __all__ = [
     "BastionAgent",
@@ -48,4 +49,7 @@ __all__ = [
     "groq_chat",
     "groq_merge",
     "groq_query",
+    "TrustLevel",
+    "TrustReport",
+    "compute_trust_score",
 ]
