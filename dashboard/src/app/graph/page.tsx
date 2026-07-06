@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import KnowledgeGraph from "@/components/KnowledgeGraph";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 interface Node {
   id: string;
@@ -68,7 +69,7 @@ export default function GraphPage() {
         setNodes(data.nodes as Node[]);
         setLinks(data.links as Link[]);
       } catch (err: unknown) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -156,11 +157,19 @@ export default function GraphPage() {
 
           <div style={{ height: "100%" }}>
             {nodes.length > 0 ? (
-              <KnowledgeGraph
-                nodes={nodes}
-                links={links}
-                onNodeClick={(node) => setSelectedNode(node)}
-              />
+              <ErrorBoundary
+                fallback={
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--accent-sunset)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+                    GRAPH RENDER FAILED — {selectedNode ? "SELECTED NODE" : "CHECK DATA SOURCE"}
+                  </div>
+                }
+              >
+                <KnowledgeGraph
+                  nodes={nodes}
+                  links={links}
+                  onNodeClick={(node) => setSelectedNode(node)}
+                />
+              </ErrorBoundary>
             ) : loading ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
                 SYNCHRONIZING GRAPH SNAPSHOT...

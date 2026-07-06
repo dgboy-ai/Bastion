@@ -378,7 +378,7 @@ class ORSet:
                 all_rem_before = all(self._memory._extract_clock(r).happens_before(ac) for r in rem_records)
                 if has_concurrent or all_rem_before:
                     result.add(elem)
-                    break
+                    continue
                 # If add happens-before all removes, element stays removed
                 if all(ac.happens_before(self._memory._extract_clock(r)) for r in rem_records):
                     break
@@ -410,6 +410,8 @@ class PNCounter:
     def __init__(self, memory: CRDTMemory, key: str) -> None:
         self._memory = memory
         self._key = key
+        self._p_clock: dict[str, int] = {}
+        self._n_clock: dict[str, int] = {}
 
     def increment(self, delta: int = 1) -> MemoryRecord:
         return self._memory.store(
@@ -423,30 +425,57 @@ class PNCounter:
             metadata={"_crdt_key": self._key},
         )
 
+    def merge(self, other: PNCounter) -> PNCounter:
+        """Merge another PNCounter into this one (element-wise max of P and N).
+
+        Proper CRDT merge: for each sub-counter, take the element-wise max
+        of the two vector clocks so that no concurrent increment is lost.
+        """
+        merged = PNCounter(self._memory, self._key)
+        merged._p_clock = dict(self._p_clock)
+        merged._n_clock = dict(self._n_clock)
+        for agent, tick in other._p_clock.items():
+            merged._p_clock[agent] = max(merged._p_clock.get(agent, 0), tick)
+        for agent, tick in other._n_clock.items():
+            merged._n_clock[agent] = max(merged._n_clock.get(agent, 0), tick)
+        return merged
+
     def value(self) -> int:
         records = self._memory.search(
             self._key, k=500, threshold=0.0, memory_type=self._CRDT_TYPE,
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
+        seen_p: set[str] = set()
+        seen_n: set[str] = set()
+        self._p_clock = {}
+        self._n_clock = {}
         p_total = 0
         n_total = 0
-        seen: set[str] = set()
 
         for r in target:
             try:
                 data = json.loads(r.content)
             except (json.JSONDecodeError, TypeError):
                 continue
-            tag = (r.metadata or {}).get("_vector_clock", "")
-            tag_str = str(tag) if tag else r.memory_id
-            if tag_str in seen:
-                continue
-            seen.add(tag_str)
+            vc_raw = (r.metadata or {}).get("_vector_clock", {})
+            tag_str = json.dumps(vc_raw, sort_keys=True) if vc_raw else r.memory_id
             if data.get("op") == "inc":
+                if tag_str in seen_p:
+                    continue
+                seen_p.add(tag_str)
                 p_total += data.get("delta", 1)
+                if isinstance(vc_raw, dict):
+                    for agent, tick in vc_raw.items():
+                        self._p_clock[agent] = max(self._p_clock.get(agent, 0), tick)
             elif data.get("op") == "dec":
+                if tag_str in seen_n:
+                    continue
+                seen_n.add(tag_str)
                 n_total += data.get("delta", 1)
+                if isinstance(vc_raw, dict):
+                    for agent, tick in vc_raw.items():
+                        self._n_clock[agent] = max(self._n_clock.get(agent, 0), tick)
 
         return p_total - n_total
 
@@ -563,9 +592,29 @@ class ORMap:
         ]
         if not target:
             return None
-        latest = max(target, key=lambda r: r.created_at or datetime.min.replace(tzinfo=UTC))
+
+        # Use vector clock dominance to pick the causally newest record.
+        # If two records are concurrent, take the one with the later timestamp.
+        def _vc_from_record(r: MemoryRecord) -> VectorClock:
+            vc_raw = (r.metadata or {}).get("_vector_clock", {})
+            return VectorClock.from_json(json.dumps(vc_raw)) if vc_raw else VectorClock()
+
+        best = target[0]
+        best_vc = _vc_from_record(best)
+        for r in target[1:]:
+            r_vc = _vc_from_record(r)
+            if r_vc.happens_before(best_vc):
+                continue
+            if best_vc.happens_before(r_vc):
+                best = r
+                best_vc = r_vc
+            elif r_vc.is_concurrent_with(best_vc):
+                if r.created_at and best.created_at and r.created_at > best.created_at:
+                    best = r
+                    best_vc = r_vc
+
         try:
-            data = json.loads(latest.content)
+            data = json.loads(best.content)
         except (json.JSONDecodeError, TypeError):
             return None
         return data.get("value")

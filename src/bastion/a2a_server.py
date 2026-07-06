@@ -1,8 +1,10 @@
 """
-Bastion A2A Server — Agent-to-Agent Protocol v1.0 Implementation
+Bastion A2A Server — A2A v1.0 Protocol Implementation.
 
-Implements the A2A agent card discovery and JSON-RPC task lifecycle
-directly over HTTP. No SDK dependency at runtime (self-contained).
+Uses the official A2A Python SDK (a2a-sdk v1.1.0) for type definitions and
+the Agent Card endpoint. Implements direct FastAPI handlers for JSON-RPC
+and REST, avoiding SDK components with protobuf version incompatibilities
+(field.label / field.is_repeated across protobuf 5.x-7.x).
 
 Usage:
     python -m bastion.a2a_server
@@ -23,22 +25,38 @@ import uuid
 from collections import defaultdict, deque
 from typing import Any
 
+from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
+from a2a.types.a2a_pb2 import AgentCapabilities, AgentCard, AgentSkill
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+
 _SAFE_ERROR_MSG = "Internal server error (see server logs for details)"
-_MAX_REQUEST_BYTES = 1_048_576  # 1 MiB
-_TASK_TTL_SECONDS = 300  # completed/failed tasks expire after 5 minutes
+_MAX_REQUEST_BYTES = 1_048_576
+_TASK_TTL_SECONDS = 300
 _MAX_TASKS = 10_000
-_ORPHAN_TASK_TTL_SECONDS = 1800  # abandoned working tasks expire after 30 minutes
-_RATE_LIMIT_WINDOW = 60  # seconds
-_RATE_LIMIT_MAX = 600  # requests per window per IP
-_REQUEST_TIMEOUT_SECONDS = 60  # max request processing time
+_ORPHAN_TASK_TTL_SECONDS = 1800
+_RATE_LIMIT_WINDOW = 60
+_RATE_LIMIT_MAX = 600
+_REQUEST_TIMEOUT_SECONDS = 60
+_A2A_VERSION = "1.0"
+
+_JSONRPC_PARSE_ERROR = -32700
+_JSONRPC_INVALID_REQUEST = -32600
+_JSONRPC_METHOD_NOT_FOUND = -32601
+_JSONRPC_INVALID_PARAMS = -32602
+_JSONRPC_INTERNAL_ERROR = -32603
+_A2A_TASK_NOT_FOUND = -32001
+_A2A_VERSION_NOT_SUPPORTED = -32009
+
+logger = logging.getLogger("bastion-a2a")
 
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
 
-class _JsonFormatter(logging.Formatter):
-    """Outputs JSON-structured log lines (one object per line)."""
 
+class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         entry = {
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -69,69 +87,10 @@ def _configure_logging() -> None:
         )
 
 
-logger = logging.getLogger("bastion-a2a")
-
-try:
-    from fastapi import FastAPI, Request
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse, Response
-    from pydantic import BaseModel
-except ImportError:
-    FastAPI = None  # type: ignore
-
-
-# ---------------------------------------------------------------------------
-# Streaming body reader with size enforcement
-# ---------------------------------------------------------------------------
-
-class _RequestTooLargeError(Exception):
-    pass
-
-
-async def _read_body(request: Request, max_bytes: int = _MAX_REQUEST_BYTES) -> bytes:
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > max_bytes:
-        raise _RequestTooLargeError()
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > max_bytes:
-            raise _RequestTooLargeError()
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-# ---------------------------------------------------------------------------
-# Agent Card (A2A v1.0 spec)
-# ---------------------------------------------------------------------------
-
-
-class AgentSkillModel(BaseModel):
-    id: str = ""
-    name: str = ""
-    description: str = ""
-    tags: list[str] = []
-    examples: list[str] = []
-
-
-class AgentCapabilitiesModel(BaseModel):
-    streaming: bool = True
-
-
-class AgentCardModel(BaseModel):
-    model_config = {"protected_namespaces": ()}
-    protocolVersion: str = "1.0"  # type: ignore  # noqa: N815
-    name: str = "Bastion Memory Agent"
-    description: str = "A2A-compliant memory agent with hash-chain integrity and C-SPANN vectors."
-    url: str = ""
-    version: str = "0.3.0"
-    capabilities: AgentCapabilitiesModel = AgentCapabilitiesModel()
-    skills: list[AgentSkillModel] = []
-
 # ---------------------------------------------------------------------------
 # Server factory
 # ---------------------------------------------------------------------------
+
 
 def create_a2a_server(
     connection_string: str | None = None,
@@ -139,9 +98,6 @@ def create_a2a_server(
     host: str = "0.0.0.0",
     port: int = 9998,
 ) -> tuple[FastAPI, Any]:
-    if FastAPI is None:
-        raise ImportError("fastapi is required; pip install fastapi uvicorn")
-
     from bastion.memory import BastionMemory
 
     _mock = mock if mock is not None else os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
@@ -158,45 +114,52 @@ def create_a2a_server(
                          extra={"agent_id": agent_id})
         memory = BastionMemory(agent_id, "", mock=True)
 
-    base_url = os.environ.get("A2A_BASE_URL", f"http://{host}:{port}")
+    skill_map = {
+        "memory_store": "store",
+        "memory_search": "search",
+        "graph_query": "graph_query",
+        "reinforce": "reinforce",
+        "broadcast": "broadcast",
+    }
 
-    card = AgentCardModel(
+    # -- A2A Agent Card ---------------------------------------------------
+
+    agent_card = AgentCard(
         name="Bastion Memory Agent",
         description="A2A-compliant memory agent with hash-chain integrity, "
-        "C-SPANN vectors, knowledge graph, and time travel.",
-        url=base_url,
+        "C-SPANN vector indexing, knowledge graph, and time travel.",
         version="0.3.0",
-        capabilities=AgentCapabilitiesModel(streaming=False),
+        capabilities=AgentCapabilities(streaming=False),
         skills=[
-            AgentSkillModel(
+            AgentSkill(
                 id="memory_store",
                 name="Store Agent Memory",
                 description="Store a memory with SHA-256 hash-chain integrity and C-SPANN vector indexing.",
                 tags=["memory", "storage", "hash-chain"],
                 examples=["Store that the user prefers Python over TypeScript"],
             ),
-            AgentSkillModel(
+            AgentSkill(
                 id="memory_search",
                 name="Search Agent Memories",
                 description="Semantic vector search across agent memories with cognitive decay weighting.",
                 tags=["memory", "search", "vector", "c-spann"],
                 examples=["Find memories about project architecture decisions"],
             ),
-            AgentSkillModel(
+            AgentSkill(
                 id="graph_query",
                 name="Knowledge Graph Query",
                 description="Traverse the knowledge graph with multi-hop BFS starting from an entity.",
                 tags=["graph", "knowledge", "traversal"],
                 examples=["Find what technologies Divyansh's projects use"],
             ),
-            AgentSkillModel(
+            AgentSkill(
                 id="reinforce",
                 name="Reinforce Memory",
                 description="Boost a memory's importance score based on successful retrieval.",
                 tags=["memory", "decay", "reinforcement"],
                 examples=["Reinforce memory abc-123 after successful use"],
             ),
-            AgentSkillModel(
+            AgentSkill(
                 id="broadcast",
                 name="Broadcast to Namespace",
                 description="Send an event message to all agents in the same namespace.",
@@ -206,21 +169,53 @@ def create_a2a_server(
         ],
     )
 
-    skill_map = {
-        "memory_store": "store",
-        "memory_search": "search",
-        "graph_query": "graph_query",
-        "reinforce": "reinforce",
-        "broadcast": "broadcast",
-    }
+    # -- In-memory task store ---------------------------------------------
 
-    _tasks: dict[str, dict] = {}
+    _tasks: dict[str, dict[str, Any]] = {}
+
+    def _store_task(tid: str, status: str, artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        now = time.time()
+        mono = time.monotonic()
+        task: dict[str, Any] = {
+            "id": tid,
+            "status": {"state": status},
+            "artifacts": artifacts or [],
+            "_created_at": now,
+            "_completed_at": None if status in ("working", "submitted") else now,
+            "_cm": mono,
+            "_dm": None if status in ("working", "submitted") else mono,
+        }
+        _tasks[tid] = task
+        stale = [k for k, v in _tasks.items() if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
+        for k in stale:
+            _tasks.pop(k, None)
+        if len(_tasks) > _MAX_TASKS:
+            oldest = min(_tasks, key=lambda k: _tasks[k]["_created_at"])
+            _tasks.pop(oldest, None)
+        return task
+
+    def _get_task(tid: str) -> dict[str, Any] | None:
+        return _tasks.get(tid)
+
+    # -- FastAPI app -------------------------------------------------------
+
+    app = FastAPI(title="Bastion A2A Server", version="0.3.0")
+    cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # -- Metrics state -----------------------------------------------------
+
     _rate_buckets: dict[str, list[float]] = defaultdict(list)
     _rate_checks = 0
     _metrics_requests_total: dict[tuple[str, str, int], int] = defaultdict(int)
     _metrics_durations: dict[tuple[str, str], deque[float]] = defaultdict(lambda: deque(maxlen=500))
     _metrics_rate_limit_hits = 0
-    _metrics_tasks_evicted = 0
     _metrics_start_time = time.monotonic()
 
     def _check_rate_limit(client_ip: str) -> bool:
@@ -233,7 +228,6 @@ def create_a2a_server(
         if len(bucket) >= _RATE_LIMIT_MAX:
             return False
         bucket.append(now)
-
         _rate_checks += 1
         if _rate_checks % 1000 == 0:
             stale = [ip for ip, ts in _rate_buckets.items() if not ts]
@@ -241,41 +235,11 @@ def create_a2a_server(
                 del _rate_buckets[ip]
         return True
 
-    def _evict_stale_tasks() -> int:
-        now = time.monotonic()
-        stale = []
-        for tid, t in list(_tasks.items()):
-            dm = t.get("_dm")
-            if dm is not None:
-                stale_at = dm + _TASK_TTL_SECONDS
-            else:
-                cm = t.get("_cm", 0)
-                stale_at = cm + _ORPHAN_TASK_TTL_SECONDS
-            if stale_at < now:
-                stale.append(tid)
-        for tid in stale:
-            _tasks.pop(tid, None)
-        return len(stale)
+    def _check_version(request: Request) -> bool:
+        version = request.headers.get("a2a-version", "")
+        return version == _A2A_VERSION
 
-    def _store_task(tid: str, task: dict) -> None:
-        nonlocal _metrics_tasks_evicted
-        evicted_count = _evict_stale_tasks()
-        _metrics_tasks_evicted += evicted_count
-        if len(_tasks) >= _MAX_TASKS:
-            oldest = min(_tasks, key=lambda k: _tasks[k].get("_created_at", 0))
-            _tasks.pop(oldest, None)
-            _metrics_tasks_evicted += 1
-        _tasks[tid] = task
-
-    app = FastAPI(title="Bastion A2A Server", version="0.3.0")
-    cors_origins = [o for o in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",") if o]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # -- Middleware --------------------------------------------------------
 
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
@@ -324,6 +288,108 @@ def create_a2a_server(
         )
         return response
 
+    # ----------------------------------------------------------------------
+    # A2A Agent Card (via SDK helper - only for this endpoint)
+    # ----------------------------------------------------------------------
+
+    add_a2a_routes_to_fastapi(
+        app,
+        agent_card_routes=create_agent_card_routes(
+            agent_card=agent_card,
+            card_url="/.well-known/agent-card.json",
+        ),
+    )
+
+    # ----------------------------------------------------------------------
+    # A2A JSON-RPC endpoint (POST /)
+    # ----------------------------------------------------------------------
+
+    @app.post("/")
+    async def jsonrpc_endpoint(request: Request):
+        rid = getattr(request.state, "request_id", uuid.uuid4().hex)
+
+        try:
+            raw = await _read_body(request)
+        except _RequestTooLargeError:
+            logger.warning("Request too large", extra={"request_id": rid})
+            return JSONResponse({"error": "Request too large"}, status_code=413)
+
+        try:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.warning("Parse error", extra={"request_id": rid, "error": str(exc)})
+            return _rpc_error(_JSONRPC_PARSE_ERROR, f"Parse error: {exc}")
+
+        if not isinstance(body, dict):
+            return _rpc_error(_JSONRPC_INVALID_REQUEST, "Body must be a JSON object")
+
+        if body.get("jsonrpc") != "2.0":
+            return _rpc_error(_JSONRPC_INVALID_REQUEST, "Invalid JSON-RPC version")
+
+        if not _check_version(request):
+            return _rpc_error(
+                _A2A_VERSION_NOT_SUPPORTED,
+                f"A2A version is not supported. Expected '{_A2A_VERSION}'.",
+                data=[{"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                       "reason": "VERSION_NOT_SUPPORTED",
+                       "domain": "a2a-protocol.org", "metadata": {}}],
+            )
+
+        req_id = body.get("id", uuid.uuid4().hex)
+        method = body.get("method", "")
+        params = body.get("params", {})
+
+        try:
+            if method == "SendMessage":
+                return _handle_send_message(params, rid, req_id)
+            elif method == "GetTask":
+                return _handle_get_task(params, req_id)
+            elif method == "CancelTask":
+                return _handle_cancel_task(params, req_id)
+            else:
+                logger.info("Method not found", extra={"request_id": rid, "method": method})
+                return _rpc_error(_JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}", req_id)
+        except Exception:
+            logger.exception("JSON-RPC error", extra={"request_id": rid, "method": method})
+            return _rpc_error(_JSONRPC_INTERNAL_ERROR, _SAFE_ERROR_MSG, req_id)
+
+    # ----------------------------------------------------------------------
+    # A2A REST endpoints
+    # ----------------------------------------------------------------------
+
+    @app.post("/message:send")
+    async def rest_message_send(request: Request):
+        rid = getattr(request.state, "request_id", uuid.uuid4().hex)
+        if not _check_version(request):
+            return JSONResponse({"error": "Unsupported A2A version"}, status_code=400)
+        try:
+            raw = await _read_body(request)
+            body = json.loads(raw)
+        except Exception:
+            logger.exception("Invalid request body in /message:send")
+            return JSONResponse({"error": "Invalid request"}, status_code=400)
+        result = _handle_send_message(body, rid, "rest")
+        return result
+
+    @app.get("/tasks/{task_id}")
+    async def rest_get_task(task_id: str):
+        task = _get_task(task_id)
+        if not task:
+            return JSONResponse({"error": "Task not found"}, status_code=404)
+        return JSONResponse(_strip_internal(task))
+
+    @app.post("/tasks/{task_id}:cancel")
+    async def rest_cancel_task(task_id: str):
+        task = _get_task(task_id)
+        if not task:
+            return JSONResponse({"error": "Task not found"}, status_code=404)
+        task["status"]["state"] = "CANCELED"
+        return JSONResponse(_strip_internal(task))
+
+    # ----------------------------------------------------------------------
+    # Bastion-specific endpoints
+    # ----------------------------------------------------------------------
+
     @app.get("/healthz")
     async def healthz():
         return JSONResponse({"status": "ok"})
@@ -338,17 +404,10 @@ def create_a2a_server(
             logger.warning("Readiness check failed", exc_info=True)
             return JSONResponse({"status": "not ready"}, status_code=503)
 
-    @app.get("/.well-known/agent-card.json")
-    async def get_agent_card(request: Request):
-        base = str(request.base_url).rstrip("/")
-        card_data = card.model_dump()
-        card_data["url"] = base
-        return JSONResponse(card_data)
-
     @app.get("/metrics")
     async def metrics():
         nonlocal _metrics_requests_total, _metrics_durations
-        nonlocal _metrics_rate_limit_hits, _metrics_tasks_evicted, _metrics_start_time
+        nonlocal _metrics_rate_limit_hits, _metrics_start_time
         lines = [
             "# HELP bastion_requests_total Total HTTP requests by method, path, and status",
             "# TYPE bastion_requests_total counter",
@@ -356,8 +415,7 @@ def create_a2a_server(
         for (method, path, status), count in sorted(_metrics_requests_total.items()):
             lines.append(f'bastion_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}')
         lines.append("")
-        lines.append("# HELP bastion_request_duration_seconds Request duration percentiles (sampled last 500 per path)",
-                     )
+        lines.append("# HELP bastion_request_duration_seconds Request duration percentiles (sampled last 500 per path)")
         lines.append("# TYPE bastion_request_duration_seconds summary")
         for (method, path), durations in sorted(_metrics_durations.items()):
             if not durations:
@@ -373,15 +431,9 @@ def create_a2a_server(
             tmpl_cnt = 'bastion_request_duration_seconds_count{method="%s",path="%s"} %d'
             lines.append(tmpl_cnt % (method, path, n))
         lines.append("")
-        lines.append("# HELP bastion_rate_limit_hits_total Total rate-limited requests",
-                     )
+        lines.append("# HELP bastion_rate_limit_hits_total Total rate-limited requests")
         lines.append("# TYPE bastion_rate_limit_hits_total counter")
         lines.append(f"bastion_rate_limit_hits_total {_metrics_rate_limit_hits}")
-        lines.append("")
-        lines.append("# HELP bastion_tasks_evicted_total Total tasks evicted from store",
-                     )
-        lines.append("# TYPE bastion_tasks_evicted_total counter")
-        lines.append(f"bastion_tasks_evicted_total {_metrics_tasks_evicted}")
         lines.append("")
         lines.append("# HELP bastion_up Server uptime in seconds")
         lines.append("# TYPE bastion_up gauge")
@@ -389,117 +441,123 @@ def create_a2a_server(
         lines.append("")
         return Response(content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
-    @app.post("/")
-    async def jsonrpc_endpoint(request: Request):
-        rid = getattr(request.state, "request_id", uuid.uuid4().hex)
+    # ----------------------------------------------------------------------
+    # Handler functions (closure captures memory, skill_map, _store_task, _get_task)
+    # ----------------------------------------------------------------------
+
+    def _rpc_error(code: int, message: str, req_id: Any = None, data: Any = None) -> JSONResponse:
+        body: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }
+        if data:
+            body["error"]["data"] = data
+        return JSONResponse(body)
+
+    def _rpc_result(result: Any, req_id: Any = None) -> JSONResponse:
+        return JSONResponse({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+    def _strip_internal(task: dict) -> dict:
+        return {k: v for k, v in task.items() if not k.startswith("_")}
+
+    def _infer_params(text: str) -> dict[str, Any]:
+        if not text:
+            return {}
         try:
-            raw = await _read_body(request)
-        except _RequestTooLargeError:
-            logger.warning("Request too large", extra={"request_id": rid})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Request too large"}},
-                status_code=413,
-            )
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+        return {"content": text}
+
+    def _handle_send_message(params: dict[str, Any], rid: str, req_id: Any) -> JSONResponse:
+        message = params.get("message", params) if isinstance(params, dict) else {}
+        parts = message.get("parts", [])
+        metadata = message.get("metadata", {}) or {}
+
+        skill_id = metadata.get("skill", "")
+        skill_params = dict(metadata.get("params", {}))
+
+        text = ""
+        for part in parts:
+            t = part.get("text", "")
+            if t:
+                text = t
+                break
+
+        if not skill_params:
+            skill_params = _infer_params(text)
+
+        method = skill_map.get(skill_id)
+
+        if not method:
+            task = _store_task(uuid.uuid4().hex, "FAILED")
+            return _rpc_result(_strip_internal(task), req_id)
+
+        task_id = uuid.uuid4().hex
+        _store_task(task_id, "WORKING")
 
         try:
-            body = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            logger.warning("Parse error", extra={"request_id": rid, "error": str(exc)})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
-            )
-
-        if not isinstance(body, dict):
-            logger.info("Invalid JSON body type", extra={"request_id": rid, "type": type(body).__name__})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Body must be a JSON object"}},
-            )
-
-        if body.get("jsonrpc") != "2.0":
-            logger.info("Invalid JSON-RPC version", extra={"request_id": rid, "version": body.get("jsonrpc")})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid JSON-RPC version"}},
-            )
-
-        req_id = body.get("id", uuid.uuid4().hex)
-        method = body.get("method", "")
-        params = body.get("params", {})
-        if not isinstance(params, dict):
-            logger.info("Invalid params type", extra={"request_id": rid, "type": type(params).__name__})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "params must be a JSON object"}},
-            )
-
-        try:
-            result: dict[str, Any] | None = None
-            if method == "tasks/send":
-                result = _handle_tasks_send(memory, params, skill_map, _store_task, _tasks, request_id=rid)
-            elif method == "tasks/get":
-                result = _handle_tasks_get(params, _tasks)
-                if result is None:
-                    task_id = params.get("id", "")
-                    err = {"code": -32001, "message": f"Task not found: {task_id}"}
-                    return JSONResponse(
-                        {"jsonrpc": "2.0", "id": req_id, "error": err},
-                        status_code=404,
-                    )
-            elif method == "tasks/cancel":
-                result = _handle_tasks_cancel(params, _tasks)
-                if result is None:
-                    task_id = params.get("id", "")
-                    err = {"code": -32001, "message": f"Task not found: {task_id}"}
-                    return JSONResponse(
-                        {"jsonrpc": "2.0", "id": req_id, "error": err},
-                        status_code=404,
-                    )
-            else:
-                logger.info("Method not found", extra={"request_id": rid, "method": method})
-                return JSONResponse(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {"code": -32601, "message": f"Method not found: {method}"},
-                    },
-                )
-            return JSONResponse({"jsonrpc": "2.0", "id": req_id, "result": result})
+            result = _execute_skill(memory, method, skill_params)
+            parts_out = [{"text": json.dumps(result, default=str)}]
+            _store_task(task_id, "COMPLETED", [{"parts": parts_out}])
         except Exception:
-            logger.exception("JSON-RPC error", extra={"request_id": rid, "method": method})
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32603, "message": _SAFE_ERROR_MSG}},
-                status_code=500,
-            )
+            logger.exception("Skill execution failed", extra={"request_id": rid, "skill": skill_id})
+            _store_task(task_id, "FAILED")
 
-    @app.post("/tasks/send")
-    async def rest_tasks_send(request: Request):
-        rid = getattr(request.state, "request_id", uuid.uuid4().hex)
-        try:
-            raw = await _read_body(request)
-        except _RequestTooLargeError:
-            return JSONResponse({"error": "Request too large"}, status_code=413)
+        return _rpc_result(_strip_internal(_tasks[task_id]), req_id)
 
-        try:
-            body = json.loads(raw)
-        except json.JSONDecodeError:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    def _handle_get_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
+        if isinstance(params, list):
+            return _rpc_error(_JSONRPC_INVALID_PARAMS, "params must be an object", req_id)
+        task_id = params.get("id", "") if isinstance(params, dict) else ""
+        task = _get_task(task_id)
+        if not task:
+            return _rpc_error(_A2A_TASK_NOT_FOUND, f"Task not found: {task_id}", req_id)
+        return _rpc_result(_strip_internal(task), req_id)
 
-        if not isinstance(body, dict):
-            return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)
-
-        try:
-            result = _handle_tasks_send(memory, body, skill_map, _store_task, _tasks, request_id=rid)
-            return JSONResponse(result)
-        except Exception:
-            logger.exception("REST error", extra={"request_id": rid})
-            return JSONResponse({"error": _SAFE_ERROR_MSG}, status_code=500)
+    def _handle_cancel_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
+        task_id = params.get("id", "")
+        task = _get_task(task_id)
+        if not task:
+            return _rpc_error(_A2A_TASK_NOT_FOUND, f"Task not found: {task_id}", req_id)
+        task["status"]["state"] = "CANCELED"
+        return _rpc_result(_strip_internal(task), req_id)
 
     return app, memory
 
 
 # ---------------------------------------------------------------------------
-# A2A task handlers
+# Request body reader
 # ---------------------------------------------------------------------------
 
-def _execute_skill(mem, method: str, params: dict[str, Any]) -> Any:
+
+class _RequestTooLargeError(Exception):
+    pass
+
+
+async def _read_body(request: Request, max_bytes: int = _MAX_REQUEST_BYTES) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_bytes:
+        raise _RequestTooLargeError()
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > max_bytes:
+            raise _RequestTooLargeError()
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Skill execution (standalone for testability)
+# ---------------------------------------------------------------------------
+
+
+def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
     if method == "store":
         mtype = params.get("memory_type", "fact")
         content = params.get("content") or params.get("text")
@@ -535,84 +593,10 @@ def _execute_skill(mem, method: str, params: dict[str, Any]) -> Any:
     return {"error": f"Unknown method: {method}"}
 
 
-def _strip_internal(task: dict) -> dict:
-    return {k: v for k, v in task.items() if not k.startswith("_")}
-
-
-def _handle_tasks_send(mem, params: dict, skill_map: dict, store_fn, task_store: dict, request_id: str = "") -> dict:
-    message = params.get("message", params)
-    skill_id = message.get("skill", "")
-    method = skill_map.get(skill_id)
-    now = time.time()
-    mono = time.monotonic()
-    if not method:
-        task_id = uuid.uuid4().hex
-        store_fn(task_id, {
-            "id": task_id,
-            "status": {"state": "failed"},
-            "_created_at": now,
-            "_completed_at": now,
-            "_cm": mono,
-            "_dm": mono,
-        })
-        logger.info("Unknown skill", extra={"request_id": request_id, "skill": skill_id, "task_id": task_id})
-        return {"id": task_id, "status": {"state": "failed"}}
-
-    task_id = uuid.uuid4().hex
-    store_fn(task_id, {
-        "id": task_id,
-        "status": {"state": "working"},
-        "_created_at": now,
-        "_cm": mono,
-    })
-    try:
-        result = _execute_skill(mem, method, message)
-        store_fn(task_id, {
-            "id": task_id,
-            "status": {"state": "completed"},
-            "artifacts": [{"parts": [{"text": json.dumps(result, default=str)}]}],
-            "_created_at": now,
-            "_completed_at": time.time(),
-            "_cm": mono,
-            "_dm": time.monotonic(),
-        })
-    except Exception:
-        logger.exception(
-            "Skill execution failed",
-            extra={"request_id": request_id, "skill": skill_id, "task_id": task_id},
-        )
-        store_fn(task_id, {
-            "id": task_id,
-            "status": {"state": "failed"},
-            "_created_at": now,
-            "_completed_at": time.time(),
-            "_cm": mono,
-            "_dm": time.monotonic(),
-        })
-
-    return _strip_internal(task_store[task_id])
-
-
-def _handle_tasks_get(params: dict, task_store: dict) -> dict | None:
-    task_id = params.get("id", "")
-    task = task_store.get(task_id)
-    if not task:
-        return None
-    return _strip_internal(task)
-
-
-def _handle_tasks_cancel(params: dict, task_store: dict) -> dict | None:
-    task_id = params.get("id", "")
-    task = task_store.get(task_id)
-    if not task:
-        return None
-    task["status"]["state"] = "canceled"
-    return _strip_internal(task)
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     _configure_logging()

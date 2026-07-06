@@ -50,6 +50,11 @@ export async function GET() {
     const recentAuditRes = await query(
       "SELECT audit_id, action, recorded_at, details FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
     );
+    const anomalyCountRes = await query(`
+      SELECT COUNT(*) as count FROM (
+        SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
+      ) dupes
+    `);
 
     const val24 = parseFloat(curveRes.rows[0]?.val_24 || "8.5");
     const val18 = parseFloat(curveRes.rows[0]?.val_18 || "6.2");
@@ -89,7 +94,17 @@ export async function GET() {
       ? ((cacheHits / totalMem) * 100).toFixed(1)
       : "94.2";
 
+    const anomalyCount = parseInt(anomalyCountRes.rows[0]?.count || "0", 10);
+    const alerts: { type: string; severity: string; count: number }[] = [];
+    if (anomalyCount > 0) {
+      alerts.push({ type: "fact_turnover", severity: "medium", count: anomalyCount });
+    }
+    if (totalMem > 100) {
+      alerts.push({ type: "size_spike", severity: "info", count: totalMem });
+    }
+
     return NextResponse.json({
+      alerts,
       memories: parseInt(memoryCountRes.rows[0]?.count || "0", 10),
       entities: parseInt(entityCountRes.rows[0]?.count || "0", 10),
       relations: parseInt(relationCountRes.rows[0]?.count || "0", 10),

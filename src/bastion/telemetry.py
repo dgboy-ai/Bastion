@@ -47,15 +47,28 @@ class TracedBastionMemory:
         with self._span("bastion.store", {"memory_type": memory_type, "content_length": len(content)}):
             return self._memory.store(memory_type, content, metadata, expires_in_seconds)
 
+    def reinforce(self, memory_id: str, success: bool = True) -> dict:
+        with self._span("bastion.reinforce", {"memory_id": memory_id, "success": success}):
+            return self._memory.reinforce(memory_id, success)
+
     def search(
         self,
         query: str,
         k: int = 5,
         threshold: float = 0.8,
         memory_type: str | None = None,
+        namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
-        with self._span("bastion.search", {"k": k, "threshold": threshold}):
-            return self._memory.search(query, k, threshold, memory_type)
+        with self._span("bastion.search", {"k": k, "threshold": threshold, "namespace_scope": namespace_scope}):
+            return self._memory.search(query, k, threshold, memory_type, namespace_scope)
+
+    def list_all(
+        self,
+        memory_type: str | None = None,
+        namespace_scope: str = "own",
+    ) -> list[MemoryRecord]:
+        with self._span("bastion.list_all", {"namespace_scope": namespace_scope}):
+            return self._memory.list_all(memory_type, namespace_scope)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
         with self._span("bastion.get_at_time", {"timestamp": timestamp}):
@@ -90,6 +103,49 @@ class TracedBastionMemory:
     def diff(self, timestamp_a: str, timestamp_b: str, agent_id: str | None = None) -> dict:
         with self._span("bastion.diff"):
             return self._memory.diff(timestamp_a, timestamp_b, agent_id)
+
+    def store_with_graph(
+        self,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        expires_in_seconds: int | None = None,
+    ) -> tuple[MemoryRecord, list, list]:
+        with self._span("bastion.store_with_graph"):
+            return self._memory.store_with_graph(content, metadata, expires_in_seconds)
+
+    def graph_query(
+        self,
+        start_entity: str,
+        relation_path: list[str] | None = None,
+        hops: int = 2,
+    ) -> list[dict[str, Any]]:
+        with self._span("bastion.graph_query", {"start_entity": start_entity, "hops": hops}):
+            return self._memory.graph_query(start_entity, relation_path, hops)
+
+    def graph_at_time(self, timestamp: str, entity: str | None = None) -> dict[str, Any]:
+        with self._span("bastion.graph_at_time", {"timestamp": timestamp}):
+            return self._memory.graph_at_time(timestamp, entity)
+
+    def graph_stats(self) -> dict[str, Any]:
+        with self._span("bastion.graph_stats"):
+            return self._memory.graph_stats()
+
+    def broadcast(
+        self,
+        event_type: str,
+        payload: dict | None = None,
+        namespace: str | None = None,
+    ) -> Any:
+        with self._span("bastion.broadcast", {"event_type": event_type}):
+            return self._memory.broadcast(event_type, payload, namespace)
+
+    def poll_messages(self, namespace: str | None = None) -> list:
+        with self._span("bastion.poll_messages"):
+            return self._memory.poll_messages(namespace)
+
+    def get_memory(self, memory_id: str) -> MemoryRecord | None:
+        with self._span("bastion.get_memory"):
+            return self._memory.get_memory(memory_id)
 
     def provision_cluster(self, name: str, region: str = "us-east1", provider: str = "aws") -> ClusterInfo:
         with self._span("bastion.provision_cluster", {"region": region, "provider": provider}):

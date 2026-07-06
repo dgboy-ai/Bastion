@@ -6,11 +6,13 @@ if (!connectionString) {
   console.warn("WARNING: BASTION_CONN environment variable is not defined");
 }
 
+const isDev = process.env.NODE_ENV === "development";
+
 export const pool = new Pool({
   connectionString,
-  ssl: {
-    rejectUnauthorized: false, // Let's keep it simple for the client, since root.crt is local
-  },
+  ssl: isDev
+    ? { rejectUnauthorized: false }
+    : { rejectUnauthorized: true },
 });
 
 export async function query(text: string, params?: unknown[]) {

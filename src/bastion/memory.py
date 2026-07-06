@@ -7,6 +7,7 @@ import math
 import os
 import re
 import subprocess
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -21,18 +22,21 @@ logger = logging.getLogger(__name__)
 _BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 _EMBED_DIM = 1024  # Titan V2 output dimension
 _bedrock_client = None
+_bedrock_lock = threading.Lock()
 
 
 def _get_bedrock_client():
-    """Lazily initialize the Bedrock runtime client."""
+    """Lazily initialize the Bedrock runtime client (thread-safe)."""
     global _bedrock_client
     if _bedrock_client is None:
-        try:
-            import boto3
-            region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "ap-south-1"))
-            _bedrock_client = boto3.client("bedrock-runtime", region_name=region)
-        except Exception:
-            _bedrock_client = None
+        with _bedrock_lock:
+            if _bedrock_client is None:
+                try:
+                    import boto3
+                    region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "ap-south-1"))
+                    _bedrock_client = boto3.client("bedrock-runtime", region_name=region)
+                except Exception:
+                    _bedrock_client = None
     return _bedrock_client
 
 
@@ -92,7 +96,8 @@ class BastionMemory:
         self.agent_id = agent_id
         self.namespace = namespace or agent_id
         self._mock = mock if mock is not None else os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
-        self._conn = None
+        self._conn: Any = None
+        self._tt_conn: Any = None
         self._conn_str = connection_string
         if self._mock:
             _mock.mock_register_namespace(agent_id, self.namespace)
@@ -181,6 +186,28 @@ class BastionMemory:
         if self._mock:
             return _mock.mock_search_memory(ns_agent_id, query, k, threshold, memory_type, namespace_scope)
         return self._search_real(query, k, threshold, memory_type, namespace_scope)
+
+    def list_all(
+        self,
+        memory_type: str | None = None,
+        namespace_scope: str = "own",
+    ) -> list[MemoryRecord]:
+        """List all non-expired memories (no vector similarity, no ordering).
+
+        This is the correct way to get all memories for analytics/reporting.
+        Unlike ``search("*", ...)`` which embeds the literal string ``"*"``
+        and does vector similarity, this performs a simple SQL query.
+
+        namespace_scope:
+            "own"    — list only this agent's memories (default)
+            "shared" — list all agents in the same namespace
+        """
+        if namespace_scope not in ("own", "shared"):
+            raise ValueError("namespace_scope must be 'own' or 'shared'")
+        ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
+        if self._mock:
+            return _mock.mock_list_all(ns_agent_id, memory_type, namespace_scope)
+        return self._list_all_real(memory_type, namespace_scope)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
         """Query memory state at a specific timestamp using AS OF SYSTEM TIME."""
@@ -317,8 +344,12 @@ class BastionMemory:
         return self._get_memory_by_id_real(memory_id)
 
     def close(self):
-        if self._conn and not self._conn.closed:
-            self._conn.close()
+        try:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
+        finally:
+            if self._tt_conn and not self._tt_conn.closed:
+                self._tt_conn.close()
 
     def _store_real(
         self,
@@ -328,7 +359,8 @@ class BastionMemory:
         expires_in_seconds: int | None,
     ) -> MemoryRecord:
         conn = self._conn
-        assert conn is not None, "store_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("store_real called without a database connection")
 
         prev_hash = self._get_last_hash()
         meta = metadata or {}
@@ -355,7 +387,8 @@ class BastionMemory:
                      expires_dt.isoformat() if expires_dt else None),
                 )
                 row = cur.fetchone()
-                assert row is not None, "INSERT RETURNING must return a row"
+                if row is None:
+                    raise RuntimeError("INSERT RETURNING did not return a row")
 
                 workflow_id = str(uuid.uuid4())
                 cur.execute(
@@ -365,8 +398,9 @@ class BastionMemory:
                 )
                 conn.commit()
 
-                return MemoryRecord(
-                    memory_id=str(row[0]),
+                row_map = row._mapping if hasattr(row, '_mapping') else {"memory_id": row[0], "created_at": row[1]}
+                result = MemoryRecord(
+                    memory_id=str(row_map["memory_id"]),
                     agent_id=self.agent_id,
                     memory_type=memory_type,
                     content=content,
@@ -374,10 +408,11 @@ class BastionMemory:
                     metadata=meta,
                     previous_hash=prev_hash,
                     cryptographic_hash=crypto_hash,
-                    created_at=row[1],
+                    created_at=row_map["created_at"],
                     expires_at=expires_dt,
                     importance_score=5.0,
                 )
+                return result
         except Exception:
             conn.rollback()
             raise
@@ -391,7 +426,8 @@ class BastionMemory:
         namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
         conn = self._conn
-        assert conn is not None, "search_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("search_real called without a database connection")
 
         query_vector = self._embed(query)
         query_vector_str = json.dumps(query_vector)
@@ -433,9 +469,41 @@ class BastionMemory:
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             return []
 
+    def _list_all_real(
+        self,
+        memory_type: str | None = None,
+        namespace_scope: str = "own",
+    ) -> list[MemoryRecord]:
+        conn = self._conn
+        if conn is None:
+            raise RuntimeError("_list_all_real called without a database connection")
+        agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
+        agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
+        try:
+            with conn.cursor() as cur:
+                if memory_type:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        f"WHERE {agent_filter} AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY created_at DESC",
+                        (agent_param, memory_type),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        f"WHERE {agent_filter} AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY created_at DESC",
+                        (agent_param,),
+                    )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception:
+            logger.exception("list_all query failed", extra={"agent_id": self.agent_id})
+            return []
+
     def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
         conn = self._conn
-        assert conn is not None, "get_memory_by_id_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("get_memory_by_id_real called without a database connection")
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -452,26 +520,24 @@ class BastionMemory:
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
         conn_str = self._conn_str
-        assert conn_str is not None, "get_at_time_real called in mock mode"
+        if conn_str is None:
+            raise RuntimeError("get_at_time_real called without a database connection")
         import psycopg
 
-        conn2 = psycopg.connect(conn_str)
-        try:
-            with conn2.cursor() as cur:
-                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
-                cur.execute(
-                    f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
-                    (agent_id,),
-                )
-                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
-        except Exception:
-            return []
-        finally:
-            conn2.close()
+        if self._tt_conn is None or self._tt_conn.closed:
+            self._tt_conn = psycopg.connect(conn_str)
+        with self._tt_conn, self._tt_conn.cursor() as cur:
+            cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
+            cur.execute(
+                f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
+                (agent_id,),
+            )
+            return [MemoryRecord.from_row(r) for r in cur.fetchall()]
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
         conn = self._conn
-        assert conn is not None, "audit_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("audit_real called without a database connection")
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -496,11 +562,13 @@ class BastionMemory:
                     ))
                 return results
         except Exception:
+            logger.exception("audit query failed", extra={"agent_id": agent_id})
             return []
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
         conn = self._conn
-        assert conn is not None, "heal_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("heal_real called without a database connection")
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -510,11 +578,13 @@ class BastionMemory:
                 conn.commit()
                 return {"agent_id": agent_id, "pruned": cur.rowcount, "status": "healed"}
         except Exception:
+            logger.exception("heal query failed", extra={"agent_id": agent_id})
             return {"agent_id": agent_id, "pruned": 0, "status": "error"}
 
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
         conn = self._conn
-        assert conn is not None, "resolve_conflict_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("resolve_conflict_real called without a database connection")
         import psycopg.errors
 
         merged = f"{fact_a}; {fact_b}"
@@ -523,10 +593,13 @@ class BastionMemory:
                 payload = json.dumps({
                     "fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context,
                 })
+                lock_resource = (
+                    f"conflict:{int(hashlib.sha256((fact_a + fact_b).encode()).hexdigest(), 16)}"
+                )
                 cur.execute(
                     "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
                     "VALUES (%s, %s, 'exclusive', %s) RETURNING lock_id",
-                    (self.agent_id, f"conflict:{hash(fact_a + fact_b)}", payload),
+                    (self.agent_id, lock_resource, payload),
                 )
                 conn.commit()
             return merged
@@ -535,7 +608,8 @@ class BastionMemory:
 
     def _get_last_hash(self) -> str | None:
         conn = self._conn
-        assert conn is not None, "get_last_hash called in mock mode"
+        if conn is None:
+            raise RuntimeError("get_last_hash called without a database connection")
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -545,6 +619,7 @@ class BastionMemory:
                 row = cur.fetchone()
                 return str(row[0]) if row else None
         except Exception:
+            logger.exception("get_last_hash query failed")
             return None
 
     def _query_with_cache_real(
@@ -563,7 +638,8 @@ class BastionMemory:
 
     def _detect_anomalies_real(self, agent_id: str) -> list[dict]:
         conn = self._conn
-        assert conn is not None, "detect_anomalies_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("detect_anomalies_real called without a database connection")
         alerts = []
         try:
             with conn.cursor() as cur:
@@ -572,7 +648,8 @@ class BastionMemory:
                     (agent_id,),
                 )
                 total_row = cur.fetchone()
-                assert total_row is not None, "COUNT query must return a row"
+                if total_row is None:
+                    raise RuntimeError("COUNT query for memories did not return a row")
                 total = total_row[0]
 
                 cur.execute(
@@ -599,7 +676,7 @@ class BastionMemory:
                     "agent_id": agent_id,
                 })
         except Exception:
-            pass
+            logger.exception("Anomaly detection query failed", extra={"agent_id": agent_id})
 
         return alerts
 
@@ -620,7 +697,8 @@ class BastionMemory:
 
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
         conn = self._conn
-        assert conn is not None, "reinforce_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("reinforce_real called without a database connection")
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT importance_score, access_count FROM agent_memory "
@@ -679,7 +757,8 @@ class BastionMemory:
         expires_in_seconds: int | None,
     ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
         conn = self._conn
-        assert conn is not None, "store_with_graph_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("store_with_graph_real called without a database connection")
         record = self._store_real("fact", content, metadata, expires_in_seconds)
         triples = self._extract_triples(content)
         created_entities: list[EntityRecord] = []
@@ -748,7 +827,8 @@ class BastionMemory:
         hops: int,
     ) -> list[dict[str, Any]]:
         conn = self._conn
-        assert conn is not None, "graph_query_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("graph_query_real called without a database connection")
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
@@ -796,58 +876,60 @@ class BastionMemory:
 
     def _graph_at_time_real(self, timestamp: str, entity: str | None) -> dict[str, Any]:
         conn_str = self._conn_str
-        assert conn_str is not None, "graph_at_time_real called in mock mode"
+        if conn_str is None:
+            raise RuntimeError("graph_at_time_real called without a database connection")
         import psycopg
-        conn2 = psycopg.connect(conn_str)
-        try:
-            with conn2.cursor() as cur:
-                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
 
-                if entity:
-                    cur.execute(
-                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                        "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s AND name = %s",
-                        (self.agent_id, entity),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                        "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s",
-                        (self.agent_id,),
-                    )
-                entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
+        if self._tt_conn is None or self._tt_conn.closed:
+            self._tt_conn = psycopg.connect(conn_str)
+        with self._tt_conn, self._tt_conn.cursor() as cur:
+            cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
 
-                entity_ids = tuple(e["entity_id"] for e in entities)
-                if entity_ids:
-                    cur.execute(
-                        "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
-                        "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
-                        "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
-                        (entity_ids, entity_ids),
-                    )
-                    relations = [dict(zip(
-                        ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
-                         "relation_type", "confidence", "valid_from", "valid_until",
-                         "source_memory_id", "created_at"], r, strict=False,
-                    )) for r in cur.fetchall()]
-                else:
-                    relations = []
+            if entity:
+                cur.execute(
+                    "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                    "valid_from, valid_until, created_at "
+                    "FROM agent_entities WHERE agent_id = %s AND name = %s",
+                    (self.agent_id, entity),
+                )
+            else:
+                cur.execute(
+                    "SELECT entity_id, agent_id, entity_type, name, attributes, "
+                    "valid_from, valid_until, created_at "
+                    "FROM agent_entities WHERE agent_id = %s",
+                    (self.agent_id,),
+                )
+            entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
 
-                return {"agent_id": self.agent_id, "timestamp": timestamp,
-                        "entities": entities, "relations": relations}
-        finally:
-            conn2.close()
+            entity_ids = tuple(e["entity_id"] for e in entities)
+            if entity_ids:
+                cur.execute(
+                    "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
+                    "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
+                    "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
+                    (entity_ids, entity_ids),
+                )
+                relations = [dict(zip(
+                    ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
+                     "relation_type", "confidence", "valid_from", "valid_until",
+                     "source_memory_id", "created_at"], r, strict=True,
+                )) for r in cur.fetchall()]
+            else:
+                relations = []
+
+            return {"agent_id": self.agent_id, "timestamp": timestamp,
+                    "entities": entities, "relations": relations}
 
     def _graph_stats_real(self) -> dict[str, Any]:
         conn = self._conn
-        assert conn is not None, "graph_stats_real called in mock mode"
+        if conn is None:
+            raise RuntimeError("graph_stats_real called without a database connection")
         with conn.cursor() as cur:
             entity_row = cur.execute(
                 "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
             ).fetchone()
-            assert entity_row is not None, "COUNT query must return a row"
+            if entity_row is None:
+                raise RuntimeError("COUNT query for entities did not return a row")
             entity_count = entity_row[0]
 
             relation_row = cur.execute(
@@ -855,7 +937,8 @@ class BastionMemory:
                 "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
                 (self.agent_id,),
             ).fetchone()
-            assert relation_row is not None, "COUNT query must return a row"
+            if relation_row is None:
+                raise RuntimeError("COUNT query for relations did not return a row")
             relation_count = relation_row[0]
 
             cur.execute(
@@ -870,7 +953,8 @@ class BastionMemory:
                 "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
                 (self.agent_id,),
             ).fetchone()
-            assert orphans_row is not None, "COUNT query must return a row"
+            if orphans_row is None:
+                raise RuntimeError("COUNT query for orphans did not return a row")
             orphans = orphans_row[0]
 
             return {"entities": entity_count, "relations": relation_count,
@@ -887,15 +971,17 @@ class BastionMemory:
                 (namespace, self.agent_id, event_type, json.dumps(payload or {})),
             )
             row = cur.fetchone()
-            assert row is not None, "INSERT RETURNING must return a row"
+            if row is None:
+                raise RuntimeError("INSERT RETURNING did not return a row")
             conn.commit()
+            row_map = row._mapping if hasattr(row, '_mapping') else {"message_id": row[0], "created_at": row[1]}
             return MessageRecord(
-                message_id=str(row[0]),
+                message_id=str(row_map["message_id"]),
                 namespace=namespace,
                 sender_agent_id=self.agent_id,
                 event_type=event_type,
                 payload=payload,
-                created_at=row[1],
+                created_at=row_map["created_at"],
             )
 
     def _poll_messages_real(self, namespace: str) -> list[MessageRecord]:

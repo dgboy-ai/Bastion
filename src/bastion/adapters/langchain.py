@@ -18,7 +18,7 @@ class BastionChatMessageHistory:
         ]
 
     def load_memory(self, k: int = 10) -> Sequence[dict[str, Any]]:
-        results = self.bastion.search("*", k=k, threshold=0.0)
+        results = self.bastion.list_all()[:k]
         return [r.to_dict() for r in results]
 
     def clear(self) -> None:

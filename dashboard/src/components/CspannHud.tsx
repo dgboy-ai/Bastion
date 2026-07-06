@@ -63,7 +63,7 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
     measureLatency();
     const interval = setInterval(measureLatency, refreshInterval);
     return () => clearInterval(interval);
-  }, [refreshInterval, readings.length]);
+  }, [refreshInterval]);
 
   // Gauge calculation (0-100ms mapped to 0-180 degrees)
   const gaugeAngle = Math.min(currentLatency / 100, 1) * 180;

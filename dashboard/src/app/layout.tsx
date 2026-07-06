@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import BackgroundParticles from "@/components/BackgroundParticles";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <GlobalErrorHandler />
         <BackgroundParticles />
         <div className="dashboard-layout">
           {/* Vertical left navigation sidebar */}
@@ -37,7 +40,9 @@ export default function RootLayout({
             </header>
             
             <main className="page-container">
-              {children}
+              <ErrorBoundary>
+                {children}
+              </ErrorBoundary>
             </main>
           </div>
         </div>

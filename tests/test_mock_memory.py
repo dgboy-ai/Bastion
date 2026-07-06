@@ -289,6 +289,68 @@ def test_from_row_parses_embedding_list():
     assert record.access_count == 0
 
 
+# -- list_all tests ----------------------------------------------------------
+
+def test_list_all_returns_all_non_expired():
+    memory = BastionMemory(agent_id="list-all-test", mock=True)
+    memory.store("fact", "First")
+    memory.store("fact", "Second")
+    memory.store("fact", "Third")
+    results = memory.list_all()
+    assert len(results) == 3
+    contents = {r.content for r in results}
+    assert contents == {"First", "Second", "Third"}
+
+
+def test_list_all_filters_by_memory_type():
+    memory = BastionMemory(agent_id="list-all-type", mock=True)
+    memory.store("fact", "Fact one")
+    memory.store("preference", "Pref one")
+    memory.store("fact", "Fact two")
+    facts = memory.list_all(memory_type="fact")
+    assert len(facts) == 2
+    assert all(r.memory_type == "fact" for r in facts)
+    prefs = memory.list_all(memory_type="preference")
+    assert len(prefs) == 1
+    assert prefs[0].content == "Pref one"
+
+
+def test_list_all_excludes_expired():
+    memory = BastionMemory(agent_id="list-all-expiry", mock=True)
+    memory.store("fact", "Persistent", expires_in_seconds=3600)
+    memory.store("fact", "Ephemeral", expires_in_seconds=-1)
+    results = memory.list_all()
+    assert len(results) == 1
+    assert results[0].content == "Persistent"
+
+
+def test_list_all_empty_agent():
+    memory = BastionMemory(agent_id="list-all-empty", mock=True)
+    results = memory.list_all()
+    assert results == []
+
+
+def test_list_all_shared_scope():
+    memory_a = BastionMemory(agent_id="agent-a", mock=True, namespace="shared-ns")
+    memory_b = BastionMemory(agent_id="agent-b", mock=True, namespace="shared-ns")
+    memory_a.store("fact", "From A")
+    memory_b.store("fact", "From B")
+    results = memory_a.list_all(namespace_scope="shared")
+    assert len(results) == 2
+    contents = {r.content for r in results}
+    assert contents == {"From A", "From B"}
+
+
+def test_list_all_own_scope_isolated():
+    memory_a = BastionMemory(agent_id="agent-a", mock=True, namespace="team")
+    memory_b = BastionMemory(agent_id="agent-b", mock=True, namespace="team")
+    memory_a.store("fact", "Only A")
+    memory_b.store("fact", "Only B")
+    results = memory_a.list_all(namespace_scope="own")
+    assert len(results) == 1
+    assert results[0].content == "Only A"
+
+
 def test_from_row_null_values():
     record = MemoryRecord.from_row((
         "test-id", "agent-1", "fact", "content",

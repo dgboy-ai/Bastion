@@ -201,7 +201,7 @@ class BastionMem0Bridge:
             from bastion.mock import _agent_data
             records = _agent_data.get(agent_id, [])
         else:
-            results = self._memory.search("*", k=top_k, threshold=0.0)
+            results = self._memory.list_all()
             records = [r.to_dict() for r in results]
 
         adapted = [self._record_to_dict(rec) for rec in records[:top_k]]

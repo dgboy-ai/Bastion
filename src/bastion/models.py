@@ -4,6 +4,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+_MEMORY_FIELDS = [
+    "memory_id", "agent_id", "memory_type", "content", "embedding",
+    "metadata", "previous_hash", "cryptographic_hash",
+    "created_at", "expires_at", "access_count", "importance_score",
+]
+
 
 class MemoryRecord:
     def __init__(
@@ -35,8 +41,25 @@ class MemoryRecord:
         self.importance_score = importance_score
 
     @classmethod
-    def from_row(cls, row: tuple) -> MemoryRecord:
-        embedding_raw = row[4]
+    def from_row(cls, row: tuple | dict) -> MemoryRecord:
+        if isinstance(row, dict):
+            return cls.from_dict(row)
+        if hasattr(row, '_mapping'):
+            vals = row._mapping
+        else:
+            vals = dict(zip(_MEMORY_FIELDS, row, strict=True))
+        memory_id = str(vals.get("memory_id", ""))
+        agent_id = str(vals.get("agent_id", ""))
+        memory_type = str(vals.get("memory_type", "fact"))
+        content = str(vals.get("content", ""))
+        embedding_raw = vals.get("embedding")
+        metadata_raw = vals.get("metadata")
+        previous_hash = vals.get("previous_hash")
+        cryptographic_hash = str(vals.get("cryptographic_hash", ""))
+        created_at = vals.get("created_at")
+        expires_at = vals.get("expires_at")
+        access_count = vals.get("access_count", 0)
+        importance_score = vals.get("importance_score", 5.0)
         if embedding_raw is not None:
             if isinstance(embedding_raw, str):
                 import json
@@ -46,18 +69,18 @@ class MemoryRecord:
         else:
             embedding = []
         return cls(
-            memory_id=str(row[0]),
-            agent_id=str(row[1]),
-            memory_type=str(row[2]),
-            content=str(row[3]),
+            memory_id=memory_id,
+            agent_id=agent_id,
+            memory_type=memory_type,
+            content=content,
             embedding=embedding,
-            metadata=dict(row[5]) if row[5] else {},
-            previous_hash=str(row[6]) if row[6] else None,
-            cryptographic_hash=str(row[7]),
-            created_at=row[8],
-            expires_at=row[9],
-            access_count=int(row[10]) if row[10] is not None else 0,
-            importance_score=float(row[11]) if row[11] is not None else 5.0,
+            metadata=dict(metadata_raw) if metadata_raw else {},
+            previous_hash=str(previous_hash) if previous_hash is not None else None,
+            cryptographic_hash=cryptographic_hash,
+            created_at=created_at,
+            expires_at=expires_at,
+            access_count=int(access_count) if access_count is not None else 0,
+            importance_score=float(importance_score) if importance_score is not None else 5.0,
         )
 
     @classmethod
@@ -206,6 +229,12 @@ class ClusterInfo:
         }
 
 
+_ENTITY_FIELDS = [
+    "entity_id", "agent_id", "entity_type", "name",
+    "attributes", "valid_from", "valid_until", "created_at",
+]
+
+
 class EntityRecord:
     def __init__(
         self,
@@ -228,16 +257,22 @@ class EntityRecord:
         self.created_at = created_at or datetime.now(UTC)
 
     @classmethod
-    def from_row(cls, row: tuple) -> EntityRecord:
+    def from_row(cls, row: tuple | dict) -> EntityRecord:
+        if isinstance(row, dict):
+            return cls(**row)
+        if hasattr(row, '_mapping'):
+            vals = row._mapping
+        else:
+            vals = dict(zip(_ENTITY_FIELDS, row, strict=True))
         return cls(
-            entity_id=str(row[0]),
-            agent_id=str(row[1]),
-            entity_type=str(row[2]),
-            name=str(row[3]),
-            attributes=dict(row[4]) if row[4] else {},
-            valid_from=row[5],
-            valid_until=row[6],
-            created_at=row[7],
+            entity_id=str(vals.get("entity_id", "")),
+            agent_id=str(vals.get("agent_id", "")),
+            entity_type=str(vals.get("entity_type", "concept")),
+            name=str(vals.get("name", "")),
+            attributes=dict(vals["attributes"]) if vals.get("attributes") else {},
+            valid_from=vals.get("valid_from"),
+            valid_until=vals.get("valid_until"),
+            created_at=vals.get("created_at"),
         )
 
     def to_dict(self) -> dict[str, Any]:

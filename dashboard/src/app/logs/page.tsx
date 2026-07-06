@@ -34,7 +34,7 @@ export default function LogsPage() {
         const data = await res.json();
         setMemories(data.memories || []);
       } catch (err: unknown) {
-        setError(err.message);
+        setError((err as Error).message);
       } finally {
         setLoading(false);
       }

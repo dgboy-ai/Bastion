@@ -115,11 +115,11 @@ class MemoryConsolidator:
 
     def _find_duplicates(self, agent_id: str) -> list[list[MemoryRecord]]:
         """Find groups of duplicate or near-duplicate memories."""
-        all_memories = self.memory.search("*", k=1000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return []
 
-        # Group by content similarity (simple exact match for now)
+        # Group by content similarity (exact match for now)
         content_groups: dict[str, list[MemoryRecord]] = {}
         for mem in all_memories:
             # Normalize content for comparison
@@ -156,7 +156,7 @@ class MemoryConsolidator:
 
     def _prune_by_decay(self, agent_id: str, threshold: float = 2.0):
         """Mark low-importance memories for pruning."""
-        all_memories = self.memory.search("*", k=1000, threshold=0.0)
+        all_memories = self.memory.list_all()
         pruned_count = 0
         for mem in all_memories:
             if mem.importance_score < threshold:
@@ -367,7 +367,7 @@ class BastionAgent:
     def create_checkpoint(self) -> AgentCheckpoint:
         """Create a checkpoint of current agent state."""
         # Get all memories
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
 
         # Compute state hash
         state_data = json.dumps(
@@ -458,7 +458,7 @@ class BastionAgent:
 
     def export_memory(self, format: str = "json") -> str:
         """Export all agent memory."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         data = {
             "agent_id": self.agent_id,
             "namespace": self.namespace,

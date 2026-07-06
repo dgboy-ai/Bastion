@@ -53,7 +53,7 @@ class MemoryAnalytics:
 
     def summary(self) -> dict[str, Any]:
         """Get memory summary statistics."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {
                 "total_memories": 0,
@@ -97,7 +97,7 @@ class MemoryAnalytics:
         - Age distribution (should have mix of old and new)
         - Duplicate rate (should be low)
         """
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return 0
 
@@ -141,7 +141,7 @@ class MemoryAnalytics:
 
     def growth_analysis(self) -> dict[str, Any]:
         """Analyze memory growth over time."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {"hourly": [], "daily": [], "trend": "stable"}
 
@@ -186,7 +186,7 @@ class MemoryAnalytics:
 
     def topic_distribution(self) -> dict[str, Any]:
         """Analyze what topics the agent knows about."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {"topics": {}, "top_topics": []}
 
@@ -225,7 +225,7 @@ class MemoryAnalytics:
 
     def decay_analysis(self) -> dict[str, Any]:
         """Analyze memory importance decay patterns."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {"avg_decay_rate": 0, "memories_at_risk": 0, "decay_curve": []}
 
@@ -258,7 +258,7 @@ class MemoryAnalytics:
 
     def quality_metrics(self) -> dict[str, Any]:
         """Assess memory quality metrics."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {
                 "avg_content_length": 0,
@@ -312,7 +312,7 @@ class MemoryAnalytics:
 
     def importance_distribution(self) -> dict[str, Any]:
         """Analyze importance score distribution."""
-        all_memories = self.memory.search("*", k=10000, threshold=0.0)
+        all_memories = self.memory.list_all()
         if not all_memories:
             return {"distribution": {}, "percentiles": {}}
 

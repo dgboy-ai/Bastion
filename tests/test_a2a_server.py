@@ -14,6 +14,12 @@ class TestA2AServer:
         from httpx import ASGITransport, AsyncClient
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
+    def _h(self, extra: dict | None = None) -> dict:
+        h = {"A2A-Version": "1.0"}
+        if extra:
+            h.update(extra)
+        return h
+
     def test_agent_card(self):
         from bastion.a2a_server import create_a2a_server
         app, _ = create_a2a_server(mock=True)
@@ -52,7 +58,7 @@ class TestA2AServer:
 
         async def run():
             async with client:
-                r = await client.post("/", content=b"not-json", headers={"content-type": "application/json"})
+                r = await client.post("/", content=b"not-json", headers=self._h({"content-type": "application/json"}))
                 assert r.status_code == 200
                 assert r.json()["error"]["code"] == -32700
 
@@ -65,7 +71,8 @@ class TestA2AServer:
 
         async def run():
             async with client:
-                r = await client.post("/", json={"jsonrpc": "1.0", "method": "tasks/send"})
+                r = await client.post("/", json={"jsonrpc": "1.0", "method": "tasks/send"},
+                                      headers=self._h())
                 assert r.status_code == 200
                 assert r.json()["error"]["code"] == -32600
 
@@ -78,7 +85,8 @@ class TestA2AServer:
 
         async def run():
             async with client:
-                r = await client.post("/", json={"jsonrpc": "2.0", "id": "1", "method": "unknown"})
+                r = await client.post("/", json={"jsonrpc": "2.0", "id": "1", "method": "unknown"},
+                                      headers=self._h())
                 assert r.status_code == 200
                 assert r.json()["error"]["code"] == -32601
 
@@ -92,7 +100,7 @@ class TestA2AServer:
 
         async def run():
             async with client:
-                r = await client.post("/", content=big_payload, headers={"content-type": "application/json"})
+                r = await client.post("/", content=big_payload, headers=self._h({"content-type": "application/json"}))
                 assert r.status_code == 413
 
         anyio.run(run)
@@ -114,23 +122,40 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "1",
-                    "method": "tasks/send",
-                    "params": {"message": {"skill": "memory_store", "content": "test"}},
-                })
+                    "method": "SendMessage",
+                    "params": {
+                        "message": {
+                            "role": 1,
+                            "parts": [{"text": "test"}],
+                            "metadata": {"skill": "memory_store", "params": {"content": "test"}},
+                        },
+                        "configuration": {"return_immediately": True},
+                    },
+                }, headers=self._h())
                 assert r.status_code == 200
                 result = r.json()
-                assert result["result"]["status"]["state"] == "completed"
+                assert result["result"]["status"]["state"] == "COMPLETED"
 
                 # Search
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "2",
-                    "method": "tasks/send",
-                    "params": {"message": {"skill": "memory_search", "query": "test", "k": 3, "threshold": 0.0}},
-                })
+                    "method": "SendMessage",
+                    "params": {
+                        "message": {
+                            "role": 1,
+                            "parts": [{"text": "test"}],
+                            "metadata": {
+                                "skill": "memory_search",
+                                "params": {"query": "test", "k": 3, "threshold": 0.0},
+                            },
+                        },
+                        "configuration": {"return_immediately": True},
+                    },
+                }, headers=self._h())
                 assert r.status_code == 200
                 result = r.json()
-                assert result["result"]["status"]["state"] == "completed"
+                assert result["result"]["status"]["state"] == "COMPLETED"
 
         anyio.run(run)
 
@@ -144,12 +169,19 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "1",
-                    "method": "tasks/send",
-                    "params": {"message": {"skill": "nonexistent"}},
-                })
+                    "method": "SendMessage",
+                    "params": {
+                        "message": {
+                            "role": 1,
+                            "parts": [{"text": ""}],
+                            "metadata": {"skill": "nonexistent"},
+                        },
+                        "configuration": {"return_immediately": True},
+                    },
+                }, headers=self._h())
                 assert r.status_code == 200
                 result = r.json()
-                assert result["result"]["status"]["state"] == "failed"
+                assert result["result"]["status"]["state"] == "FAILED"
 
         anyio.run(run)
 
@@ -163,9 +195,16 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "1",
-                    "method": "tasks/send",
-                    "params": {"message": {"skill": "memory_store", "content": "hello"}},
-                })
+                    "method": "SendMessage",
+                    "params": {
+                        "message": {
+                            "role": 1,
+                            "parts": [{"text": "hello"}],
+                            "metadata": {"skill": "memory_store", "params": {"content": "hello"}},
+                        },
+                        "configuration": {"return_immediately": True},
+                    },
+                }, headers=self._h())
                 assert r.status_code == 200
                 task = r.json()["result"]
                 task_id = task["id"]
@@ -173,15 +212,15 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "2",
-                    "method": "tasks/get",
+                    "method": "GetTask",
                     "params": {"id": task_id},
-                })
+                }, headers=self._h())
                 assert r.status_code == 200
-                assert r.json()["result"]["status"]["state"] in ("completed", "working")
+                assert r.json()["result"]["status"]["state"] in ("COMPLETED", "WORKING")
 
         anyio.run(run)
 
-    def test_tasks_get_nonexistent_returns_404(self):
+    def test_tasks_get_nonexistent_returns_error(self):
         from bastion.a2a_server import create_a2a_server
         app, _ = create_a2a_server(mock=True)
         anyio, client = self._client(app)
@@ -191,15 +230,15 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "1",
-                    "method": "tasks/get",
+                    "method": "GetTask",
                     "params": {"id": "nonexistent-task-id"},
-                })
-                assert r.status_code == 404
+                }, headers=self._h())
+                assert r.status_code == 200
                 assert r.json()["error"]["code"] == -32001
 
         anyio.run(run)
 
-    def test_tasks_cancel_nonexistent_returns_404(self):
+    def test_tasks_cancel_nonexistent_returns_error(self):
         from bastion.a2a_server import create_a2a_server
         app, _ = create_a2a_server(mock=True)
         anyio, client = self._client(app)
@@ -209,10 +248,10 @@ class TestA2AServer:
                 r = await client.post("/", json={
                     "jsonrpc": "2.0",
                     "id": "1",
-                    "method": "tasks/cancel",
+                    "method": "CancelTask",
                     "params": {"id": "nonexistent-task-id"},
-                })
-                assert r.status_code == 404
+                }, headers=self._h())
+                assert r.status_code == 200
                 assert r.json()["error"]["code"] == -32001
 
         anyio.run(run)

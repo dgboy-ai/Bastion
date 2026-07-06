@@ -2,6 +2,80 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.3.0] — 2026-07-06
+
+### Production-Grade Hardening — A2A v1.0, CRDT Semantics, Zero Silent Failures
+
+This session focused on closing every gap between hackathon prototype and Google production grade: A2A compliance, CRDT correctness, thread safety, resource safety, frontend resilience, and silent-failure elimination. All gates green (278 tests, ruff clean, mypy clean, TypeScript clean).
+
+#### Added — A2A v1.0 Protocol Server
+
+- **`a2a_server.py` rewritten**: Uses official `a2a-sdk ~v1.1.0` types and helpers
+- **Protobuf-based AgentCard** served at `/.well-known/agent-card.json`
+- **JSON-RPC endpoints**: `SendMessage`, `GetTask`, `CancelTask` (all gRPC-style method names per spec)
+- **REST endpoints**: `/message:send`, `/tasks/{id}`, `/tasks/{id}:cancel`
+- **`A2A-Version: 1.0` header** required on all requests
+- **Rate limiter** with per-IP buckets (configurable via env)
+- **Prometheus `/metrics`** endpoint
+- **Structured JSON logging** with correlation IDs, configurable via `LOG_JSON` env var
+
+#### Fixed — All Critical/High Backend Bugs (7 + 10 review findings)
+
+- **`search("*")` anti-pattern eliminated**: All 13 call sites in `analytics.py`, `agent.py`, `bridge_mem0.py`, `adapters/langchain.py` replaced with `list_all()`
+- **`_MEMORY_FIELDS` + `_ENTITY_FIELDS` as single source of truth**: `from_row` uses `zip(fields, row, strict=True)` instead of hardcoded tuple indices
+- **`_bedrock_client` thread-safe**: Double-checked locking with `threading.Lock`
+- **Connection reuse for time-travel queries**: `_tt_conn` lazily created and shared between `_get_at_time_real` and `_graph_at_time_real`
+- **`close()` uses `try/finally`**: Guarantees `_tt_conn` is closed even if `_conn.close()` raises
+- **`detect_anomalies_real` logs instead of bare `pass`**: `logger.exception(...)` replaces silent error swallow
+- **INSERT RETURNING rows use named column access**: `row._mapping` with fallback instead of fragile `row[0]`/`row[1]`
+- **`hash(fact_a + fact_b)` replaced**: Uses `int(hashlib.sha256(...).hexdigest(), 16)` for deterministic lock names across restarts
+- **19 `assert conn is not None` → `RuntimeError`**: All assertions replaced with explicit typed exceptions
+- **`_audit_real`, `_heal_real`, `_get_last_hash`**: Added `logger.exception()` to eliminate silent failures
+- **`a2a_server.py /message:send`**: Added `logger.exception()` for request body parsing errors
+- **CORS fixed**: `allow_credentials=False` when `allow_origins=["*"]` (per CORS spec); origin parsing now strips whitespace
+
+#### Fixed — CRDT Semantics
+
+- **PNCounter `merge()` + proper clock accumulation**: `_p_clock`/`_n_clock` use element-wise max instead of overwrite; `value()` dedup key uses `json.dumps(vc_raw, sort_keys=True)` instead of fragile `str(tag)`
+- **ORMap vector clock dominance**: Replaced LWW-by-timestamp with causal comparison; concurrent writes fall back to timestamp
+- **ORSet add-wins semantics fixed**: `break` → `continue` in element resolution loop — was ignoring subsequent add records after first match
+
+#### Fixed — All 6 Frontend Critical Bugs
+
+- **React Error Boundary component**: Created and wired at root layout + `<KnowledgeGraph>` with fallback UI and retry button
+- **Global error handler**: `window.onerror` + `unhandledrejection` listeners via `<GlobalErrorHandler />`
+- **SSL `rejectUnauthorized: false` gated by `NODE_ENV`**: Dev-only permissive SSL, production uses `ssl: true` with full certificate validation
+- **TypeScript errors fixed**: `err: unknown` → proper `instanceof Error` checks in graph and logs pages
+- **CspannHud infinite loop**: Removed `readings.length` from dependency array
+- **Stats anomaly count always 0**: Wired up `alerts` field from duplicate-content query to `anomalyCount`
+
+#### Added — `list_all()` Method
+
+- **`BastionMemory.list_all()`**: Public method returning all non-expired memories with namespace scope and type filtering
+- **`mock_list_all()`**: In-memory mock with same semantics
+- **`_list_all_real()`**: SQL query using `_MEMORY_COLS` with proper expiry and agent-id filtering
+- **`TracedBastionMemory.list_all()`**: OpenTelemetry-traced proxy
+- **6 comprehensive tests**: basic listing, type filter, expiry exclusion, empty agent, shared scope, own-scope isolation
+
+#### Added — TracedBastionMemory Proxy Methods
+
+- **9 missing proxy methods**: `list_all`, `reinforce`, `store_with_graph`, `graph_query`, `graph_at_time`, `graph_stats`, `broadcast`, `poll_messages`, `get_memory`
+- **`namespace_scope` param** added to `search()` proxy
+
+#### Fixed — Mock Consistency
+
+- **`expires_at` type handling**: `mock_search_memory`, `mock_list_all`, `mock_poll_messages` now handle both `str` and `datetime` types (matching `mock_heal` pattern)
+
+#### Test Results
+
+| Suite | Tests | Status |
+|---|---|---|
+| Python SDK | 278 | All pass |
+| TypeScript SDK | 32 | All pass |
+| **Total** | **310** | **All pass** |
+
+---
+
 ## [0.2.0] — 2026-07-06
 
 ### Hackathon Gap Fixes & MCP Protocol Rewrite

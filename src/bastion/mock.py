@@ -106,8 +106,8 @@ def mock_search_memory(
     valid = []
     for r in records:
         expires = r.get("expires_at")
-        if expires and isinstance(expires, str):
-            expires_dt = datetime.fromisoformat(expires)
+        if expires:
+            expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
             if expires_dt <= now:
                 continue
 
@@ -131,6 +131,35 @@ def mock_search_memory(
         results.append(MemoryRecord.from_dict(r))
 
     return results
+
+
+def mock_list_all(
+    agent_id: str,
+    memory_type: str | None = None,
+    namespace_scope: str = "own",
+) -> list[MemoryRecord]:
+    if namespace_scope == "shared":
+        agent_ids = _namespace_map.get(agent_id, {agent_id})
+        records = []
+        for aid in agent_ids:
+            recs = _agent_data.get(aid, [])
+            records.extend(recs)
+    else:
+        records = _agent_data.get(agent_id, [])
+    if memory_type:
+        records = [r for r in records if r["memory_type"] == memory_type]
+
+    now = datetime.now(UTC)
+    valid = []
+    for r in records:
+        expires = r.get("expires_at")
+        if expires:
+            expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
+            if expires_dt <= now:
+                continue
+        valid.append(r)
+
+    return [MemoryRecord.from_dict(r) for r in valid]
 
 
 def mock_reinforce(agent_id: str, memory_id: str, success: bool = True) -> dict:
@@ -167,8 +196,8 @@ def mock_poll_messages(namespace: str) -> list[MessageRecord]:
     unread = []
     for m in _messages:
         expires = m.get("expires_at")
-        if isinstance(expires, str):
-            expires_dt = datetime.fromisoformat(expires)
+        if expires:
+            expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
             if expires_dt <= now:
                 continue
         if m.get("namespace") == namespace and not m.get("read"):
@@ -452,11 +481,7 @@ def mock_store_with_graph(
             created_relations.append(rel)
 
     for eid_dict in _entities.get(agent_id, []):
-        created_entities.append(EntityRecord.from_row((
-            eid_dict["entity_id"], eid_dict["agent_id"], eid_dict["entity_type"],
-            eid_dict["name"], eid_dict["attributes"], eid_dict["valid_from"],
-            eid_dict["valid_until"], eid_dict["created_at"],
-        )))
+        created_entities.append(EntityRecord.from_row(dict(eid_dict)))
 
     deduped = {e.entity_id: e for e in created_entities}
     return record, list(deduped.values()), created_relations
