@@ -6,6 +6,18 @@ from bastion.config import BastionSettings, get_settings, reset_settings
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA
 from bastion.drift import BehavioralDriftDetector, DriftReport
+from bastion.errors import (
+    BastionAuthError,
+    BastionConfigError,
+    BastionConnectionError,
+    BastionError,
+    BastionNotFoundError,
+    BastionPoolExhaustedError,
+    BastionRetryExhaustedError,
+    BastionSerializationError,
+    BastionTimeoutError,
+    BastionValidationError,
+)
 from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.limiter import RequestLimiter
@@ -21,18 +33,6 @@ from bastion.models import (
     MemoryRecord,
     MessageRecord,
     RelationRecord,
-)
-from bastion.errors import (
-    BastionAuthError,
-    BastionConfigError,
-    BastionConnectionError,
-    BastionError,
-    BastionNotFoundError,
-    BastionPoolExhaustedError,
-    BastionRetryExhaustedError,
-    BastionSerializationError,
-    BastionTimeoutError,
-    BastionValidationError,
 )
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine

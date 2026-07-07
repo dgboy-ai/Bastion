@@ -109,7 +109,11 @@ class WebhookNotifier:
                     "fields": [
                         {"name": "Event Type", "value": event.event_type, "inline": True},
                         {"name": "Severity", "value": event.severity, "inline": True},
-                        {"name": "Details", "value": f"```json\n{json.dumps(event.details, indent=2)}\n```", "inline": False},
+                        {
+                            "name": "Details",
+                            "value": f"```json\n{json.dumps(event.details, indent=2)}\n```",
+                            "inline": False,
+                        },
                     ],
                     "timestamp": event.timestamp,
                 }],

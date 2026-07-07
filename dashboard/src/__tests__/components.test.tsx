@@ -275,7 +275,8 @@ describe('CompliancePage', () => {
     render(<CompliancePage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/EU AI Act Article 12 Compliance/)).toBeDefined()
+      expect(screen.getByText(/Compliance Check Failed/)).toBeDefined()
+      expect(screen.getByText(/Network error/)).toBeDefined()
     })
   })
 

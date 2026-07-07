@@ -73,8 +73,6 @@ class AgentCardSigner:
         return cls(raw)
 
     def sign_card(self, card: dict[str, Any]) -> dict[str, Any]:
-        from cryptography.hazmat.primitives import hashes
-
         signed = deepcopy(card)
         card_json = json.dumps(card, sort_keys=True, separators=(",", ":")).encode()
         signature = self._private_key.sign(card_json)
@@ -101,8 +99,7 @@ class AgentCardSigner:
 
 def verify_card_signed(card: dict[str, Any]) -> bool:
     from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.hazmat.primitives import serialization
 
     sig_info = card.get("signature")
     if not sig_info or not isinstance(sig_info, dict):

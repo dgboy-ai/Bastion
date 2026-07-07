@@ -59,7 +59,9 @@ class MemoryRecord(BaseModel):
             created_at=_ensure_dt(raw_created),
             expires_at=vals.get("expires_at"),
             access_count=int(vals.get("access_count", 0)) if vals.get("access_count") is not None else 0,
-            importance_score=float(vals.get("importance_score", 5.0)) if vals.get("importance_score") is not None else 5.0,
+            importance_score=float(vals.get("importance_score", 5.0))
+            if vals.get("importance_score") is not None
+            else 5.0,
             trust_level=int(vals.get("trust_level", 2)) if vals.get("trust_level") is not None else 2,
             source_provenance=str(vals.get("source_provenance", "agent_direct")),
             overwrite_count=int(vals.get("overwrite_count", 0)) if vals.get("overwrite_count") is not None else 0,

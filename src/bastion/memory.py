@@ -15,9 +15,9 @@ from typing import Any
 from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
 from bastion.config import get_settings
+from bastion.errors import BastionPoolExhaustedError
 from bastion.log_setup import get_logger
 from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
-from bastion.errors import BastionPoolExhaustedError
 from bastion.pool import ConnectionPool
 from bastion.retry import SerializationRetryEngine
 
@@ -456,7 +456,10 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s", (memory_id, self.agent_id))
+                cur.execute(
+                    "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
+                )
                 if cur.rowcount == 0:
                     return False
                 cur.execute(

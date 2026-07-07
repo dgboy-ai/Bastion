@@ -224,7 +224,7 @@ class AsyncConnectionPool:
         )
         structlog_logger.info("async_pool_started", min_size=self.min_size, max_size=self.max_size)
 
-    async def acquire(self, timeout: float = 30.0) -> Any:
+    async def acquire(self, timeout: float = 30.0) -> Any:  # noqa: ASYNC109
         if self._pool is None:
             raise BastionPoolExhaustedError("Pool not started. Call start() first.")
         conn = await asyncio.wait_for(self._pool.acquire(), timeout=timeout)
@@ -244,28 +244,28 @@ class AsyncConnectionPool:
         self._pool = None
         structlog_logger.info("async_pool_closed")
 
-    async def execute(self, query: str, *args: Any, timeout: float | None = None) -> Any:
+    async def execute(self, query: str, *args: Any, timeout: float | None = None) -> Any:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)
         try:
             return await conn.execute(query, *args)
         finally:
             await self.release(conn)
 
-    async def fetch(self, query: str, *args: Any, timeout: float | None = None) -> list[Any]:
+    async def fetch(self, query: str, *args: Any, timeout: float | None = None) -> list[Any]:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)
         try:
             return await conn.fetch(query, *args)
         finally:
             await self.release(conn)
 
-    async def fetchrow(self, query: str, *args: Any, timeout: float | None = None) -> Any | None:
+    async def fetchrow(self, query: str, *args: Any, timeout: float | None = None) -> Any | None:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)
         try:
             return await conn.fetchrow(query, *args)
         finally:
             await self.release(conn)
 
-    async def fetchval(self, query: str, *args: Any, timeout: float | None = None) -> Any:
+    async def fetchval(self, query: str, *args: Any, timeout: float | None = None) -> Any:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)
         try:
             return await conn.fetchval(query, *args)

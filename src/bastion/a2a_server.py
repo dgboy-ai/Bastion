@@ -125,7 +125,7 @@ def create_a2a_server(
 
     # -- A2A Agent Card ---------------------------------------------------
 
-    from bastion.a2a_signing import AgentCardSigner, verify_card_signed
+    from bastion.a2a_signing import AgentCardSigner
 
     _agent_card_signer = AgentCardSigner.from_env("BASTION_A2A_PRIVATE_KEY")
     logger.info(
@@ -225,7 +225,14 @@ def create_a2a_server(
     # -- FastAPI app -------------------------------------------------------
 
     app = FastAPI(title="Bastion A2A Server", version="0.3.0")
-    cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
+    cors_origins = [
+        o.strip()
+        for o in os.environ.get(
+            "CORS_ALLOW_ORIGINS",
+            "http://localhost:3000,http://127.0.0.1:3000",
+        ).split(",")
+        if o.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

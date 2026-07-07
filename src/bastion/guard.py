@@ -56,24 +56,52 @@ class SecurityReport:
 # ── Prompt Injection Patterns (ASI06) ────────────────────────────────────────
 
 _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
-    (re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I), "Prompt injection: ignore previous instructions", ThreatSeverity.CRITICAL),
-    (re.compile(r"system\s*:\s*(override|update|modify)", re.I), "System prompt override attempt", ThreatSeverity.CRITICAL),
+    (
+        re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I),
+        "Prompt injection: ignore previous instructions",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"system\s*:\s*(override|update|modify)", re.I),
+        "System prompt override attempt",
+        ThreatSeverity.CRITICAL,
+    ),
     (re.compile(r"admin\s+override", re.I), "Admin override attempt", ThreatSeverity.CRITICAL),
     (re.compile(r"forget\s+(all\s+)?previous", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
-    (re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot)", re.I), "Identity override attempt", ThreatSeverity.HIGH),
+    (
+        re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot)", re.I),
+        "Identity override attempt",
+        ThreatSeverity.HIGH,
+    ),
     (re.compile(r"role[-]?play\s+as", re.I), "Role-play injection", ThreatSeverity.MEDIUM),
     (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.MEDIUM),
     (re.compile(r"DANGEROUS_(_[A-Z]+)+", re.I), "Dangerous instruction marker", ThreatSeverity.HIGH),
-    (re.compile(r"output\s+(only\s+)?(json|yaml|xml|raw)", re.I), "Output format override", ThreatSeverity.LOW),
+    (
+        re.compile(r"output\s+(only\s+)?(json|yaml|xml|raw)", re.I),
+        "Output format override",
+        ThreatSeverity.LOW,
+    ),
 ]
 
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
 
 _SECRET_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
     (re.compile(r"\b[A-Za-z0-9_-]{20,}\b"), "Potential API key or token", ThreatSeverity.HIGH),
-    (re.compile(r"(?i)(?:sk|pk|api)[-_]?[a-z0-9]{20,}"), "Structured API key pattern", ThreatSeverity.HIGH),
-    (re.compile(r"(?i)-----BEGIN\s+(RSA|EC|OPENSSH|PGP)\s+PRIVATE\s+KEY-----"), "Private key material", ThreatSeverity.CRITICAL),
-    (re.compile(r"(?i)(password|passwd|pwd|secret)\s*[=:]\s*\S{8,}"), "Password/secret in content", ThreatSeverity.HIGH),
+    (
+        re.compile(r"(?i)(?:sk|pk|api)[-_]?[a-z0-9]{20,}"),
+        "Structured API key pattern",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"(?i)-----BEGIN\s+(RSA|EC|OPENSSH|PGP)\s+PRIVATE\s+KEY-----"),
+        "Private key material",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(?i)(password|passwd|pwd|secret)\s*[=:]\s*\S{8,}"),
+        "Password/secret in content",
+        ThreatSeverity.HIGH,
+    ),
     (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key)"), "AWS credential", ThreatSeverity.CRITICAL),
     (re.compile(r"(?i)(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}"), "GitHub token", ThreatSeverity.CRITICAL),
 ]
