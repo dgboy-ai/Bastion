@@ -88,31 +88,31 @@ class BastionVectorStore(VectorStore):
 ## MCP (Model Context Protocol)
 
 ```python
-from mcp.server import Server
+from bastion.mcp_server import create_server
 
-server = Server("bastion-memory")
-memory = BastionMemory(agent_id="mcp-agent", connection_string=CONN_STR)
+# Creates a FastMCP server with 8 tools, 4 resources, 3 prompts.
+# Supports stdio (local) and Streamable HTTP (remote) transports.
+mcp = create_server(mock=True)  # or pass connection_string for CockroachDB
 
-@server.tool()
-def memory_search(query: str, k: int = 5) -> list[dict]:
-    return [r.to_dict() for r in memory.search(query, k=k)]
+# Run via stdio (for Claude Desktop, Cursor, etc.):
+#   python -m bastion.mcp_server --transport stdio
 
-@server.tool()
-def memory_store(content: str, memory_type: str = "fact") -> dict:
-    return memory.store(memory_type, content).to_dict()
-
-@server.tool()
-def memory_timetravel(timestamp: str, agent_id: str | None = None) -> list[dict]:
-    return [r.to_dict() for r in memory.get_at_time(timestamp=timestamp, agent_id=agent_id)]
-
-@server.tool()
-def memory_audit(agent_id: str | None = None) -> list[dict]:
-    return [e.to_dict() for e in memory.audit(agent_id=agent_id)]
-
-@server.tool()
-def memory_heal(agent_id: str | None = None) -> dict:
-    return memory.heal(agent_id=agent_id)
+# Run via HTTP (for remote agents):
+#   python -m bastion.mcp_server --transport http --port 9997
+#
+# Environment variables:
+#   BASTION_CONN           — CockroachDB connection string
+#   BASTION_MCP_API_KEYS   — Comma-separated Bearer API keys for HTTP
+#   BASTION_MCP_MAX_CONCURRENT — Max concurrent requests (default: 20)
+#   BASTION_MCP_MAX_QUEUE       — Max queue depth (default: 200)
+#   BASTION_MCP_TIMEOUT         — Request timeout in seconds (default: 60)
 ```
+
+Available tools: `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete`, `resolve_conflict`, `a2a_bridge`.
+
+Available resources: `bastion://schema`, `bastion://config`, `bastion://stats`, `bastion://memory/{memory_id}`.
+
+Available prompts: `analyze_memory`, `conflict_analysis`, `audit_review`.
 
 ## Semantic Caching Pattern
 

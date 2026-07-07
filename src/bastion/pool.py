@@ -153,6 +153,11 @@ class ConnectionPool:
 
     def release(self, conn: Any) -> None:
         """Release a connection back to the pool."""
+        try:
+            with conn.cursor() as cur:
+                cur.execute("RESET ALL")
+        except Exception:
+            logger.warning("Failed to reset connection session context during release")
         with self._lock:
             if len(self._pool) < self.max_size:
                 self._pool.append((conn, time.time()))

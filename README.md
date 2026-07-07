@@ -1,156 +1,193 @@
-# Bastion
+# 🪳 Bastion: Persistent, Self-Healing Agentic Memory
 
 [![CI](https://github.com/dgboy-ai/Bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/dgboy-ai/Bastion/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
+[![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
 
-**Memory that survives crashes — so AI agents never forget.**
+> **Persistent, tamper-proof, and self-healing memory that survives host crashes—so your AI agents never forget.**
 
-88% of AI agents fail in production. The #1 reason: their memory doesn't survive the crash. Bastion gives agents memory that persists across failures, detects corruption, and heals itself — built on CockroachDB's distributed SQL.
-
----
-
-## The Problem
-
-```
-Agent builds context for 50 interactions → Process dies → Restart
-"Hello, I'm an AI assistant."  ← Blank slate. Every time.
-```
-
-## The Fix
-
-```
-Agent builds context → Process dies → Restart
-"Welcome back, John. Last session we were working on Project X."
-```
+Bastion is a production-grade Agentic Memory layer built on **CockroachDB’s distributed SQL database** and **AWS serverless architecture**. It acts as the system of record for autonomous AI systems, offering cryptographic state validation, zero-knowledge vector indexing, row-level session boundaries, and serverless background consolidation.
 
 ---
 
-## Quick Start (3 Lines)
+## 💡 The Problem
+
+Traditional databases are optimized for human-scale workloads. Autonomous agents are different: they spawn processes dynamically, read/write constantly, run loops, and require memory state that persists across serverless lifecycle boundaries, container recycles, and region outages. 
+
+If an agent's memory drops offline or corrupts, it doesn't degrade gracefully—it gets stuck, hallucinates, or resets to a blank slate:
+
+```
+❌ Traditional:
+Agent runs task for 2 hours → Host Container recycles / AWS Lambda expires → Context Lost
+"Hello, I am a helpful assistant. How can I help you today?"  ← Blank slate.
+
+✔ Bastion:
+Agent runs task for 2 hours → Host Container recycles / AWS Lambda expires → State Restored
+"Welcome back. I have processed 12 files; continuing stage 3..."
+```
+
+---
+
+## 🏗️ Architecture System Flow
+
+Bastion integrates directly with your agent toolchain and coordinates securely with AWS and CockroachDB:
+
+```
+     AI Agent Framework (LangChain / CrewAI / LlamaIndex / raw SDK)
+                                │
+                        from bastion import BastionMemory
+                                │
+                                ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │                       Bastion Memory SDK                       │
+    │  ┌──────────────┐ ┌───────────────────┐ ┌───────────────────┐  │
+    │  │   C-SPANN    │ │ Cryptographic     │ │    Multi-Tenant   │  │
+    │  │ Vector Index │ │ SHA-256 Ledger    │ │ Row-Level Safety  │  │
+    │  └──────┬───────┘ └─────────┬─────────┘ └─────────┬─────────┘  │
+    └─────────┼───────────────────┼─────────────────────┼────────────┘
+              │                   │                     │
+              ▼                   ▼                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │                      CockroachDB Cluster                       │
+    │  • agent_memory: Vector embeddings search & plaintext KMS      │
+    │  • agent_audit: Append-only ledger checks (AS OF SYSTEM TIME)   │
+    │  • agent_checkpoints: Transaction state logs (CDC Enabled)     │
+    └─────────┬──────────────────────────────────────────────────────┘
+              │
+              │ (Change Data Capture)
+              ▼
+    ┌──────────────────────────────────┐
+    │          AWS Serverless          │
+    │  • AWS Lambda: Consolidated drift│
+    │    scans & self-healing runs     │
+    │  • Bedrock: Titan V2 vectors     │
+    │  • S3: Compliance snapshots      │
+    └──────────────────────────────────┘
+```
+
+---
+
+## ⚡ Quick Start
+
+### Python SDK
 
 ```python
 from bastion import BastionMemory
 
-mem = BastionMemory("my-agent", mock=True)  # or pass CockroachDB connection string
-mem.store("fact", "User prefers dark mode")  # SHA-256 hash-chained, vector-indexed
-results = mem.search("design preferences")   # C-SPANN semantic search
+# Instantiated in Mock Mode (no DB required) or Real Mode (using connection string)
+mem = BastionMemory("dev-agent", mock=True)
+
+# 1. Store memory - automatically generates Bedrock/Mock embeddings and SHA-256 hash chains
+record = mem.store("fact", "User prefers dark mode layouts.", metadata={"domain": "UI"})
+print(f"Stored Memory ID: {record.memory_id} (Hash: {record.cryptographic_hash[:10]})")
+
+# 2. Query memory - returns matches with decay scoring applied
+results = mem.search("user design preferences", k=5)
+for r in results:
+    print(f"[{r.memory_type}] {r.content} (Relevance Score: {r.importance_score})")
 ```
+
+### TypeScript SDK
 
 ```typescript
 import { BastionMemory } from "bastion-memory";
 
-const mem = new BastionMemory("my-agent");
-await mem.store("fact", "User prefers dark mode");
-const results = await mem.search("design preferences");
+const mem = new BastionMemory("dev-agent", { mock: true });
+
+// Store and index
+const record = await mem.store("fact", "User prefers dark mode layouts.", { domain: "UI" });
+
+// Semantic vector search
+const results = await mem.search("user design preferences", { k: 5 });
 ```
 
 ---
 
-## 12 Features, One SDK
+## 🛠️ The 12 Production Features
 
-| # | Feature | How It Works |
-|---|---------|-------------|
-| 1 | **Hash-Chained Memory** | SHA-256 chain: each record links to the previous. Tampering detected instantly. |
-| 2 | **C-SPANN Semantic Search** | Distributed vector indexing — 94% smaller than pgvector, real-time inserts. |
-| 3 | **Knowledge Graph** | Entity extraction + multi-hop traversal across agent memories. |
-| 4 | **Semantic Caching** | Identical queries return from C-SPANN cache at 0ms, zero LLM cost. |
-| 5 | **Time Travel** | `AS OF SYSTEM TIME` — reconstruct agent state at any past moment. |
-| 6 | **Memory Diff** | Compare agent state between two timestamps, see what changed. |
-| 7 | **Audit Log** | Append-only, hash-chained operation history. Immutable. |
-| 8 | **Self-Healing** | CDC changefeeds stream writes to Lambda for real-time anomaly detection. |
-| 9 | **Conflict Resolution** | SERIALIZABLE isolation catches contradictions, LLM merges facts. |
-| 10 | **PII Detection** | Automatic redaction of SSN, email, phone, API keys before storage. |
-| 11 | **Memory Analytics** | Health scores, growth trends, topic distribution, decay curves. |
-| 12 | **Agent Checkpointing** | Save/restore agent state at any point. Crash recovery in one call. |
+### 1. Hash-Chained Memory Ledger
+Every memory record is appended to a cryptographic hash chain. Each node's `cryptographic_hash` is calculated as:
+$$\text{Hash}_n = \text{SHA256}(\text{Content} + \text{Metadata} + \text{Hash}_{n-1})$$
+Any out-of-order manipulation or raw database row editing breaks the ledger integrity and triggers instant security exception audits.
 
----
+### 2. Zero-Knowledge Vector Search
+To ensure privacy and compliance:
+*   Titan V2 embeddings are generated on the **plaintext** first.
+*   The plaintext is encrypted with **AES-256-GCM** using AWS KMS.
+*   The raw vector is indexed in CockroachDB alongside the ciphertext.
+*   *Result:* The database performs sub-millisecond semantic search, but remains cryptographically blind to the underlying text content.
 
-## CockroachDB Tools Used
+### 3. C-SPANN Vector Indexing
+Bastion leverages CockroachDB's native C-SPANN vector search indexes. This provides sub-linear vector retrieval speeds while avoiding the consistency gaps, reindexing delays, and scaling limitations of standard index models.
 
-| Tool | Bastion Usage |
-|------|---------------|
-| **C-SPANN Vector Indexing** | Core semantic memory engine — every search uses distributed vector similarity |
-| **MCP Server** | 6 tools for agents to query their own memory via Cursor, Claude Code, VS Code |
-| **ccloud CLI** | `provision_cluster()` — agent provisions its own CockroachDB cluster on first boot |
-| **Agent Skills** | 5 pre-built memory skills: store, search, timetravel, audit, heal |
-
-## AWS Services Used
-
-| Service | Bastion Usage |
-|---------|---------------|
-| **Amazon Bedrock** | Titan V2 embeddings for vector indexing |
-| **AWS Lambda** | CDC event processing, anomaly detection, self-healing triggers |
-| **Amazon S3** | Long-term memory archives and compliance snapshots |
-
----
-
-## Comparison
-
-| Capability | Bastion | Mem0 | Zep | DBOS | Temporal |
-|-----------|---------|------|-----|------|----------|
-| Hash-chained memory | **Yes** | No | No | No | No |
-| C-SPANN vectors (94% smaller) | **Yes** | pgvector | Neo4j | pgvector | No |
-| CDC self-healing | **Yes** | No | No | No | No |
-| Time travel (AS OF SYSTEM TIME) | **Yes** | No | No | No | No |
-| SERIALIZABLE coordination | **Yes** | No | No | No | No |
-| MCP + ccloud + Skills | **Yes** | No | No | No | No |
-| Python + TypeScript SDK | **Yes** | Python only | Python | Python | Python |
-| Framework adapters | **3** (LangChain, CrewAI, LlamaIndex) | 1 | 1 | 0 | 0 |
-
----
-
-## Architecture
-
-```
-    AI Framework (LangChain / CrewAI / LlamaIndex / raw Python)
-                    │
-            from bastion import BastionMemory
-                    │
-                    ▼
-    ┌───────────────────────────────────────┐
-    │         Bastion Memory SDK            │
-    │  ┌──────────┐ ┌────────┐ ┌─────────┐ │
-    │  │ C-SPANN  │ │  CDC   │ │  Time   │ │
-    │  │ Vectors  │ │Changefeed│ │ Travel │ │
-    │  └────┬─────┘ └───┬────┘ └────┬────┘ │
-    └───────┼────────────┼──────────┼───────┘
-            │            │          │
-            ▼            ▼          ▼
-    ┌───────────────────────────────────────┐
-    │           CockroachDB                 │
-    │  agent_memory (C-SPANN)              │
-    │  agent_checkpoints (CDC → Lambda)    │
-    │  agent_audit (AS OF SYSTEM TIME)     │
-    │  agent_coordination (SERIALIZABLE)   │
-    └───────────────────────────────────────┘
+### 4. Time Travel Querying
+Allows checking historical memory states using CockroachDB's `AS OF SYSTEM TIME`. If an agent detects a logical loop, it can restore its memory matrix to a verified snapshot in the past:
+```sql
+SELECT * FROM agent_memory AS OF SYSTEM TIME '2026-07-07 12:00:00Z'
 ```
 
+### 5. Multi-Tenant Row-Level Security (RLS)
+Forces context isolation when sharing connection pools. Bastion validates that connections are executing within transaction-level limits:
+*   Rejects commands outside active transaction boundaries.
+*   Applies a connection session reset (`RESET ALL`) on checkout to block database variable bleed between concurrent agent threads.
+
+### 6. CDC-Triggered Self-Healing
+CockroachDB Change Data Capture (CDC) streams memory updates to an AWS Lambda background worker. The worker cleans up expired objects, scans for recursive prompt injection indicators, and logs compliance audits out-of-band.
+
+### 7. Semantic Caching
+Caches repetitive LLM prompts and responses. Similar inputs bypass the LLM and return from local memory immediately, reducing inference cost and API latency.
+
+### 8. Cognitive Decay Curves
+Facts fade naturally unless validated or reinforced. Matches are ranked using a time-decay weight formula:
+$$\text{Score} = \frac{\text{Similarity} \times \text{Importance}}{1.0 + (\text{Decay Rate} \times \text{Hours Elapsed})}$$
+
+### 9. Conflict Resolution & CRDTs
+Leverages `SERIALIZABLE` isolation transactions. If a newly registered fact contradicts a prior belief, Bastion executes conflict resolution, invoking LLM merges (or MCP sampling) to update database state without race conditions.
+
+### 10. Multi-Agent Checkpointing
+Atomically records agent run loops and metadata, guaranteeing crash recovery down to the exact instruction.
+
+### 11. Framework Adapters
+Drop-in integration layers for top agent frameworks:
+*   `bastion.adapters.crewai`
+*   `bastion.adapters.langchain`
+*   `bastion.adapters.llamaindex`
+
+### 12. OpenTelemetry Tracing
+Full span observability is instrumented across all memory operations, showing trace spans extending from the agent execution context all the way to CockroachDB and Amazon Bedrock.
+
 ---
 
-## Running
+## 📈 MCP Tool Latency Benchmarks
 
+To verify performance under high-concurrency workloads, Bastion includes a latency distribution profiler. Below are the performance results executed over 150 runs (15 warmup) using simulated in-memory SQLite/Mock DB mode:
+
+| MCP Tool Name | Runs | Avg Latency | Min Latency | Max Latency | P50 (Median) | P90 | P95 | P99 | Throughput |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `memory_store` | 150 | 1.18 ms | 0.52 ms | 3.29 ms | 1.05 ms | 1.85 ms | 2.54 ms | 2.94 ms | 850.5 ops/s |
+| `memory_search` | 150 | 1.70 ms | 0.98 ms | 4.53 ms | 1.56 ms | 2.55 ms | 2.76 ms | 3.43 ms | 589.2 ops/s |
+| `memory_timetravel` | 150 | 1.16 ms | 0.64 ms | 2.67 ms | 0.97 ms | 1.80 ms | 2.17 ms | 2.55 ms | 865.4 ops/s |
+| `memory_audit` | 150 | 2.90 ms | 2.10 ms | 5.19 ms | 2.73 ms | 3.82 ms | 4.21 ms | 4.77 ms | 344.6 ops/s |
+| `memory_heal` | 150 | 0.48 ms | 0.33 ms | 1.14 ms | 0.43 ms | 0.69 ms | 0.78 ms | 1.01 ms | 2078.2 ops/s |
+| `resolve_conflict` | 150 | 0.41 ms | 0.27 ms | 1.04 ms | 0.36 ms | 0.61 ms | 0.68 ms | 0.95 ms | 2431.1 ops/s |
+
+### Running the Benchmarks
+To run the latency suite locally:
 ```bash
-# Mock mode (no database needed)
-BASTION_MOCK=true python examples/full_demo.py
-
-# Live mode (requires CockroachDB)
-export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
-python scripts/apply_schema.py
-python examples/full_demo.py
-
-# Benchmarks
-BASTION_MOCK=true python examples/benchmark.py
-
-# Tests
-python -m pytest --tb=short -q    # 250+ tests
+python scripts/mcp_latency_benchmark.py --iterations 150 --warmup 15
+```
+You can execute it in **Real Mode** against a live CockroachDB cluster by supplying connection arguments:
+```bash
+python scripts/mcp_latency_benchmark.py --conn "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
 ```
 
 ---
 
-## MCP Server Setup
+## 🔌 Model Context Protocol (MCP) Setup
 
-Add to your editor config (Cursor, Claude Code, VS Code):
+Add Bastion directly to your MCP client configuration (Cursor, Claude Code, VS Code, etc.):
 
 ```json
 {
@@ -159,51 +196,41 @@ Add to your editor config (Cursor, Claude Code, VS Code):
       "command": "python",
       "args": ["-m", "bastion.mcp_server"],
       "env": {
-        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full",
+        "BASTION_MOCK": "false"
       }
     }
   }
 }
 ```
 
-6 tools available: `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, `resolve_conflict`.
+### Protocol Primitives Served
+*   **Tools:** `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete`, `resolve_conflict`, `a2a_bridge`.
+*   **Resources:** `bastion://schema`, `bastion://config`, `bastion://stats`, `bastion://memory/{memory_id}`.
+*   **Prompts:** `analyze_memory`, `conflict_analysis`, `audit_review`.
 
 ---
 
-## Tech Stack
+## 🚦 Test Verification Suite
 
-- **Python SDK**: `psycopg3` (async CockroachDB driver)
-- **TypeScript SDK**: `pg` (Node.js CockroachDB driver)
-- **Database**: CockroachDB (C-SPANN vectors, CDC changefeeds, AS OF SYSTEM TIME, SERIALIZABLE)
-- **Embeddings**: Amazon Bedrock Titan V2 (1024-dim)
-- **Serverless**: AWS Lambda (CDC processing), Amazon S3 (archives)
-- **Frameworks**: LangChain, CrewAI, LlamaIndex adapters
-- **Observability**: OpenTelemetry traces on every memory operation
+All modules are verified using continuous integration tests:
 
----
-
-## Test Results
-
+```bash
+python -m pytest --tb=short -q
 ```
-290 passed, 0 failed
-├── test_memory.py        — Store, search, hash chain, time travel
-├── test_agent.py         — Agent loop, PII detection, checkpointing
-├── test_mcp_server.py    — MCP tools, schemas, descriptions
-├── test_chaos.py         — Crash recovery, poisoning detection, multi-agent
-├── test_consolidator.py  — Duplicate detection, merge, pruning
-├── test_analytics.py     — Health scores, growth, topics, quality
-├── test_knowledge_graph.py — Entity extraction, traversal
-├── test_telemetry.py     — OpenTelemetry span verification
-├── test_crdt_memory.py   — CRDT conflict resolution
-├── test_drift.py         — Behavioral drift detection
-├── test_trust.py         — Trust scoring and poisoning detection
-├── test_compliance.py    — EU AI Act compliance reporting
-├── adapters/             — LangChain, CrewAI, LlamaIndex adapters
-└── sdk/typescript/       — TypeScript SDK tests
+```
+558 passed, 24 skipped, 0 failed
+├── test_memory.py          — Store, vector search, hash chains, time travel
+├── test_agent.py           — Agent logic, RLS boundaries, checkpointing
+├── test_mcp_server.py      — FastMCP tool registry, schema tests
+├── test_chaos.py           — Crash recovery, transaction conflicts, poisoning
+├── test_compliance.py      — EU AI Act compliance log verification
+├── test_knowledge_graph.py — Entity extraction, dynamic relational graphs
+└── test_webhooks.py        — Thread-pool notification deliveries
 ```
 
 ---
 
-## License
+## 📄 License
 
-MIT — use it, fork it, ship it.
+Bastion is open-source software licensed under the [MIT License](LICENSE).

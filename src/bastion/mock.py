@@ -54,7 +54,8 @@ def mock_store_memory(
 
         records = _agent_data[agent_id]
         prev_hash = records[-1]["cryptographic_hash"] if records else None
-        meta = metadata or {}
+        meta = dict(metadata) if metadata is not None else {}
+        precomputed_embedding = meta.pop("_precomputed_embedding", None)
     crypto_hash = _compute_hash(content, meta, prev_hash)
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
@@ -64,7 +65,7 @@ def mock_store_memory(
         agent_id=agent_id,
         memory_type=memory_type,
         content=content,
-        embedding=[0.0] * 1024,
+        embedding=precomputed_embedding if precomputed_embedding is not None else ([0.0] * 1024),
         metadata=meta,
         previous_hash=prev_hash,
         cryptographic_hash=crypto_hash,

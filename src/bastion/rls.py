@@ -67,8 +67,10 @@ class RowLevelSecurity:
     def set_agent_context(self, agent_id: str) -> None:
         """Set the current agent context for RLS filtering.
 
-        Must be called within an active transaction.
+        Must be called within an active transaction (autocommit must be False).
         """
+        if getattr(self.conn, "autocommit", False):
+            raise RuntimeError("Cannot set local agent context: autocommit is True (no active transaction)")
         with self.conn.cursor() as cur:
             cur.execute(
                 "SET LOCAL app.current_agent_id = %s",

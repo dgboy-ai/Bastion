@@ -10,7 +10,7 @@
 | **CDC self-healing** | Real-time | No | No | No | No | No |
 | **Time travel** | AS OF SYSTEM TIME | No | No | No | No | No |
 | **SERIALIZABLE coordination** | Native | No | No | No | No | No |
-| **MCP Server** | 6 tools | No | No | Read-only | No | No |
+| **MCP Server** | 8 tools | No | No | Read-only | No | No |
 | **ccloud CLI** | Auto-provision | No | No | Evaluated, cut | No | No |
 | **Agent Skills** | 5 skills | No | No | No | No | No |
 | **Python SDK** | Yes | Yes | Yes | Yes | Yes | Yes |
@@ -33,7 +33,7 @@
 | AS OF SYSTEM TIME | Time travel queries | Not used | Not used |
 | SERIALIZABLE | Multi-agent coordination | Not used | Not used |
 | CDC Changefeed | Self-healing pipeline | Not used | Not used |
-| MCP Server | 6 tools (store, search, timetravel, audit, heal, conflict) | Read-only queries | Not used |
+| MCP Server | 8 tools (store, search, timetravel, audit, heal, delete, conflict, a2a) | Read-only queries | Not used |
 | ccloud CLI | Auto-provision from SDK | Evaluated, cut | Not used |
 | Agent Skills | 5 pre-built skills | Not used | Not used |
 

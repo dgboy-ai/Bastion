@@ -41,6 +41,7 @@ except ImportError:
 # Abstract KMS interface
 # ---------------------------------------------------------------------------
 
+
 class KMSInterface(ABC):
     """Pluggable key-management / encryption interface."""
 
@@ -64,6 +65,7 @@ class KMSInterface(ABC):
 # ---------------------------------------------------------------------------
 # Local AES-256-GCM implementation
 # ---------------------------------------------------------------------------
+
 
 class LocalKMS(KMSInterface):
     """AES-256-GCM encryption with a locally managed 256-bit key.
@@ -166,8 +168,7 @@ class LocalKMS(KMSInterface):
         except ValueError as exc:
             raise ValueError(f"Key file {key_path} is corrupt (not valid hex)") from exc
         raise ValueError(
-            "No KMS key found. Set BASTION_KMS_KEY, BASTION_KMS_KEY_FILE, "
-            "or pass generate=True to auto-generate a key."
+            "No KMS key found. Set BASTION_KMS_KEY, BASTION_KMS_KEY_FILE, or pass generate=True to auto-generate a key."
         )
 
     def _load_or_generate_key(self) -> bytes:
@@ -184,8 +185,7 @@ class LocalKMS(KMSInterface):
                 with open(key_file) as f:
                     return bytes.fromhex(f.read().strip())
             except FileNotFoundError:
-                logger.warning("BASTION_KMS_KEY_FILE not found, will generate new key",
-                               extra={"path": key_file})
+                logger.warning("BASTION_KMS_KEY_FILE not found, will generate new key", extra={"path": key_file})
 
         key_dir = os.path.expanduser("~/.bastion")
         os.makedirs(key_dir, exist_ok=True)
@@ -215,6 +215,7 @@ class LocalKMS(KMSInterface):
 # ---------------------------------------------------------------------------
 # AWS KMS wrapper
 # ---------------------------------------------------------------------------
+
 
 class AwsKMS(KMSInterface):
     """AWS KMS-backed encryption.
@@ -268,6 +269,7 @@ class AwsKMS(KMSInterface):
 # GCP Cloud KMS wrapper
 # ---------------------------------------------------------------------------
 
+
 class GcpKMS(KMSInterface):
     """GCP Cloud KMS-backed encryption.
 
@@ -320,6 +322,7 @@ class GcpKMS(KMSInterface):
 # EncryptedMemoryWrapper — wraps BastionMemory with transparent encryption
 # ---------------------------------------------------------------------------
 
+
 class EncryptedMemoryWrapper:
     """Transparently encrypts/decrypts memory content via a ``KMSInterface``.
 
@@ -341,8 +344,15 @@ class EncryptedMemoryWrapper:
 
     def store(self, memory_type: str, content: str, metadata: dict | None = None) -> Any:
         ctx = {"agent_id": self._memory.agent_id}
+        # Zero-Knowledge: compute the vector embedding on plaintext BEFORE encrypting it
+        embedding = self._memory._embed(content)
         encrypted = self._kms.encrypt(content, ctx)
-        meta = {**(metadata or {}), "_encrypted": True, "_key_id": self._kms.key_id()}
+        meta = {
+            **(metadata or {}),
+            "_encrypted": True,
+            "_key_id": self._kms.key_id(),
+            "_precomputed_embedding": embedding,
+        }
         return self._memory.store(memory_type, encrypted, meta)
 
     def search(self, query: str, **kwargs: Any) -> list:
@@ -353,8 +363,9 @@ class EncryptedMemoryWrapper:
                 try:
                     r.content = self._kms.decrypt(r.content, ctx)
                 except Exception:
-                    logger.exception("KMS decrypt failed on search result",
-                                     extra={"memory_id": getattr(r, "memory_id", "")})
+                    logger.exception(
+                        "KMS decrypt failed on search result", extra={"memory_id": getattr(r, "memory_id", "")}
+                    )
                     r.content = "<encrypted:decryption_failed>"
         return results
 
@@ -366,8 +377,9 @@ class EncryptedMemoryWrapper:
                 try:
                     r.content = self._kms.decrypt(r.content, ctx)
                 except Exception:
-                    logger.exception("KMS decrypt failed on time-travel result",
-                                     extra={"memory_id": getattr(r, "memory_id", "")})
+                    logger.exception(
+                        "KMS decrypt failed on time-travel result", extra={"memory_id": getattr(r, "memory_id", "")}
+                    )
                     r.content = "<encrypted:decryption_failed>"
         return results
 
@@ -377,6 +389,4 @@ class EncryptedMemoryWrapper:
         try:
             return getattr(self._memory, name)
         except AttributeError:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")

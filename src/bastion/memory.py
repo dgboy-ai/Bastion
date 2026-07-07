@@ -484,12 +484,16 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             prev_hash = self._get_last_hash(conn)
-            meta = metadata or {}
+            meta = dict(metadata) if metadata is not None else {}
+            precomputed_embedding = meta.pop("_precomputed_embedding", None)
             crypto_hash = hashlib.sha256(
                 (content + json.dumps(meta, sort_keys=True) + (prev_hash or "")).encode()
             ).hexdigest()
 
-            embedding = self._embed(content)
+            if precomputed_embedding is not None:
+                embedding = precomputed_embedding
+            else:
+                embedding = self._embed(content)
             embedding_str = json.dumps(embedding)
             now = datetime.now(UTC)
             expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None

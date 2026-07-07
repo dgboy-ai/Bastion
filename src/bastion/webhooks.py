@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -57,15 +58,16 @@ class WebhookNotifier:
         self._sent_count = 0
         self._failed_count = 0
         self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="bastion_webhook_")
 
         if self._enabled:
             logger.info("Webhook notifier enabled with %d endpoint(s)", len(self._urls))
 
     def send(self, event: WebhookEvent) -> None:
-        """Send a webhook event (non-blocking, background thread)."""
+        """Send a webhook event (non-blocking, background thread pool)."""
         if not self._enabled:
             return
-        threading.Thread(target=self._send_sync, args=(event,), daemon=True).start()
+        self._executor.submit(self._send_sync, event)
 
     def send_async(self, event: WebhookEvent) -> None:
         """Alias for send()."""

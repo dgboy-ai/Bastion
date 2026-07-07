@@ -2,6 +2,57 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.4.0] — 2026-07-07
+
+### Production Security, MCP Streamable HTTP, A2A Signed Cards, Frontend Polish
+
+Hardened all layers for production: dashboard API authentication, MCP server with Streamable HTTP transport + rate limiting, A2A v1.0 Ed25519-signed Agent Cards, proper error/empty states on all pages, and git hygiene.
+
+#### Added — Dashboard API Authentication
+
+- **`src/lib/api-auth.ts`**: `requireAuth()` middleware with timing-safe comparison (`timingSafeEqual`) for all 12 dashboard API routes
+- **`unauthorizedResponse()`**: Returns 401 JSON with consistent error shape
+- **Every `/api/*/route.ts`** now calls `requireAuth()` before processing requests
+
+#### Added — MCP Streamable HTTP
+
+- **`--transport http` flag**: Runs MCP server via Starlette + uvicorn with Streamable HTTP transport
+- **`BASTION_MCP_API_KEYS`**: API key authentication for HTTP transport
+- **`RequestLimiter`**: Configurable max_concurrent/max_queue/timeout rate limiting
+- **2 new tools**: `memory_delete` (with `confirmed:true` safety gate) + `a2a_bridge` (returns agent card)
+- **`_delete_by_id()`**: Added to both `BastionMemory` and `MockBastionMemory`
+- **Health & metrics**: `/healthz` and `/metrics` endpoints
+
+#### Added — A2A v1.0 Signed Agent Cards
+
+- **`src/bastion/a2a_signing.py`**: `AgentCardSigner` class using Ed25519 via `cryptography`
+- **`BASTION_A2A_PRIVATE_KEY`**: Key loaded from env var; ephemeral key auto-generated if absent
+- **Agent Card signed with Ed25519**: Served at `/.well-known/agent-card.json` with `signature` block (algorithm, value, publicKeyPem, signedFields)
+- **Public key endpoint**: `/.well-known/public-key.pem`
+- **`verify_card_signed()`**: Function for third-party verification
+
+#### Fixed — Frontend Silent Failures
+
+- **Compliance page**: Empty catch block replaced with `setError`; error state with retry button; empty state when no report data available
+- **Graph page entity fetch**: Silent `console.error` replaced with `setError` for proper error feedback
+
+#### Chores
+
+- **`.gitignore`**: Added `dashboard/playwright-report/`, `dashboard/test-results/`, `later-work.md`
+- **`opentelemetry-sdk==1.39.1`**: Pinned to match existing api/semconv versions, eliminating mistralai dep conflicts
+- **`test_namespace.py`**: Removed module-level `os.environ["BASTION_MOCK"] = "true"` preventing test pollution
+
+#### Test Results
+
+| Suite | Tests | Status |
+|---|---|---|
+| Python SDK | 524 | All pass |
+| TypeScript SDK | 58 + 19 skipped | All pass |
+| Playwright E2E | 28 | All pass |
+| **Total** | **610** | **All pass** |
+
+---
+
 ## [0.3.0] — 2026-07-06
 
 ### Production-Grade Hardening — A2A v1.0, CRDT Semantics, Zero Silent Failures

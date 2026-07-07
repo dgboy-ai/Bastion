@@ -294,10 +294,18 @@ class MemoryAnalytics:
         }
 
     def _check_hash_chain(self, memories: list) -> bool:
-        """Verify hash chain integrity."""
+        """Verify hash chain integrity with active SHA-256 verification."""
+        import hashlib
+        import json
         sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
         prev_hash = None
         for mem in sorted_memories:
+            meta_json = json.dumps(mem.metadata or {}, sort_keys=True)
+            recalculated = hashlib.sha256(
+                (mem.content + meta_json + (mem.previous_hash or "")).encode()
+            ).hexdigest()
+            if mem.cryptographic_hash != recalculated:
+                return False
             if mem.previous_hash != prev_hash:
                 return False
             prev_hash = mem.cryptographic_hash

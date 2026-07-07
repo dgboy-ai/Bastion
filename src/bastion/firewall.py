@@ -36,11 +36,13 @@ class CognitiveFirewall:
         violations = []
 
         if agent_id in self._blocked_agents:
-            violations.append({
-                "rule": "BLOCKED_AGENT",
-                "severity": "critical",
-                "detail": f"Agent {agent_id} is blocked due to prior violations",
-            })
+            violations.append(
+                {
+                    "rule": "BLOCKED_AGENT",
+                    "severity": "critical",
+                    "detail": f"Agent {agent_id} is blocked due to prior violations",
+                }
+            )
 
         pii_patterns = [
             (r"\b\d{3}-\d{2}-\d{4}\b", "SSN detected"),
@@ -50,25 +52,31 @@ class CognitiveFirewall:
 
         for pattern, desc in pii_patterns:
             if re.search(pattern, content):
-                violations.append({
-                    "rule": "PII_DETECTED",
-                    "severity": "high",
-                    "detail": desc,
-                })
+                violations.append(
+                    {
+                        "rule": "PII_DETECTED",
+                        "severity": "high",
+                        "detail": desc,
+                    }
+                )
 
         if memory_type not in ("fact", "task", "preference", "learned", "procedure", "system_event"):
-            violations.append({
-                "rule": "INVALID_MEMORY_TYPE",
-                "severity": "medium",
-                "detail": f"Unexpected memory type: {memory_type}",
-            })
+            violations.append(
+                {
+                    "rule": "INVALID_MEMORY_TYPE",
+                    "severity": "medium",
+                    "detail": f"Unexpected memory type: {memory_type}",
+                }
+            )
 
         if len(content) > 10000:
-            violations.append({
-                "rule": "OVERSIZED_CONTENT",
-                "severity": "low",
-                "detail": f"Content length {len(content)} exceeds 10000 chars",
-            })
+            violations.append(
+                {
+                    "rule": "OVERSIZED_CONTENT",
+                    "severity": "low",
+                    "detail": f"Content length {len(content)} exceeds 10000 chars",
+                }
+            )
 
         is_safe = len(violations) == 0
         blocked = any(v["severity"] == "critical" for v in violations)
@@ -91,9 +99,28 @@ class CognitiveFirewall:
         agent_id: str,
     ) -> dict[str, Any]:
         """Verify hash chain integrity for an agent's memories."""
-        memories = self.memory.list_all()
-        agent_memories = [m for m in memories if m.agent_id == agent_id]
-        agent_memories.sort(key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
+        if self.memory._mock:
+            from bastion.models import MemoryRecord
+
+            memories = self.memory.list_all()
+            agent_memories = [m for m in memories if m.agent_id == agent_id]
+        else:
+            from bastion.models import MemoryRecord
+
+            pool = self.memory.get_pool()
+            conn = pool.acquire(timeout=30.0)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT memory_id, agent_id, memory_type, content, embedding, metadata, "
+                        "previous_hash, cryptographic_hash, created_at, expires_at, "
+                        "access_count, importance_score, trust_level, source_provenance, overwrite_count "
+                        "FROM agent_memory WHERE agent_id = %s ORDER BY created_at ASC",
+                        (agent_id,),
+                    )
+                    agent_memories = [MemoryRecord.from_row(r) for r in cur.fetchall()]
+            finally:
+                pool.release(conn)
 
         broken_links = 0
         for i in range(1, len(agent_memories)):
@@ -107,9 +134,7 @@ class CognitiveFirewall:
             "total_memories": len(agent_memories),
             "broken_links": broken_links,
             "chain_intact": broken_links == 0,
-            "integrity_score": round(
-                (1 - broken_links / max(len(agent_memories), 1)) * 100, 2
-            ),
+            "integrity_score": round((1 - broken_links / max(len(agent_memories), 1)) * 100, 2),
         }
 
     def get_stats(self) -> dict[str, Any]:

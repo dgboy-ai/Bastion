@@ -3,7 +3,7 @@
   "info": {
     "title": "Bastion MCP (Health) Server",
     "version": "1.0.0",
-    "description": "Health endpoints for the Bastion Model Context Protocol (MCP) server. The MCP protocol itself runs over stdio transport (not HTTP), providing 6 tools to AI agents: `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, and `resolve_conflict`.\n\nThis HTTP server provides health checks for container orchestration and load balancers.",
+    "description": "Health endpoints for the Bastion Model Context Protocol (MCP) server. The MCP server supports both stdio and Streamable HTTP transports, providing 8 tools, 4 resources, and 3 prompts to AI agents.\n\nTools: `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete`, `resolve_conflict`, `a2a_bridge`.\n\nResources: `bastion://schema`, `bastion://config`, `bastion://stats`, `bastion://memory/{memory_id}`.\n\nThis HTTP server provides health check endpoints for container orchestration and load balancers.",
     "contact": { "name": "Bastion Project" },
     "license": { "name": "MIT" }
   },
@@ -72,7 +72,7 @@
     }
   },
   "x-mcp-tools": {
-    "description": "These tools are available via MCP stdio transport, not HTTP. Agent frameworks (CrewAI, LangChain, LlamaIndex) connect to the MCP server via subprocess stdio.",
+    "description": "These tools are available via MCP stdio (subprocess) or Streamable HTTP transport. Agent frameworks connect to the MCP server via stdio or HTTP.",
     "tools": [
       {
         "name": "memory_search",
@@ -95,8 +95,16 @@
         "description": "CDC-triggered self-healing pipeline that detects hash chain gaps, re-runs embeddings on corrupted entries, and restores chain integrity."
       },
       {
+        "name": "memory_delete",
+        "description": "Delete a single memory by ID with confirmation flag. Uses CockroachDB SERIALIZABLE isolation for safe concurrent deletion."
+      },
+      {
         "name": "resolve_conflict",
         "description": "Multi-agent conflict resolution using SERIALIZABLE isolation level. Uses CRDT merge strategies and lease consensus to resolve concurrent writes."
+      },
+      {
+        "name": "a2a_bridge",
+        "description": "Retrieve the A2A Agent Card for inter-agent discovery. Returns A2A-compliant metadata including capabilities and protocol version."
       }
     ]
   }
