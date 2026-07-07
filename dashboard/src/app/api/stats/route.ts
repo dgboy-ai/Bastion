@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { pool, query } from "@/lib/db";
 import { getMockStats } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";

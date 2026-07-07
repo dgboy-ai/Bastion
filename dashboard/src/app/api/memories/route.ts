@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockMemories } from "@/lib/mock-data";
 import { apiSuccess } from "@/lib/api-response";
