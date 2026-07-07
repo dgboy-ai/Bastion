@@ -52,7 +52,7 @@ Bastion integrates directly with your agent toolchain and coordinates securely w
     ┌────────────────────────────────────────────────────────────────┐
     │                      CockroachDB Cluster                       │
     │  • agent_memory: Vector embeddings search & plaintext KMS      │
-    │  • agent_audit: Append-only ledger checks (AS OF SYSTEM TIME)   │
+    │  • agent_audit: Append-only ledger checks (AS OF SYSTEM TIME)  │
     │  • agent_checkpoints: Transaction state logs (CDC Enabled)     │
     └─────────┬──────────────────────────────────────────────────────┘
               │

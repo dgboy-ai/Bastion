@@ -1,6 +1,30 @@
 # Later Work — Post-Hackathon Items
 
-## Phase 2
+## Hackathon Security & Threat Vector Roadmap
+
+### 1. Context Compaction & Safety Pinning (OpenClaw Defense)
+- **Problem:** AI agents drop safety instructions during context window compaction (e.g., Summer Yue Meta OpenClaw incident where "suggest, don't act" was truncated, leading to mass inbox deletion).
+- **Work Item:** Build the database-backed `mem.pin(content, priority="CRITICAL")` engine. Ensure critical safety rows bypass sliding-window compaction and get re-injected at the prompt boundaries on every execution cycle.
+
+### 2. Cryptographic Tenant Isolation (Zero-Trust Memory)
+- **Problem:** Logical isolation (simple `WHERE tenant_id = X` clauses) is vulnerable to SQL injection or developer filters dropping. If a filter fails, cross-tenant memories bleed.
+- **Work Item:** Implement Tenant-Specific Data Encryption Keys (DEKs) via AWS KMS. AES-256-GCM encrypt all memory contents per-agent so that even if logical query boundaries fail, data remains cryptographically isolated.
+
+### 3. Multi-Language Prompt Injection (Mandarin/Arabic/Portuguese Guard)
+- **Problem:** Attackers split prompt injection payloads across multiple languages to bypass English-only filters in production.
+- **Work Item:** Integrate `langdetect` into the `guard.py` pipeline to detect translated instruction-override vectors without API call overhead.
+
+### 4. C-SPANN Tenant Index Partitioning
+- **Problem:** Searching a single global vector index scales poorly and leaks search metrics across namespaces.
+- **Work Item:** Modify index definitions to `CREATE VECTOR INDEX ON agent_memory (agent_id, namespace, embedding)` to enforce hardware/logical locality and guarantee sub-10ms query speeds.
+
+### 5. Webhook Rate Limiting & Circuit Breakers (Spend Defense)
+- **Problem:** Rogue looping agents can call tools infinitely and trigger runaway API and server costs.
+- **Work Item:** Build token-aware rate limiting (TPM/cost-per-minute thresholds) and add a loop detector circuit breaker to suspend agents executing identical queries.
+
+---
+
+## Phase 1 — Immediate Submission Prep
 
 ### 9. Submit to Claude Connector Directory
 
