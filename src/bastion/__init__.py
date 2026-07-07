@@ -7,6 +7,7 @@ from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCo
 from bastion.dba import AutonomousDBA, SchemaEvolution
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.rules import CognitiveRulesEngine, CognitiveRule, ExecutionLog, RuleCategory
+from bastion.thought_chain import ThoughtChain, ThoughtNode, ThoughtType
 from bastion.errors import (
     BastionAuthError,
     BastionConfigError,
