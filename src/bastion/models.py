@@ -4,282 +4,128 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-_MEMORY_FIELDS = [
-    "memory_id", "agent_id", "memory_type", "content", "embedding",
-    "metadata", "previous_hash", "cryptographic_hash",
-    "created_at", "expires_at", "access_count", "importance_score",
-    "trust_level", "source_provenance", "overwrite_count",
-]
+from pydantic import BaseModel, Field
 
 
-class MemoryRecord:
-    def __init__(
-        self,
-        memory_id: str | None = None,
-        agent_id: str = "",
-        memory_type: str = "fact",
-        content: str = "",
-        embedding: list[float] | None = None,
-        metadata: dict[str, Any] | None = None,
-        previous_hash: str | None = None,
-        cryptographic_hash: str = "",
-        created_at: datetime | None = None,
-        expires_at: datetime | None = None,
-        access_count: int = 0,
-        importance_score: float = 5.0,
-        trust_level: int = 2,
-        source_provenance: str = "agent_direct",
-        overwrite_count: int = 0,
-    ):
-        self.memory_id = memory_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.memory_type = memory_type
-        self.content = content
-        self.embedding = embedding or []
-        self.metadata = metadata or {}
-        self.previous_hash = previous_hash
-        self.cryptographic_hash = cryptographic_hash
-        self.created_at = created_at or datetime.now(UTC)
-        self.expires_at = expires_at
-        self.access_count = access_count
-        self.importance_score = importance_score
-        self.trust_level = trust_level
-        self.source_provenance = source_provenance
-        self.overwrite_count = overwrite_count
+class MemoryRecord(BaseModel):
+    memory_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    memory_type: str = "fact"
+    content: str = ""
+    embedding: list[float] = []
+    metadata: dict[str, Any] = {}
+    previous_hash: str | None = None
+    cryptographic_hash: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    access_count: int = 0
+    importance_score: float = 5.0
+    trust_level: int = 2
+    source_provenance: str = "agent_direct"
+    overwrite_count: int = 0
+
+    @classmethod
+    def from_dict(cls, d: dict) -> MemoryRecord:
+        known = {k: v for k, v in d.items() if k in _MEMORY_FIELDS}
+        created_at = known.get("created_at")
+        if isinstance(created_at, str):
+            known["created_at"] = datetime.fromisoformat(created_at)
+        expires_at = known.get("expires_at")
+        if isinstance(expires_at, str):
+            known["expires_at"] = datetime.fromisoformat(expires_at)
+        embedding = known.get("embedding")
+        if isinstance(embedding, str):
+            known["embedding"] = _parse_embedding(embedding)
+        return cls(**known)
 
     @classmethod
     def from_row(cls, row: tuple | dict) -> MemoryRecord:
         if isinstance(row, dict):
-            return cls.from_dict(row)
-        if hasattr(row, '_mapping'):
+            return cls(**row)
+        if hasattr(row, "_mapping"):
             vals = row._mapping
         else:
             vals = dict(zip(_MEMORY_FIELDS, row, strict=True))
-        memory_id = str(vals.get("memory_id", ""))
-        agent_id = str(vals.get("agent_id", ""))
-        memory_type = str(vals.get("memory_type", "fact"))
-        content = str(vals.get("content", ""))
-        embedding_raw = vals.get("embedding")
-        metadata_raw = vals.get("metadata")
-        previous_hash = vals.get("previous_hash")
-        cryptographic_hash = str(vals.get("cryptographic_hash", ""))
-        created_at = vals.get("created_at")
-        expires_at = vals.get("expires_at")
-        access_count = vals.get("access_count", 0)
-        importance_score = vals.get("importance_score", 5.0)
-        trust_level = int(vals.get("trust_level", 2)) if vals.get("trust_level") is not None else 2
-        source_provenance = str(vals.get("source_provenance", "agent_direct"))
-        overwrite_count = int(vals.get("overwrite_count", 0)) if vals.get("overwrite_count") is not None else 0
-        if embedding_raw is not None:
-            if isinstance(embedding_raw, str):
-                import json
-                embedding = json.loads(embedding_raw)
-            else:
-                embedding = list(embedding_raw)
-        else:
-            embedding = []
+        raw_created = vals.get("created_at")
         return cls(
-            memory_id=memory_id,
-            agent_id=agent_id,
-            memory_type=memory_type,
-            content=content,
-            embedding=embedding,
-            metadata=dict(metadata_raw) if metadata_raw else {},
-            previous_hash=str(previous_hash) if previous_hash is not None else None,
-            cryptographic_hash=cryptographic_hash,
-            created_at=created_at,
-            expires_at=expires_at,
-            access_count=int(access_count) if access_count is not None else 0,
-            importance_score=float(importance_score) if importance_score is not None else 5.0,
-            trust_level=trust_level,
-            source_provenance=source_provenance,
-            overwrite_count=overwrite_count,
-        )
-
-    @classmethod
-    def from_dict(cls, d: dict) -> MemoryRecord:
-        created_at = d["created_at"]
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at)
-        expires_at = d.get("expires_at")
-        if isinstance(expires_at, str):
-            expires_at = datetime.fromisoformat(expires_at)
-        return cls(
-            memory_id=d["memory_id"],
-            agent_id=d["agent_id"],
-            memory_type=d["memory_type"],
-            content=d["content"],
-            embedding=list(d["embedding"]) if d["embedding"] else [],
-            metadata=dict(d["metadata"]) if d["metadata"] else {},
-            previous_hash=d.get("previous_hash"),
-            cryptographic_hash=d["cryptographic_hash"],
-            created_at=created_at,
-            expires_at=expires_at,
-            access_count=d.get("access_count", 0),
-            importance_score=d.get("importance_score", 5.0),
-            trust_level=int(d.get("trust_level", 2)),
-            source_provenance=str(d.get("source_provenance", "agent_direct")),
-            overwrite_count=int(d.get("overwrite_count", 0)),
+            memory_id=str(vals.get("memory_id", "")),
+            agent_id=str(vals.get("agent_id", "")),
+            memory_type=str(vals.get("memory_type", "fact")),
+            content=str(vals.get("content", "")),
+            embedding=_parse_embedding(vals.get("embedding")),
+            metadata=dict(vals["metadata"]) if vals.get("metadata") else {},
+            previous_hash=str(vals["previous_hash"]) if vals.get("previous_hash") is not None else None,
+            cryptographic_hash=str(vals.get("cryptographic_hash", "")),
+            created_at=_ensure_dt(raw_created),
+            expires_at=vals.get("expires_at"),
+            access_count=int(vals.get("access_count", 0)) if vals.get("access_count") is not None else 0,
+            importance_score=float(vals.get("importance_score", 5.0)) if vals.get("importance_score") is not None else 5.0,
+            trust_level=int(vals.get("trust_level", 2)) if vals.get("trust_level") is not None else 2,
+            source_provenance=str(vals.get("source_provenance", "agent_direct")),
+            overwrite_count=int(vals.get("overwrite_count", 0)) if vals.get("overwrite_count") is not None else 0,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "memory_id": self.memory_id,
-            "agent_id": self.agent_id,
-            "memory_type": self.memory_type,
-            "content": self.content,
-            "embedding": self.embedding,
-            "metadata": self.metadata,
-            "previous_hash": self.previous_hash,
-            "cryptographic_hash": self.cryptographic_hash,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "access_count": self.access_count,
-            "importance_score": self.importance_score,
-            "trust_level": self.trust_level,
-            "source_provenance": self.source_provenance,
-            "overwrite_count": self.overwrite_count,
-        }
-
-    def __repr__(self) -> str:
-        preview = self.content[:50]
-        return f"MemoryRecord(agent={self.agent_id}, type={self.memory_type}, content={preview}...)"
+        return self.model_dump(mode="json")
 
 
-class CheckpointState:
-    def __init__(
-        self,
-        workflow_id: str | None = None,
-        agent_id: str = "",
-        step_number: int = 0,
-        step_type: str = "",
-        input_data: dict[str, Any] | None = None,
-        output_data: dict[str, Any] | None = None,
-        idempotency_key: str | None = None,
-        token_cost: float | None = None,
-        status: str = "pending",
-        health_score: float | None = None,
-        created_at: datetime | None = None,
-        completed_at: datetime | None = None,
-        region: str | None = None,
-    ):
-        self.workflow_id = workflow_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.step_number = step_number
-        self.step_type = step_type
-        self.input_data = input_data or {}
-        self.output_data = output_data or {}
-        self.idempotency_key = idempotency_key
-        self.token_cost = token_cost
-        self.status = status
-        self.health_score = health_score
-        self.created_at = created_at or datetime.now(UTC)
-        self.completed_at = completed_at
-        self.region = region
+class CheckpointState(BaseModel):
+    workflow_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    step_number: int = 0
+    step_type: str = ""
+    input_data: dict[str, Any] = {}
+    output_data: dict[str, Any] = {}
+    idempotency_key: str | None = None
+    token_cost: float | None = None
+    status: str = "pending"
+    health_score: float | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
+    region: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "workflow_id": self.workflow_id,
-            "agent_id": self.agent_id,
-            "step_number": self.step_number,
-            "step_type": self.step_type,
-            "input_data": self.input_data,
-            "output_data": self.output_data,
-            "idempotency_key": self.idempotency_key,
-            "token_cost": self.token_cost,
-            "status": self.status,
-            "health_score": self.health_score,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "region": self.region,
-        }
+        return self.model_dump(mode="json")
 
 
-class AuditEntry:
-    def __init__(
-        self,
-        audit_id: str | None = None,
-        agent_id: str = "",
-        workflow_id: str = "",
-        action: str = "",
-        details: dict[str, Any] | None = None,
-        recorded_at: datetime | None = None,
-    ):
-        self.audit_id = audit_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.workflow_id = workflow_id
-        self.action = action
-        self.details = details or {}
-        self.recorded_at = recorded_at or datetime.now(UTC)
+class AuditEntry(BaseModel):
+    audit_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    workflow_id: str = ""
+    action: str = ""
+    details: dict[str, Any] = {}
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "audit_id": self.audit_id,
-            "agent_id": self.agent_id,
-            "workflow_id": self.workflow_id,
-            "action": self.action,
-            "details": self.details,
-            "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
-        }
+        return self.model_dump(mode="json")
 
 
-class ClusterInfo:
-    def __init__(
-        self,
-        cluster_id: str = "",
-        connection_string: str = "",
-        admin_url: str = "",
-        region: str = "us-east1",
-        status: str = "created",
-    ):
-        self.cluster_id = cluster_id
-        self.connection_string = connection_string
-        self.admin_url = admin_url
-        self.region = region
-        self.status = status
+class ClusterInfo(BaseModel):
+    cluster_id: str = ""
+    connection_string: str = ""
+    admin_url: str = ""
+    region: str = "us-east1"
+    status: str = "created"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "cluster_id": self.cluster_id,
-            "connection_string": self.connection_string,
-            "admin_url": self.admin_url,
-            "region": self.region,
-            "status": self.status,
-        }
+        return self.model_dump(mode="json")
 
 
-_ENTITY_FIELDS = [
-    "entity_id", "agent_id", "entity_type", "name",
-    "attributes", "valid_from", "valid_until", "created_at",
-]
-
-
-class EntityRecord:
-    def __init__(
-        self,
-        entity_id: str | None = None,
-        agent_id: str = "",
-        entity_type: str = "concept",
-        name: str = "",
-        attributes: dict[str, Any] | None = None,
-        valid_from: datetime | None = None,
-        valid_until: datetime | None = None,
-        created_at: datetime | None = None,
-    ):
-        self.entity_id = entity_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.entity_type = entity_type
-        self.name = name
-        self.attributes = attributes or {}
-        self.valid_from = valid_from or datetime.now(UTC)
-        self.valid_until = valid_until
-        self.created_at = created_at or datetime.now(UTC)
+class EntityRecord(BaseModel):
+    entity_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    entity_type: str = "concept"
+    name: str = ""
+    attributes: dict[str, Any] = {}
+    valid_from: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    valid_until: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @classmethod
     def from_row(cls, row: tuple | dict) -> EntityRecord:
         if isinstance(row, dict):
             return cls(**row)
-        if hasattr(row, '_mapping'):
+        if hasattr(row, "_mapping"):
             vals = row._mapping
         else:
             vals = dict(zip(_ENTITY_FIELDS, row, strict=True))
@@ -289,124 +135,83 @@ class EntityRecord:
             entity_type=str(vals.get("entity_type", "concept")),
             name=str(vals.get("name", "")),
             attributes=dict(vals["attributes"]) if vals.get("attributes") else {},
-            valid_from=vals.get("valid_from"),
+            valid_from=_ensure_dt(vals.get("valid_from")),
             valid_until=vals.get("valid_until"),
-            created_at=vals.get("created_at"),
+            created_at=_ensure_dt(vals.get("created_at")),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "entity_id": self.entity_id,
-            "agent_id": self.agent_id,
-            "entity_type": self.entity_type,
-            "name": self.name,
-            "attributes": self.attributes,
-            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
-            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+        return self.model_dump(mode="json")
 
 
-class RelationRecord:
-    def __init__(
-        self,
-        relation_id: str | None = None,
-        agent_id: str = "",
-        source_entity_id: str = "",
-        target_entity_id: str = "",
-        relation_type: str = "",
-        confidence: float = 1.0,
-        valid_from: datetime | None = None,
-        valid_until: datetime | None = None,
-        source_memory_id: str | None = None,
-        created_at: datetime | None = None,
-    ):
-        self.relation_id = relation_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.source_entity_id = source_entity_id
-        self.target_entity_id = target_entity_id
-        self.relation_type = relation_type
-        self.confidence = confidence
-        self.valid_from = valid_from or datetime.now(UTC)
-        self.valid_until = valid_until
-        self.source_memory_id = source_memory_id
-        self.created_at = created_at or datetime.now(UTC)
+class RelationRecord(BaseModel):
+    relation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    source_entity_id: str = ""
+    target_entity_id: str = ""
+    relation_type: str = ""
+    confidence: float = 1.0
+    valid_from: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    valid_until: datetime | None = None
+    source_memory_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "relation_id": self.relation_id,
-            "agent_id": self.agent_id,
-            "source_entity_id": self.source_entity_id,
-            "target_entity_id": self.target_entity_id,
-            "relation_type": self.relation_type,
-            "confidence": self.confidence,
-            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
-            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
-            "source_memory_id": self.source_memory_id,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+        return self.model_dump(mode="json")
 
 
-class CoordinationLock:
-    def __init__(
-        self,
-        lock_id: str | None = None,
-        agent_id: str = "",
-        resource: str = "",
-        lock_type: str = "shared",
-        acquired_at: datetime | None = None,
-        expires_at: datetime | None = None,
-        payload: dict[str, Any] | None = None,
-    ):
-        self.lock_id = lock_id or str(uuid.uuid4())
-        self.agent_id = agent_id
-        self.resource = resource
-        self.lock_type = lock_type
-        self.acquired_at = acquired_at or datetime.now(UTC)
-        self.expires_at = expires_at
-        self.payload = payload or {}
+class CoordinationLock(BaseModel):
+    lock_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str = ""
+    resource: str = ""
+    lock_type: str = "shared"
+    acquired_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    payload: dict[str, Any] = {}
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "lock_id": self.lock_id,
-            "agent_id": self.agent_id,
-            "resource": self.resource,
-            "lock_type": self.lock_type,
-            "acquired_at": self.acquired_at.isoformat() if self.acquired_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "payload": self.payload,
-        }
+        return self.model_dump(mode="json")
 
 
-class MessageRecord:
-    def __init__(
-        self,
-        message_id: str | None = None,
-        namespace: str = "",
-        sender_agent_id: str = "",
-        event_type: str = "",
-        payload: dict[str, Any] | None = None,
-        created_at: datetime | None = None,
-        expires_at: datetime | None = None,
-        read: bool = False,
-    ):
-        self.message_id = message_id or str(uuid.uuid4())
-        self.namespace = namespace
-        self.sender_agent_id = sender_agent_id
-        self.event_type = event_type
-        self.payload = payload or {}
-        self.created_at = created_at or datetime.now(UTC)
-        self.expires_at = expires_at or (datetime.now(UTC) + timedelta(hours=1))
-        self.read = read
+class MessageRecord(BaseModel):
+    message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    namespace: str = ""
+    sender_agent_id: str = ""
+    event_type: str = ""
+    payload: dict[str, Any] = {}
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(hours=1))
+    read: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "message_id": self.message_id,
-            "namespace": self.namespace,
-            "sender_agent_id": self.sender_agent_id,
-            "event_type": self.event_type,
-            "payload": self.payload,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "read": self.read,
-        }
+        return self.model_dump(mode="json")
+
+
+_MEMORY_FIELDS = [
+    "memory_id", "agent_id", "memory_type", "content", "embedding",
+    "metadata", "previous_hash", "cryptographic_hash",
+    "created_at", "expires_at", "access_count", "importance_score",
+    "trust_level", "source_provenance", "overwrite_count",
+]
+
+_ENTITY_FIELDS = [
+    "entity_id", "agent_id", "entity_type", "name",
+    "attributes", "valid_from", "valid_until", "created_at",
+]
+
+
+def _parse_embedding(raw: Any) -> list[float]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        import json
+        return json.loads(raw)
+    return list(raw)
+
+
+def _ensure_dt(val: Any) -> datetime:
+    if val is None:
+        return datetime.now(UTC)
+    if isinstance(val, str):
+        return datetime.fromisoformat(val)
+    return val

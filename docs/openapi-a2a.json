@@ -1,0 +1,290 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Bastion A2A Protocol Server",
+    "version": "1.0.0",
+    "description": "Agent-to-Agent (A2A v1.0) protocol server for Bastion memory coordination. Supports multi-agent memory exchange with SHA-256 hash chaining, C-SPANN vector search, and OWASP ASI06 MemoryGuard protection.\n\nSee `GET /.well-known/agent-card.json` for agent capabilities and skill definitions.",
+    "contact": { "name": "Bastion Project" },
+    "license": { "name": "MIT" }
+  },
+  "servers": [
+    { "url": "http://localhost:9998", "description": "Local development" }
+  ],
+  "security": [
+    { "ApiKeyAuth": [] }
+  ],
+  "paths": {
+    "/.well-known/agent-card.json": {
+      "get": {
+        "summary": "Get Agent Card",
+        "description": "Returns the A2A agent card describing capabilities, skills, and authentication requirements.",
+        "tags": ["Agent Card"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Agent card JSON",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentCard" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "post": {
+        "summary": "JSON-RPC 2.0 Endpoint",
+        "description": "Processes A2A JSON-RPC 2.0 requests: SendMessage, GetTask, CancelTask. Requires `X-A2A-Version: 1.0.0` header.",
+        "tags": ["JSON-RPC"],
+        "parameters": [
+          {
+            "name": "X-A2A-Version",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "default": "1.0.0" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/JsonRpcRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JsonRpcResponse" }
+              }
+            }
+          },
+          "400": { "description": "Invalid JSON-RPC request" }
+        }
+      }
+    },
+    "/message:send": {
+      "post": {
+        "summary": "Send Message (REST)",
+        "description": "REST-style wrapper around the SendMessage JSON-RPC method.",
+        "tags": ["Messages"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MessageSendRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message processed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}": {
+      "get": {
+        "summary": "Get Task Status",
+        "description": "Retrieves the current status of a previously submitted task.",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "post": {
+        "summary": "Cancel Task",
+        "description": "Requests cancellation of a running or pending task.",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancellation result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Returns 200 OK when the server is running.",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness Check",
+        "description": "Returns 200 OK when the server is ready to accept traffic (DB connected or mock mode).",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ready" }
+                  }
+                }
+              }
+            }
+          },
+          "503": { "description": "Server not ready (DB unavailable and no mock)" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus Metrics",
+        "description": "Returns Prometheus-format metrics for monitoring and alerting.",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Prometheus metrics",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key via `BASTION_API_KEY` environment variable. Send as `Authorization: Bearer <key>`."
+      }
+    },
+    "schemas": {
+      "AgentCard": {
+        "type": "object",
+        "description": "A2A agent card exposing Bastion memory skills.",
+        "properties": {
+          "name": { "type": "string", "example": "Bastion Memory Coordinator" },
+          "description": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      },
+      "JsonRpcRequest": {
+        "type": "object",
+        "required": ["jsonrpc", "method", "id"],
+        "properties": {
+          "jsonrpc": { "type": "string", "enum": ["2.0"] },
+          "method": { "type": "string", "enum": ["SendMessage", "GetTask", "CancelTask"] },
+          "id": { "type": "string" },
+          "params": { "type": "object" }
+        }
+      },
+      "JsonRpcResponse": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": { "type": "string", "enum": ["2.0"] },
+          "id": { "type": "string" },
+          "result": { "type": "object" },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "integer" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "MessageSendRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string", "enum": ["user", "agent"] },
+              "content": { "type": "array", "items": { "type": "object" } }
+            }
+          },
+          "skillId": { "type": "string" },
+          "metadata": { "type": "object" }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "enum": ["submitted", "working", "completed", "failed", "canceled"] },
+          "result": { "type": "object" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

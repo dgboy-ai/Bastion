@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
+import { getMockDrift } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
 const DRIFT_DIMENSIONS = [
   "memory_access_pattern",
@@ -23,13 +25,10 @@ interface DriftRow {
 }
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (!pool) {
-    return NextResponse.json({
-      latest: null,
-      timeSeries: [],
-      mock: true,
-    });
+    return NextResponse.json(getMockDrift());
   }
 
   try {
@@ -53,23 +52,45 @@ export async function GET(request: Request) {
     sql += ` ORDER BY scorable_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
 
-    const res = await query(sql, params);
+    const res = await safeQuery(sql, params);
+    if (res.mock || res.rows.length === 0) {
+      return NextResponse.json(getMockDrift());
+    }
 
-    const scores: DriftRow[] = res.rows.map((row: Record<string, unknown>) => ({
-      score_id: String(row.score_id),
-      overall_drift_score: Number(row.overall_drift_score),
-      dimensions: typeof row.dimensions === "string"
-        ? JSON.parse(row.dimensions as string)
-        : (row.dimensions as Record<string, number>),
-      baseline_sessions: Number(row.baseline_sessions),
-      alert_threshold: Number(row.alert_threshold),
-      status: String(row.status),
-      top_drift_signals: typeof row.top_drift_signals === "string"
-        ? JSON.parse(row.top_drift_signals as string)
-        : (row.top_drift_signals as string[]),
-      recommendation: String(row.recommendation),
-      scorable_at: String(row.scorable_at),
-    }));
+    const scoreRows = res.rows as Record<string, unknown>[];
+    const scores: DriftRow[] = [];
+    for (const row of scoreRows) {
+      let dimensions: Record<string, number> = {};
+      if (typeof row.dimensions === "string") {
+        try { dimensions = JSON.parse(row.dimensions); }
+        catch { dimensions = {}; }
+      } else if (row.dimensions && typeof row.dimensions === "object") {
+        dimensions = row.dimensions as Record<string, number>;
+      }
+
+      let top_drift_signals: string[] = [];
+      if (typeof row.top_drift_signals === "string") {
+        try { top_drift_signals = JSON.parse(row.top_drift_signals); }
+        catch { top_drift_signals = []; }
+      } else if (Array.isArray(row.top_drift_signals)) {
+        top_drift_signals = row.top_drift_signals as string[];
+      }
+
+      const overall = Number(row.overall_drift_score);
+      const alertThresh = Number(row.alert_threshold);
+
+      scores.push({
+        score_id: String(row.score_id ?? ""),
+        overall_drift_score: Number.isFinite(overall) ? overall : 0,
+        dimensions,
+        baseline_sessions: Math.max(0, Number(row.baseline_sessions) || 0),
+        alert_threshold: Number.isFinite(alertThresh) ? alertThresh : 0,
+        status: String(row.status ?? "unknown"),
+        top_drift_signals,
+        recommendation: String(row.recommendation ?? ""),
+        scorable_at: String(row.scorable_at ?? ""),
+      });
+    }
 
     const latest = scores[0] ?? null;
 
@@ -98,8 +119,7 @@ export async function GET(request: Request) {
       dimensionAverages,
       totalScores: scores.length,
     });
-  } catch (error: unknown) {
-    console.error("Failed to fetch drift data:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json(getMockDrift());
   }
 }

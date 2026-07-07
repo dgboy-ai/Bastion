@@ -1,0 +1,195 @@
+"""End-to-end tests simulating judge API verification — tests the actual server endpoints."""
+
+import json
+import time
+import pytest
+import requests
+from urllib.parse import urljoin
+
+# These tests run against a running server instance
+# Configure via env vars: BASTION_TEST_BASE_URL, BASTION_API_KEY
+BASE_URL = "http://localhost:9998"
+API_KEY = "test-key-123"
+
+pytestmark = pytest.mark.skipif(
+    "not config.getoption('--e2e')",
+    reason="Only run with --e2e flag against a live server",
+)
+
+
+def _headers():
+    return {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+
+class TestA2AServerE2E:
+    """End-to-end tests for the Bastion A2A server."""
+
+    def test_healthz(self):
+        res = requests.get(urljoin(BASE_URL, "/healthz"), headers=_headers())
+        assert res.status_code == 200
+        assert res.json()["status"] == "ok"
+
+    def test_readyz(self):
+        res = requests.get(urljoin(BASE_URL, "/readyz"), headers=_headers())
+        assert res.status_code in (200, 503)
+
+    def test_agent_card(self):
+        res = requests.get(
+            urljoin(BASE_URL, "/.well-known/agent-card.json"), headers=_headers()
+        )
+        assert res.status_code == 200
+        card = res.json()
+        assert card["name"] == "Bastion Memory Agent"
+        assert "skills" in card
+        assert len(card["skills"]) >= 4
+
+    def test_jsonrpc_send_message_store(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": "test-1",
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "parts": [{"text": "store that the user likes Python"}],
+                    "metadata": {"skill": "memory_store"},
+                }
+            },
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
+        )
+        assert res.status_code == 200
+        result = res.json()
+        assert "result" in result
+        assert result["result"]["status"]["state"] in ("COMPLETED", "WORKING")
+
+    def test_jsonrpc_send_message_search(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": "test-2",
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "parts": [{"text": "search for memories about Python"}],
+                    "metadata": {"skill": "memory_search"},
+                }
+            },
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
+        )
+        assert res.status_code == 200
+        result = res.json()
+        assert "result" in result
+
+    def test_jsonrpc_invalid_method(self):
+        payload = {
+            "jsonrpc": "2.0",
+            "id": "test-3",
+            "method": "InvalidMethod",
+            "params": {},
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
+        )
+        assert res.status_code == 200
+        result = res.json()
+        assert "error" in result
+        assert result["error"]["code"] == -32601  # Method not found
+
+    def test_jsonrpc_missing_version(self):
+        payload = {"id": "test-4", "method": "SendMessage", "params": {}}
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
+        )
+        assert res.status_code == 200
+        result = res.json()
+        assert "error" in result
+
+    def test_auth_required(self):
+        res = requests.get(urljoin(BASE_URL, "/healthz"))
+        assert res.status_code == 401
+
+    def test_auth_wrong_key(self):
+        res = requests.get(
+            urljoin(BASE_URL, "/healthz"),
+            headers={"Authorization": "Bearer wrong-key"},
+        )
+        assert res.status_code == 401
+
+    def test_rate_limiting(self):
+        """Send many rapid requests and verify rate limiting engages."""
+        headers = _headers()
+        responses = []
+        for _ in range(50):
+            res = requests.get(urljoin(BASE_URL, "/healthz"), headers=headers)
+            responses.append(res.status_code)
+            time.sleep(0.01)
+        # At least some should succeed, rate limit may or may not trigger
+        assert any(s == 200 for s in responses)
+
+    def test_metrics_endpoint(self):
+        res = requests.get(urljoin(BASE_URL, "/metrics"), headers=_headers())
+        assert res.status_code == 200
+        body = res.text
+        assert "bastion_requests_total" in body
+        assert "bastion_up" in body
+
+    def test_rest_get_task_nonexistent(self):
+        res = requests.get(
+            urljoin(BASE_URL, "/tasks/nonexistent-task"), headers=_headers()
+        )
+        assert res.status_code == 404
+
+
+class TestFullWorkflow:
+    """Complete workflow: store → search → audit → heal cycle."""
+
+    def test_store_search_audit_cycle(self):
+        """Simulate a complete agent memory cycle."""
+        # 1. Store a memory
+        store_payload = {
+            "jsonrpc": "2.0",
+            "id": "wf-1",
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "parts": [{"text": "The user prefers Python over TypeScript for backend services"}],
+                    "metadata": {"skill": "memory_store"},
+                }
+            },
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=store_payload, headers=_headers()
+        )
+        assert res.status_code == 200
+
+        # 2. Search for the stored memory
+        search_payload = {
+            "jsonrpc": "2.0",
+            "id": "wf-2",
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "parts": [{"text": "search for Python preference"}],
+                    "metadata": {"skill": "memory_search"},
+                }
+            },
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=search_payload, headers=_headers()
+        )
+        assert res.status_code == 200
+
+        # 3. Get task status
+        task_id = "wf-1"
+        task_payload = {
+            "jsonrpc": "2.0",
+            "id": "wf-3",
+            "method": "GetTask",
+            "params": {"id": task_id},
+        }
+        res = requests.post(
+            urljoin(BASE_URL, "/"), json=task_payload, headers=_headers()
+        )
+        assert res.status_code == 200

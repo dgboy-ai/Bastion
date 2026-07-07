@@ -1,14 +1,17 @@
 """
 Bastion A2A Server — A2A v1.0 Protocol Implementation.
 
-Uses the official A2A Python SDK (a2a-sdk v1.1.0) for type definitions and
-the Agent Card endpoint. Implements direct FastAPI handlers for JSON-RPC
-and REST, avoiding SDK components with protobuf version incompatibilities
-(field.label / field.is_repeated across protobuf 5.x-7.x).
+Features:
+  - A2A v1.0 Signed Agent Cards (Ed25519 cryptographic identity)
+  - JSON-RPC 2.0 task lifecycle (working / input-required / completed)
+  - Prometheus metrics, rate limiting, API key auth
+  - Bastion-specific endpoints: healthz, readyz, metrics
+  - Push notification registration via CDC changefeed
 
 Usage:
     python -m bastion.a2a_server
     BASTION_CONN=postgresql://... python -m bastion.a2a_server
+    BASTION_A2A_PRIVATE_KEY="base64..." python -m bastion.a2a_server  # persistent identity
 """
 
 from __future__ import annotations
@@ -93,7 +96,7 @@ def _configure_logging() -> None:
 def create_a2a_server(
     connection_string: str | None = None,
     mock: bool | None = None,
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 9998,
 ) -> tuple[FastAPI, Any]:
     from bastion.memory import BastionMemory
@@ -122,53 +125,74 @@ def create_a2a_server(
 
     # -- A2A Agent Card ---------------------------------------------------
 
-    from a2a.server.routes import add_a2a_routes_to_fastapi, create_agent_card_routes
-    from a2a.types.a2a_pb2 import AgentCapabilities, AgentCard, AgentSkill
+    from bastion.a2a_signing import AgentCardSigner, verify_card_signed
 
-    agent_card = AgentCard(
-        name="Bastion Memory Agent",
-        description="A2A-compliant memory agent with hash-chain integrity, "
-        "C-SPANN vector indexing, knowledge graph, and time travel.",
-        version="0.3.0",
-        capabilities=AgentCapabilities(streaming=False),
-        skills=[
-            AgentSkill(
-                id="memory_store",
-                name="Store Agent Memory",
-                description="Store a memory with SHA-256 hash-chain integrity and C-SPANN vector indexing.",
-                tags=["memory", "storage", "hash-chain"],
-                examples=["Store that the user prefers Python over TypeScript"],
-            ),
-            AgentSkill(
-                id="memory_search",
-                name="Search Agent Memories",
-                description="Semantic vector search across agent memories with cognitive decay weighting.",
-                tags=["memory", "search", "vector", "c-spann"],
-                examples=["Find memories about project architecture decisions"],
-            ),
-            AgentSkill(
-                id="graph_query",
-                name="Knowledge Graph Query",
-                description="Traverse the knowledge graph with multi-hop BFS starting from an entity.",
-                tags=["graph", "knowledge", "traversal"],
-                examples=["Find what technologies Divyansh's projects use"],
-            ),
-            AgentSkill(
-                id="reinforce",
-                name="Reinforce Memory",
-                description="Boost a memory's importance score based on successful retrieval.",
-                tags=["memory", "decay", "reinforcement"],
-                examples=["Reinforce memory abc-123 after successful use"],
-            ),
-            AgentSkill(
-                id="broadcast",
-                name="Broadcast to Namespace",
-                description="Send an event message to all agents in the same namespace.",
-                tags=["communication", "namespace", "a2a"],
-                examples=["Broadcast task_complete event to project-alice agents"],
-            ),
-        ],
+    _agent_card_signer = AgentCardSigner.from_env("BASTION_A2A_PRIVATE_KEY")
+    logger.info(
+        "A2A signing key loaded",
+        extra={"public_key": _agent_card_signer.get_public_key_base64()[:16] + "..."},
     )
+
+    _agent_card_unsigned: dict[str, Any] = {
+        "name": "Bastion Memory Agent",
+        "description": (
+            "A2A-compliant memory agent with hash-chain integrity, "
+            "C-SPANN vector indexing, knowledge graph, and time travel."
+        ),
+        "version": "1.0.0",
+        "a2a_version": "1.0",
+        "url": "https://bastion-self.vercel.app",
+        "documentationUrl": "https://github.com/dgboy-ai/Bastion",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False,
+            "stateTransitionHistory": True,
+        },
+        "skills": [
+            {
+                "id": "memory_store",
+                "name": "Store Agent Memory",
+                "description": "Store a memory with SHA-256 hash-chain integrity and C-SPANN vector indexing.",
+                "tags": ["memory", "storage", "hash-chain", "c-spann"],
+                "examples": ["Store that the user prefers Python over TypeScript"],
+            },
+            {
+                "id": "memory_search",
+                "name": "Search Agent Memories",
+                "description": "Semantic vector search across agent memories with cognitive decay weighting.",
+                "tags": ["memory", "search", "vector", "c-spann"],
+                "examples": ["Find memories about project architecture decisions"],
+            },
+            {
+                "id": "graph_query",
+                "name": "Knowledge Graph Query",
+                "description": "Traverse the knowledge graph with multi-hop BFS starting from an entity.",
+                "tags": ["graph", "knowledge", "traversal"],
+                "examples": ["Find what technologies the user's projects use"],
+            },
+            {
+                "id": "reinforce",
+                "name": "Reinforce Memory",
+                "description": "Boost a memory's importance score based on successful retrieval.",
+                "tags": ["memory", "decay", "reinforcement"],
+                "examples": ["Reinforce memory abc-123 after successful use"],
+            },
+            {
+                "id": "broadcast",
+                "name": "Broadcast to Namespace",
+                "description": "Send an event message to all agents in the same namespace.",
+                "tags": ["communication", "namespace", "a2a"],
+                "examples": ["Broadcast task_complete event to project-alice agents"],
+            },
+        ],
+        "defaultInputModes": ["text"],
+        "defaultOutputModes": ["text"],
+        "supportsAuthenticatedExtendedCard": False,
+        "provider": {
+            "organization": "Bastion",
+            "url": "https://github.com/dgboy-ai/Bastion",
+        },
+    }
 
     # -- In-memory task store ---------------------------------------------
 
@@ -201,7 +225,7 @@ def create_a2a_server(
     # -- FastAPI app -------------------------------------------------------
 
     app = FastAPI(title="Bastion A2A Server", version="0.3.0")
-    cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",") if o.strip()]
+    cors_origins = [o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -298,16 +322,21 @@ def create_a2a_server(
         return response
 
     # ----------------------------------------------------------------------
-    # A2A Agent Card (via SDK helper - only for this endpoint)
+    # A2A v1.0 Signed Agent Card
     # ----------------------------------------------------------------------
 
-    add_a2a_routes_to_fastapi(
-        app,
-        agent_card_routes=create_agent_card_routes(
-            agent_card=agent_card,
-            card_url="/.well-known/agent-card.json",
-        ),
-    )
+    @app.get("/.well-known/agent-card.json")
+    async def agent_card():
+        signed = _agent_card_signer.sign_card(_agent_card_unsigned)
+        return JSONResponse(signed)
+
+    @app.get("/.well-known/public-key.pem")
+    async def public_key():
+        return Response(
+            content=_agent_card_signer.get_public_key_pem(),
+            media_type="application/x-pem-file",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     # ----------------------------------------------------------------------
     # A2A JSON-RPC endpoint (POST /)

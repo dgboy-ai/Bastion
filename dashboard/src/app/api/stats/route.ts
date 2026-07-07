@@ -1,33 +1,11 @@
 import { NextResponse } from "next/server";
 import { pool, query } from "@/lib/db";
+import { getMockStats } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
-// Mock data for when database is not available
-function getMockStats() {
-  return {
-    alerts: [],
-    memories: 0,
-    entities: 0,
-    relations: 0,
-    auditLogs: 0,
-    conflicts: 0,
-    avgImportance: "0.00",
-    decayCurve: [
-      { label: "24h ago", value: 0 },
-      { label: "18h ago", value: 0 },
-      { label: "12h ago", value: 0 },
-      { label: "6h ago", value: 0 },
-      { label: "Now", value: 0 },
-    ],
-    hourlyGrowth: [0, 0, 0, 0, 0, 0, 0, 0],
-    topRecalls: [],
-    cacheHitPct: "0.0",
-    recentAudits: [],
-    mock: true,
-  };
-}
-
-export async function GET() {
-  // If no database connection, return mock data
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (!pool) {
     return NextResponse.json(getMockStats());
   }
@@ -158,8 +136,7 @@ export async function GET() {
         details: row.details || {},
       })),
     });
-  } catch (error: unknown) {
-    console.error("Failed to fetch stats:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json(getMockStats());
   }
 }

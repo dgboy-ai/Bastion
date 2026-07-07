@@ -320,7 +320,7 @@ def test_list_all_filters_by_memory_type():
 def test_list_all_excludes_expired():
     memory = BastionMemory(agent_id="list-all-expiry", mock=True)
     memory.store("fact", "Persistent", expires_in_seconds=3600)
-    memory.store("fact", "Ephemeral", expires_in_seconds=-1)
+    memory.store("fact", "Ephemeral", expires_in_seconds=0)
     results = memory.list_all()
     assert len(results) == 1
     assert results[0].content == "Persistent"

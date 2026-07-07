@@ -66,7 +66,7 @@ class RowLevelSecurity:
 
     def set_agent_context(self, agent_id: str) -> None:
         """Set the current agent context for RLS filtering.
-        
+
         Must be called within an active transaction.
         """
         with self.conn.cursor() as cur:

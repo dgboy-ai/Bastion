@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import math
 import os
 import re
@@ -14,32 +13,45 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bastion import mock as _mock
+from bastion.circuit_breaker import CircuitBreaker
+from bastion.config import get_settings
+from bastion.log_setup import get_logger
 from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
+from bastion.errors import BastionPoolExhaustedError
+from bastion.pool import ConnectionPool
+from bastion.retry import SerializationRetryEngine
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-# Bedrock embedding config
-_BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
-_EMBED_DIM = 1024  # Titan V2 output dimension
 _bedrock_client = None
-_bedrock_lock = threading.Lock()
+_bedrock_client_lock = threading.Lock()
 
 
 def _get_bedrock_client():
-    """Lazily initialize the Bedrock runtime client (thread-safe)."""
     global _bedrock_client
-    if _bedrock_client is None:
-        with _bedrock_lock:
-            if _bedrock_client is None:
-                try:
-                    import boto3
-                    from botocore.config import Config as BotoConfig
-                    region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "ap-south-1"))
-                    _bedrock_cfg = BotoConfig(read_timeout=10, connect_timeout=10)
-                    _bedrock_client = boto3.client("bedrock-runtime", region_name=region, config=_bedrock_cfg)
-                except Exception:
-                    logger.exception("Failed to create Bedrock client")
-                    _bedrock_client = None
+    if _bedrock_client is not None:
+        return _bedrock_client
+    with _bedrock_client_lock:
+        if _bedrock_client is not None:
+            return _bedrock_client
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+        except ImportError:
+            logger.warning("boto3 not available, Bedrock client disabled")
+            return None
+        settings = get_settings()
+        cfg = BotoConfig(
+            read_timeout=settings.bedrock_read_timeout,
+            connect_timeout=settings.bedrock_connect_timeout,
+        )
+        try:
+            _bedrock_client = boto3.client(
+                "bedrock-runtime", region_name=settings.aws_region, config=cfg,
+            )
+        except Exception as exc:
+            logger.error("Failed to create Bedrock client", error=str(exc))
+            _bedrock_client = None
     return _bedrock_client
 
 
@@ -65,6 +77,52 @@ _MEMORY_COLS = (
     "created_at, expires_at, access_count, importance_score, "
     "trust_level, source_provenance, overwrite_count"
 )
+
+_MAX_CONTENT_LENGTH = 100_000
+_MAX_AGENT_ID_LENGTH = 255
+_MAX_MEMORY_TYPE_LENGTH = 100
+
+
+def _validate_memory_type(memory_type: str) -> None:
+    if not memory_type or not isinstance(memory_type, str):
+        raise ValueError(f"memory_type must be a non-empty string, got {type(memory_type).__name__}")
+    if len(memory_type) > _MAX_MEMORY_TYPE_LENGTH:
+        raise ValueError(f"memory_type too long ({len(memory_type)} > {_MAX_MEMORY_TYPE_LENGTH})")
+
+
+def _validate_content(content: str) -> None:
+    if not content or not isinstance(content, str):
+        raise ValueError(f"content must be a non-empty string, got {type(content).__name__}")
+    if len(content) > _MAX_CONTENT_LENGTH:
+        raise ValueError(f"content too long ({len(content)} > {_MAX_CONTENT_LENGTH})")
+
+
+def _validate_agent_id(agent_id: str) -> None:
+    if not agent_id or not isinstance(agent_id, str):
+        raise ValueError(f"agent_id must be a non-empty string, got {type(agent_id).__name__}")
+    if len(agent_id) > _MAX_AGENT_ID_LENGTH:
+        raise ValueError(f"agent_id too long ({len(agent_id)} > {_MAX_AGENT_ID_LENGTH})")
+
+
+def _validate_k(value: int) -> None:
+    if not isinstance(value, int) or value < 1:
+        raise ValueError(f"k must be a positive integer, got {value!r}")
+
+
+def _validate_threshold(value: float) -> None:
+    if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        raise ValueError(f"threshold must be between 0 and 1, got {value!r}")
+
+
+def _validate_namespace_scope(value: str) -> None:
+    if value not in ("own", "shared"):
+        raise ValueError(f"namespace_scope must be 'own' or 'shared', got {value!r}")
+
+
+def _validate_expires_in(seconds: int | None) -> None:
+    if seconds is not None and (not isinstance(seconds, int) or seconds < 0):
+        raise ValueError(f"expires_in_seconds must be a non-negative integer, got {seconds!r}")
+
 
 def _parse_payload(raw: Any) -> dict[str, Any]:
     if raw is None:
@@ -97,24 +155,50 @@ class BastionMemory:
         namespace: str | None = None,
         compliance_mode: str | None = None,
     ):
-        import threading
+        _validate_agent_id(agent_id)
+
+        settings = get_settings()
         self.agent_id = agent_id
         self.namespace = namespace or agent_id
-        self._mock = mock if mock is not None else os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
-        self._conn: Any = None
-        self._conn_lock = threading.Lock()
-        self._tt_conn: Any = None
-        self._tt_lock = threading.Lock()
-        self._conn_str = connection_string
-        self.compliance_mode = compliance_mode
+        self._mock = mock if mock is not None else (
+            settings.mock or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
+        )
+        self.compliance_mode = compliance_mode or settings.compliance_mode
+        self._conn_str = connection_string or settings.connection_string
+
+        self._pool: ConnectionPool | None = None
+        self._pool_lock = threading.Lock()
+
+        self._bedrock_cb = CircuitBreaker(
+            name="bedrock_embed",
+            failure_threshold=settings.circuit_breaker_failure_threshold,
+            recovery_timeout=settings.circuit_breaker_recovery_timeout,
+            success_threshold=settings.circuit_breaker_success_threshold,
+        )
+        self._retry_engine = SerializationRetryEngine(
+            max_retries=settings.retry_max_retries,
+            base_delay_ms=settings.retry_base_delay_ms,
+            max_delay_ms=settings.retry_max_delay_ms,
+            jitter_factor=settings.retry_jitter_factor,
+        )
+
         if self._mock:
             _mock.mock_register_namespace(agent_id, self.namespace)
+        elif not self._conn_str:
+            raise ValueError("connection_string is required when mock=False")
 
-        if not self._mock:
-            if not connection_string:
-                raise ValueError("connection_string is required when mock=False")
-            import psycopg
-            self._conn = psycopg.connect(connection_string)
+    def get_pool(self) -> ConnectionPool:
+        if self._pool is None:
+            with self._pool_lock:
+                if self._pool is None:
+                    settings = get_settings()
+                    self._pool = ConnectionPool(
+                        connection_string=self._conn_str,
+                        min_size=settings.pool_min_size,
+                        max_size=settings.pool_max_size,
+                        max_idle_seconds=settings.pool_max_idle_seconds,
+                    )
+        return self._pool
 
     @property
     def is_mock(self) -> bool:
@@ -126,15 +210,14 @@ class BastionMemory:
         """Whether the database connection is established and alive."""
         if self._mock:
             return True
-        conn = self._conn
-        if conn is None or conn.closed:
+        pool = self._pool
+        if pool is None:
             return False
         try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
+            conn = pool.acquire(timeout=5.0)
+            pool.release(conn)
             return True
-        except Exception:
-            logger.exception("is_connected check failed")
+        except (BastionPoolExhaustedError, OSError, RuntimeError):
             return False
 
     def store(
@@ -144,25 +227,16 @@ class BastionMemory:
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
     ) -> MemoryRecord:
-        """Store a memory with automatic hash chain linking.
-
-        Embeds content via Bedrock Titan V2, inserts into C-SPANN indexed
-        agent_memory table, and chains to previous memory via SHA-256 hash.
-        """
-        if not content:
-            raise ValueError("content cannot be empty")
-        if not memory_type:
-            raise ValueError("memory_type cannot be empty")
+        _validate_memory_type(memory_type)
+        _validate_content(content)
+        _validate_expires_in(expires_in_seconds)
         if self._mock:
             return _mock.mock_store_memory(self.agent_id, memory_type, content, metadata, expires_in_seconds)
         return self._store_real(memory_type, content, metadata, expires_in_seconds)
 
     def reinforce(self, memory_id: str, success: bool = True) -> dict:
-        """Reinforce a memory's importance score.
-
-        Successful reinforcement adds 1.1 to importance (0.1 access + 1.0 success).
-        Failed reinforcement adds only 0.1. Score capped at 10.0.
-        """
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
         if self._mock:
             return _mock.mock_reinforce(self.agent_id, memory_id, success)
         return self._reinforce_real(memory_id, success)
@@ -175,22 +249,10 @@ class BastionMemory:
         memory_type: str | None = None,
         namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
-        """Search memories using C-SPANN vector similarity with decay weighting.
-
-        Returns memories ranked by (cosine_similarity * importance_score / time_decay).
-
-        namespace_scope:
-            "own"    — search only this agent's memories (default)
-            "shared" — search all agents in the same namespace
-        """
-        if not query:
-            raise ValueError("query cannot be empty")
-        if k < 1:
-            raise ValueError("k must be at least 1")
-        if not 0 <= threshold <= 1:
-            raise ValueError("threshold must be between 0 and 1")
-        if namespace_scope not in ("own", "shared"):
-            raise ValueError("namespace_scope must be 'own' or 'shared'")
+        _validate_content(query)
+        _validate_k(k)
+        _validate_threshold(threshold)
+        _validate_namespace_scope(namespace_scope)
         ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
             return _mock.mock_search_memory(ns_agent_id, query, k, threshold, memory_type, namespace_scope)
@@ -201,46 +263,37 @@ class BastionMemory:
         memory_type: str | None = None,
         namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
-        """List all non-expired memories (no vector similarity, no ordering).
-
-        This is the correct way to get all memories for analytics/reporting.
-        Unlike ``search("*", ...)`` which embeds the literal string ``"*"``
-        and does vector similarity, this performs a simple SQL query.
-
-        namespace_scope:
-            "own"    — list only this agent's memories (default)
-            "shared" — list all agents in the same namespace
-        """
-        if namespace_scope not in ("own", "shared"):
-            raise ValueError("namespace_scope must be 'own' or 'shared'")
+        _validate_namespace_scope(namespace_scope)
         ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
             return _mock.mock_list_all(ns_agent_id, memory_type, namespace_scope)
         return self._list_all_real(memory_type, namespace_scope)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
-        """Query memory state at a specific timestamp using AS OF SYSTEM TIME."""
+        if not timestamp or not isinstance(timestamp, str):
+            raise ValueError(f"timestamp must be a non-empty string, got {type(timestamp).__name__}")
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_get_memory_at_time(agent_id, timestamp)
         return self._get_at_time_real(agent_id, timestamp)
 
     def audit(self, agent_id: str | None = None) -> list[AuditEntry]:
-        """Retrieve the append-only audit log for an agent."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_get_audit(agent_id)
         return self._audit_real(agent_id)
 
     def heal(self, agent_id: str | None = None) -> dict[str, Any]:
-        """Trigger memory self-healing: prune expired records and compact storage."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_heal(agent_id)
         return self._heal_real(agent_id)
 
     def resolve_conflict(self, fact_a: str, fact_b: str, context: str | None = None) -> str:
-        """Resolve conflicting memories via SERIALIZABLE isolation and LLM merge."""
+        if not fact_a or not isinstance(fact_a, str):
+            raise ValueError(f"fact_a must be a non-empty string, got {type(fact_a).__name__}")
+        if not fact_b or not isinstance(fact_b, str):
+            raise ValueError(f"fact_b must be a non-empty string, got {type(fact_b).__name__}")
         if self._mock:
             return _mock.mock_resolve_conflict(fact_a, fact_b, context or "")
         return self._resolve_conflict_real(fact_a, fact_b, context or "")
@@ -252,20 +305,23 @@ class BastionMemory:
         memory_type: str = "semantic_cache",
         threshold: float = 0.97,
     ) -> tuple[str, dict]:
-        """Semantic caching: return cached result if similar query exists, else call LLM."""
+        _validate_content(query)
+        _validate_threshold(threshold)
         if self._mock:
             return _mock.mock_query_with_cache(self.agent_id, query, llm_callback, memory_type, threshold)
         return self._query_with_cache_real(query, llm_callback, memory_type, threshold)
 
     def detect_anomalies(self, agent_id: str | None = None) -> list[dict]:
-        """Detect memory anomalies: fact turnover, size spikes, rapid forgetting."""
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_detect_anomalies(agent_id)
         return self._detect_anomalies_real(agent_id)
 
     def diff(self, timestamp_a: str, timestamp_b: str, agent_id: str | None = None) -> dict:
-        """Compare memory state between two timestamps, showing added and removed memories."""
+        if not timestamp_a or not isinstance(timestamp_a, str):
+            raise ValueError(f"timestamp_a must be a non-empty string, got {type(timestamp_a).__name__}")
+        if not timestamp_b or not isinstance(timestamp_b, str):
+            raise ValueError(f"timestamp_b must be a non-empty string, got {type(timestamp_b).__name__}")
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_diff(agent_id, timestamp_a, timestamp_b)
@@ -309,6 +365,8 @@ class BastionMemory:
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
     ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
+        _validate_content(content)
+        _validate_expires_in(expires_in_seconds)
         if self._mock:
             return _mock.mock_store_with_graph(self.agent_id, content, metadata, expires_in_seconds)
         return self._store_with_graph_real(content, metadata, expires_in_seconds)
@@ -319,6 +377,10 @@ class BastionMemory:
         relation_path: list[str] | None = None,
         hops: int = 2,
     ) -> list[dict[str, Any]]:
+        if not start_entity or not isinstance(start_entity, str):
+            raise ValueError(f"start_entity must be a non-empty string, got {type(start_entity).__name__}")
+        if hops < 1:
+            raise ValueError(f"hops must be at least 1, got {hops}")
         if self._mock:
             return _mock.mock_graph_query(self.agent_id, start_entity, relation_path, hops)
         return self._graph_query_real(start_entity, relation_path, hops)
@@ -334,10 +396,9 @@ class BastionMemory:
         return self._graph_stats_real()
 
     def broadcast(self, event_type: str, payload: dict | None = None, namespace: str | None = None) -> MessageRecord:
-        """Send a message to all agents in a namespace."""
         ns = namespace if namespace is not None else self.namespace
-        if not event_type:
-            raise ValueError("event_type cannot be empty")
+        if not event_type or not isinstance(event_type, str):
+            raise ValueError(f"event_type must be a non-empty string, got {type(event_type).__name__}")
         if self._mock:
             return _mock.mock_broadcast(self.agent_id, event_type, payload, ns)
         return self._broadcast_real(event_type, payload, ns)
@@ -380,24 +441,37 @@ class BastionMemory:
         }
 
     def get_memory(self, memory_id: str) -> MemoryRecord | None:
-        """Retrieve a single memory by its exact ID (not semantic search).
-
-        Returns ``None`` if not found. Uses primary-key lookup so this is
-        deterministic — unlike ``search()`` which ranks by vector similarity.
-        """
-        if not memory_id:
-            raise ValueError("memory_id cannot be empty")
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
         if self._mock:
             return _mock.mock_get_memory_by_id(self.agent_id, memory_id)
         return self._get_memory_by_id_real(memory_id)
 
-    def close(self):
+    def _delete_by_id(self, memory_id: str) -> bool:
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
+        if self._mock:
+            return _mock.mock_delete_memory(self.agent_id, memory_id)
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
-            if self._conn and not self._conn.closed:
-                self._conn.close()
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s", (memory_id, self.agent_id))
+                if cur.rowcount == 0:
+                    return False
+                cur.execute(
+                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                    (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id})),
+                )
+                conn.commit()
+                return True
         finally:
-            if self._tt_conn and not self._tt_conn.closed:
-                self._tt_conn.close()
+            pool.release(conn)
+
+    def close(self):
+        pool = self._pool
+        if pool is not None:
+            pool.close_all()
 
     def _store_real(
         self,
@@ -406,36 +480,29 @@ class BastionMemory:
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
     ) -> MemoryRecord:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("store_real called without a database connection")
-
-        prev_hash = self._get_last_hash()
-        meta = metadata or {}
-        crypto_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + (prev_hash or "")).encode()
-        ).hexdigest()
-
-        embedding = self._embed(content)
-        embedding_str = json.dumps(embedding)
-        now = datetime.now(UTC)
-        expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
-
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
+            prev_hash = self._get_last_hash(conn)
+            meta = metadata or {}
+            crypto_hash = hashlib.sha256(
+                (content + json.dumps(meta, sort_keys=True) + (prev_hash or "")).encode()
+            ).hexdigest()
+
+            embedding = self._embed(content)
+            embedding_str = json.dumps(embedding)
+            now = datetime.now(UTC)
+            expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
+
             with conn.cursor() as cur:
-                # Security: Never trust user-supplied trust levels or provenance
-                trust_level = 2  # Default MEDIUM trust
+                trust_level = 2
                 source_prov = "agent_direct"
                 meta.pop("_trust_level", None)
                 meta.pop("_source_provenance", None)
                 cur.execute(
-                    """
-                    INSERT INTO agent_memory
-                        (agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash,
-                         expires_at, importance_score, trust_level, source_provenance)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s)
-                    RETURNING memory_id, created_at
-                    """,
+                    "INSERT INTO agent_memory (agent_id, memory_type, content, embedding, metadata, "
+                    "previous_hash, cryptographic_hash, expires_at, importance_score, trust_level, source_provenance) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s) RETURNING memory_id, created_at",
                     (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
                      expires_dt.isoformat() if expires_dt else None, trust_level, source_prov),
                 )
@@ -452,7 +519,7 @@ class BastionMemory:
                 conn.commit()
 
                 row_map = row._mapping if hasattr(row, '_mapping') else {"memory_id": row[0], "created_at": row[1]}
-                result = MemoryRecord(
+                return MemoryRecord(
                     memory_id=str(row_map["memory_id"]),
                     agent_id=self.agent_id,
                     memory_type=memory_type,
@@ -467,11 +534,15 @@ class BastionMemory:
                     trust_level=trust_level,
                     source_provenance=source_prov,
                 )
-                return result
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception as rb_exc:
+                logger.warning("rollback failed during store error handling", extra={"rollback_error": str(rb_exc)})
             logger.exception("store failed, rolled back transaction")
             raise
+        finally:
+            pool.release(conn)
 
     def _search_real(
         self,
@@ -481,18 +552,16 @@ class BastionMemory:
         memory_type: str | None,
         namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("search_real called without a database connection")
-
-        query_vector = self._embed(query)
-        query_vector_str = json.dumps(query_vector)
-        decay_rate = 0.01
-
-        agent_filter = "agent_id LIKE %s"
-        agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
-
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
+            query_vector = self._embed(query)
+            query_vector_str = json.dumps(query_vector)
+            settings = get_settings()
+            decay_rate = settings.decay_rate
+            agent_filter = "agent_id LIKE %s"
+            agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
+
             with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
@@ -524,18 +593,19 @@ class BastionMemory:
         except Exception as e:
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             raise RuntimeError(f"Search failed for agent {self.agent_id}: {e}") from e
+        finally:
+            pool.release(conn)
 
     def _list_all_real(
         self,
         memory_type: str | None = None,
         namespace_scope: str = "own",
     ) -> list[MemoryRecord]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("_list_all_real called without a database connection")
-        agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
-        agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
+            agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
+            agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
             with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
@@ -555,11 +625,12 @@ class BastionMemory:
         except Exception as e:
             logger.exception("list_all query failed", extra={"agent_id": self.agent_id})
             raise RuntimeError(f"List all failed for agent {self.agent_id}: {e}") from e
+        finally:
+            pool.release(conn)
 
     def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("get_memory_by_id_real called without a database connection")
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -567,24 +638,16 @@ class BastionMemory:
                     (memory_id,),
                 )
                 row = cur.fetchone()
-                if row is None:
-                    return None
-                return MemoryRecord.from_row(row)
+                return MemoryRecord.from_row(row) if row else None
         except Exception as e:
             logger.exception("get_memory_by_id failed", extra={"memory_id": memory_id})
             raise RuntimeError(f"Failed to get memory {memory_id}: {e}") from e
+        finally:
+            pool.release(conn)
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
-        conn_str = self._conn_str
-        if conn_str is None:
-            raise RuntimeError("get_at_time_real called without a database connection")
-
-        with self._tt_lock:
-            if self._tt_conn is None or self._tt_conn.closed:
-                import psycopg
-                self._tt_conn = psycopg.connect(conn_str)
-            conn = self._tt_conn
-
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
@@ -598,21 +661,17 @@ class BastionMemory:
         except Exception:
             conn.rollback()
             raise
+        finally:
+            pool.release(conn)
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("audit_real called without a database connection")
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT audit_id, agent_id, workflow_id, action, details, recorded_at
-                    FROM agent_audit
-                    WHERE agent_id = %s
-                    ORDER BY recorded_at DESC
-                    LIMIT 100
-                    """,
+                    "SELECT audit_id, agent_id, workflow_id, action, details, recorded_at "
+                    "FROM agent_audit WHERE agent_id = %s ORDER BY recorded_at DESC LIMIT 100",
                     (agent_id,),
                 )
                 results = []
@@ -629,11 +688,12 @@ class BastionMemory:
         except Exception as e:
             logger.exception("audit query failed", extra={"agent_id": agent_id})
             raise RuntimeError(f"Audit query failed for agent {agent_id}: {e}") from e
+        finally:
+            pool.release(conn)
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("heal_real called without a database connection")
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -645,14 +705,14 @@ class BastionMemory:
         except Exception:
             logger.exception("heal query failed", extra={"agent_id": agent_id})
             return {"agent_id": agent_id, "pruned": 0, "status": "error"}
+        finally:
+            pool.release(conn)
 
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("resolve_conflict_real called without a database connection")
-
-        merged = f"{fact_a}; {fact_b}"
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
+            merged = f"{fact_a}; {fact_b}"
             with conn.cursor() as cur:
                 payload = json.dumps({
                     "fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context,
@@ -670,22 +730,27 @@ class BastionMemory:
         except Exception as e:
             logger.exception("resolve_conflict failed")
             raise RuntimeError(f"Conflict resolution failed: {e}") from e
+        finally:
+            pool.release(conn)
 
-    def _get_last_hash(self) -> str | None:
-        conn = self._conn
+    def _get_last_hash(self, conn=None) -> str | None:
         if conn is None:
-            raise RuntimeError("get_last_hash called without a database connection")
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
-                    (self.agent_id,),
-                )
-                row = cur.fetchone()
-                return str(row[0]) if row else None
-        except Exception as e:
-            logger.exception("get_last_hash query failed")
-            raise RuntimeError(f"Failed to get last hash: {e}") from e
+            pool = self.get_pool()
+            conn = pool.acquire(timeout=30.0)
+            try:
+                return self._get_last_hash_impl(conn)
+            finally:
+                pool.release(conn)
+        return self._get_last_hash_impl(conn)
+
+    def _get_last_hash_impl(self, conn) -> str | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                (self.agent_id,),
+            )
+            row = cur.fetchone()
+            return str(row[0]) if row else None
 
     def _query_with_cache_real(
         self,
@@ -702,10 +767,8 @@ class BastionMemory:
         return response, {"cache": "miss"}
 
     def _detect_anomalies_real(self, agent_id: str) -> list[dict]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("detect_anomalies_real called without a database connection")
-        alerts = []
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -725,6 +788,7 @@ class BastionMemory:
                 rows = cur.fetchall()
 
             contents = [r[0] for r in rows]
+            alerts = []
             if len(contents) != len(set(contents)):
                 alerts.append({
                     "type": "fact_turnover",
@@ -740,11 +804,12 @@ class BastionMemory:
                     "detail": f"Memory count ({total}) exceeds 100 records",
                     "agent_id": agent_id,
                 })
+            return alerts
         except Exception as e:
             logger.exception("Anomaly detection query failed", extra={"agent_id": agent_id})
             raise RuntimeError(f"Anomaly detection failed for agent {agent_id}: {e}") from e
-
-        return alerts
+        finally:
+            pool.release(conn)
 
     def _diff_real(self, agent_id: str, timestamp_a: str, timestamp_b: str) -> dict:
         state_a = self._get_at_time_real(agent_id, timestamp_a)
@@ -762,37 +827,40 @@ class BastionMemory:
         }
 
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("reinforce_real called without a database connection")
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT importance_score, access_count FROM agent_memory "
-                "WHERE memory_id = %s AND agent_id = %s",
-                (memory_id, self.agent_id),
-            )
-            row = cur.fetchone()
-            if not row:
-                return {"status": "not_found"}
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT importance_score, access_count FROM agent_memory "
+                    "WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {"status": "not_found"}
 
-            base_imp = float(row[0]) or 5.0
-            boost = 0.1  # small reinforcement for access
-            if success:
-                boost += 1.0  # positive outcome reinforcement
-            new_imp = min(base_imp + boost, 10.0)
+                base_imp = float(row[0]) or 5.0
+                settings = get_settings()
+                boost = 0.1
+                if success:
+                    boost += settings.reinforce_boost
+                new_imp = min(base_imp + boost, 10.0)
 
-            cur.execute(
-                "UPDATE agent_memory SET importance_score = %s, access_count = access_count + 1 "
-                "WHERE memory_id = %s AND agent_id = %s",
-                (new_imp, memory_id, self.agent_id),
-            )
-            conn.commit()
-            return {
-                "status": "reinforced",
-                "memory_id": memory_id,
-                "importance_score": new_imp,
-                "delta": round(new_imp - base_imp, 2),
-            }
+                cur.execute(
+                    "UPDATE agent_memory SET importance_score = %s, access_count = access_count + 1 "
+                    "WHERE memory_id = %s AND agent_id = %s",
+                    (new_imp, memory_id, self.agent_id),
+                )
+                conn.commit()
+                return {
+                    "status": "reinforced",
+                    "memory_id": memory_id,
+                    "importance_score": new_imp,
+                    "delta": round(new_imp - base_imp, 2),
+                }
+        finally:
+            pool.release(conn)
 
     def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
         triples: list[tuple[str, str, str, str, float]] = []
@@ -822,61 +890,63 @@ class BastionMemory:
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
     ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("store_with_graph_real called without a database connection")
-        record = self._store_real("fact", content, metadata, expires_in_seconds)
-        triples = self._extract_triples(content)
-        created_entities: list[EntityRecord] = []
-        created_relations: list[RelationRecord] = []
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            record = self._store_real("fact", content, metadata, expires_in_seconds)
+            triples = self._extract_triples(content)
+            created_entities: list[EntityRecord] = []
+            created_relations: list[RelationRecord] = []
 
-        for src_name, tgt_name, rel_type, kind, confidence in triples:
-            if kind == "entity_type":
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                        "VALUES (%s, %s, %s, now())",
-                        (self.agent_id, tgt_name, src_name),
-                    )
-                    conn.commit()
-            else:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                        "VALUES (%s, 'person', %s, now()) "
-                        "ON CONFLICT DO NOTHING RETURNING entity_id",
-                        (self.agent_id, src_name),
-                    )
-                    src_row = cur.fetchone()
-                    eid_src = str(src_row[0]) if src_row else self._ensure_entity_id(cur, src_name)
+            for src_name, tgt_name, rel_type, kind, confidence in triples:
+                if kind == "entity_type":
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                            "VALUES (%s, %s, %s, now())",
+                            (self.agent_id, tgt_name, src_name),
+                        )
+                        conn.commit()
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                            "VALUES (%s, 'person', %s, now()) "
+                            "ON CONFLICT DO NOTHING RETURNING entity_id",
+                            (self.agent_id, src_name),
+                        )
+                        src_row = cur.fetchone()
+                        eid_src = str(src_row[0]) if src_row else self._ensure_entity_id(cur, src_name)
 
-                    cur.execute(
-                        "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                        "VALUES (%s, 'concept', %s, now()) "
-                        "ON CONFLICT DO NOTHING RETURNING entity_id",
-                        (self.agent_id, tgt_name),
-                    )
-                    tgt_row = cur.fetchone()
-                    eid_tgt = str(tgt_row[0]) if tgt_row else self._ensure_entity_id(cur, tgt_name)
+                        cur.execute(
+                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
+                            "VALUES (%s, 'concept', %s, now()) "
+                            "ON CONFLICT DO NOTHING RETURNING entity_id",
+                            (self.agent_id, tgt_name),
+                        )
+                        tgt_row = cur.fetchone()
+                        eid_tgt = str(tgt_row[0]) if tgt_row else self._ensure_entity_id(cur, tgt_name)
 
-                    cur.execute(
-                        "INSERT INTO agent_relations (agent_id, source_entity_id, target_entity_id, "
-                        "relation_type, confidence, source_memory_id) VALUES (%s, %s, %s, %s, %s, %s) "
-                        "RETURNING relation_id",
-                        (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record.memory_id),
-                    )
-                    conn.commit()
+                        cur.execute(
+                            "INSERT INTO agent_relations (agent_id, source_entity_id, target_entity_id, "
+                            "relation_type, confidence, source_memory_id) VALUES (%s, %s, %s, %s, %s, %s) "
+                            "RETURNING relation_id",
+                            (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record.memory_id),
+                        )
+                        conn.commit()
 
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at "
-                "FROM agent_entities WHERE agent_id = %s ORDER BY created_at DESC",
-                (self.agent_id,),
-            )
-            for r in cur.fetchall():
-                created_entities.append(EntityRecord.from_row(r))
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at "
+                    "FROM agent_entities WHERE agent_id = %s ORDER BY created_at DESC",
+                    (self.agent_id,),
+                )
+                for r in cur.fetchall():
+                    created_entities.append(EntityRecord.from_row(r))
 
-        return record, created_entities, created_relations
+            return record, created_entities, created_relations
+        finally:
+            pool.release(conn)
 
     def _ensure_entity_id(self, cur, name: str) -> str:
         cur.execute("SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s", (self.agent_id, name))
@@ -891,65 +961,59 @@ class BastionMemory:
         relation_path: list[str] | None,
         hops: int,
     ) -> list[dict[str, Any]]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("graph_query_real called without a database connection")
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
-                (self.agent_id, start_entity),
-            )
-            row = cur.fetchone()
-            if not row:
-                return []
-            start_id = str(row[0])
-
-            found: list[dict[str, Any]] = []
-            visited: set[str] = set()
-            queue: list[tuple[str, int]] = [(start_id, 0)]
-
-            while queue:
-                eid, depth = queue.pop(0)
-                if depth >= hops or eid in visited:
-                    continue
-                visited.add(eid)
-
-                rel_type_filter = ""
-                params: list[Any] = [eid]
-                if relation_path:
-                    placeholders = ", ".join(f"${i+2}" for i in range(len(relation_path)))
-                    rel_type_filter = f"AND r.relation_type IN ({placeholders})"
-                    params.extend(relation_path)
-
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT r.relation_type, r.confidence, r.source_memory_id, "
-                    f"e.name AS target_name, e.entity_id AS target_id "
-                    f"FROM agent_relations r JOIN agent_entities e ON r.target_entity_id = e.entity_id "
-                    f"WHERE r.source_entity_id = $1 {rel_type_filter}",
-                    params,
+                    "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
+                    (self.agent_id, start_entity),
                 )
-                for rel_row in cur.fetchall():
-                    found.append({
-                        "source": start_entity,
-                        "target": str(rel_row[3]),
-                        "relation": str(rel_row[0]),
-                        "confidence": float(rel_row[1]),
-                        "depth": depth + 1,
-                    })
-                    queue.append((str(rel_row[4]), depth + 1))
-            return found
+                row = cur.fetchone()
+                if not row:
+                    return []
+                start_id = str(row[0])
+
+                found: list[dict[str, Any]] = []
+                visited: set[str] = set()
+                queue: list[tuple[str, int]] = [(start_id, 0)]
+
+                while queue:
+                    eid, depth = queue.pop(0)
+                    if depth >= hops or eid in visited:
+                        continue
+                    visited.add(eid)
+
+                    rel_type_filter = ""
+                    params: list[Any] = [eid]
+                    if relation_path:
+                        placeholders = ", ".join(f"${i+2}" for i in range(len(relation_path)))
+                        rel_type_filter = f"AND r.relation_type IN ({placeholders})"
+                        params.extend(relation_path)
+
+                    cur.execute(
+                        f"SELECT r.relation_type, r.confidence, r.source_memory_id, "
+                        f"e.name AS target_name, e.entity_id AS target_id "
+                        f"FROM agent_relations r JOIN agent_entities e ON r.target_entity_id = e.entity_id "
+                        f"WHERE r.source_entity_id = $1 {rel_type_filter}",
+                        params,
+                    )
+                    for rel_row in cur.fetchall():
+                        found.append({
+                            "source": start_entity,
+                            "target": str(rel_row[3]),
+                            "relation": str(rel_row[0]),
+                            "confidence": float(rel_row[1]),
+                            "depth": depth + 1,
+                        })
+                        queue.append((str(rel_row[4]), depth + 1))
+                return found
+        finally:
+            pool.release(conn)
 
     def _graph_at_time_real(self, timestamp: str, entity: str | None) -> dict[str, Any]:
-        conn_str = self._conn_str
-        if conn_str is None:
-            raise RuntimeError("graph_at_time_real called without a database connection")
-
-        with self._tt_lock:
-            if self._tt_conn is None or self._tt_conn.closed:
-                import psycopg
-                self._tt_conn = psycopg.connect(conn_str)
-            conn = self._tt_conn
-
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
@@ -992,109 +1056,120 @@ class BastionMemory:
         except Exception:
             conn.rollback()
             raise
+        finally:
+            pool.release(conn)
 
     def _graph_stats_real(self) -> dict[str, Any]:
-        conn = self._conn
-        if conn is None:
-            raise RuntimeError("graph_stats_real called without a database connection")
-        with conn.cursor() as cur:
-            entity_row = cur.execute(
-                "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
-            ).fetchone()
-            if entity_row is None:
-                logger.error("COUNT query for entities returned no row")
-                raise RuntimeError("COUNT query for entities did not return a row")
-            entity_count = entity_row[0]
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
+                )
+                entity_row = cur.fetchone()
+                if entity_row is None:
+                    logger.error("COUNT query for entities returned no row")
+                    raise RuntimeError("COUNT query for entities did not return a row")
+                entity_count = entity_row[0]
 
-            relation_row = cur.execute(
-                "SELECT COUNT(*) FROM agent_relations r "
-                "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
-                (self.agent_id,),
-            ).fetchone()
-            if relation_row is None:
-                logger.error("COUNT query for relations returned no row")
-                raise RuntimeError("COUNT query for relations did not return a row")
-            relation_count = relation_row[0]
+                cur.execute(
+                    "SELECT COUNT(*) FROM agent_relations r "
+                    "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
+                    (self.agent_id,),
+                )
+                relation_row = cur.fetchone()
+                if relation_row is None:
+                    logger.error("COUNT query for relations returned no row")
+                    raise RuntimeError("COUNT query for relations did not return a row")
+                relation_count = relation_row[0]
 
-            cur.execute(
-                "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = %s ORDER BY entity_type",
-                (self.agent_id,),
-            )
-            entity_types = [r[0] for r in cur.fetchall()]
+                cur.execute(
+                    "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = %s ORDER BY entity_type",
+                    (self.agent_id,),
+                )
+                entity_types = [r[0] for r in cur.fetchall()]
 
-            orphans_row = cur.execute(
-                "SELECT COUNT(*) FROM agent_entities e WHERE e.agent_id = %s "
-                "AND NOT EXISTS (SELECT 1 FROM agent_relations r "
-                "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
-                (self.agent_id,),
-            ).fetchone()
-            if orphans_row is None:
-                logger.error("COUNT query for orphans returned no row")
-                raise RuntimeError("COUNT query for orphans did not return a row")
-            orphans = orphans_row[0]
+                cur.execute(
+                    "SELECT COUNT(*) FROM agent_entities e WHERE e.agent_id = %s "
+                    "AND NOT EXISTS (SELECT 1 FROM agent_relations r "
+                    "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
+                    (self.agent_id,),
+                )
+                orphans_row = cur.fetchone()
+                if orphans_row is None:
+                    logger.error("COUNT query for orphans returned no row")
+                    raise RuntimeError("COUNT query for orphans did not return a row")
+                orphans = orphans_row[0]
 
-            return {"entities": entity_count, "relations": relation_count,
-                    "orphans": orphans, "entity_types": entity_types}
+                return {"entities": entity_count, "relations": relation_count,
+                        "orphans": orphans, "entity_types": entity_types}
+        finally:
+            pool.release(conn)
 
     def _broadcast_real(self, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
-        conn = self._conn
-        if conn is None or conn.closed:
-            raise RuntimeError("Connection is not open")
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO agent_messages (namespace, sender_agent_id, event_type, payload) "
-                "VALUES (%s, %s, %s, %s) RETURNING message_id, created_at",
-                (namespace, self.agent_id, event_type, json.dumps(payload or {})),
-            )
-            row = cur.fetchone()
-            if row is None:
-                raise RuntimeError("INSERT RETURNING did not return a row")
-            conn.commit()
-            row_map = row._mapping if hasattr(row, '_mapping') else {"message_id": row[0], "created_at": row[1]}
-            return MessageRecord(
-                message_id=str(row_map["message_id"]),
-                namespace=namespace,
-                sender_agent_id=self.agent_id,
-                event_type=event_type,
-                payload=payload,
-                created_at=row_map["created_at"],
-            )
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO agent_messages (namespace, sender_agent_id, event_type, payload) "
+                    "VALUES (%s, %s, %s, %s) RETURNING message_id, created_at",
+                    (namespace, self.agent_id, event_type, json.dumps(payload or {})),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise RuntimeError("INSERT RETURNING did not return a row")
+                conn.commit()
+                row_map = row._mapping if hasattr(row, '_mapping') else {"message_id": row[0], "created_at": row[1]}
+                return MessageRecord(
+                    message_id=str(row_map["message_id"]),
+                    namespace=namespace,
+                    sender_agent_id=self.agent_id,
+                    event_type=event_type,
+                    payload=payload,
+                    created_at=row_map["created_at"],
+                )
+        finally:
+            pool.release(conn)
 
     def _poll_messages_real(self, namespace: str) -> list[MessageRecord]:
-        conn = self._conn
-        if conn is None or conn.closed:
-            raise RuntimeError("Connection is not open")
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT message_id, namespace, sender_agent_id, event_type, payload, "
-                "created_at, expires_at, read FROM agent_messages "
-                "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now()) "
-                "ORDER BY created_at ASC "
-                "FOR UPDATE SKIP LOCKED",
-                (namespace,),
-            )
-            rows = cur.fetchall()
-            if rows:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE agent_messages SET read = TRUE "
-                    "WHERE message_id = ANY(%s)",
-                    (tuple(r[0] for r in rows),),
+                    "SELECT message_id, namespace, sender_agent_id, event_type, payload, "
+                    "created_at, expires_at, read FROM agent_messages "
+                    "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY created_at ASC "
+                    "FOR UPDATE SKIP LOCKED",
+                    (namespace,),
                 )
-            conn.commit()
-            results = []
-            for r in rows:
-                payload_raw = r[4]
-                results.append(MessageRecord(
-                    message_id=str(r[0]),
-                    namespace=str(r[1]),
-                    sender_agent_id=str(r[2]),
-                    event_type=str(r[3]),
-                    payload=_parse_payload(payload_raw),
-                    created_at=r[5],
-                    expires_at=r[6],
-                    read=bool(r[7]),
-                ))
-            return results
+                rows = cur.fetchall()
+                if rows:
+                    cur.execute(
+                        "UPDATE agent_messages SET read = TRUE "
+                        "WHERE message_id = ANY(%s)",
+                        (tuple(r[0] for r in rows),),
+                    )
+                conn.commit()
+                results = []
+                for r in rows:
+                    payload_raw = r[4]
+                    results.append(MessageRecord(
+                        message_id=str(r[0]),
+                        namespace=str(r[1]),
+                        sender_agent_id=str(r[2]),
+                        event_type=str(r[3]),
+                        payload=_parse_payload(payload_raw),
+                        created_at=r[5],
+                        expires_at=r[6],
+                        read=bool(r[7]),
+                    ))
+                return results
+        finally:
+            pool.release(conn)
 
     def _embed(self, text: str) -> list[float]:
         """
@@ -1110,12 +1185,13 @@ class BastionMemory:
         if client is None:
             return _hash_fallback_embed(text)
 
-        body = json.dumps({"inputText": text, "dimensions": _EMBED_DIM, "normalize": True})
+        settings = get_settings()
+        body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
                 response = client.invoke_model(
-                    modelId=_BEDROCK_MODEL_ID,
+                    modelId=settings.bedrock_model_id,
                     body=body,
                     contentType="application/json",
                     accept="application/json",
@@ -1136,6 +1212,7 @@ class BastionMemory:
                     continue
                 logger.exception("Bedrock embedding failed after %d attempts, falling back to hash", attempt + 1)
                 return _hash_fallback_embed(text)
+        return _hash_fallback_embed(text)
 
     def __enter__(self):
         return self

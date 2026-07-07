@@ -54,7 +54,7 @@ class SagaBoundary:
 
 class SagaMemoryManager:
     """Manages saga boundaries for crash-safe agent task execution.
-    
+
     Persists saga state to CockroachDB for crash recovery.
     """
 
@@ -84,7 +84,7 @@ class SagaMemoryManager:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record an operation within a saga.
-        
+
         Raises ValueError if saga not found.
         """
         with self._lock:
@@ -95,7 +95,7 @@ class SagaMemoryManager:
 
     def commit_saga(self, saga_id: str) -> dict[str, Any]:
         """Mark a saga as successfully completed and persist.
-        
+
         Raises ValueError if saga not found.
         """
         with self._lock:
@@ -116,7 +116,7 @@ class SagaMemoryManager:
 
     def rollback_saga(self, saga_id: str) -> dict[str, Any]:
         """Rollback all operations in a saga and persist.
-        
+
         Raises ValueError if saga not found.
         """
         with self._lock:

@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
+import { getMockCacheStats } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (!pool) {
-    return NextResponse.json({
-      summary: { total_queries: 0, cache_hits: 0, cache_misses: 0, hit_rate_percent: 0, total_tokens_saved: 0, total_cost_saved_usd: 0, avg_latency_ms: 0, avg_hit_latency_ms: 0, avg_miss_latency_ms: 0 },
-      projections: { daily: 0, monthly: 0, annual: 0 },
-      competitor_comparison: { bastion_monthly: 0, mem0_monthly: 249, zep_monthly: 125, letta_monthly: 99, annual_savings_vs_mem0: 2988, annual_savings_vs_zep: 1500 },
-      hourly_breakdown: [],
-      period_hours: 24,
-      mock: true,
-    });
+    return NextResponse.json(getMockCacheStats());
   }
 
   try {
@@ -41,7 +37,10 @@ export async function GET(request: Request) {
       params.push(agentId);
     }
 
-    const statsResult = await query(statsSql, params);
+    const statsResult = await safeQuery(statsSql, params);
+    if (statsResult.mock) {
+      return NextResponse.json(getMockCacheStats());
+    }
     const stats = statsResult.rows[0];
 
     const totalQueries = parseInt(stats.total_queries ?? "0");
@@ -60,7 +59,7 @@ export async function GET(request: Request) {
       GROUP BY EXTRACT(HOUR FROM timestamp)
       ORDER BY hour
     `;
-    const hourlyResult = await query(hourlySql, params);
+    const hourlyResult = await safeQuery(hourlySql, params);
 
     const dailyCost = parseFloat(stats.total_cost_saved ?? "0");
     const monthlyProjection = dailyCost * 30;
@@ -98,16 +97,15 @@ export async function GET(request: Request) {
         annual_savings_vs_mem0: (competitorCosts.mem0 * 12),
         annual_savings_vs_zep: (competitorCosts.zep * 12),
       },
-      hourly_breakdown: hourlyResult.rows.map((row: Record<string, unknown>) => ({
+      hourly_breakdown: hourlyResult.rows?.map((row: Record<string, unknown>) => ({
         hour: parseInt(row.hour as string),
         hits: parseInt(row.hits as string ?? "0"),
         misses: parseInt(row.misses as string ?? "0"),
         cost_saved: parseFloat(row.cost_saved as string ?? "0"),
-      })),
+      })) ?? [],
       period_hours: hours,
     });
-  } catch (error: unknown) {
-    console.error("Cache stats failed:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json(getMockCacheStats());
   }
 }

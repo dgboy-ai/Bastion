@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import TrustRing from "@/components/TrustRing";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
 import DriftChart from "@/components/DriftChart";
+import MemoryGuardPanel from "@/components/MemoryGuardPanel";
+import LiveEventFeed from "@/components/LiveEventFeed";
 
 interface Stats {
   memories: number;
@@ -608,6 +610,27 @@ export default function OverviewPage() {
           </div>
         </div>
       )}
+
+        {/* Live SSE Event Stream */}
+        <div className="panel" style={{ marginTop: "24px" }}>
+          <div className="panel-header">
+            <span className="title-sm">Live Event Stream (SSE)</span>
+          </div>
+          <LiveEventFeed />
+        </div>
+
+        {/* MemoryGuard ASI06 Security Section */}
+        <div className="panel" style={{ marginTop: "24px" }}>
+          <div className="panel-header">
+            <div>
+              <span className="title-sm">MemoryGuard — OWASP ASI06 Memory Poisoning Defense</span>
+              <span style={{ fontSize: "11px", color: "var(--mute)", marginLeft: "12px" }}>
+                Real-time prompt injection, secret leakage & hash chain integrity scanning
+              </span>
+            </div>
+          </div>
+          <MemoryGuardPanel />
+        </div>
     </div>
   );
 }

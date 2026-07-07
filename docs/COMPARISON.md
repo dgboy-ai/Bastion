@@ -1,3 +1,4 @@
+
 # Bastion vs Alternatives — Real Comparison
 
 ## Head-to-Head: Feature Matrix

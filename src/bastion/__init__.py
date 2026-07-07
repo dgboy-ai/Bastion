@@ -2,6 +2,7 @@ from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, 
 from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, redact_pii
 from bastion.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
 from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
+from bastion.config import BastionSettings, get_settings, reset_settings
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA
 from bastion.drift import BehavioralDriftDetector, DriftReport
@@ -21,7 +22,19 @@ from bastion.models import (
     MessageRecord,
     RelationRecord,
 )
-from bastion.pool import ConnectionPool
+from bastion.errors import (
+    BastionAuthError,
+    BastionConfigError,
+    BastionConnectionError,
+    BastionError,
+    BastionNotFoundError,
+    BastionPoolExhaustedError,
+    BastionRetryExhaustedError,
+    BastionSerializationError,
+    BastionTimeoutError,
+    BastionValidationError,
+)
+from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
 from bastion.saga import SagaBoundary, SagaMemoryManager
@@ -45,11 +58,15 @@ __all__ = [
     "SagaBoundary",
     "SagaMemoryManager",
     "ConnectionPool",
+    "AsyncConnectionPool",
     "CircuitBreaker",
     "CircuitBreakerOpenError",
     "CircuitState",
     "RequestLimiter",
     "TracedBastionMemory",
+    "BastionSettings",
+    "get_settings",
+    "reset_settings",
     "CRDTMemory",
     "VectorClock",
     "LWWRegister",
@@ -79,4 +96,14 @@ __all__ = [
     "compute_trust_score",
     "BehavioralDriftDetector",
     "DriftReport",
+    "BastionError",
+    "BastionConnectionError",
+    "BastionTimeoutError",
+    "BastionSerializationError",
+    "BastionRetryExhaustedError",
+    "BastionPoolExhaustedError",
+    "BastionValidationError",
+    "BastionConfigError",
+    "BastionNotFoundError",
+    "BastionAuthError",
 ]

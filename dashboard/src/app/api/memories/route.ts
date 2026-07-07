@@ -1,32 +1,70 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
+import { getMockMemories } from "@/lib/mock-data";
+import { jsonResponse } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
+
+const CACHE = { "Cache-Control": "public, max-age=60, s-maxage=120" } as const;
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
+  const authError = requireAuth(request);
+  if (authError) return authError;
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
+  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
+  const search = searchParams.get("search") || "";
+  const offset = (page - 1) * limit;
+
+  const getPaginatedMemories = () => {
+    const allMemories = getMockMemories();
+    const filtered = search
+      ? allMemories.filter(m =>
+          m.content.toLowerCase().includes(search.toLowerCase()) ||
+          m.memoryType.toLowerCase().includes(search.toLowerCase())
+        )
+      : allMemories;
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit);
+    const memories = filtered.slice(offset, offset + limit);
+    return { memories, total, page, limit, totalPages, mock: true };
+  };
+
   if (!pool) {
-    return NextResponse.json({ memories: [], total: 0, mock: true });
+    return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
   }
 
   try {
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search");
-
-    let sql = `
+    let countSql = "SELECT COUNT(*) as cnt FROM agent_memory";
+    let dataSql = `
       SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, created_at, expires_at, access_count
       FROM agent_memory
     `;
     const params: unknown[] = [];
+    const whereParams: unknown[] = [];
 
     if (search) {
-      sql += " WHERE content ILIKE $1 OR memory_type ILIKE $1";
+      const whereClause = " WHERE content ILIKE $1 OR memory_type ILIKE $1";
+      countSql += whereClause;
+      dataSql += whereClause;
       params.push(`%${search}%`);
+      whereParams.push(`%${search}%`);
     }
 
-    sql += " ORDER BY created_at DESC LIMIT 100";
+    dataSql += " ORDER BY created_at DESC LIMIT $2 OFFSET $3";
+    params.push(limit, offset);
 
-    const res = await query(sql, params);
+    const [countRes, dataRes] = await Promise.all([
+      safeQuery(countSql, whereParams.length > 0 ? [`%${search}%`] : undefined),
+      safeQuery(dataSql, params),
+    ]);
 
-    const memories = res.rows.map((row) => ({
+    if (countRes.mock || dataRes.mock) {
+      return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
+    }
+
+    const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
+    const totalPages = Math.ceil(total / limit);
+    const memories = dataRes.rows.map((row: any) => ({
       memoryId: row.memory_id,
       agentId: row.agent_id,
       memoryType: row.memory_type,
@@ -40,9 +78,8 @@ export async function GET(request: Request) {
       accessCount: row.access_count ?? 0,
     }));
 
-    return NextResponse.json({ memories });
-  } catch (error: unknown) {
-    console.error("Failed to fetch memories:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ memories, total, page, limit, totalPages }, { headers: CACHE });
+  } catch {
+    return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
   }
 }

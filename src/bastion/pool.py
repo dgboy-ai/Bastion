@@ -6,6 +6,7 @@ Prevents connection exhaustion under concurrent agent workloads.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import threading
@@ -13,7 +14,12 @@ import time
 from collections import deque
 from typing import Any
 
+import structlog
+
+from bastion.errors import BastionPoolExhaustedError
+
 logger = logging.getLogger(__name__)
+structlog_logger = structlog.get_logger("bastion.pool")
 
 
 class ConnectionPool:
@@ -89,15 +95,15 @@ class ConnectionPool:
 
     def acquire(self, timeout: float = 30.0) -> Any:
         """Acquire a connection from the pool.
-        
+
         Args:
             timeout: Maximum seconds to wait for a connection.
-            
+
         Returns:
             A database connection.
-            
+
         Raises:
-            ConnectionPoolExhaustedError: If no connection available within timeout.
+            BastionPoolExhaustedError: If no connection available within timeout.
         """
         deadline = time.time() + timeout
 
@@ -139,7 +145,7 @@ class ConnectionPool:
             if time.time() >= deadline:
                 with self._lock:
                     self._total_rejected += 1
-                raise ConnectionPoolExhaustedError(
+                raise BastionPoolExhaustedError(
                     f"Connection pool exhausted after {timeout}s"
                 )
 
@@ -179,6 +185,93 @@ class ConnectionPool:
                     conn.close()
 
 
-class ConnectionPoolExhaustedError(Exception):
-    """Raised when connection pool is exhausted."""
-    pass
+class AsyncConnectionPool:
+    """Async connection pool using asyncpg.
+
+    Wraps asyncpg connection pool with structured logging and stats.
+    """
+
+    def __init__(
+        self,
+        dsn: str,
+        min_size: int = 2,
+        max_size: int = 10,
+        max_idle_seconds: int = 300,
+        command_timeout: int = 30,
+    ):
+        self.dsn = dsn
+        self.min_size = min_size
+        self.max_size = max_size
+        self.max_idle_seconds = max_idle_seconds
+        self.command_timeout = command_timeout
+        self._pool: Any = None
+        self._total_acquired = 0
+        self._total_released = 0
+
+    async def start(self) -> None:
+        import asyncpg
+        self._pool = await asyncpg.create_pool(
+            dsn=self.dsn,
+            min_size=self.min_size,
+            max_size=self.max_size,
+            max_inactive_connection_lifetime=self.max_idle_seconds,
+            command_timeout=self.command_timeout,
+        )
+        structlog_logger.info("async_pool_started", min_size=self.min_size, max_size=self.max_size)
+
+    async def acquire(self, timeout: float = 30.0) -> Any:
+        if self._pool is None:
+            raise BastionPoolExhaustedError("Pool not started. Call start() first.")
+        conn = await asyncio.wait_for(self._pool.acquire(), timeout=timeout)
+        self._total_acquired += 1
+        return conn
+
+    async def release(self, conn: Any) -> None:
+        if self._pool is None:
+            return
+        await self._pool.release(conn)
+        self._total_released += 1
+
+    async def close(self) -> None:
+        if self._pool is None:
+            return
+        await self._pool.close()
+        self._pool = None
+        structlog_logger.info("async_pool_closed")
+
+    async def execute(self, query: str, *args: Any, timeout: float | None = None) -> Any:
+        conn = await self.acquire(timeout=timeout or 30)
+        try:
+            return await conn.execute(query, *args)
+        finally:
+            await self.release(conn)
+
+    async def fetch(self, query: str, *args: Any, timeout: float | None = None) -> list[Any]:
+        conn = await self.acquire(timeout=timeout or 30)
+        try:
+            return await conn.fetch(query, *args)
+        finally:
+            await self.release(conn)
+
+    async def fetchrow(self, query: str, *args: Any, timeout: float | None = None) -> Any | None:
+        conn = await self.acquire(timeout=timeout or 30)
+        try:
+            return await conn.fetchrow(query, *args)
+        finally:
+            await self.release(conn)
+
+    async def fetchval(self, query: str, *args: Any, timeout: float | None = None) -> Any:
+        conn = await self.acquire(timeout=timeout or 30)
+        try:
+            return await conn.fetchval(query, *args)
+        finally:
+            await self.release(conn)
+
+    def get_stats(self) -> dict[str, Any]:
+        return {
+            "min_size": self.min_size,
+            "max_size": self.max_size,
+            "total_acquired": self._total_acquired,
+            "total_released": self._total_released,
+            "pool_open": self._pool is not None and not self._pool._closed,
+        }

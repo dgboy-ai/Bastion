@@ -26,7 +26,7 @@ def test_create_server_returns_server_and_memory():
 
 def test_tools_list_has_six_tools():
     tools = _get_tools()
-    assert len(tools) == 6
+    assert len(tools) == 8
     tool_names = [t.name for t in tools]
     assert "memory_search" in tool_names
     assert "memory_store" in tool_names

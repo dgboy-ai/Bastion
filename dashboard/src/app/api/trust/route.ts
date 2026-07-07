@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
+import { getMockTrust } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
 function computeTrustScore(row: Record<string, unknown>) {
   const trustLevel = (row.trust_level ?? 2) as number;
@@ -47,14 +49,10 @@ function computeTrustScore(row: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (!pool) {
-    return NextResponse.json({
-      summary: { totalMemories: 0, avgTrustScore: 0, trustLevelDistribution: {}, poisoningDistribution: {}, dangerousMemories: 0 },
-      alerts: [],
-      memories: [],
-      mock: true,
-    });
+    return NextResponse.json(getMockTrust());
   }
 
   try {
@@ -82,7 +80,10 @@ export async function GET(request: Request) {
     sql += ` ORDER BY m.created_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
 
-    const res = await query(sql, params);
+    const res = await safeQuery(sql, params);
+    if (res.mock) {
+      return NextResponse.json(getMockTrust());
+    }
 
     const trustLevelCounts: Record<number, number> = {};
     const poisoningCounts: Record<string, number> = {};
@@ -120,8 +121,7 @@ export async function GET(request: Request) {
       alerts,
       memories,
     });
-  } catch (error: unknown) {
-    console.error("Failed to fetch trust data:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json(getMockTrust());
   }
 }

@@ -87,7 +87,8 @@ class AutonomousDBA:
             cmd = ["ccloud", "cluster", "describe", self.cluster_id, "-o", "json"]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
-                return json.loads(result.stdout)
+                result_dict: dict[str, Any] = json.loads(result.stdout)
+                return result_dict
             return {"error": result.stderr}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to get cluster status: %s", e)

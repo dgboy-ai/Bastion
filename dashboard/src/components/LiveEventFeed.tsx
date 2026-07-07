@@ -1,0 +1,91 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+interface LiveEvent {
+  type: string;
+  event?: string;
+  agentId?: string;
+  memoryId?: string;
+  content?: string;
+  timestamp?: string;
+  message?: string;
+}
+
+export default function LiveEventFeed() {
+  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+  const rafRef = useRef<number | null>(null);
+  const tailRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const es = new EventSource("/api/events");
+
+    es.onopen = () => {
+      setConnected(true);
+    };
+
+    es.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data) as LiveEvent;
+        setEvents((prev) => {
+          const next = [...prev, data];
+          return next.length > 50 ? next.slice(-50) : next;
+        });
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      setConnected(false);
+    };
+
+    return () => {
+      es.close();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    rafRef.current = requestAnimationFrame(() => {
+      tailRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+  }, [events]);
+
+  return (
+    <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        <span style={{
+          width: "8px", height: "8px", borderRadius: "50%",
+          backgroundColor: connected ? "var(--accent-emerald)" : "var(--accent-sunset)",
+          display: "inline-block",
+        }} />
+        <span>{connected ? "Live" : "Disconnected"}</span>
+        <span style={{ color: "var(--mute)" }}>{events.filter(e => e.type === "event").length} events</span>
+      </div>
+      <div style={{ maxHeight: "160px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px" }}>
+        {events.filter(e => e.type === "event").slice(-20).map((evt, i) => (
+          <div key={i} style={{ display: "flex", gap: "6px", padding: "2px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+            <span style={{ color: "var(--accent-breeze)", whiteSpace: "nowrap" }}>
+              {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ""}
+            </span>
+            <span style={{
+              color: evt.event?.includes("conflict") ? "var(--accent-sunset)" :
+                     evt.event?.includes("anomaly") ? "var(--accent-magenta)" :
+                     evt.event?.includes("heal") ? "var(--accent-emerald)" :
+                     "var(--ink)",
+              whiteSpace: "nowrap",
+            }}>
+              {evt.event}
+            </span>
+            <span style={{ color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+              {evt.content ?? evt.message ?? ""}
+            </span>
+          </div>
+        ))}
+        <div ref={tailRef} />
+      </div>
+    </div>
+  );
+}

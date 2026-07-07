@@ -1,0 +1,103 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Bastion MCP (Health) Server",
+    "version": "1.0.0",
+    "description": "Health endpoints for the Bastion Model Context Protocol (MCP) server. The MCP protocol itself runs over stdio transport (not HTTP), providing 6 tools to AI agents: `memory_search`, `memory_store`, `memory_timetravel`, `memory_audit`, `memory_heal`, and `resolve_conflict`.\n\nThis HTTP server provides health checks for container orchestration and load balancers.",
+    "contact": { "name": "Bastion Project" },
+    "license": { "name": "MIT" }
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "MCP health endpoint" }
+  ],
+  "security": [
+    { "ApiKeyAuth": [] }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Returns 200 OK when the MCP server process is running.",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness Check",
+        "description": "Returns 200 OK when the MCP server is ready to process tool calls (DB connected or mock mode).",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ready" }
+                  }
+                }
+              }
+            }
+          },
+          "503": { "description": "Server not ready (DB unavailable)" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key via `BASTION_API_KEY` environment variable. Send as `Authorization: Bearer <key>`."
+      }
+    }
+  },
+  "x-mcp-tools": {
+    "description": "These tools are available via MCP stdio transport, not HTTP. Agent frameworks (CrewAI, LangChain, LlamaIndex) connect to the MCP server via subprocess stdio.",
+    "tools": [
+      {
+        "name": "memory_search",
+        "description": "C-SPANN vector search over agent memories with decay-weighted scoring. Returns semantically relevant memories with trust scores and provenance data."
+      },
+      {
+        "name": "memory_store",
+        "description": "SHA-256 hash-chained memory storage. Embeds content via AWS Bedrock Titan V2, computes hash over previous chain head, stores in CRDB with full provenance."
+      },
+      {
+        "name": "memory_timetravel",
+        "description": "Point-in-time queries using CockroachDB `AS OF SYSTEM TIME` for historical memory analysis and audit reconstruction."
+      },
+      {
+        "name": "memory_audit",
+        "description": "Append-only immutable audit log with cryptographic hash chain verification. Every operation is recorded with agent ID, action, and chain hash."
+      },
+      {
+        "name": "memory_heal",
+        "description": "CDC-triggered self-healing pipeline that detects hash chain gaps, re-runs embeddings on corrupted entries, and restores chain integrity."
+      },
+      {
+        "name": "resolve_conflict",
+        "description": "Multi-agent conflict resolution using SERIALIZABLE isolation level. Uses CRDT merge strategies and lease consensus to resolve concurrent writes."
+      }
+    ]
+  }
+}

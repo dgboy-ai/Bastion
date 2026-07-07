@@ -1,29 +1,26 @@
-"""Jittered Serializable Retry Engine.
-
-Catches CockroachDB 40001 serialization failures and retries
-with exponential backoff + randomized jitter. Critical for
-multi-agent concurrent writes under SERIALIZABLE isolation.
-"""
-
 from __future__ import annotations
 
-import logging
 import random
 import time
 from collections.abc import Callable
 from typing import Any
 
-logger = logging.getLogger(__name__)
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace import SpanKind
+
+    _has_otel = True
+except ImportError:
+    _has_otel = False
+
+import structlog
+
+from bastion.errors import BastionRetryExhaustedError
+
+logger = structlog.get_logger("bastion.retry")
 
 
 class SerializationRetryEngine:
-    """Wraps database writes in automatic retry loops for 40001 errors.
-    
-    Usage:
-        engine = SerializationRetryEngine(max_retries=5, base_delay_ms=10)
-        result = engine.execute(conn, lambda cur: cur.execute("INSERT ..."))
-    """
-
     def __init__(
         self,
         max_retries: int = 5,
@@ -44,60 +41,45 @@ class SerializationRetryEngine:
         operation: Callable[[Any], Any],
         isolation: str = "serializable",
     ) -> Any:
-        """Execute operation with automatic retry on serialization failure.
-        
-        Args:
-            conn: Database connection
-            operation: Callable that takes a cursor and performs the operation
-            isolation: Transaction isolation level
-            
-        Returns:
-            Result of the operation
-        """
-        last_error = None
+        tracer = trace.get_tracer("bastion.retry") if _has_otel else None
+        span = tracer.start_as_current_span("retry.execute", kind=SpanKind.CLIENT) if _has_otel else _null_context()
+        with span:
+            last_error: Exception | None = None
 
-        for attempt in range(self.max_retries + 1):
-            try:
-                with conn.cursor() as cur:
-                    result = operation(cur)
-                    conn.commit()
-                    self._total_successes += 1
-                    return result
-            except Exception as e:
-                conn.rollback()
-                error_str = str(e)
-                is_serialization = (
-                    "40001" in error_str
-                    or "serialization" in error_str.lower()
-                    or "restart transaction" in error_str.lower()
-                )
+            for attempt in range(self.max_retries + 1):
+                try:
+                    with conn.cursor() as cur:
+                        result = operation(cur)
+                        conn.commit()
+                        self._total_successes += 1
+                        return result
+                except Exception as e:
+                    conn.rollback()
+                    if not _is_serialization_error(e) or attempt == self.max_retries:
+                        raise
 
-                if not is_serialization or attempt == self.max_retries:
-                    raise
+                    last_error = e
+                    self._total_retries += 1
+                    delay = self._compute_delay(attempt)
+                    logger.warning(
+                        "serialization_retry",
+                        attempt=attempt + 1,
+                        max_retries=self.max_retries,
+                        delay_ms=round(delay, 1),
+                    )
+                    time.sleep(delay / 1000)
 
-                last_error = e
-                self._total_retries += 1
-
-                delay = self._compute_delay(attempt)
-                logger.warning(
-                    "Serialization failure (attempt %d/%d), retrying in %.1fms",
-                    attempt + 1,
-                    self.max_retries,
-                    delay,
-                )
-                time.sleep(delay / 1000)
-
-        raise last_error or RuntimeError("Retry engine exhausted")
+            raise BastionRetryExhaustedError(
+                f"Retry engine exhausted after {self.max_retries} attempts"
+            ) from last_error
 
     def _compute_delay(self, attempt: int) -> float:
-        """Exponential backoff with jitter."""
-        base = self.base_delay_ms * (2 ** attempt)
+        base = self.base_delay_ms * float(2**attempt)
         capped = min(base, self.max_delay_ms)
         jitter = capped * self.jitter_factor * random.random()
         return capped + jitter
 
     def get_stats(self) -> dict[str, Any]:
-        """Return retry statistics."""
         total = self._total_successes + self._total_retries
         return {
             "total_attempts": total,
@@ -105,3 +87,23 @@ class SerializationRetryEngine:
             "total_successes": self._total_successes,
             "retry_rate": round(self._total_retries / max(total, 1) * 100, 2),
         }
+
+
+def _is_serialization_error(e: Exception) -> bool:
+    estr = str(e)
+    return (
+        "40001" in estr
+        or "serialization" in estr.lower()
+        or "restart transaction" in estr.lower()
+    )
+
+
+class _NullContext:
+    def __enter__(self):
+        return None
+    def __exit__(self, *args):
+        pass
+
+
+def _null_context():
+    return _NullContext()

@@ -17,7 +17,7 @@ CREATE TABLE agent_memory (
 -- Enables sub-linear vector similarity search at scale with 94% compression vs pgvector
 -- Requires CockroachDB v25.2+ with vector indexing (Preview)
 -- Reference: https://www.cockroachlabs.com/docs/stable/vector-indexes
-CREATE VECTOR INDEX idx_memory_embedding ON agent_memory (agent_id, embedding) WITH (dim=1024);
+CREATE VECTOR INDEX idx_memory_embedding ON agent_memory (agent_id, embedding);
 
 -- CDC Changefeed: Streams every memory write for real-time anomaly detection and self-healing
 -- Lambda handler receives events, checks hash chain integrity, detects poisoning attacks

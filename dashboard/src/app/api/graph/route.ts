@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
+import { getMockGraph } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (!pool) {
-    return NextResponse.json({ entities: [], relations: [], mock: true });
+    return NextResponse.json(getMockGraph());
   }
 
   try {
@@ -16,23 +19,25 @@ export async function GET(request: Request) {
     const params: unknown[] = [];
 
     if (asOf) {
-      // Validate that asOf looks like a timestamp or relative interval
       entitiesSql += " AS OF SYSTEM TIME $1";
       relationsSql += " AS OF SYSTEM TIME $1";
       params.push(asOf);
     }
 
-    const entitiesRes = await query(entitiesSql, params);
-    const relationsRes = await query(relationsSql, params);
+    const entitiesRes = await safeQuery(entitiesSql, params);
+    if (entitiesRes.mock) {
+      return NextResponse.json(getMockGraph());
+    }
+    const relationsRes = await safeQuery(relationsSql, params);
 
-    const nodes = entitiesRes.rows.map((row) => ({
+    const nodes = entitiesRes.rows.map((row: any) => ({
       id: row.entity_id,
       name: row.name,
       type: row.entity_type,
       attributes: row.attributes || {},
     }));
 
-    const links = relationsRes.rows.map((row) => ({
+    const links = relationsRes.rows.map((row: any) => ({
       id: row.relation_id,
       source: row.source_entity_id,
       target: row.target_entity_id,
@@ -41,8 +46,7 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ nodes, links });
-  } catch (error: unknown) {
-    console.error("Failed to fetch graph data:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    return NextResponse.json(getMockGraph());
   }
 }

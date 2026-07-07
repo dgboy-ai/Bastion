@@ -1,31 +1,53 @@
 import { NextResponse } from "next/server";
-import { pool, query } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
+import { getMockMemories } from "@/lib/mock-data";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  // If no database connection, return mock data
-  if (!pool) {
-    return NextResponse.json({ memories: [], mock: true });
-  }
-
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     const { searchParams } = new URL(request.url);
     const entityId = searchParams.get("entity_id");
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
+    const offset = (page - 1) * limit;
 
     if (!entityId) {
       return NextResponse.json({ error: "Missing entity_id parameter" }, { status: 400 });
     }
 
-    // Query memories that generated relations connected to this entity
-    const memoriesRes = await query(
+    const countRes = await safeQuery(
+      `SELECT COUNT(*) as cnt FROM (
+        SELECT DISTINCT m.memory_id
+        FROM agent_memory m
+        JOIN agent_relations r ON r.source_memory_id = m.memory_id
+        WHERE r.source_entity_id = $1 OR r.target_entity_id = $1
+      ) sub`,
+      [entityId]
+    );
+
+    const memoriesRes = await safeQuery(
       `SELECT DISTINCT m.memory_id, m.content, m.cryptographic_hash, m.previous_hash, m.created_at, m.importance_score
        FROM agent_memory m
        JOIN agent_relations r ON r.source_memory_id = m.memory_id
        WHERE r.source_entity_id = $1 OR r.target_entity_id = $1
-       ORDER BY m.created_at DESC`,
-      [entityId]
+       ORDER BY m.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [entityId, limit, offset]
     );
 
-    const memories = memoriesRes.rows.map((row) => ({
+    if (countRes.mock || memoriesRes.mock) {
+      const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
+      const total = allMemories.length;
+      const totalPages = Math.ceil(total / limit);
+      const memories = allMemories.slice(offset, offset + limit);
+      return NextResponse.json({ memories, total, page, limit, totalPages, mock: true });
+    }
+
+    const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
+    const totalPages = Math.ceil(total / limit);
+    const memories = memoriesRes.rows.map((row: any) => ({
       memoryId: row.memory_id,
       content: row.content,
       cryptographicHash: row.cryptographic_hash,
@@ -34,9 +56,9 @@ export async function GET(request: Request) {
       importanceScore: row.importance_score ?? 5.0,
     }));
 
-    return NextResponse.json({ memories });
-  } catch (error: unknown) {
-    console.error("Failed to fetch entity memories:", error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ memories, total, page, limit, totalPages });
+  } catch {
+    const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
+    return NextResponse.json({ memories: allMemories, total: allMemories.length, page: 1, limit: allMemories.length, totalPages: 1, mock: true });
   }
 }

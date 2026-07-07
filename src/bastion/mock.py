@@ -240,6 +240,23 @@ def mock_get_memory_by_id(agent_id: str, memory_id: str) -> MemoryRecord | None:
     return None
 
 
+def mock_delete_memory(agent_id: str, memory_id: str) -> bool:
+    records = _agent_data.get(agent_id, [])
+    for i, rec in enumerate(records):
+        if rec.get("memory_id") == memory_id:
+            records.pop(i)
+            _audit_log.append({
+                "audit_id": str(uuid.uuid4()),
+                "agent_id": agent_id,
+                "workflow_id": str(uuid.uuid4()),
+                "action": "memory_delete",
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "details": json.dumps({"memory_id": memory_id}),
+            })
+            return True
+    return False
+
+
 def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]:
     target = datetime.fromisoformat(timestamp)
     records = _agent_data.get(agent_id, [])

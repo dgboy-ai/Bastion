@@ -138,6 +138,7 @@ export default function GraphPage() {
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to load entity data:", err);
+          setError(err instanceof Error ? err.message : "Failed to load entity data");
         }
       } finally {
         if (!cancelled) {

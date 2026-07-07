@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import os
-
-os.environ["BASTION_MOCK"] = "true"
-
 from bastion import BastionMemory
 from bastion.models import MessageRecord
 

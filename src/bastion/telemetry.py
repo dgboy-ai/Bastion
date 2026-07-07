@@ -7,18 +7,73 @@ try:
     from opentelemetry import trace
     from opentelemetry.trace import SpanKind
 
-    _has_otel = True
+    _has_otel_api = True
 except ImportError:
-    _has_otel = False
+    _has_otel_api = False
+    SpanKind = None
+
+try:
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+
+    _has_otel_sdk = True
+except ImportError:
+    _has_otel_sdk = False
 
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, ClusterInfo, MemoryRecord
 
 
+def setup_otel(
+    service_name: str = "bastion",
+    exporter=None,
+):
+    if not _has_otel_sdk:
+        return None
+    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    provider.add_span_processor(BatchSpanProcessor(exporter or ConsoleSpanExporter()))
+    trace.set_tracer_provider(provider)
+    return trace.get_tracer(service_name, "0.1.0")
+
+
+def get_tracer(name: str = "bastion"):
+    if _has_otel_api:
+        return trace.get_tracer(name, "0.1.0")
+    return _NullTracer()
+
+
+class _NullTracer:
+    def start_as_current_span(self, name, **kwargs):
+        return _NullSpan()
+
+    def start_span(self, name, **kwargs):
+        return _NullSpan()
+
+
+class _NullSpan:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def set_attribute(self, key, value):
+        pass
+
+    def set_status(self, status):
+        pass
+
+    def record_exception(self, exception):
+        pass
+
+    def end(self):
+        pass
+
+
 class _NullContext:
     def __enter__(self):
         return None
-
     def __exit__(self, *args):
         pass
 
@@ -26,10 +81,10 @@ class _NullContext:
 class TracedBastionMemory:
     def __init__(self, memory: BastionMemory):
         self._memory = memory
-        self._tracer = trace.get_tracer("bastion-memory", "0.1.0") if _has_otel else None
+        self._tracer = trace.get_tracer("bastion-memory", "0.1.0") if _has_otel_api else _NullTracer()
 
     def _span(self, name: str, attrs: dict[str, Any] | None = None):
-        if self._tracer:
+        if _has_otel_api:
             return self._tracer.start_as_current_span(name, kind=SpanKind.CLIENT, attributes=attrs or {})
         return _NullContext()
 

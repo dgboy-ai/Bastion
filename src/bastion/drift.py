@@ -69,12 +69,12 @@ class BehavioralDriftDetector:
         self._watch_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
-    def establish_baseline(self, agent_id: str, window: str = "7d") -> dict[str, dict[str, float]]:
+    def establish_baseline(self, agent_id: str, window: str = "7d") -> dict[str, Any]:
         all_memories = self.memory.list_all(namespace_scope="shared")
         agent_memories = [m for m in all_memories if m.agent_id == agent_id]
         audit_entries = self.memory.audit(agent_id)
 
-        baseline: dict[str, dict[str, float]] = {}
+        baseline: dict[str, Any] = {}
 
         access_types = Counter(m.memory_type for m in agent_memories)
         total = len(agent_memories) or 1
@@ -214,7 +214,7 @@ class BehavioralDriftDetector:
         overall = round(min(max(overall, 0.0), 1.0), 4)
 
         bl_meta = baseline.get("_meta", {})
-        baseline_sessions = bl_meta.get("total_memories", 0)
+        baseline_sessions = int(bl_meta.get("total_memories", 0))
 
         status = _classify_drift(overall, alert_threshold)
         recommendation = _generate_recommendation(dim_scores, alert_threshold)
@@ -259,10 +259,8 @@ class BehavioralDriftDetector:
             self._store_drift_score_real(agent_id, report)
 
     def _store_drift_score_real(self, agent_id: str, report: DriftReport) -> None:
-        conn = self.memory._conn
-        if conn is None or conn.closed:
-            logger.warning("Cannot store drift score: no DB connection")
-            return
+        pool = self.memory.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -285,6 +283,8 @@ class BehavioralDriftDetector:
                 conn.commit()
         except Exception:
             logger.exception("Failed to store drift score for agent %s", agent_id)
+        finally:
+            pool.release(conn)
 
     def recent_scores(self, agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
         if self.memory._mock:
@@ -292,9 +292,8 @@ class BehavioralDriftDetector:
         return self._recent_scores_real(agent_id, limit)
 
     def _recent_scores_real(self, agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
-        conn = self.memory._conn
-        if conn is None or conn.closed:
-            return []
+        pool = self.memory.get_pool()
+        conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -336,6 +335,8 @@ class BehavioralDriftDetector:
         except Exception:
             logger.exception("Failed to fetch recent drift scores for agent %s", agent_id)
             return []
+        finally:
+            pool.release(conn)
 
 
 def _parse_json_field(v: Any) -> Any:
