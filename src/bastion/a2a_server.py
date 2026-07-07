@@ -28,6 +28,7 @@ import uuid
 from collections import defaultdict, deque
 from typing import Any
 
+import anyio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -714,7 +715,9 @@ def create_a2a_server(
         _store_task(task_id, "WORKING")
 
         try:
-            result = _execute_skill(memory, method, skill_params)
+            result = await anyio.to_thread.run_sync(
+                _execute_skill, memory, method, skill_params
+            )
             parts_out = [{"text": json.dumps(result, default=str)}]
             _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
         except Exception:
