@@ -1,5 +1,45 @@
 # Later Work — Post-Hackathon Items
 
+## ABSOLUTE_DOMINATION.md — Remaining Items (Audit: 2026-07-07)
+
+### NOT STARTED — Must complete before submission
+
+#### 1. Architecture Diagram (Excalidraw Quality)
+- **Why:** Judges expect a visual architecture proof. No standalone diagram file exists.
+- **Work Item:** Create `docs/architecture.svg` showing: Agent Fleet → A2A/MCP → Bastion SDK → CockroachDB (5 tables) → CDC → Lambda → S3. Include C-SPANN, CRDT, Hash Chain, RLS labels.
+- **Effort:** 2 hours
+
+#### 2. Autonomous Schema Evolution (`schema_evolution.py`)
+- **Why:** Claim #21 in the submission text references this feature. File does not exist.
+- **Work Item:** Create `src/bastion/schema_evolution.py` with `SemanticDataContract` class that validates column names/types and executes `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` at runtime.
+- **Effort:** 4 hours
+
+### PARTIAL — Need finishing touches
+
+#### 3. npm Publish TypeScript SDK
+- **Status:** Built at `sdk/typescript/` (v0.1.0, dist/ ready), but never published to npm.
+- **Work Item:** Run `npm publish` from `sdk/typescript/`. Requires npm account + access token.
+- **Effort:** 30 minutes
+
+#### 4. Durable Virtual Actor Paging
+- **Status:** `BastionAgent` has checkpointing and consolidation, but no explicit memory windowing.
+- **Work Item:** Add `page_size`, cursor, and memory windowing to `BastionAgent` for dehydrating/reactivating agent contexts.
+- **Effort:** 1 day
+
+### Submission Artifacts — Critical for judging
+
+#### 5. Demo Video (3 minutes)
+- **Status:** Script exists in `DEMO_SCRIPT.md`. Not recorded.
+- **Work Item:** Record 1080p video showing: dashboard live → hash chain break detection → CRDT merge → time-travel query → close on metrics. Upload to YouTube.
+- **Effort:** 6 hours
+
+#### 6. Vercel Deployment Verified
+- **Status:** Dashboard deployed, but not verified with real CRDB cluster + Bedrock.
+- **Work Item:** Confirm live URL loads with real data from CRDB Cloud. Test all endpoints.
+- **Effort:** 2 hours
+
+---
+
 ## Hackathon Security & Threat Vector Roadmap
 
 ### 1. Context Compaction & Safety Pinning (OpenClaw Defense)
