@@ -489,6 +489,103 @@ class BastionAgent:
         self.stop_consolidation()
         self.memory.close()
 
+    # ── Durable Virtual Actor Paging ──────────────────────────────────────
+
+    def dehydrate(self) -> dict[str, Any]:
+        """Flush active agent state to CockroachDB and clear local context.
+
+        Stores conversation history + metadata as a paged "snapshot" that can
+        be rehydrated later. After dehydration, the agent's local context is
+        empty — like a suspended virtual actor that can be reactivated on demand.
+        """
+        page_id = str(uuid.uuid4())
+        page_data = {
+            "page_id": page_id,
+            "agent_id": self.agent_id,
+            "conversation_history": self._conversation_history,
+            "memory_count": len(self.memory.list_all()),
+            "dehydrated_at": datetime.now(UTC).isoformat(),
+        }
+
+        self.memory.store(
+            "agent_page",
+            json.dumps(page_data, default=str),
+            metadata={
+                "page_id": page_id,
+                "type": "dehydration",
+                "conversation_turns": len(self._conversation_history),
+            },
+        )
+
+        # Clear local context
+        self._conversation_history.clear()
+
+        return {
+            "status": "dehydrated",
+            "page_id": page_id,
+            "conversation_turns_saved": len(page_data["conversation_history"]),
+            "memory_count": page_data["memory_count"],
+        }
+
+    def rehydrate(self, page_id: str) -> dict[str, Any]:
+        """Load agent state from a dehydrated page in CockroachDB.
+
+        Restores conversation history and metadata. The agent's memory
+        (agent_memory table) is already persistent — this restores the
+        ephemeral conversation context that would otherwise be lost.
+        """
+        results = self.memory.search(
+            page_id,
+            k=1,
+            threshold=0.5,
+            memory_type="agent_page",
+        )
+        if not results:
+            return {"status": "not_found", "page_id": page_id}
+
+        try:
+            page_data = json.loads(results[0].content)
+            self._conversation_history = page_data.get("conversation_history", [])
+            return {
+                "status": "rehydrated",
+                "page_id": page_id,
+                "conversation_turns_restored": len(self._conversation_history),
+                "memory_count": page_data.get("memory_count", 0),
+                "dehydrated_at": page_data.get("dehydrated_at"),
+            }
+        except (json.JSONDecodeError, KeyError):
+            return {"status": "error", "page_id": page_id, "error": "Invalid page data"}
+
+    def list_pages(self) -> list[dict[str, Any]]:
+        """List all dehydrated pages for this agent."""
+        results = self.memory.list_all(memory_type="agent_page")
+        pages = []
+        for r in results:
+            try:
+                data = json.loads(r.content)
+                pages.append({
+                    "page_id": data.get("page_id"),
+                    "dehydrated_at": data.get("dehydrated_at"),
+                    "conversation_turns": data.get("conversation_turns", 0),
+                    "memory_count": data.get("memory_count", 0),
+                })
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return pages
+
+    def delete_page(self, page_id: str) -> dict[str, Any]:
+        """Delete a dehydrated page from CockroachDB."""
+        results = self.memory.search(
+            page_id,
+            k=1,
+            threshold=0.5,
+            memory_type="agent_page",
+        )
+        if not results:
+            return {"status": "not_found", "page_id": page_id}
+        self.memory._delete_by_id(results[0].memory_id)
+        return {"status": "deleted", "page_id": page_id}
+
     def __enter__(self):
         return self
 
