@@ -8,6 +8,7 @@ from bastion.dba import AutonomousDBA, SchemaEvolution
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.rules import CognitiveRulesEngine, CognitiveRule, ExecutionLog, RuleCategory
 from bastion.thought_chain import ThoughtChain, ThoughtNode, ThoughtType
+from bastion.locality import MemoryLocality, DataRegion
 from bastion.errors import (
     BastionAuthError,
     BastionConfigError,
