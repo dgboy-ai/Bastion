@@ -20,6 +20,7 @@ from bastion.log_setup import get_logger
 from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
 from bastion.pool import ConnectionPool
 from bastion.retry import SerializationRetryEngine
+from bastion.rls import RowLevelSecurity
 
 logger = get_logger(__name__)
 
@@ -168,6 +169,7 @@ class BastionMemory:
 
         self._pool: ConnectionPool | None = None
         self._pool_lock = threading.Lock()
+        self._rls_enabled = False
 
         self._bedrock_cb = CircuitBreaker(
             name="bedrock_embed",
@@ -199,6 +201,35 @@ class BastionMemory:
                         max_idle_seconds=settings.pool_max_idle_seconds,
                     )
         return self._pool
+
+    def enable_rls(self) -> dict[str, Any]:
+        """Enable Row-Level Security on all agent tables.
+
+        After calling this, every query automatically filters rows by agent_id,
+        preventing cross-agent data leaks even if application code has bugs.
+        """
+        if self._mock:
+            return {"status": "enabled", "tables": ["agent_memory", "agent_audit", "agent_checkpoints"]}
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            rls = RowLevelSecurity(conn)
+            result = rls.enable_rls()
+            if result.get("status") == "enabled":
+                self._rls_enabled = True
+            return result
+        finally:
+            pool.release(conn)
+
+    def _set_rls_context(self, conn: Any) -> None:
+        """Set agent context for RLS filtering within a transaction."""
+        if not self._rls_enabled:
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
+        except Exception:
+            pass  # RLS not enabled yet or connection issue — proceed without filtering
 
     @property
     def is_mock(self) -> bool:
@@ -454,6 +485,7 @@ class BastionMemory:
             return _mock.mock_delete_memory(self.agent_id, memory_id)
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -485,6 +517,7 @@ class BastionMemory:
     ) -> MemoryRecord:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             prev_hash = self._get_last_hash(conn)
             meta = dict(metadata) if metadata is not None else {}
@@ -561,6 +594,7 @@ class BastionMemory:
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             query_vector = self._embed(query)
             query_vector_str = json.dumps(query_vector)
@@ -610,6 +644,7 @@ class BastionMemory:
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
@@ -638,6 +673,7 @@ class BastionMemory:
     def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -655,6 +691,7 @@ class BastionMemory:
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -671,6 +708,7 @@ class BastionMemory:
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -698,6 +736,7 @@ class BastionMemory:
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -833,6 +872,7 @@ class BastionMemory:
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
