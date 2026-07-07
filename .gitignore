@@ -8,6 +8,7 @@ venv/
 env/
 *.env
 .env.local
+.env.example
 node_modules/
 .next/
 .cockroach-data/
@@ -18,6 +19,13 @@ __pycache__/
 *.sqlite
 bastion-memory-*.tgz
 .opencode/AGENTS.md
+.mimocode/
 dashboard/playwright-report/
 dashboard/test-results/
 later-work.md
+future.md
+futurescope.md
+research/
+test_real_crdb.py
+htmlcov/
+*.log
