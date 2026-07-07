@@ -4,7 +4,7 @@ from bastion.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, Cir
 from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
 from bastion.config import BastionSettings, get_settings, reset_settings
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
-from bastion.dba import AutonomousDBA
+from bastion.dba import AutonomousDBA, SchemaEvolution
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.errors import (
     BastionAuthError,
@@ -53,6 +53,7 @@ __all__ = [
     "IETFAATRecord",
     "VerifiableUnlearning",
     "AutonomousDBA",
+    "SchemaEvolution",
     "CognitiveFirewall",
     "SerializationRetryEngine",
     "RowLevelSecurity",

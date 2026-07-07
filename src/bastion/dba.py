@@ -168,3 +168,169 @@ class AutonomousDBA:
             )
 
         return recommendations
+
+
+# ── Autonomous Schema Evolution ─────────────────────────────────────────────
+
+
+# Allowed column types for semantic data contracts
+ALLOWED_COLUMN_TYPES = frozenset({
+    "TEXT", "STRING", "VARCHAR", "CHAR",
+    "INT", "INTEGER", "INT8", "INT16", "INT32", "INT64",
+    "FLOAT", "FLOAT4", "FLOAT8", "DECIMAL", "NUMERIC",
+    "BOOL", "BOOLEAN",
+    "JSONB", "JSON",
+    "UUID",
+    "TIMESTAMPTZ", "TIMESTAMP", "DATE", "TIME",
+    "BYTES", "VARBYTES",
+    "INET", "CIDR",
+    "ARRAY",
+})
+
+# Patterns that are unsafe for DDL execution
+_UNSAFE_DDL_PATTERNS = frozenset({
+    "DROP TABLE", "DROP DATABASE", "TRUNCATE",
+    "ALTER TABLE ... DROP COLUMN", "DELETE FROM",
+    "GRANT", "REVOKE", "CREATE USER", "DROP USER",
+})
+
+
+class SchemaEvolution:
+    """Autonomous schema evolution with semantic data contracts.
+
+    Validates proposed schema changes against safety rules, then executes
+    DDL mutations using CockroachDB's non-blocking online schema changes.
+
+    This enables AI agents to adapt their memory schemas at runtime
+    without manual migrations or service restarts.
+    """
+
+    def __init__(self, cluster_id: str | None = None):
+        self.cluster_id = cluster_id
+
+    def validate_proposal(
+        self,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+    ) -> dict[str, Any]:
+        """Validate a schema change proposal against semantic data contracts.
+
+        Returns validation result with allowed/rejected status and reason.
+        """
+        errors = []
+
+        # Validate table name
+        if not table_name or not isinstance(table_name, str):
+            errors.append("table_name must be a non-empty string")
+        elif not table_name.isidentifier():
+            errors.append(f"Invalid table name: {table_name}")
+        elif len(table_name) > 128:
+            errors.append(f"table_name too long ({len(table_name)} > 128)")
+
+        # Validate column name
+        if not column_name or not isinstance(column_name, str):
+            errors.append("column_name must be a non-empty string")
+        elif not column_name.isidentifier():
+            errors.append(f"Invalid column name: {column_name}")
+        elif len(column_name) > 128:
+            errors.append(f"column_name too long ({len(column_name)} > 128)")
+
+        # Validate column type
+        if not column_type or not isinstance(column_type, str):
+            errors.append("column_type must be a non-empty string")
+        elif column_type.upper() not in ALLOWED_COLUMN_TYPES:
+            errors.append(
+                f"Column type '{column_type}' not in allowed types. "
+                f"Allowed: {', '.join(sorted(ALLOWED_COLUMN_TYPES))}"
+            )
+
+        # Check for unsafe DDL patterns
+        proposed_ddl = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+        for pattern in _UNSAFE_DDL_PATTERNS:
+            if pattern.lower() in proposed_ddl.lower():
+                errors.append(f"Proposed DDL contains unsafe pattern: {pattern}")
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "table_name": table_name,
+            "column_name": column_name,
+            "column_type": column_type.upper() if column_type else None,
+        }
+
+    def execute_migration(
+        self,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+        default_value: str | None = None,
+    ) -> dict[str, Any]:
+        """Execute a validated schema migration using CockroachDB's online DDL.
+
+        Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS for idempotent execution.
+        CockroachDB performs non-blocking schema changes that don't lock reads/writes.
+        """
+        # Validate first
+        validation = self.validate_proposal(table_name, column_name, column_type)
+        if not validation["valid"]:
+            return {
+                "status": "rejected",
+                "errors": validation["errors"],
+            }
+
+        if not self.cluster_id:
+            return {"error": "No cluster_id configured"}
+
+        # Build DDL
+        col_type = column_type.upper()
+        ddl = f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {col_type}"
+        if default_value:
+            ddl += f" DEFAULT {default_value}"
+
+        try:
+            cmd = [
+                "ccloud", "sql", "--cluster", self.cluster_id,
+                "--execute", ddl,
+                "-o", "json",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0:
+                return {
+                    "status": "executed",
+                    "ddl": ddl,
+                    "table_name": table_name,
+                    "column_name": column_name,
+                    "column_type": col_type,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            return {"status": "error", "error": result.stderr, "ddl": ddl}
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+            logger.warning("Failed to execute migration: %s", e)
+            return {"status": "error", "error": str(e), "ddl": ddl}
+
+    def list_columns(self, table_name: str) -> dict[str, Any]:
+        """List current columns for a table via SHOW COLUMNS."""
+        if not self.cluster_id:
+            return {"error": "No cluster_id configured"}
+
+        try:
+            sql = f"SHOW COLUMNS FROM {table_name}"
+            cmd = [
+                "ccloud", "sql", "--cluster", self.cluster_id,
+                "--execute", sql,
+                "-o", "json",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                columns = json.loads(result.stdout)
+                return {
+                    "table_name": table_name,
+                    "columns": columns,
+                    "column_count": len(columns),
+                }
+            return {"error": result.stderr}
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+            logger.warning("Failed to list columns: %s", e)
+            return {"error": str(e)}
