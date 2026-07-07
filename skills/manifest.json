@@ -1,0 +1,140 @@
+{
+  "name": "bastion-memory-skills",
+  "version": "1.0.0",
+  "description": "CockroachDB-backed memory skills for AI agents. Provides persistent, tamper-proof memory with hash-chain integrity, C-SPANN vector indexing, and time-travel queries.",
+  "author": "Bastion",
+  "license": "MIT",
+  "repository": "https://github.com/dgboy-ai/Bastion",
+  "protocols": ["mcp", "a2a"],
+  "skills": [
+    {
+      "id": "memory_store",
+      "name": "Memory Store",
+      "description": "Store memories with SHA-256 hash chain integrity and C-SPANN vector indexing.",
+      "protocol": "mcp",
+      "tool": "memory_store",
+      "tags": ["memory", "storage", "hash-chain", "c-spann"],
+      "input_schema": {
+        "memory_type": "string (fact, instruction, preference, etc.)",
+        "content": "string (the memory content)",
+        "metadata": "object (optional, arbitrary key-value pairs)"
+      },
+      "output_schema": {
+        "memory_id": "UUID",
+        "cryptographic_hash": "SHA-256 hex string",
+        "importance_score": "float"
+      }
+    },
+    {
+      "id": "memory_search",
+      "name": "Memory Search",
+      "description": "Semantic vector search across agent memories with cognitive decay weighting.",
+      "protocol": "mcp",
+      "tool": "memory_search",
+      "tags": ["memory", "search", "vector", "c-spann"],
+      "input_schema": {
+        "query": "string (natural language search query)",
+        "k": "integer (default 5, max 100)",
+        "threshold": "float (0.0-1.0, default 0.8)",
+        "memory_type": "string (optional filter)"
+      },
+      "output_schema": {
+        "results": "array of MemoryRecord objects with similarity scores"
+      }
+    },
+    {
+      "id": "memory_timetravel",
+      "name": "Memory Time Travel",
+      "description": "Query memory state as it existed at a past timestamp using CockroachDB AS OF SYSTEM TIME.",
+      "protocol": "mcp",
+      "tool": "memory_timetravel",
+      "tags": ["memory", "time-travel", "temporal", "audit"],
+      "input_schema": {
+        "timestamp": "ISO 8601 timestamp or relative string like '5 minutes ago'",
+        "query": "string (optional, filter by content)"
+      },
+      "output_schema": {
+        "memories": "array of MemoryRecord objects as they existed at the timestamp"
+      }
+    },
+    {
+      "id": "memory_audit",
+      "name": "Memory Audit",
+      "description": "Verify hash chain integrity and detect tampering in agent memory.",
+      "protocol": "mcp",
+      "tool": "memory_audit",
+      "tags": ["memory", "audit", "integrity", "security"],
+      "input_schema": {
+        "agent_id": "string (optional, defaults to current agent)"
+      },
+      "output_schema": {
+        "chain_valid": "boolean",
+        "total_memories": "integer",
+        "broken_links": "array of audit entries with integrity issues"
+      }
+    },
+    {
+      "id": "memory_heal",
+      "name": "Memory Self-Heal",
+      "description": "Detect and repair memory corruption using hash chain verification and S3 snapshots.",
+      "protocol": "mcp",
+      "tool": "memory_heal",
+      "tags": ["memory", "healing", "recovery", "resilience"],
+      "input_schema": {
+        "agent_id": "string (optional)",
+        "force": "boolean (optional, force full re-verification)"
+      },
+      "output_schema": {
+        "repaired": "integer (number of memories repaired)",
+        "snapshots_created": "integer"
+      }
+    },
+    {
+      "id": "graph_query",
+      "name": "Knowledge Graph Query",
+      "description": "Traverse the knowledge graph with multi-hop BFS starting from an entity.",
+      "protocol": "mcp",
+      "tool": "graph_query",
+      "tags": ["graph", "knowledge", "traversal"],
+      "input_schema": {
+        "start_entity": "string (entity name or ID)",
+        "relation_path": "string (optional, filter by relation type)",
+        "hops": "integer (default 2, max 5)"
+      },
+      "output_schema": {
+        "entities": "array of EntityRecord objects",
+        "relations": "array of RelationRecord objects",
+        "paths": "array of traversal paths"
+      }
+    },
+    {
+      "id": "resolve_conflict",
+      "name": "Conflict Resolution",
+      "description": "Resolve conflicting memories using semantic comparison and CRDT merge strategies.",
+      "protocol": "mcp",
+      "tool": "resolve_conflict",
+      "tags": ["memory", "conflict", "crdt", "merge"],
+      "input_schema": {
+        "memory_id_a": "UUID (first memory)",
+        "memory_id_b": "UUID (second memory)",
+        "strategy": "string (lww, semantic, manual)"
+      },
+      "output_schema": {
+        "resolved_memory": "MemoryRecord (the merged result)",
+        "strategy_used": "string"
+      }
+    },
+    {
+      "id": "a2a_bridge",
+      "name": "A2A Bridge",
+      "description": "Generate a signed A2A Agent Card for cross-agent communication.",
+      "protocol": "mcp",
+      "tool": "a2a_bridge",
+      "tags": ["a2a", "interop", "agent-card"],
+      "input_schema": {},
+      "output_schema": {
+        "agent_card": "signed A2A Agent Card JSON"
+      }
+    }
+  ]
+}

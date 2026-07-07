@@ -2,6 +2,91 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.5.0] — 2026-07-07
+
+### A2A Production Hardening, Real CRDB Integration Tests, Deep Research Strategy
+
+Completed the full a2a_master.md blueprint: DB-backed task store, Ed25519 signature verification, CDC-triggered webhook push notifications, EventBridge cold start mitigation, Agent Skills Repo. Fixed 2 critical CRDB bugs found via real integration testing. Added self-contained e2e tests that work on Windows.
+
+#### Added — A2A Database-Backed Task Store
+
+- **`schema/012_a2a_tasks.sql`**: New `a2a_tasks` table with CDC changefeed for webhook notifications
+- **`src/bastion/memory.py`**: Added `store_a2a_task()`, `get_a2a_task()`, `update_a2a_task()`, `cancel_a2a_task()` — full CRUD against CockroachDB with in-memory fallback
+- **`src/bastion/a2a_server.py`**: `_store_task()`, `_get_task()`, `_update_task()` now write to CRDB first, fall back to in-memory dict on failure
+- Tasks survive server crashes — agents polling `GetTask` no longer get 404 after restart
+
+#### Added — Ed25519 Signature Verification on Incoming Requests
+
+- **`src/bastion/a2a_server.py`**: `_verify_sender_signature()` fetches sender's public key from their `.well-known/agent-card.json`, verifies Ed25519 signature against request body
+- 24-hour TTL cache for fetched public keys to avoid repeated HTTP calls
+- Wired into `_handle_send_message()` — rejects unsigned/invalid requests with JSON-RPC error `-32603`
+- Defends against OWASP ASI06 memory poisoning attacks
+
+#### Added — Webhook Push Notifications via CDC
+
+- **`lambda/webhook_dispatcher.py`**: New Lambda function (187 lines) — receives CDC events from `a2a_tasks` table, POSTs task state transitions to registered callback URLs
+- Circuit breaker pattern (5 failures in 300s opens circuit)
+- **`lambda/template.yaml`**: Added `WebhookDispatcherFunction`, `WebhookRetryQueue` (SQS, 3 retries), `WebhookDeadLetterQueue` (14-day retention)
+- **`src/bastion/a2a_server.py`**: Added `setTaskPushNotification` and `getTaskPushNotification` JSON-RPC methods
+- Agent Card `capabilities.pushNotifications` set to `True`
+
+#### Added — EventBridge Cold Start Mitigation
+
+- **`lambda/template.yaml`**: `KeepAliveRule` (rate 5 minutes) invokes health check Lambda to prevent Vercel cold starts
+- `KeepAliveRole` IAM policy for EventBridge → Lambda invocation
+
+#### Added — Agent Skills Repo
+
+- **`skills/manifest.json`**: Formal manifest with 8 skills (memory_store, memory_search, memory_timetravel, memory_audit, memory_heal, graph_query, resolve_conflict, a2a_bridge)
+- Each skill documented with input/output schemas and protocol assignment
+
+#### Fixed — CRDB Hash Chain Verification Bug
+
+- **`src/bastion/memory.py`**: `list_all()` returns `ORDER BY created_at DESC` but chain verification needs `ASC`
+- Integration test now sorts records before verification — hash chain integrity confirmed across all memories
+
+#### Fixed — CRDB Time Travel Transaction Bug
+
+- **`src/bastion/memory.py`**: `_get_at_time_real()` replaced `SET TRANSACTION AS OF SYSTEM TIME` (fails on pooled connections) with `WHERE created_at <= %s::TIMESTAMPTZ`
+- Time travel queries now work reliably against live CockroachDB
+
+#### Fixed — E2E Tests Windows Compatibility
+
+- **`tests/test_api_e2e.py`**: Added `_start_server` module-scoped fixture that starts/stops A2A server via `subprocess` with proper env var inheritance (fixes Windows `Start-Process` not inheriting env vars)
+- Added `A2A-Version: 1.0` header to all test requests
+- Auth tests now hit `/metrics` instead of `/healthz` (which is exempt from auth)
+- Rate limiting test reduced from 50 to 20 requests with timeout
+
+#### Fixed — CI Failures (3 checks)
+
+- **vitest**: Test expecting "EU AI Act Article 12 Compliance" on error state — fixed to check "Compliance Check Failed"
+- **ruff lint**: Fixed 20 errors across 7 files (import sorting, unused imports, line length, ASYNC109)
+- **playwright**: Port conflict resolved via `reuseExistingServer: true`
+
+#### Added — Real CRDB Integration Tests
+
+- **`test_real_crdb.py`**: 19 tests verified against live CockroachDB cluster (`bastion-memory-28736`)
+- Tests cover: connect, store, hash chain links, vector search, audit trail, list_all, chain verification, time travel, reinforce, heal, A2A task CRUD
+
+#### Added — Deep Research Strategy
+
+- **`futurescope.md`**: Comprehensive hackathon strategy from 96+ sources across 8 research angles
+- Identified 3 unsolved problems Bastion uniquely solves: memory as attack surface, EU AI Act compliance gaps, multi-agent memory consensus
+- CockroachDB competitive advantages: 3x throughput at 10K agents, AS OF SYSTEM TIME, managed MCP server
+- Hackathon winning playbook with judging criteria analysis
+
+#### Test Results
+
+| Suite | Tests | Status |
+|---|---|---|
+| Python SDK (mock) | 558 | All pass |
+| E2E (live server) | 13 | All pass |
+| Stress (concurrent) | 11 | All pass |
+| Real CRDB integration | 19 | All pass |
+| **Total** | **601** | **All pass** |
+
+---
+
 ## [0.4.0] — 2026-07-07
 
 ### Production Security, MCP Streamable HTTP, A2A Signed Cards, Frontend Polish
@@ -282,5 +367,8 @@ This session focused on closing critical gaps identified in the hackathon readin
 
 | Version | Date | Description |
 |---|---|---|
+| 0.5.0 | 2026-07-07 | A2A production hardening, real CRDB tests, deep research strategy |
+| 0.4.0 | 2026-07-07 | Production security, MCP Streamable HTTP, A2A signed cards, frontend polish |
+| 0.3.0 | 2026-07-06 | A2A v1.0 protocol, CRDT semantics, zero silent failures |
 | 0.2.0 | 2026-07-06 | MCP protocol rewrite, Lambda CDC, dashboard visualizations, Docker Compose |
 | 0.1.0 | 2026-07-05 | Initial release — core SDK, knowledge graph, TypeScript SDK, dashboard |

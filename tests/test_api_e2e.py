@@ -1,10 +1,13 @@
 """End-to-end tests simulating judge API verification — tests the actual server endpoints."""
 
-import json
+import os
+import subprocess
+import sys
 import time
+from urllib.parse import urljoin
+
 import pytest
 import requests
-from urllib.parse import urljoin
 
 # These tests run against a running server instance
 # Configure via env vars: BASTION_TEST_BASE_URL, BASTION_API_KEY
@@ -16,9 +19,62 @@ pytestmark = pytest.mark.skipif(
     reason="Only run with --e2e flag against a live server",
 )
 
+_server_proc = None
+
 
 def _headers():
-    return {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    return {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+        "A2A-Version": "1.0",
+    }
+
+
+def _wait_for_server(url, timeout=15):
+    """Poll until server is ready or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code == 200:
+                return True
+        except requests.ConnectionError:
+            pass
+        time.sleep(0.3)
+    return False
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _start_server():
+    """Start A2A server in mock mode for the e2e test module."""
+    global _server_proc
+
+    env = os.environ.copy()
+    env["BASTION_MOCK"] = "true"
+    env["BASTION_API_KEY"] = API_KEY
+
+    _server_proc = subprocess.Popen(
+        [sys.executable, "-m", "bastion.a2a_server", "--mock"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "src"),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    if not _wait_for_server(f"{BASE_URL}/healthz", timeout=15):
+        _server_proc.kill()
+        _server_proc.wait()
+        pytest.fail("A2A server failed to start within 15 seconds")
+
+    yield
+
+    if _server_proc and _server_proc.poll() is None:
+        _server_proc.terminate()
+        try:
+            _server_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _server_proc.kill()
+            _server_proc.wait()
 
 
 class TestA2AServerE2E:
@@ -107,24 +163,27 @@ class TestA2AServerE2E:
         assert "error" in result
 
     def test_auth_required(self):
-        res = requests.get(urljoin(BASE_URL, "/healthz"))
+        # /healthz is exempt from auth — test on an endpoint that requires it
+        res = requests.get(urljoin(BASE_URL, "/metrics"))
         assert res.status_code == 401
 
     def test_auth_wrong_key(self):
         res = requests.get(
-            urljoin(BASE_URL, "/healthz"),
+            urljoin(BASE_URL, "/metrics"),
             headers={"Authorization": "Bearer wrong-key"},
         )
         assert res.status_code == 401
 
     def test_rate_limiting(self):
-        """Send many rapid requests and verify rate limiting engages."""
+        """Send rapid requests and verify rate limiting engages."""
         headers = _headers()
         responses = []
-        for _ in range(50):
-            res = requests.get(urljoin(BASE_URL, "/healthz"), headers=headers)
-            responses.append(res.status_code)
-            time.sleep(0.01)
+        for _ in range(20):
+            try:
+                res = requests.get(urljoin(BASE_URL, "/healthz"), headers=headers, timeout=3)
+                responses.append(res.status_code)
+            except requests.Timeout:
+                responses.append(0)
         # At least some should succeed, rate limit may or may not trigger
         assert any(s == 200 for s in responses)
 

@@ -11,7 +11,6 @@ from bastion.compliance import (
     VerifiableUnlearning,
 )
 from bastion.memory import BastionMemory
-from bastion.models import MemoryRecord
 
 
 class TestIETFAATRecord:
@@ -165,7 +164,7 @@ class TestComplianceReporter:
 class TestVerifiableUnlearning:
     def test_generate_receipt(self):
         memory = BastionMemory(agent_id="unlearn-test", mock=True)
-        r1 = memory.store("fact", "Memory to keep")
+        memory.store("fact", "Memory to keep")
         r2 = memory.store("fact", "Memory to delete")
 
         v = VerifiableUnlearning(memory)

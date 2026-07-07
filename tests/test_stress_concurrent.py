@@ -13,8 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
-from bastion.memory import BastionMemory
 from bastion.guard import MemoryGuard
+from bastion.memory import BastionMemory
 
 pytestmark = [
     pytest.mark.stress,

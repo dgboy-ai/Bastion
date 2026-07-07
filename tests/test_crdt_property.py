@@ -6,13 +6,13 @@ Tests standalone CRDT primitives (VectorClock) and CRDTMemory-based types.
 import pytest
 
 try:
-    from hypothesis import given, strategies as st
+    from hypothesis import given
+    from hypothesis import strategies as st
 except ImportError:
     pytest.skip("hypothesis not installed", allow_module_level=True)
 
-from bastion.crdt_memory import VectorClock, CRDTMemory
+from bastion.crdt_memory import CRDTMemory, VectorClock
 from bastion.memory import BastionMemory
-
 
 # ---- Vector Clock Property Tests ----
 

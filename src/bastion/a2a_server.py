@@ -145,7 +145,7 @@ def create_a2a_server(
         "documentationUrl": "https://github.com/dgboy-ai/Bastion",
         "capabilities": {
             "streaming": False,
-            "pushNotifications": False,
+            "pushNotifications": True,
             "stateTransitionHistory": True,
         },
         "skills": [
@@ -194,21 +194,41 @@ def create_a2a_server(
         },
     }
 
-    # -- In-memory task store ---------------------------------------------
+    # -- In-memory fallback cache (used when mock mode or DB unavailable) --
 
     _tasks: dict[str, dict[str, Any]] = {}
 
     def _store_task(tid: str, status: str, artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         now = time.time()
         mono = time.monotonic()
-        task: dict[str, Any] = {
+
+        # Try DB-backed storage first
+        if not memory._mock:
+            try:
+                task_record = memory.store_a2a_task(tid, agent_id, "unknown", status)
+                task: dict[str, Any] = {
+                    "id": task_record["task_id"],
+                    "status": {"state": task_record["status"]},
+                    "artifacts": artifacts or [],
+                    "_created_at": now,
+                    "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
+                    "_cm": mono,
+                    "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
+                }
+                _tasks[tid] = task
+                return task
+            except Exception:
+                logger.exception("DB task store failed, falling back to in-memory", extra={"task_id": tid})
+
+        # Fallback: in-memory
+        task = {
             "id": tid,
             "status": {"state": status},
             "artifacts": artifacts or [],
             "_created_at": now,
-            "_completed_at": None if status in ("working", "submitted") else now,
+            "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
             "_cm": mono,
-            "_dm": None if status in ("working", "submitted") else mono,
+            "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
         }
         _tasks[tid] = task
         stale = [k for k, v in _tasks.items() if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
@@ -220,7 +240,61 @@ def create_a2a_server(
         return task
 
     def _get_task(tid: str) -> dict[str, Any] | None:
+        # Try DB first
+        if not memory._mock:
+            try:
+                record = memory.get_a2a_task(tid)
+                if record:
+                    now = time.time()
+                    mono = time.monotonic()
+                    task = {
+                        "id": record["task_id"],
+                        "status": {"state": record["status"]},
+                        "artifacts": record.get("artifacts") or [],
+                        "_created_at": now,
+                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "_cm": mono,
+                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    }
+                    _tasks[tid] = task
+                    return task
+            except Exception:
+                logger.exception("DB task get failed, falling back to in-memory", extra={"task_id": tid})
+
         return _tasks.get(tid)
+
+    def _update_task(tid: str, status: str, artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+        """Update task status in DB and in-memory cache."""
+        if not memory._mock:
+            try:
+                record = memory.update_a2a_task(tid, status, artifacts)
+                if record:
+                    now = time.time()
+                    mono = time.monotonic()
+                    task = {
+                        "id": record["task_id"],
+                        "status": {"state": record["status"]},
+                        "artifacts": record.get("artifacts") or [],
+                        "_created_at": now,
+                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "_cm": mono,
+                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    }
+                    _tasks[tid] = task
+                    return task
+            except Exception:
+                logger.exception("DB task update failed", extra={"task_id": tid})
+
+        # Fallback: update in-memory
+        task = _tasks.get(tid)
+        if task:
+            task["status"]["state"] = status
+            if artifacts is not None:
+                task["artifacts"] = artifacts
+            if status in ("COMPLETED", "FAILED", "CANCELED"):
+                task["_completed_at"] = time.time()
+                task["_dm"] = time.monotonic()
+        return task
 
     # -- FastAPI app -------------------------------------------------------
 
@@ -270,6 +344,66 @@ def create_a2a_server(
     def _check_version(request: Request) -> bool:
         version = request.headers.get("a2a-version", "")
         return version == _A2A_VERSION
+
+    # -- Signature verification -------------------------------------------
+
+    _sender_key_cache: dict[str, tuple[str, float]] = {}  # url -> (pem, expiry)
+    _signature_cache_ttl = 86400  # 24 hours
+
+    async def _verify_sender_signature(request: Request, body: bytes) -> bool:
+        """Verify Ed25519 signature on incoming SendMessage requests."""
+        sender_url = request.headers.get("X-Sender-URL", "")
+        signature_b64 = request.headers.get("X-Sender-Signature", "")
+
+        # If no signature headers, allow (backwards compatible)
+        if not sender_url or not signature_b64:
+            return True
+
+        # Check cache
+        now = time.time()
+        cached = _sender_key_cache.get(sender_url)
+        if cached and cached[1] > now:
+            pubkey_pem = cached[0]
+        else:
+            # Fetch sender's agent card
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{sender_url.rstrip('/')}/.well-known/agent-card.json")
+                    if resp.status_code != 200:
+                        logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
+                        return False
+                    card = resp.json()
+                    sig_info = card.get("signature", {})
+                    pubkey_pem = sig_info.get("publicKeyPem", "")
+                    if not pubkey_pem:
+                        logger.warning("Sender card missing publicKeyPem", extra={"sender_url": sender_url})
+                        return False
+                    _sender_key_cache[sender_url] = (pubkey_pem, now + _signature_cache_ttl)
+            except Exception:
+                logger.exception("Error fetching sender agent card", extra={"sender_url": sender_url})
+                return False
+
+        # Verify signature
+        try:
+            import base64
+
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+            pubkey = load_pem_public_key(pubkey_pem.encode())
+            if not isinstance(pubkey, Ed25519PublicKey):
+                return False
+            sig_bytes = base64.b64decode(signature_b64)
+            pubkey.verify(sig_bytes, body)
+            return True
+        except Exception:
+            logger.exception("Signature verification failed", extra={"sender_url": sender_url})
+            return False
+
+    # -- Webhook push notification registration ---------------------------
+
+    _push_notifications: dict[str, str] = {}  # task_id -> callback_url
 
     # -- Authentication ----------------------------------------------------
 
@@ -386,11 +520,15 @@ def create_a2a_server(
 
         try:
             if method == "SendMessage":
-                return _handle_send_message(params, rid, req_id)
+                return await _handle_send_message(params, rid, req_id, raw, request)
             elif method == "GetTask":
                 return _handle_get_task(params, req_id)
             elif method == "CancelTask":
                 return _handle_cancel_task(params, req_id)
+            elif method == "setTaskPushNotification":
+                return _handle_set_push_notification(params, req_id)
+            elif method == "getTaskPushNotification":
+                return _handle_get_push_notification(params, req_id)
             else:
                 logger.info("Method not found", extra={"request_id": rid, "method": method})
                 return _rpc_error(_JSONRPC_METHOD_NOT_FOUND, f"Method not found: {method}", req_id)
@@ -413,7 +551,7 @@ def create_a2a_server(
         except Exception:
             logger.exception("Invalid request body in /message:send")
             return JSONResponse({"error": "Invalid request"}, status_code=400)
-        result = _handle_send_message(body, rid, "rest")
+        result = await _handle_send_message(body, rid, "rest", raw, request)
         return result
 
     @app.get("/tasks/{task_id}")
@@ -517,7 +655,38 @@ def create_a2a_server(
             pass
         return {"content": text}
 
-    def _handle_send_message(params: dict[str, Any], rid: str, req_id: Any) -> JSONResponse:
+    async def _handle_send_message(
+        params: dict[str, Any],
+        rid: str,
+        req_id: Any,
+        raw_body: bytes = b"",
+        request: Request | None = None,
+    ) -> JSONResponse:
+        # Verify sender signature if headers are present
+        if request and raw_body:
+            sender_url = request.headers.get("X-Sender-URL", "")
+            sender_sig = request.headers.get("X-Sender-Signature", "")
+            if sender_url and sender_sig:
+                try:
+                    verified = await _verify_sender_signature(request, raw_body)
+                    if not verified:
+                        logger.warning(
+                            "Signature verification failed",
+                            extra={"request_id": rid, "sender_url": sender_url},
+                        )
+                        return _rpc_error(
+                            _JSONRPC_INTERNAL_ERROR,
+                            "Signature verification failed: invalid or missing sender signature",
+                            req_id,
+                        )
+                except Exception:
+                    logger.exception("Signature verification error", extra={"request_id": rid})
+                    return _rpc_error(
+                        _JSONRPC_INTERNAL_ERROR,
+                        "Signature verification error",
+                        req_id,
+                    )
+
         message = params.get("message", params) if isinstance(params, dict) else {}
         parts = message.get("parts", [])
         metadata = message.get("metadata", {}) or {}
@@ -547,12 +716,13 @@ def create_a2a_server(
         try:
             result = _execute_skill(memory, method, skill_params)
             parts_out = [{"text": json.dumps(result, default=str)}]
-            _store_task(task_id, "COMPLETED", [{"parts": parts_out}])
+            _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
         except Exception:
             logger.exception("Skill execution failed", extra={"request_id": rid, "skill": skill_id})
-            _store_task(task_id, "FAILED")
+            _update_task(task_id, "FAILED")
 
-        return _rpc_result(_strip_internal(_tasks[task_id]), req_id)
+        task = _get_task(task_id) or _tasks.get(task_id, {"id": task_id, "status": {"state": "FAILED"}})
+        return _rpc_result(_strip_internal(task), req_id)
 
     def _handle_get_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
         if isinstance(params, list):
@@ -568,8 +738,29 @@ def create_a2a_server(
         task = _get_task(task_id)
         if not task:
             return _rpc_error(_A2A_TASK_NOT_FOUND, f"Task not found: {task_id}", req_id)
-        task["status"]["state"] = "CANCELED"
+        _update_task(task_id, "CANCELED")
+        task = _get_task(task_id) or task
         return _rpc_result(_strip_internal(task), req_id)
+
+    def _handle_set_push_notification(params: dict[str, Any], req_id: Any) -> JSONResponse:
+        task_id = params.get("id", "")
+        if not task_id:
+            return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing task id", req_id)
+        callback_url = params.get("url", "")
+        if not callback_url:
+            return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing callback url", req_id)
+        _push_notifications[task_id] = callback_url
+        logger.info("Push notification registered", extra={"task_id": task_id, "callback_url": callback_url})
+        return _rpc_result({"task_id": task_id, "url": callback_url}, req_id)
+
+    def _handle_get_push_notification(params: dict[str, Any], req_id: Any) -> JSONResponse:
+        task_id = params.get("id", "")
+        if not task_id:
+            return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing task id", req_id)
+        url = _push_notifications.get(task_id)
+        if not url:
+            return _rpc_error(_A2A_TASK_NOT_FOUND, f"No push notification for task: {task_id}", req_id)
+        return _rpc_result({"task_id": task_id, "url": url}, req_id)
 
     return app, memory
 

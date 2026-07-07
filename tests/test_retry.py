@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import time
-from unittest import mock
 
 import pytest
 
-from bastion.errors import BastionRetryExhaustedError
 from bastion.retry import SerializationRetryEngine, _is_serialization_error
 
 

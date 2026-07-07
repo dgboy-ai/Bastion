@@ -112,7 +112,7 @@ class TestErrorMessageStorage:
         assert str(exc) == "None"
 
     def test_formatted_message(self):
-        msg = "retry %d of %d failed" % (3, 5)
+        msg = f"retry {3} of {5} failed"
         exc = BastionRetryExhaustedError(msg)
         assert str(exc) == "retry 3 of 5 failed"
 

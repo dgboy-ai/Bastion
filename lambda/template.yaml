@@ -1,9 +1,9 @@
-# AWS SAM Template for Bastion CDC Lambda Handler
+# AWS SAM Template for Bastion CDC Lambda Handler + Webhook Dispatcher
 # Deploy: sam build && sam deploy --guided
 
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Bastion CDC Handler - Self-healing memory pipeline for AI agents
+Description: Bastion CDC Handler + A2A Webhook Dispatcher for AI agent memory
 
 Globals:
   Function:
@@ -53,6 +53,41 @@ Resources:
       Architectures:
         - x86_64
 
+  WebhookDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: webhook_dispatcher.handler
+      CodeUri: .
+      Description: Dispatches A2A task state changes to registered callback URLs via CDC
+      Timeout: 10
+      Events:
+        WebhookEndpoint:
+          Type: HttpApi
+          Properties:
+            Path: /webhook
+            Method: POST
+      Environment:
+        Variables:
+          DLQ_URL: !Ref WebhookRetryQueue
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt WebhookRetryQueue.QueueName
+      Architectures:
+        - x86_64
+
+  WebhookDispatcherHealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: webhook_dispatcher.health_check
+      CodeUri: .
+      Description: Health check for webhook dispatcher
+      Events:
+        WebhookHealthEndpoint:
+          Type: HttpApi
+          Properties:
+            Path: /webhook/health
+            Method: GET
+
   HealthCheckFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -65,6 +100,36 @@ Resources:
           Properties:
             Path: /cdc/health
             Method: GET
+
+  # Cold start mitigation: keep A2A server warm by invoking health check every 5 minutes
+  KeepAliveRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Invoke health check Lambda every 5 minutes to keep A2A server warm
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt HealthCheckFunction.Arn
+          Id: KeepAliveTarget
+
+  KeepAliveRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeHealthCheck
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt HealthCheckFunction.Arn
 
   ArchiveBucket:
     Type: AWS::S3::Bucket
@@ -84,10 +149,32 @@ Resources:
       TopicName: bastion-memory-alerts
       DisplayName: Bastion Memory Alerts
 
+  WebhookRetryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: bastion-a2a-webhooks
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 1209600  # 14 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WebhookDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  WebhookDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: bastion-a2a-webhooks-dlq
+      MessageRetentionPeriod: 1209600  # 14 days
+
 Outputs:
   CdcEndpoint:
     Description: CDC event receiver endpoint
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc"
+  WebhookEndpoint:
+    Description: A2A webhook dispatcher endpoint
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"
+  WebhookHealthEndpoint:
+    Description: Webhook dispatcher health check
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook/health"
   HealthEndpoint:
     Description: Health check endpoint
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc/health"
@@ -97,3 +184,9 @@ Outputs:
   AlertTopicArn:
     Description: SNS topic for alerts
     Value: !Ref AlertTopic
+  WebhookRetryQueueUrl:
+    Description: SQS queue for webhook retries
+    Value: !Ref WebhookRetryQueue
+  WebhookDeadLetterQueueUrl:
+    Description: SQS dead letter queue for failed webhooks
+    Value: !Ref WebhookDeadLetterQueue

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from unittest import mock
 
 import pytest
@@ -94,7 +93,8 @@ class TestWebhookNotifier:
             assert n._urls == []
 
     def test_parses_urls_from_env(self):
-        with mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://a.com/webhook,https://b.com/webhook"}, clear=True):
+        env = {"BASTION_WEBHOOK_URLS": "https://a.com/webhook,https://b.com/webhook"}
+        with mock.patch.dict("os.environ", env, clear=True):
             n = WebhookNotifier()
             assert n._enabled is True
             assert len(n._urls) == 2
@@ -109,8 +109,9 @@ class TestWebhookNotifier:
             assert n.get_stats()["failed"] == 0
 
     def test_http_post_success(self, sample_event):
+        env = {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/test"}
         with (
-            mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/test"}, clear=True),
+            mock.patch.dict("os.environ", env, clear=True),
             mock.patch("urllib.request.urlopen") as mock_urlopen,
         ):
             mock_urlopen.return_value.__enter__.return_value.status = 200
@@ -123,7 +124,7 @@ class TestWebhookNotifier:
     def test_http_post_failure(self, sample_event):
         with (
             mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/bad"}, clear=True),
-            mock.patch("urllib.request.urlopen", side_effect=ConnectionError("unreachable")) as mock_urlopen,
+            mock.patch("urllib.request.urlopen", side_effect=ConnectionError("unreachable")),
         ):
             n = WebhookNotifier()
             n._send_sync(sample_event)

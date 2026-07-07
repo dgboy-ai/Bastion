@@ -52,7 +52,10 @@ class TestInjectionPatterns:
         assert len(findings) >= 1
         finding = findings[0]
         assert finding.detail == expected_detail
-        assert finding.severity in (ThreatSeverity.LOW, ThreatSeverity.MEDIUM, ThreatSeverity.HIGH, ThreatSeverity.CRITICAL)
+        assert finding.severity in (
+            ThreatSeverity.LOW, ThreatSeverity.MEDIUM,
+            ThreatSeverity.HIGH, ThreatSeverity.CRITICAL,
+        )
         assert finding.confidence == 0.85
 
 
@@ -160,7 +163,8 @@ def test_trust_score_high_for_system():
 
 def test_hash_chain_integrity_ok():
     guard = MemoryGuard()
-    import hashlib, json
+    import hashlib
+    import json
     content = "test content"
     h = hashlib.sha256((content + json.dumps({}, sort_keys=True) + "").encode()).hexdigest()
     report = guard.check(content, cryptographic_hash=h)

@@ -1,14 +1,14 @@
 """Integration tests for ASI06 MemoryGuard — content scanning, trust scoring, hash chain."""
 
+import contextlib
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
 from bastion.guard import MemoryGuard
-from bastion.trust import compute_trust_score
 from bastion.memory import BastionMemory
+from bastion.trust import compute_trust_score
 
 
 class TestASI06ContentScanning:
@@ -123,9 +123,8 @@ class TestTrustScoring:
 
     def test_hash_chain_intact(self):
         """Memory with intact hash chain should have LOW poisoning risk."""
-        import hashlib
-        import json
         import datetime
+        import hashlib
         content = "Some memory content that will be hashed"
         meta = {}
         prev = "abc" * 21
@@ -149,9 +148,8 @@ class TestTrustScoring:
 
     def test_hash_chain_broken(self):
         """Memory with broken hash chain should have CRITICAL poisoning risk."""
-        import hashlib
-        import json
         import datetime
+        import hashlib
         content = "Some memory content"
         meta = {}
         prev = "abc" * 21
@@ -177,9 +175,8 @@ class TestTrustScoring:
 
     def test_high_overwrite_count_detection(self):
         """High overwrite count should elevate poisoning risk."""
-        import hashlib
-        import json
         import datetime
+        import hashlib
         content = "content"
         meta = {}
         prev = None
@@ -202,9 +199,8 @@ class TestTrustScoring:
 
     def test_unverified_provenance_detection(self):
         """Unverified source provenance should lower trust score."""
-        import hashlib
-        import json
         import datetime
+        import hashlib
         now = datetime.datetime.now(datetime.UTC)
         content = "content"
         meta = {}
@@ -240,9 +236,8 @@ class TestTrustScoring:
 
     def test_age_penalty_increases_over_time(self):
         """Older memories should have higher age penalty."""
-        import hashlib
-        import json
         import datetime
+        import hashlib
 
         content = "content"
         meta = {}
@@ -357,10 +352,8 @@ class TestConcurrentAccess:
 
         def reader():
             for _ in range(50):
-                try:
+                with contextlib.suppress(Exception):
                     mem.search("memory", k=5)
-                except Exception:
-                    pass
 
         threads = []
         threads.append(threading.Thread(target=writer))

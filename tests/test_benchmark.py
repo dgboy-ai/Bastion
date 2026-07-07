@@ -1,6 +1,5 @@
 """MCP Tool Latency Benchmarks — p50, p95, p99 statistics."""
 
-import json
 import statistics
 import time
 
@@ -48,7 +47,8 @@ def _print_table(results: list[dict]) -> None:
     lines = [header, sep]
     for r in results:
         lines.append(
-            f"{r['label']:<30} {r['min']:>10} {r['p50']:>10} {r['p95']:>10} {r['p99']:>10} {r['max']:>10} {r['mean']:>10} {r['runs']:>6}"
+            f"{r['label']:<30} {r['min']:>10} {r['p50']:>10} {r['p95']:>10} "
+            f"{r['p99']:>10} {r['max']:>10} {r['mean']:>10} {r['runs']:>6}"
         )
     print("\n".join(lines))
 
