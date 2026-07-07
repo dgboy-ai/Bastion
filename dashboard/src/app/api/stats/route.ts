@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { pool, query } from "@/lib/db";
 import { getMockStats } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
+import { apiSuccess } from "@/lib/api-response";
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockStats());
+    return apiSuccess(getMockStats(), "short", { mock: true });
   }
 
   try {
@@ -111,7 +112,7 @@ export async function GET(request: Request) {
       alerts.push({ type: "size_spike", severity: "info", count: totalMem });
     }
 
-    return NextResponse.json({
+    return apiSuccess({
       alerts,
       memories: parseInt(memoryCountRes.rows[0]?.count || "0", 10),
       entities: parseInt(entityCountRes.rows[0]?.count || "0", 10),
@@ -135,8 +136,8 @@ export async function GET(request: Request) {
         recordedAt: row.recorded_at,
         details: row.details || {},
       })),
-    });
+    }, "short");
   } catch {
-    return NextResponse.json(getMockStats());
+    return apiSuccess(getMockStats(), "short", { mock: true });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-response";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockTrust } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockTrust());
+    return apiSuccess(getMockTrust(), 'short', { mock: true });
   }
 
   try {
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
 
     const res = await safeQuery(sql, params);
     if (res.mock) {
-      return NextResponse.json(getMockTrust());
+      return apiSuccess(getMockTrust(), 'short', { mock: true });
     }
 
     const trustLevelCounts: Record<number, number> = {};
@@ -110,7 +110,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
+    return apiSuccess({
       summary: {
         totalMemories: processed,
         avgTrustScore: Math.round(avgTrustScore * 10000) / 10000,
@@ -120,8 +120,8 @@ export async function GET(request: Request) {
       },
       alerts,
       memories,
-    });
+    }, 'short');
   } catch {
-    return NextResponse.json(getMockTrust());
+    return apiSuccess(getMockTrust(), 'short', { mock: true });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-response";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockAnomalies } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockAnomalies());
+    return apiSuccess(getMockAnomalies(), 'short', { mock: true });
   }
 
   try {
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     
     const countRes = await safeQuery("SELECT COUNT(*) as count FROM agent_memory");
     if (countRes.mock) {
-      return NextResponse.json(getMockAnomalies());
+      return apiSuccess(getMockAnomalies(), 'short', { mock: true });
     }
     const total = parseInt((countRes.rows[0]?.count as string) || "0", 10);
     
@@ -46,8 +46,8 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ alerts });
+    return apiSuccess({ alerts }, 'short');
   } catch {
-    return NextResponse.json(getMockAnomalies());
+    return apiSuccess(getMockAnomalies(), 'short', { mock: true });
   }
 }

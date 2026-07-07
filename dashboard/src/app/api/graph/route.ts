@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-response";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockGraph } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockGraph());
+    return apiSuccess(getMockGraph(), 'short', { mock: true });
   }
 
   try {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
     const entitiesRes = await safeQuery(entitiesSql, params);
     if (entitiesRes.mock) {
-      return NextResponse.json(getMockGraph());
+      return apiSuccess(getMockGraph(), 'short', { mock: true });
     }
     const relationsRes = await safeQuery(relationsSql, params);
 
@@ -45,8 +45,8 @@ export async function GET(request: Request) {
       confidence: row.confidence || 1.0,
     }));
 
-    return NextResponse.json({ nodes, links });
+    return apiSuccess({ nodes, links }, 'short');
   } catch {
-    return NextResponse.json(getMockGraph());
+    return apiSuccess(getMockGraph(), 'short', { mock: true });
   }
 }

@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockMemories } from "@/lib/mock-data";
-import { jsonResponse } from "@/lib/api-response";
+import { apiSuccess } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
-
-const CACHE = { "Cache-Control": "public, max-age=60, s-maxage=120" } as const;
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
@@ -26,11 +24,11 @@ export async function GET(request: Request) {
     const total = filtered.length;
     const totalPages = Math.ceil(total / limit);
     const memories = filtered.slice(offset, offset + limit);
-    return { memories, total, page, limit, totalPages, mock: true };
+    return { memories, total, page, limit, totalPages };
   };
 
   if (!pool) {
-    return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
+    return apiSuccess(getPaginatedMemories(), "short", { mock: true });
   }
 
   try {
@@ -59,7 +57,7 @@ export async function GET(request: Request) {
     ]);
 
     if (countRes.mock || dataRes.mock) {
-      return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
+      return apiSuccess(getPaginatedMemories(), "short", { mock: true });
     }
 
     const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
@@ -78,8 +76,8 @@ export async function GET(request: Request) {
       accessCount: row.access_count ?? 0,
     }));
 
-    return NextResponse.json({ memories, total, page, limit, totalPages }, { headers: CACHE });
+    return apiSuccess({ memories, total, page, limit, totalPages }, "short");
   } catch {
-    return NextResponse.json(getPaginatedMemories(), { headers: CACHE });
+    return apiSuccess(getPaginatedMemories(), "short", { mock: true });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
@@ -115,10 +115,5 @@ export async function GET(request: Request) {
     },
   };
 
-  return NextResponse.json(agentCard, {
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
+  return apiSuccess(agentCard, 'static', undefined, { "Access-Control-Allow-Origin": "*" });
 }

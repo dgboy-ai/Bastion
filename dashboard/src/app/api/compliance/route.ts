@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess, apiError } from "@/lib/api-response";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockCompliance } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockCompliance());
+    return apiSuccess(getMockCompliance(), 'short', { mock: true });
   }
 
   try {
@@ -21,11 +21,11 @@ export async function GET(request: Request) {
 
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
-        return NextResponse.json({ error: "Invalid month format, expected YYYY-MM" }, { status: 400 });
+        return apiError("Invalid month format, expected YYYY-MM", 400);
       }
       const [year, mon] = month.split("-").map(Number);
       if (mon < 1 || mon > 12) {
-        return NextResponse.json({ error: "Invalid month" }, { status: 400 });
+        return apiError("Invalid month", 400);
       }
       startDate = `${year}-${String(mon).padStart(2, "0")}-01T00:00:00Z`;
       const lastDay = new Date(year, mon, 0).getDate();
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
     const auditResult = await safeQuery(auditSql, params);
     if (auditResult.mock || auditResult.rows.length === 0) {
-      return NextResponse.json(getMockCompliance());
+      return apiSuccess(getMockCompliance(), 'short', { mock: true });
     }
 
     const operationsByType: Record<string, number> = {};
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
     const hashResult = await safeQuery(hashChainSql, [agentId]);
     const hashStats = hashResult.rows?.[0] ?? { total: "0", chained: "0" };
 
-    return NextResponse.json({
+    return apiSuccess({
       report_id: crypto.randomUUID(),
       agent_id: agentId,
       status: "COMPLIANT",
@@ -117,8 +117,8 @@ export async function GET(request: Request) {
         timestamp: row.recorded_at ?? "",
         details: row.details ?? {},
       })),
-    });
+    }, 'short');
   } catch {
-    return NextResponse.json(getMockCompliance());
+    return apiSuccess(getMockCompliance(), 'short', { mock: true });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-response";
 import { pool, safeQuery } from "@/lib/db";
 import { getMockCacheStats } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return NextResponse.json(getMockCacheStats());
+    return apiSuccess(getMockCacheStats(), 'short', { mock: true });
   }
 
   try {
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
     const statsResult = await safeQuery(statsSql, params);
     if (statsResult.mock) {
-      return NextResponse.json(getMockCacheStats());
+      return apiSuccess(getMockCacheStats(), 'short', { mock: true });
     }
     const stats = statsResult.rows[0];
 
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       letta: 99,
     };
 
-    return NextResponse.json({
+    return apiSuccess({
       summary: {
         total_queries: totalQueries,
         cache_hits: cacheHits,
@@ -104,8 +104,8 @@ export async function GET(request: Request) {
         cost_saved: parseFloat(row.cost_saved as string ?? "0"),
       })) ?? [],
       period_hours: hours,
-    });
+    }, 'short');
   } catch {
-    return NextResponse.json(getMockCacheStats());
+    return apiSuccess(getMockCacheStats(), 'short', { mock: true });
   }
 }

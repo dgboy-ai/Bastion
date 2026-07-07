@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess, apiError } from "@/lib/api-response";
 import { safeQuery } from "@/lib/db";
 import { getMockMemories } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const offset = (page - 1) * limit;
 
     if (!entityId) {
-      return NextResponse.json({ error: "Missing entity_id parameter" }, { status: 400 });
+      return apiError("Missing entity_id parameter", 400);
     }
 
     const countRes = await safeQuery(
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
       const total = allMemories.length;
       const totalPages = Math.ceil(total / limit);
       const memories = allMemories.slice(offset, offset + limit);
-      return NextResponse.json({ memories, total, page, limit, totalPages, mock: true });
+      return apiSuccess({ memories, total, page, limit, totalPages }, 'short', { mock: true });
     }
 
     const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
@@ -56,9 +56,9 @@ export async function GET(request: Request) {
       importanceScore: row.importance_score ?? 5.0,
     }));
 
-    return NextResponse.json({ memories, total, page, limit, totalPages });
+    return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
   } catch {
     const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
-    return NextResponse.json({ memories: allMemories, total: allMemories.length, page: 1, limit: allMemories.length, totalPages: 1, mock: true });
+    return apiSuccess({ memories: allMemories, total: allMemories.length, page: 1, limit: allMemories.length, totalPages: 1 }, 'short', { mock: true });
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
 const INJECTION_PATTERNS = [
@@ -57,7 +57,7 @@ function getMockReport() {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  return NextResponse.json(getMockReport());
+  return apiSuccess(getMockReport(), 'short', { mock: true });
 }
 
 export async function POST(request: Request) {
@@ -66,12 +66,12 @@ export async function POST(request: Request) {
   try {
     const { content } = await request.json();
     if (!content || typeof content !== "string") {
-      return NextResponse.json({ error: "Missing 'content' field" }, { status: 400 });
+      return apiError("Missing 'content' field", 400);
     }
     const findings = scanContent(content);
     const isSafe = findings.filter(f => f.severity === "critical" || f.severity === "high").length === 0;
-    return NextResponse.json({ content, isSafe, findings });
+    return apiSuccess({ content, isSafe, findings }, 'short');
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return apiError("Invalid request body", 400);
   }
 }
