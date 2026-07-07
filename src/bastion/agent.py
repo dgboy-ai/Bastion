@@ -534,27 +534,29 @@ class BastionAgent:
         (agent_memory table) is already persistent — this restores the
         ephemeral conversation context that would otherwise be lost.
         """
-        results = self.memory.search(
-            page_id,
-            k=1,
-            threshold=0.5,
-            memory_type="agent_page",
-        )
-        if not results:
+        # Use list_all for exact lookup instead of search (search filters by score)
+        all_pages = self.memory.list_all(memory_type="agent_page")
+        page = None
+        for p in all_pages:
+            try:
+                data = json.loads(p.content)
+                if data.get("page_id") == page_id:
+                    page = data
+                    break
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+        if not page:
             return {"status": "not_found", "page_id": page_id}
 
-        try:
-            page_data = json.loads(results[0].content)
-            self._conversation_history = page_data.get("conversation_history", [])
-            return {
-                "status": "rehydrated",
-                "page_id": page_id,
-                "conversation_turns_restored": len(self._conversation_history),
-                "memory_count": page_data.get("memory_count", 0),
-                "dehydrated_at": page_data.get("dehydrated_at"),
-            }
-        except (json.JSONDecodeError, KeyError):
-            return {"status": "error", "page_id": page_id, "error": "Invalid page data"}
+        self._conversation_history = page.get("conversation_history", [])
+        return {
+            "status": "rehydrated",
+            "page_id": page_id,
+            "conversation_turns_restored": len(self._conversation_history),
+            "memory_count": page.get("memory_count", 0),
+            "dehydrated_at": page.get("dehydrated_at"),
+        }
 
     def list_pages(self) -> list[dict[str, Any]]:
         """List all dehydrated pages for this agent."""
@@ -575,16 +577,16 @@ class BastionAgent:
 
     def delete_page(self, page_id: str) -> dict[str, Any]:
         """Delete a dehydrated page from CockroachDB."""
-        results = self.memory.search(
-            page_id,
-            k=1,
-            threshold=0.5,
-            memory_type="agent_page",
-        )
-        if not results:
-            return {"status": "not_found", "page_id": page_id}
-        self.memory._delete_by_id(results[0].memory_id)
-        return {"status": "deleted", "page_id": page_id}
+        all_pages = self.memory.list_all(memory_type="agent_page")
+        for p in all_pages:
+            try:
+                data = json.loads(p.content)
+                if data.get("page_id") == page_id:
+                    self.memory._delete_by_id(p.memory_id)
+                    return {"status": "deleted", "page_id": page_id}
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return {"status": "not_found", "page_id": page_id}
 
     def __enter__(self):
         return self
