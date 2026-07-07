@@ -22,7 +22,7 @@ from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.limiter import RequestLimiter
 from bastion.mcp_server import create_server
-from bastion.memory import BastionMemory
+from bastion.memory import BastionMemory, MemoryRouter
 from bastion.merkle import MerkleHashChain, MerkleTree
 from bastion.models import (
     AuditEntry,
@@ -47,6 +47,7 @@ __all__ = [
     "MemoryConsolidator",
     "redact_pii",
     "BastionMemory",
+    "MemoryRouter",
     "ComplianceMode",
     "ComplianceReporter",
     "IETFAATRecord",
