@@ -502,7 +502,7 @@ class BastionAgent:
         page_data = {
             "page_id": page_id,
             "agent_id": self.agent_id,
-            "conversation_history": self._conversation_history,
+            "conversation_history": self._conversation_history.copy(),
             "memory_count": len(self.memory.list_all()),
             "dehydrated_at": datetime.now(UTC).isoformat(),
         }
