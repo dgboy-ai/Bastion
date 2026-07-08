@@ -48,7 +48,9 @@ def _get_bedrock_client():
         )
         try:
             _bedrock_client = boto3.client(
-                "bedrock-runtime", region_name=settings.aws_region, config=cfg,
+                "bedrock-runtime",
+                region_name=settings.aws_region,
+                config=cfg,
             )
         except Exception as exc:
             logger.error("Failed to create Bedrock client", error=str(exc))
@@ -71,6 +73,7 @@ def _hash_fallback_embed(text: str) -> list[float]:
     # L2-normalise so cosine similarity works correctly
     norm = math.sqrt(sum(v * v for v in raw)) or 1.0
     return [v / norm for v in raw]
+
 
 _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
@@ -161,8 +164,10 @@ class BastionMemory:
         settings = get_settings()
         self.agent_id = agent_id
         self.namespace = namespace or agent_id
-        self._mock = mock if mock is not None else (
-            settings.mock or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
+        self._mock = (
+            mock
+            if mock is not None
+            else (settings.mock or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"))
         )
         self.compliance_mode = compliance_mode or settings.compliance_mode
         self._conn_str = connection_string or settings.connection_string
@@ -374,16 +379,20 @@ class BastionMemory:
 
         # Security: Validate inputs to prevent argument injection
         import re
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', name):
+
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$", name):
             raise ValueError(f"Invalid cluster name: {name!r}")
-        if not re.match(r'^[a-z][a-z0-9-]{0,30}$', region):
+        if not re.match(r"^[a-z][a-z0-9-]{0,30}$", region):
             raise ValueError(f"Invalid region: {region!r}")
-        if not re.match(r'^[a-z]+$', provider):
+        if not re.match(r"^[a-z]+$", provider):
             raise ValueError(f"Invalid provider: {provider!r}")
 
         result = subprocess.run(
             ["ccloud", "cluster", "create", name, "--provider", provider, "--region", region],
-            capture_output=True, text=True, check=True, timeout=120,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
         )
         data = json.loads(result.stdout)
         return ClusterInfo(
@@ -547,8 +556,18 @@ class BastionMemory:
                     "INSERT INTO agent_memory (agent_id, memory_type, content, embedding, metadata, "
                     "previous_hash, cryptographic_hash, expires_at, importance_score, trust_level, source_provenance) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s) RETURNING memory_id, created_at",
-                    (self.agent_id, memory_type, content, embedding_str, json.dumps(meta), prev_hash, crypto_hash,
-                     expires_dt.isoformat() if expires_dt else None, trust_level, source_prov),
+                    (
+                        self.agent_id,
+                        memory_type,
+                        content,
+                        embedding_str,
+                        json.dumps(meta),
+                        prev_hash,
+                        crypto_hash,
+                        expires_dt.isoformat() if expires_dt else None,
+                        trust_level,
+                        source_prov,
+                    ),
                 )
                 row = cur.fetchone()
                 if row is None:
@@ -557,12 +576,16 @@ class BastionMemory:
                 workflow_id = str(uuid.uuid4())
                 cur.execute(
                     "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                    (self.agent_id, workflow_id, "memory_store",
-                     json.dumps({"memory_type": memory_type, "content_preview": content[:100]})),
+                    (
+                        self.agent_id,
+                        workflow_id,
+                        "memory_store",
+                        json.dumps({"memory_type": memory_type, "content_preview": content[:100]}),
+                    ),
                 )
                 conn.commit()
 
-                row_map = row._mapping if hasattr(row, '_mapping') else {"memory_id": row[0], "created_at": row[1]}
+                row_map = row._mapping if hasattr(row, "_mapping") else {"memory_id": row[0], "created_at": row[1]}
                 return MemoryRecord(
                     memory_id=str(row_map["memory_id"]),
                     agent_id=self.agent_id,
@@ -722,14 +745,16 @@ class BastionMemory:
                 )
                 results = []
                 for r in cur.fetchall():
-                    results.append(AuditEntry(
-                        audit_id=str(r[0]),
-                        agent_id=str(r[1]),
-                        workflow_id=str(r[2]),
-                        action=str(r[3]),
-                        details=dict(r[4]) if r[4] else {},
-                        recorded_at=r[5],
-                    ))
+                    results.append(
+                        AuditEntry(
+                            audit_id=str(r[0]),
+                            agent_id=str(r[1]),
+                            workflow_id=str(r[2]),
+                            action=str(r[3]),
+                            details=dict(r[4]) if r[4] else {},
+                            recorded_at=r[5],
+                        )
+                    )
                 return results
         except Exception as e:
             logger.exception("audit query failed", extra={"agent_id": agent_id})
@@ -761,12 +786,15 @@ class BastionMemory:
         try:
             merged = f"{fact_a}; {fact_b}"
             with conn.cursor() as cur:
-                payload = json.dumps({
-                    "fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context,
-                })
-                lock_resource = (
-                    f"conflict:{int(hashlib.sha256((fact_a + fact_b).encode()).hexdigest(), 16)}"
+                payload = json.dumps(
+                    {
+                        "fact_a": fact_a,
+                        "fact_b": fact_b,
+                        "merged": merged,
+                        "context": context,
+                    }
                 )
+                lock_resource = f"conflict:{int(hashlib.sha256((fact_a + fact_b).encode()).hexdigest(), 16)}"
                 cur.execute(
                     "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
                     "VALUES (%s, %s, 'exclusive', %s) RETURNING lock_id",
@@ -837,20 +865,24 @@ class BastionMemory:
             contents = [r[0] for r in rows]
             alerts = []
             if len(contents) != len(set(contents)):
-                alerts.append({
-                    "type": "fact_turnover",
-                    "severity": "medium",
-                    "detail": "Duplicate content detected in recent memory",
-                    "agent_id": agent_id,
-                })
+                alerts.append(
+                    {
+                        "type": "fact_turnover",
+                        "severity": "medium",
+                        "detail": "Duplicate content detected in recent memory",
+                        "agent_id": agent_id,
+                    }
+                )
 
             if total > 100:
-                alerts.append({
-                    "type": "size_spike",
-                    "severity": "info",
-                    "detail": f"Memory count ({total}) exceeds 100 records",
-                    "agent_id": agent_id,
-                })
+                alerts.append(
+                    {
+                        "type": "size_spike",
+                        "severity": "info",
+                        "detail": f"Memory count ({total}) exceeds 100 records",
+                        "agent_id": agent_id,
+                    }
+                )
             return alerts
         except Exception as e:
             logger.exception("Anomaly detection query failed", extra={"agent_id": agent_id})
@@ -880,8 +912,7 @@ class BastionMemory:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT importance_score, access_count FROM agent_memory "
-                    "WHERE memory_id = %s AND agent_id = %s",
+                    "SELECT importance_score, access_count FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
@@ -1035,7 +1066,7 @@ class BastionMemory:
                     rel_type_filter = ""
                     params: list[Any] = [eid]
                     if relation_path:
-                        placeholders = ", ".join(f"${i+2}" for i in range(len(relation_path)))
+                        placeholders = ", ".join(f"${i + 2}" for i in range(len(relation_path)))
                         rel_type_filter = f"AND r.relation_type IN ({placeholders})"
                         params.extend(relation_path)
 
@@ -1047,13 +1078,15 @@ class BastionMemory:
                         params,
                     )
                     for rel_row in cur.fetchall():
-                        found.append({
-                            "source": start_entity,
-                            "target": str(rel_row[3]),
-                            "relation": str(rel_row[0]),
-                            "confidence": float(rel_row[1]),
-                            "depth": depth + 1,
-                        })
+                        found.append(
+                            {
+                                "source": start_entity,
+                                "target": str(rel_row[3]),
+                                "relation": str(rel_row[0]),
+                                "confidence": float(rel_row[1]),
+                                "depth": depth + 1,
+                            }
+                        )
                         queue.append((str(rel_row[4]), depth + 1))
                 return found
         finally:
@@ -1090,17 +1123,32 @@ class BastionMemory:
                         "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
                         (entity_ids, entity_ids),
                     )
-                    relations = [dict(zip(
-                        ["relation_id", "agent_id", "source_entity_id", "target_entity_id",
-                         "relation_type", "confidence", "valid_from", "valid_until",
-                         "source_memory_id", "created_at"], r, strict=True,
-                    )) for r in cur.fetchall()]
+                    relations = [
+                        dict(
+                            zip(
+                                [
+                                    "relation_id",
+                                    "agent_id",
+                                    "source_entity_id",
+                                    "target_entity_id",
+                                    "relation_type",
+                                    "confidence",
+                                    "valid_from",
+                                    "valid_until",
+                                    "source_memory_id",
+                                    "created_at",
+                                ],
+                                r,
+                                strict=True,
+                            )
+                        )
+                        for r in cur.fetchall()
+                    ]
                 else:
                     relations = []
 
             conn.commit()
-            return {"agent_id": self.agent_id, "timestamp": timestamp,
-                    "entities": entities, "relations": relations}
+            return {"agent_id": self.agent_id, "timestamp": timestamp, "entities": entities, "relations": relations}
         except Exception:
             conn.rollback()
             raise
@@ -1112,9 +1160,7 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,)
-                )
+                cur.execute("SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,))
                 entity_row = cur.fetchone()
                 if entity_row is None:
                     logger.error("COUNT query for entities returned no row")
@@ -1150,8 +1196,12 @@ class BastionMemory:
                     raise RuntimeError("COUNT query for orphans did not return a row")
                 orphans = orphans_row[0]
 
-                return {"entities": entity_count, "relations": relation_count,
-                        "orphans": orphans, "entity_types": entity_types}
+                return {
+                    "entities": entity_count,
+                    "relations": relation_count,
+                    "orphans": orphans,
+                    "entity_types": entity_types,
+                }
         finally:
             pool.release(conn)
 
@@ -1169,7 +1219,7 @@ class BastionMemory:
                 if row is None:
                     raise RuntimeError("INSERT RETURNING did not return a row")
                 conn.commit()
-                row_map = row._mapping if hasattr(row, '_mapping') else {"message_id": row[0], "created_at": row[1]}
+                row_map = row._mapping if hasattr(row, "_mapping") else {"message_id": row[0], "created_at": row[1]}
                 return MessageRecord(
                     message_id=str(row_map["message_id"]),
                     namespace=namespace,
@@ -1197,24 +1247,25 @@ class BastionMemory:
                 rows = cur.fetchall()
                 if rows:
                     cur.execute(
-                        "UPDATE agent_messages SET read = TRUE "
-                        "WHERE message_id = ANY(%s)",
+                        "UPDATE agent_messages SET read = TRUE WHERE message_id = ANY(%s)",
                         (tuple(r[0] for r in rows),),
                     )
                 conn.commit()
                 results = []
                 for r in rows:
                     payload_raw = r[4]
-                    results.append(MessageRecord(
-                        message_id=str(r[0]),
-                        namespace=str(r[1]),
-                        sender_agent_id=str(r[2]),
-                        event_type=str(r[3]),
-                        payload=_parse_payload(payload_raw),
-                        created_at=r[5],
-                        expires_at=r[6],
-                        read=bool(r[7]),
-                    ))
+                    results.append(
+                        MessageRecord(
+                            message_id=str(r[0]),
+                            namespace=str(r[1]),
+                            sender_agent_id=str(r[2]),
+                            event_type=str(r[3]),
+                            payload=_parse_payload(payload_raw),
+                            created_at=r[5],
+                            expires_at=r[6],
+                            read=bool(r[7]),
+                        )
+                    )
                 return results
         finally:
             pool.release(conn)
@@ -1251,10 +1302,12 @@ class BastionMemory:
                 exc_name = type(exc).__name__
                 # Retry on throttling / service unavailable with exponential backoff + jitter
                 if attempt < max_retries and exc_name in ("ThrottlingException", "ServiceUnavailableException"):
-                    sleep_secs = (2 ** attempt) + random.uniform(0, 1)
+                    sleep_secs = (2**attempt) + random.uniform(0, 1)
                     logger.warning(
                         "Bedrock throttled (attempt %d/%d), retrying in %.1fs",
-                        attempt + 1, max_retries, sleep_secs,
+                        attempt + 1,
+                        max_retries,
+                        sleep_secs,
                     )
                     time.sleep(sleep_secs)
                     continue
@@ -1348,6 +1401,7 @@ class BastionMemory:
         task_id: str,
         status: str,
         artifacts: list[dict[str, Any]] | None = None,
+        callback_url: str | None = None,
     ) -> dict[str, Any] | None:
         """Update an A2A task's status and artifacts in CockroachDB."""
         if self._mock:
@@ -1358,12 +1412,13 @@ class BastionMemory:
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE a2a_tasks SET status = %s, artifacts = %s, "
+                    "callback_url = COALESCE(%s, callback_url), "
                     "completed_at = CASE WHEN %s IN ('COMPLETED', 'FAILED', 'CANCELED') "
                     "THEN now() ELSE completed_at END "
                     "WHERE task_id = %s "
                     "RETURNING task_id, agent_id, skill_id, status, callback_url, "
                     "artifacts, created_at, completed_at",
-                    (status, json.dumps(artifacts) if artifacts else None, status, task_id),
+                    (status, json.dumps(artifacts) if artifacts else None, callback_url, status, task_id),
                 )
                 row = cur.fetchone()
                 if not row:

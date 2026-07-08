@@ -112,8 +112,9 @@ def create_a2a_server(
     try:
         memory = BastionMemory(agent_id, connection_string=conn, mock=_mock)
     except Exception:
-        logger.exception("Failed to create BastionMemory with real DB, falling back to mock",
-                         extra={"agent_id": agent_id})
+        logger.exception(
+            "Failed to create BastionMemory with real DB, falling back to mock", extra={"agent_id": agent_id}
+        )
         memory = BastionMemory(agent_id, mock=True)
 
     skill_map = {
@@ -199,14 +200,19 @@ def create_a2a_server(
 
     _tasks: dict[str, dict[str, Any]] = {}
 
-    def _store_task(tid: str, status: str, artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def _store_task(
+        tid: str,
+        status: str,
+        artifacts: list[dict[str, Any]] | None = None,
+        callback_url: str | None = None,
+    ) -> dict[str, Any]:
         now = time.time()
         mono = time.monotonic()
 
         # Try DB-backed storage first
         if not memory._mock:
             try:
-                task_record = memory.store_a2a_task(tid, agent_id, "unknown", status)
+                task_record = memory.store_a2a_task(tid, agent_id, "unknown", status, callback_url)
                 task: dict[str, Any] = {
                     "id": task_record["task_id"],
                     "status": {"state": task_record["status"]},
@@ -369,6 +375,7 @@ def create_a2a_server(
             # Fetch sender's agent card
             try:
                 import httpx
+
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(f"{sender_url.rstrip('/')}/.well-known/agent-card.json")
                     if resp.status_code != 200:
@@ -510,9 +517,14 @@ def create_a2a_server(
             return _rpc_error(
                 _A2A_VERSION_NOT_SUPPORTED,
                 f"A2A version is not supported. Expected '{_A2A_VERSION}'.",
-                data=[{"@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                       "reason": "VERSION_NOT_SUPPORTED",
-                       "domain": "a2a-protocol.org", "metadata": {}}],
+                data=[
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "VERSION_NOT_SUPPORTED",
+                        "domain": "a2a-protocol.org",
+                        "metadata": {},
+                    }
+                ],
             )
 
         req_id = body.get("id", uuid.uuid4().hex)
@@ -715,9 +727,7 @@ def create_a2a_server(
         _store_task(task_id, "WORKING")
 
         try:
-            result = await anyio.to_thread.run_sync(
-                _execute_skill, memory, method, skill_params
-            )
+            result = await anyio.to_thread.run_sync(_execute_skill, memory, method, skill_params)
             parts_out = [{"text": json.dumps(result, default=str)}]
             _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
         except Exception:
@@ -753,6 +763,12 @@ def create_a2a_server(
         if not callback_url:
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing callback url", req_id)
         _push_notifications[task_id] = callback_url
+        # Persist callback_url to DB so CDC Lambda can dispatch webhook
+        if not memory._mock:
+            try:
+                memory.update_a2a_task(task_id, "WORKING", callback_url=callback_url)
+            except Exception:
+                logger.exception("Failed to persist callback_url to DB", extra={"task_id": task_id})
         logger.info("Push notification registered", extra={"task_id": task_id, "callback_url": callback_url})
         return _rpc_result({"task_id": task_id, "url": callback_url}, req_id)
 

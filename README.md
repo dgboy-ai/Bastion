@@ -5,8 +5,35 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
+[![Tests](https://img.shields.io/badge/Tests-558%20passed-brightgreen)](#-test-verification-suite)
 
 > **Persistent, tamper-proof, and self-healing memory that survives host crashes—so your AI agents never forget.**
+
+## Why Bastion?
+
+```
+Bastion: $0/mo (CockroachDB Serverless free tier)
+Mem0:    $249/mo Pro tier
+Zep:     $125/mo Flex tier
+Letta:   Cloud pricing
+```
+
+| Feature | Bastion | Mem0 | Zep | Letta |
+|---------|---------|------|-----|-------|
+| Hash-chain integrity | ✅ | ❌ | ❌ | ❌ |
+| AS OF SYSTEM TIME | ✅ | ❌ | ❌ | ❌ |
+| CRDT conflict resolution | ✅ | ❌ | ❌ | ❌ |
+| OWASP ASI06 detection | ✅ | ❌ (closed) | ❌ | ❌ |
+| EU AI Act compliance | ✅ | ❌ | ❌ | ❌ |
+| Row-Level Security | ✅ | ❌ | ❌ | ❌ |
+| Live cost tracking | ✅ | ❌ | ❌ | ❌ |
+| A2A protocol | ✅ | ❌ | ❌ | ❌ |
+| Single database (no Neo4j) | ✅ | ❌ (needs Qdrant) | ❌ (needs Neo4j) | ✅ |
+| Self-hostable full version | ✅ (MIT) | ❌ (graph = Pro) | ❌ (Community deprecated) | ✅ |
+| Python + TypeScript SDK | ✅ | ✅ | ✅ | ❌ (Python only) |
+| Framework adapters | 3 | 1 | 1 | 0 |
+
+**Bastion is the only open-source memory layer with security, compliance, temporal travel, and multi-agent coordination — for free.**
 
 Bastion is a production-grade Agentic Memory layer built on **CockroachDB’s distributed SQL database** and **AWS serverless architecture**. It acts as the system of record for autonomous AI systems, offering cryptographic state validation, zero-knowledge vector indexing, row-level session boundaries, and serverless background consolidation.
 
