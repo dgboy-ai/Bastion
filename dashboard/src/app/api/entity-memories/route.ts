@@ -57,7 +57,8 @@ export async function GET(request: Request) {
     }));
 
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/entity-memories] Query failed, falling back to mock:", error);
     const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
     return apiSuccess({ memories: allMemories, total: allMemories.length, page: 1, limit: allMemories.length, totalPages: 1 }, 'short', { mock: true });
   }

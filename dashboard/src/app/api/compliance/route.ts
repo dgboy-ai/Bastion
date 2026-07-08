@@ -118,7 +118,8 @@ export async function GET(request: Request) {
         details: row.details ?? {},
       })),
     }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/compliance] Query failed, falling back to mock:", error);
     return apiSuccess(getMockCompliance(), 'short', { mock: true });
   }
 }

@@ -228,8 +228,11 @@ class BastionMemory:
         try:
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
-        except Exception:
-            pass  # RLS not enabled yet or connection issue — proceed without filtering
+        except Exception as exc:
+            logger.warning(
+                "Failed to set RLS context — row-level security may be bypassed",
+                extra={"agent_id": self.agent_id, "error": str(exc)},
+            )
 
     @property
     def is_mock(self) -> bool:
@@ -248,7 +251,8 @@ class BastionMemory:
             conn = pool.acquire(timeout=5.0)
             pool.release(conn)
             return True
-        except (BastionPoolExhaustedError, OSError, RuntimeError):
+        except (BastionPoolExhaustedError, OSError, RuntimeError) as exc:
+            logger.debug("Connection check failed: %s", exc)
             return False
 
     def store(

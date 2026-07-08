@@ -334,7 +334,7 @@ class BehavioralDriftDetector:
                 return results
         except Exception:
             logger.exception("Failed to fetch recent drift scores for agent %s", agent_id)
-            return []
+            return [{"error": "database_unavailable", "message": "Could not fetch drift scores"}]
         finally:
             pool.release(conn)
 

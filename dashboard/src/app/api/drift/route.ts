@@ -119,7 +119,8 @@ export async function GET(request: Request) {
       dimensionAverages,
       totalScores: scores.length,
     }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/drift] Query failed, falling back to mock:", error);
     return apiSuccess(getMockDrift(), 'short', { mock: true });
   }
 }

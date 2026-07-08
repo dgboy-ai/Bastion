@@ -47,7 +47,8 @@ export async function GET(request: Request) {
     }
 
     return apiSuccess({ alerts }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/anomalies] Query failed, falling back to mock:", error);
     return apiSuccess(getMockAnomalies(), 'short', { mock: true });
   }
 }

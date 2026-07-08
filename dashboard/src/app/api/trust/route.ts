@@ -121,7 +121,8 @@ export async function GET(request: Request) {
       alerts,
       memories,
     }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/trust] Query failed, falling back to mock:", error);
     return apiSuccess(getMockTrust(), 'short', { mock: true });
   }
 }

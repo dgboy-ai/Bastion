@@ -381,6 +381,7 @@ def create_server(
 
                 offset = int(base64.b64decode(cursor).decode())
             except Exception:
+                logger.warning("Invalid cursor, resetting to offset 0", exc_info=True)
                 offset = 0
 
         page = results[offset : offset + k]

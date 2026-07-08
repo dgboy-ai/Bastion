@@ -105,7 +105,8 @@ export async function GET(request: Request) {
       })) ?? [],
       period_hours: hours,
     }, 'short');
-  } catch {
+  } catch (error) {
+    console.error("[api/cache-stats] Query failed, falling back to mock:", error);
     return apiSuccess(getMockCacheStats(), 'short', { mock: true });
   }
 }

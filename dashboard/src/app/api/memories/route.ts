@@ -76,7 +76,8 @@ export async function GET(request: Request) {
     }));
 
     return apiSuccess({ memories, total, page, limit, totalPages }, "short");
-  } catch {
+  } catch (error) {
+    console.error("[api/memories] Query failed, falling back to mock:", error);
     return apiSuccess(getPaginatedMemories(), "short", { mock: true });
   }
 }
