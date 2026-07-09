@@ -21,7 +21,7 @@ from bastion.errors import (
 )
 from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
-from bastion.guard import ToolScanResult, multilang_scan, scan_tool_manifest
+from bastion.guard import ToolScanResult, multilang_scan, pii_scan, scan_tool_manifest
 from bastion.limiter import RequestLimiter
 from bastion.locality import DataRegion, MemoryLocality
 from bastion.mcp_server import create_server
@@ -117,6 +117,7 @@ __all__ = [
     "ToolScanResult",
     "scan_tool_manifest",
     "multilang_scan",
+    "pii_scan",
     "MemoryLocality",
     "DataRegion",
     "CognitiveRulesEngine",

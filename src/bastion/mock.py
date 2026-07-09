@@ -325,6 +325,21 @@ def mock_memory_health(agent_id: str) -> dict:
     }
 
 
+def mock_apply_patch(agent_id: str, memory_id: str, patch_ops: list) -> dict | None:
+    try:
+        import jsonpatch
+    except ImportError:
+        return None
+    records = _agent_data.get(agent_id, [])
+    for r in records:
+        if r.get("memory_id") == memory_id:
+            current = dict(r.get("metadata") or {})
+            patched = jsonpatch.apply_patch(current, patch_ops)
+            r["metadata"] = patched
+            return {"memory_id": memory_id, "metadata": patched}
+    return None
+
+
 def mock_broadcast(sender_agent_id: str, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
     record = MessageRecord(
         namespace=namespace,

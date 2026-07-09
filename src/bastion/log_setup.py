@@ -21,6 +21,24 @@ _LOG_LEVELS = {
 }
 
 
+_SENSITIVE_KEYS = frozenset({
+    "api_key", "secret", "password", "token", "connection_string",
+    "bastion_conn", "authorization", "credentials", "private_key",
+})
+
+
+def _redact_secrets(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+    """Redact sensitive values from structured log output."""
+    for key in list(event_dict.keys()):
+        if key.lower() in _SENSITIVE_KEYS or any(s in key.lower() for s in ("secret", "key", "password", "token")):
+            val = event_dict[key]
+            if isinstance(val, str) and len(val) > 4:
+                event_dict[key] = val[:2] + "****" + val[-2:]
+            elif isinstance(val, str):
+                event_dict[key] = "****"
+    return event_dict
+
+
 def configure_logging() -> None:
     level_name = os.environ.get("BASTION_LOG_LEVEL", "INFO").upper()
     level = _LOG_LEVELS.get(level_name, logging.INFO)
@@ -35,6 +53,7 @@ def configure_logging() -> None:
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
+                _redact_secrets,
                 structlog.processors.JSONRenderer(),
             ],
             context_class=dict,

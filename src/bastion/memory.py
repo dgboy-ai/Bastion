@@ -373,6 +373,20 @@ class BastionMemory:
             return _mock.mock_memory_health(self.agent_id)
         return self._memory_health_real()
 
+    def apply_patch(
+        self, memory_id: str, patch_ops: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Apply RFC 6902 JSON Patch operations to a memory's metadata.
+
+        Atomic: either the full patch applies or nothing does (CRDB transaction).
+        Returns updated memory dict or None if not found.
+        """
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError("memory_id must be a non-empty string")
+        if self._mock:
+            return _mock.mock_apply_patch(self.agent_id, memory_id, patch_ops)
+        return self._apply_patch_real(memory_id, patch_ops)
+
     def search(
         self,
         query: str,
@@ -1235,6 +1249,38 @@ class BastionMemory:
         finally:
             pool.release(conn)
 
+    def _apply_patch_real(
+        self, memory_id: str, patch_ops: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        import json as _json
+        try:
+            import jsonpatch
+        except ImportError:
+            raise RuntimeError("jsonpatch is required for apply_patch: pip install jsonpatch")
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT memory_id, metadata FROM agent_memory "
+                    "WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                current_metadata = dict(row[1]) if row[1] else {}
+                patched = jsonpatch.apply_patch(current_metadata, patch_ops)
+                cur.execute(
+                    "UPDATE agent_memory SET metadata = %s WHERE memory_id = %s AND agent_id = %s",
+                    (_json.dumps(patched), memory_id, self.agent_id),
+                )
+            conn.commit()
+            return {"memory_id": memory_id, "metadata": patched}
+        finally:
+            pool.release(conn)
+
     def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
         triples: list[tuple[str, str, str, str, float]] = []
         patterns = [
@@ -1257,6 +1303,49 @@ class BastionMemory:
                 triples.append((src, tgt, rel_type, kind, 1.0))
         return triples
 
+    def _self_check_triples(
+        self, content: str, triples: list[tuple[str, str, str, str, float]]
+    ) -> list[tuple[str, str, str, str, float]]:
+        """Optional LLM self-check on extracted triples.
+
+        Uses Groq to verify extraction quality when available.
+        Falls back to returning original triples if Groq is unavailable.
+        """
+        if not triples:
+            return triples
+        try:
+            import os
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                return triples
+            from groq import Groq
+            client = Groq(api_key=api_key)
+            triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
+            resp = client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                messages=[
+                    {"role": "system", "content": (
+                        "You verify entity extraction. Given text and extracted triples, "
+                        "return ONLY valid triples as JSON: "
+                        '[["subject","relation","object","kind",confidence],...]. '
+                        "Remove duplicates and invalid triples. Keep confidence 0.0-1.0."
+                    )},
+                    {"role": "user", "content": f"Text: {content}\nTriples: {triples_text}"},
+                ],
+                temperature=0.1,
+                max_tokens=512,
+                timeout=10,
+            )
+            import json
+            verified = json.loads(resp.choices[0].message.content or "[]")
+            result = []
+            for t in verified:
+                if len(t) >= 5:
+                    result.append((str(t[0]), str(t[1]), str(t[2]), str(t[3]), float(t[4])))
+            return result if result else triples
+        except Exception:
+            return triples
+
     def _store_with_graph_real(
         self,
         content: str,
@@ -1268,6 +1357,7 @@ class BastionMemory:
         try:
             record = self._store_real("fact", content, metadata, expires_in_seconds)
             triples = self._extract_triples(content)
+            triples = self._self_check_triples(content, triples)
             created_entities: list[EntityRecord] = []
             created_relations: list[RelationRecord] = []
 

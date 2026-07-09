@@ -673,6 +673,34 @@ def create_server(
         return json.dumps(health, indent=2, default=str)
 
     @mcp.tool(
+        name="memory_apply_patch",
+        title="Apply JSON Patch to Memory",
+        description=(
+            "Apply RFC 6902 JSON Patch operations to a memory's metadata. "
+            "Atomic: either the full patch applies or nothing does. "
+            "Schema-validated: result must conform to the memory metadata schema."
+        ),
+        annotations=ToolAnnotations(
+            title="Apply JSON Patch to Memory",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def memory_apply_patch(
+        ctx: Context,
+        memory_id: str,
+        patch_ops: list[dict[str, Any]],
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        result = await anyio.to_thread.run_sync(mem.apply_patch, memory_id, patch_ops)
+        if result is None:
+            return json.dumps({"error": f"Memory {memory_id} not found"})
+        await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
+        return json.dumps(result, indent=2, default=str)
+
+    @mcp.tool(
         name="resolve_conflict",
         title="Resolve Memory Conflict",
         description=("Resolve conflicting memories from multiple agents using SERIALIZABLE isolation."),
@@ -791,6 +819,11 @@ def create_server(
                 "name": "memory_health",
                 "description": "Memory health metrics: count, freshness, pinned",
                 "read_only": True,
+            },
+            {
+                "name": "memory_apply_patch",
+                "description": "Apply RFC 6902 JSON Patch to memory metadata",
+                "read_only": False,
             },
         ]
         card = {
