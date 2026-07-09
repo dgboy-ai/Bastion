@@ -217,43 +217,25 @@ class BastionMem0Bridge:
         """Update a stored memory by ID (delete + re-store with updated content)."""
         if data is None and metadata is None and expiration_date is None:
             return {"message": "No updates provided"}
-        if not self._memory.is_mock:
-            raise NotImplementedError("update in DB mode not yet supported; use mock=True")
         existing = self.get(memory_id)
         if existing is None:
             raise ValueError(f"Memory with id '{memory_id}' not found")
 
-        from bastion.mock import _agent_data
-        records = _agent_data.get(self._agent_id, [])
-        orig = next((r for r in records if r.get("memory_id") == memory_id), None)
-
         new_content = data if data is not None else existing.get("memory", "")
         meta_merged = {**(existing.get("metadata") or {}), **(metadata or {})}
         self.delete(memory_id)
-        try:
-            new_record = self._memory.store(existing.get("memory_type", "fact"), new_content, meta_merged)
-            new_id = new_record.memory_id
-            logger.info(
-                "Memory updated (ID changed due to delete+re-store)",
-                extra={"old_id": memory_id, "new_id": new_id},
-            )
-            return {"message": "Memory updated successfully!", "new_id": new_id}
-        except Exception:
-            if orig is not None:
-                _agent_data.setdefault(self._agent_id, []).append(dict(orig))
-            raise
+        new_record = self._memory.store(existing.get("memory_type", "fact"), new_content, meta_merged)
+        new_id = new_record.memory_id
+        logger.info(
+            "Memory updated (ID changed due to delete+re-store)",
+            extra={"old_id": memory_id, "new_id": new_id},
+        )
+        return {"message": "Memory updated successfully!", "new_id": new_id}
 
     def delete(self, memory_id: str) -> dict:
         """Delete a single memory by ID."""
-        if self._memory.is_mock:
-            from bastion.mock import _agent_data
-            records = _agent_data.get(self._agent_id, [])
-            new_data = [r for r in records if r.get("memory_id") != memory_id]
-            if len(new_data) == len(records):
-                raise ValueError(f"Memory with id '{memory_id}' not found")
-            _agent_data[self._agent_id] = new_data
-        else:
-            raise NotImplementedError("delete in DB mode not yet supported; use mock=True")
+        if not self._memory.delete_memory(memory_id):
+            raise ValueError(f"Memory with id '{memory_id}' not found")
         return {"message": "Memory deleted successfully!"}
 
     def delete_all(
@@ -263,13 +245,20 @@ class BastionMem0Bridge:
         run_id: str | None = None,
     ) -> dict:
         """Delete all memories for the given entity."""
-        if self._memory.is_mock:
-            from bastion.mock import _agent_data
-            eid = agent_id or user_id or run_id or self._agent_id
-            _agent_data.pop(eid, None)
-        else:
-            raise NotImplementedError("delete_all in DB mode not yet supported; use mock=True")
-        return {"message": "Memories deleted successfully!"}
+        eid = agent_id or user_id or run_id or self._agent_id
+        if not self._memory.is_mock:
+            pool = self._memory.get_pool()
+            conn = pool.acquire(timeout=30.0)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM agent_memory WHERE agent_id = %s", (eid,))
+                conn.commit()
+                return {"message": f"{cur.rowcount} memories deleted successfully!"}
+            finally:
+                pool.release(conn)
+        from bastion.mock import _agent_data
+        records = _agent_data.pop(eid, [])
+        return {"message": f"{len(records)} memories deleted successfully!"}
 
     def history(self, memory_id: str) -> list[dict]:
         """Return change history for a memory (not persisted in mock mode)."""
@@ -277,10 +266,18 @@ class BastionMem0Bridge:
 
     def reset(self) -> None:
         """Clear all stored memories."""
+        if not self._memory.is_mock:
+            self.delete_all(agent_id=self._agent_id)
+            pool = self._memory.get_pool()
+            conn = pool.acquire(timeout=30.0)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM agent_audit WHERE agent_id = %s", (self._agent_id,))
+                conn.commit()
+            finally:
+                pool.release(conn)
         from bastion.mock import _agent_data
         _agent_data.clear()
-        if not self._memory.is_mock:
-            logger.warning("reset() only clears mock data; DB data is untouched in this version")
 
     # ------------------------------------------------------------------
     # Internal helpers

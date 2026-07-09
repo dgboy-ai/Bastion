@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
@@ -77,17 +78,15 @@ class BehavioralDriftDetector:
         baseline: dict[str, Any] = {}
 
         access_types = Counter(m.memory_type for m in agent_memories)
-        total = len(agent_memories) or 1
         baseline["memory_access_pattern"] = {
             "mean": sum(access_types.values()) / max(len(access_types), 1),
             "stddev": _stddev(list(access_types.values())),
         }
 
-        all_contents = [m.content for m in agent_memories]
-        word_counts = _word_frequencies(all_contents)
+        all_embeddings = [m.embedding for m in agent_memories if m.embedding]
         baseline["semantic_similarity"] = {
-            "mean": len(word_counts) / total,
-            "stddev": sum(word_counts.values()) / max(len(word_counts), 1),
+            "mean_vector": _mean_vector(all_embeddings) if all_embeddings else [],
+            "stddev": 0.1,
         }
 
         store_count = sum(1 for e in audit_entries if "store" in e.action)
@@ -157,14 +156,16 @@ class BehavioralDriftDetector:
         if dim_scores["memory_access_pattern"] >= alert_threshold:
             top_signals.append("memory_access_pattern")
 
-        all_contents = [m.content for m in agent_memories]
-        word_counts = _word_frequencies(all_contents)
-        current_sem_mean = len(word_counts) / total
+        all_embeddings = [m.embedding for m in agent_memories if m.embedding]
         bl_sem = baseline.get("semantic_similarity", {})
-        bl_sem_mean = bl_sem.get("mean", current_sem_mean)
-        bl_sem_std = bl_sem.get("stddev", 0.1) or 0.01
-        sem_drift = abs(current_sem_mean - bl_sem_mean) / bl_sem_std
-        dim_scores["semantic_similarity"] = round(min(max(sem_drift / 3.0, 0.0), 1.0), 4)
+        bl_mean_vector = bl_sem.get("mean_vector", [])
+        if all_embeddings and bl_mean_vector:
+            current_mean = _mean_vector(all_embeddings)
+            cos_sim = _cosine_similarity(current_mean, bl_mean_vector)
+            sem_drift = (1.0 - cos_sim) / 2.0
+        else:
+            sem_drift = 0.0
+        dim_scores["semantic_similarity"] = round(min(max(sem_drift, 0.0), 1.0), 4)
         if dim_scores["semantic_similarity"] >= alert_threshold:
             top_signals.append("semantic_similarity")
 
@@ -366,6 +367,27 @@ def _mock_store_drift_score(agent_id: str, report: DriftReport) -> None:
 def _mock_recent_drift_scores(agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
     scores = _MOCK_DRIFT_SCORES.get(agent_id, [])
     return scores[-limit:]
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 1.0
+    return dot / (norm_a * norm_b)
+
+
+def _mean_vector(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    dim = len(vectors[0])
+    summed = [0.0] * dim
+    for v in vectors:
+        for i in range(dim):
+            summed[i] += v[i]
+    n = len(vectors)
+    return [s / n for s in summed]
 
 
 def _word_frequencies(contents: list[str]) -> Counter:

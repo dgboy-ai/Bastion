@@ -1,3 +1,5 @@
+import pytest
+
 from bastion import BastionMemory, BehavioralDriftDetector, DriftReport
 
 
@@ -171,3 +173,108 @@ def test_drift_report_dataclass():
     assert report.agent_id == "test"
     assert report.overall_drift_score == 0.15
     assert report.status == "HEALTHY"
+
+
+# ---------------------------------------------------------------------------
+# Cosine vector drift tests
+# ---------------------------------------------------------------------------
+
+
+def test_cosine_similarity_identical():
+    from bastion.drift import _cosine_similarity
+
+    v = [1.0, 0.0, 0.0]
+    assert _cosine_similarity(v, v) == 1.0
+
+
+def test_cosine_similarity_orthogonal():
+    from bastion.drift import _cosine_similarity
+
+    assert _cosine_similarity([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+
+def test_cosine_similarity_zero_vector():
+    from bastion.drift import _cosine_similarity
+
+    assert _cosine_similarity([0.0, 0.0], [0.0, 0.0]) == 1.0
+
+
+def test_cosine_similarity_partial():
+    from bastion.drift import _cosine_similarity
+
+    v1 = [1.0, 0.0]
+    v2 = [0.5, 0.5]
+    sim = _cosine_similarity(v1, v2)
+    expected = 0.5 / (1.0 * (0.5**2 + 0.5**2) ** 0.5)
+    assert abs(sim - expected) < 1e-10
+
+
+def test_mean_vector():
+    from bastion.drift import _mean_vector
+
+    vecs = [[1.0, 2.0], [3.0, 4.0]]
+    assert _mean_vector(vecs) == [2.0, 3.0]
+
+
+def test_mean_vector_empty():
+    from bastion.drift import _mean_vector
+
+    assert _mean_vector([]) == []
+
+
+def test_baseline_stores_mean_vector():
+    memory = BastionMemory(agent_id="vec-test", mock=True)
+    memory.store("fact", "A", metadata={"_precomputed_embedding": [0.1, 0.2]})
+    memory.store("fact", "B", metadata={"_precomputed_embedding": [0.3, 0.4]})
+
+    detector = BehavioralDriftDetector(memory)
+    baseline = detector.establish_baseline("vec-test")
+
+    sem = baseline["semantic_similarity"]
+    assert "mean_vector" in sem
+    assert sem["mean_vector"] == pytest.approx([0.2, 0.3])
+
+
+def test_semantic_drift_detected_when_embeddings_change():
+    memory = BastionMemory(agent_id="drift-test", mock=True)
+    memory.store("fact", "A", metadata={"_precomputed_embedding": [0.1, 0.2]})
+    memory.store("fact", "B", metadata={"_precomputed_embedding": [0.3, 0.4]})
+
+    detector = BehavioralDriftDetector(memory)
+    baseline = detector.establish_baseline("drift-test")
+
+    # Add semantically different memories (opposite direction)
+    memory.store("fact", "C", metadata={"_precomputed_embedding": [-0.1, -0.2]})
+    memory.store("fact", "D", metadata={"_precomputed_embedding": [-0.3, -0.4]})
+
+    report = detector.score_drift("drift-test", baseline)
+    assert report.dimensions["semantic_similarity"] > 0.0
+
+
+def test_semantic_drift_zero_when_no_change():
+    memory = BastionMemory(agent_id="no-drift", mock=True)
+    memory.store("fact", "A", metadata={"_precomputed_embedding": [0.1, 0.2]})
+    memory.store("fact", "B", metadata={"_precomputed_embedding": [0.3, 0.4]})
+
+    detector = BehavioralDriftDetector(memory)
+    baseline = detector.establish_baseline("no-drift")
+
+    # Add same data again (same embeddings)
+    memory.store("fact", "C", metadata={"_precomputed_embedding": [0.1, 0.2]})
+    memory.store("fact", "D", metadata={"_precomputed_embedding": [0.3, 0.4]})
+
+    report = detector.score_drift("no-drift", baseline)
+    assert report.dimensions["semantic_similarity"] < 0.01
+
+
+def test_semantic_drift_handles_empty_embeddings():
+    memory = BastionMemory(agent_id="empty-emb", mock=True)
+    memory.store("fact", "A")
+    memory.store("fact", "B")
+
+    detector = BehavioralDriftDetector(memory)
+    baseline = detector.establish_baseline("empty-emb")
+    report = detector.score_drift("empty-emb", baseline)
+
+    # Zero embeddings => cosine_sim returns 1.0 => drift = 0.0
+    assert report.dimensions["semantic_similarity"] == 0.0

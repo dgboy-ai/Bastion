@@ -87,3 +87,117 @@ class TestBastionMem0Bridge:
         self.bridge.add("keep me", infer=False)
         self.bridge.reset()
         assert len(self.bridge.get_all()["results"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# DB-mode tests (mocked connection pool)
+# ---------------------------------------------------------------------------
+
+
+def _make_db_bridge():
+    from unittest.mock import MagicMock
+
+    memory = MagicMock()
+    memory._mock = False
+    memory.is_mock = False
+    memory.agent_id = "db-test"
+    memory.get_memory.return_value = None
+    memory.delete_memory.return_value = True
+    memory.list_all.return_value = []
+
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    pool = MagicMock()
+    pool.acquire.return_value = conn
+    memory.get_pool.return_value = pool
+
+    bridge = BastionMem0Bridge.__new__(BastionMem0Bridge)
+    bridge._memory = memory
+    bridge._agent_id = "db-test"
+    bridge._infer_fn = None
+    return bridge, memory, conn, cur
+
+
+class TestBastionMem0BridgeDB:
+    def test_delete_db_calls_memory_delete(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        memory.get_memory.return_value = {"memory_id": "mem-1", "agent_id": "db-test"}
+        memory.delete_memory.return_value = True
+
+        result = bridge.delete("mem-1")
+        assert result["message"] == "Memory deleted successfully!"
+        memory.delete_memory.assert_called_once_with("mem-1")
+
+    def test_delete_db_not_found(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        memory.delete_memory.return_value = False
+
+        import pytest
+        with pytest.raises(ValueError, match="not found"):
+            bridge.delete("nonexistent")
+
+    def test_delete_all_db_executes_sql(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        cur.rowcount = 3
+
+        result = bridge.delete_all(agent_id="some-agent")
+        cur.execute.assert_any_call(
+            "DELETE FROM agent_memory WHERE agent_id = %s",
+            ("some-agent",),
+        )
+        conn.commit.assert_called()
+        assert "3 memories deleted" in result["message"]
+
+    def test_update_db(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+
+        # Simulate get() returning an existing memory
+        from bastion.models import MemoryRecord
+        memory.get_memory.return_value = MemoryRecord(
+            memory_id="mem-1", agent_id="db-test",
+            content="original", memory_type="fact",
+        )
+        memory.delete_memory.return_value = True
+        new_rec = MemoryRecord(memory_id="new-id", agent_id="db-test", content="updated")
+        memory.store.return_value = new_rec
+
+        result = bridge.update("mem-1", data="updated")
+        assert result["message"] == "Memory updated successfully!"
+        assert result["new_id"] == "new-id"
+
+    def test_update_db_no_changes(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        result = bridge.update("mem-1")
+        assert result["message"] == "No updates provided"
+
+    def test_update_db_not_found(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        memory.get_memory.return_value = None
+
+        import pytest
+        with pytest.raises(ValueError, match="not found"):
+            bridge.update("mem-1", data="updated")
+
+    def test_delete_all_db_cross_agent(self):
+        bridge, memory, conn, cur = _make_db_bridge()
+        cur.rowcount = 2
+
+        result = bridge.delete_all(agent_id="other-agent")
+        cur.execute.assert_any_call(
+            "DELETE FROM agent_memory WHERE agent_id = %s",
+            ("other-agent",),
+        )
+        assert "2 memories deleted" in result["message"]
+
+    def test_delete_all_mock_cross_agent(self):
+        from bastion.mock import _agent_data, reset
+        reset()
+        _agent_data["other-agent"] = [
+            {"memory_id": "m1", "agent_id": "other-agent", "content": "a"},
+            {"memory_id": "m2", "agent_id": "other-agent", "content": "b"},
+        ]
+        bridge = BastionMem0Bridge("test-agent", mock=True)
+        result = bridge.delete_all(agent_id="other-agent")
+        assert "2 memories deleted" in result["message"]
+        assert "other-agent" not in _agent_data

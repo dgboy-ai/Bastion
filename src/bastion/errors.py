@@ -39,3 +39,11 @@ class BastionNotFoundError(BastionError):
 
 class BastionAuthError(BastionError):
     """Raised on authentication or authorization failure."""
+
+
+class SecurityBlockError(BastionError):
+    """Raised when MemoryGuard blocks content as unsafe."""
+
+    def __init__(self, message: str, report: object | None = None) -> None:
+        super().__init__(message)
+        self.report = report

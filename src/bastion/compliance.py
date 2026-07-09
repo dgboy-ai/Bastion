@@ -12,12 +12,16 @@ References:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ComplianceMode(StrEnum):
@@ -132,60 +136,130 @@ class ComplianceReporter:
 
 
 class VerifiableUnlearning:
-    """GDPR Article 17 verifiable unlearning with Merkle receipts."""
+    """GDPR Article 17 verifiable unlearning with Merkle receipts.
 
-    def __init__(self, memory: Any):
+    Performs physical SQL ``DELETE`` (not tombstone) for each memory,
+    recalculates the active Merkle tree root, and optionally signs the
+    receipt with the host agent's Ed25519 key for cryptographic
+    non-repudiation.
+
+    Usage::
+
+        from bastion.a2a_signing import AgentCardSigner
+
+        signer = AgentCardSigner.from_env()
+        uv = VerifiableUnlearning(memory, signer=signer)
+        receipt = uv.generate_unlearning_receipt("agent-1", [mem_id])
+    """
+
+    def __init__(self, memory: Any, signer: Any | None = None):
         self.memory = memory
+        self._signer = signer
 
     def generate_unlearning_receipt(
         self,
         agent_id: str,
         memory_ids: list[str],
     ) -> dict[str, Any]:
-        """Generate a cryptographic receipt for deleted memories."""
+        """Generate a signed cryptographic receipt for physically purged memories."""
+        memory_agent = getattr(self.memory, "agent_id", None)
+        if memory_agent is not None and agent_id != memory_agent:
+            logger.warning("agent_id mismatch", extra={"requested": agent_id, "memory_agent": memory_agent})
+
         all_memories = self.memory.list_all()
         agent_memories = [m for m in all_memories if m.agent_id == agent_id]
-        before_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id not in memory_ids]
+        all_hashes = [m.cryptographic_hash for m in agent_memories]
         deleted_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids]
 
-        old_root = self._compute_merkle_root(before_hashes)
+        old_root = self._compute_merkle_root(all_hashes)
 
+        # Physical hard delete — not tombstone
+        deleted_ids: list[str] = []
+        not_found_ids: list[str] = []
         for mid in memory_ids:
-            self.memory.store(
-                memory_type="system_event",
-                content=f"GDPR Article 17: Memory {mid} tombstoned",
-                metadata={"tombstone": True, "original_memory_id": mid, "compliance": "gdpr_art17"},
+            if self.memory.delete_memory(mid):
+                deleted_ids.append(mid)
+            else:
+                not_found_ids.append(mid)
+
+        if not_found_ids:
+            logger.warning("Some memory IDs not found for unlearning", extra={"not_found": not_found_ids})
+
+        deleted_hash_map = {m.memory_id: m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids}
+        # Persist IETF AAT audit record for each deletion
+        for mid in deleted_ids:
+            record = IETFAATRecord(
+                agent_id=agent_id,
+                action="gdpr_art17_unlearn",
+                target=mid,
+                outcome="deleted",
+                metadata={"compliance": "gdpr_art17", "deleted_hash": deleted_hash_map.get(mid, "")},
             )
+            self.memory.store_audit(
+                agent_id=agent_id,
+                action=record.action,
+                details=record.to_jsonl(),
+            )
+            logger.info("Unlearning audit record: %s", record.to_jsonl())
 
-        after_memories = self.memory.list_all()
-        after_agent_memories = [m for m in after_memories if m.agent_id == agent_id]
-        after_hashes = [m.cryptographic_hash for m in after_agent_memories]
-        new_root = self._compute_merkle_root(after_hashes)
+        # Capture post-deletion state safely — list_all() may fail after deletion
+        try:
+            after_memories = self.memory.list_all()
+            after_agent_memories = [m for m in after_memories if m.agent_id == agent_id]
+            after_hashes = [m.cryptographic_hash for m in after_agent_memories]
+            new_root = self._compute_merkle_root(after_hashes)
+            memories_after = len(after_agent_memories)
+        except Exception as exc:
+            logger.error("Failed to compute Merkle root after deletion", extra={"error": str(exc)})
+            new_root = "unknown"
+            memories_after = -1
 
-        return {
+        receipt: dict[str, Any] = {
+            "@context": "https://w3id.org/security/v3",
+            "type": "VerifiableUnlearningReceipt",
             "receipt_id": str(uuid.uuid4()),
             "agent_id": agent_id,
             "timestamp": datetime.now(UTC).isoformat(),
             "deleted_memory_ids": memory_ids,
             "deleted_hashes": deleted_hashes,
+            "not_found_ids": not_found_ids,
             "old_merkle_root": old_root,
             "new_merkle_root": new_root,
-            "memories_before": len(all_memories),
-            "memories_after": len(after_memories),
+            "memories_before": len(agent_memories),
+            "memories_after": memories_after,
             "compliance_framework": "GDPR Article 17",
             "verification_method": "SHA-256 Merkle Tree",
         }
 
+        if self._signer is not None:
+            receipt_json = json.dumps(
+                {k: v for k, v in receipt.items() if k != "signature"},
+                sort_keys=True, separators=(",", ":"), default=str,
+            ).encode()
+            sig_value = self._signer._private_key.sign(receipt_json)
+            receipt["signature"] = {
+                "algorithm": "ed25519",
+                "value": base64.b64encode(sig_value).decode(),
+                "publicKeyPem": self._signer.get_public_key_pem(),
+                "signedFields": sorted(k for k in receipt if k != "signature"),
+            }
+
+        return receipt
+
     def _compute_merkle_root(self, hashes: list[str]) -> str:
         if not hashes:
-            return hashlib.sha256(b"empty").hexdigest()
-        current = hashes
+            return hashlib.sha256(b"\x00").hexdigest()
+        from bastion.merkle import MerkleTree
+
+        current = list(hashes)
+        next_pow2 = 1
+        while next_pow2 < len(current):
+            next_pow2 <<= 1
+        sentinel = MerkleTree._hash("")
+        current += [sentinel] * (next_pow2 - len(current))
         while len(current) > 1:
             next_level = []
             for i in range(0, len(current), 2):
-                left = current[i]
-                right = current[i + 1] if i + 1 < len(current) else left
-                combined = hashlib.sha256((left + right).encode()).hexdigest()
-                next_level.append(combined)
+                next_level.append(MerkleTree._pair_hash(current[i], current[i + 1]))
             current = next_level
         return current[0]

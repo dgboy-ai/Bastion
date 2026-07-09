@@ -218,13 +218,25 @@ class LocalKMS(KMSInterface):
 
 
 class AwsKMS(KMSInterface):
-    """AWS KMS-backed encryption.
+    """AWS KMS envelope encryption with a per-process Data Encryption Key.
+
+    On construction, calls ``kms_client.generate_data_key()`` once to obtain a
+    wrapped DEK (Data Encryption Key).  All encrypt/decrypt operations use the
+    cached plaintext DEK locally (AES-256-GCM), so only **one** KMS API call is
+    made per process lifetime.
+
+    The encrypted DEK is stored alongside each ciphertext so that other processes
+    (e.g. new Vercel instances) can unwrap it on first decrypt via
+    ``kms_client.decrypt()`` and cache it.
 
     Requires ``boto3`` and the ``BASTION_AWS_KMS_KEY_ARN`` env var (or
     *key_arn* constructor argument).
     """
 
     def __init__(self, key_arn: str | None = None, region: str | None = None):
+        if AESGCM is None:
+            raise ImportError("cryptography is required; pip install bastion[kms]")
+
         try:
             import boto3
             from botocore.config import Config
@@ -245,24 +257,79 @@ class AwsKMS(KMSInterface):
         )
         self._client = boto3.client("kms", **kwargs)
 
+        # Envelope encryption: generate a single DEK at process startup
+        try:
+            resp = self._client.generate_data_key(
+                KeyId=self._key_arn,
+                KeySpec="AES_256",
+            )
+        except Exception as exc:
+            logger.error("Failed to generate KMS data key", extra={"key_arn": self._key_arn, "error": str(exc)})
+            raise RuntimeError(f"AWS KMS generate_data_key failed: {exc}") from exc
+
+        self._dek_plaintext: bytes = resp["Plaintext"]
+        self._dek_ciphertext: bytes = resp["CiphertextBlob"]
+        # Cache for DEKs unwrapped by other processes: encrypted_dek -> plaintext_dek
+        self._dek_cache: dict[str, bytes] = {}
+        self._dek_cache[self._dek_ciphertext.hex()] = self._dek_plaintext
+
     def encrypt(self, plaintext: str, context: dict[str, str] | None = None) -> str:
-        resp = self._client.encrypt(
-            KeyId=self._key_arn,
-            Plaintext=plaintext.encode("utf-8"),
-            EncryptionContext=context or {},
+        aesgcm = AESGCM(self._dek_plaintext)
+        nonce = os.urandom(12)
+        aad = self._encode_aad(context)
+        ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
+        # Format: iv(12) + len(DEK_CT)(4) + DEK_CT(var) + ciphertext+tag(var)
+        payload = (
+            nonce
+            + len(self._dek_ciphertext).to_bytes(4, "big")
+            + self._dek_ciphertext
+            + ct
         )
-        return base64.b64encode(resp["CiphertextBlob"]).decode("ascii")
+        return base64.b64encode(payload).decode("ascii")
 
     def decrypt(self, ciphertext_b64: str, context: dict[str, str] | None = None) -> str:
-        resp = self._client.decrypt(
-            CiphertextBlob=base64.b64decode(ciphertext_b64),
-            EncryptionContext=context or {},
-        )
-        plaintext_bytes: bytes = resp["Plaintext"]
-        return plaintext_bytes.decode("utf-8")
+        payload = base64.b64decode(ciphertext_b64)
+        if len(payload) < 16:
+            raise ValueError(
+                f"ciphertext too short ({len(payload)} bytes); expected at least 16 bytes "
+                "(12-byte IV + 4-byte DEK_CT length field)"
+            )
+        nonce = payload[:12]
+        dek_ct_len = int.from_bytes(payload[12:16], "big")
+        if dek_ct_len < 1 or 16 + dek_ct_len > len(payload):
+            raise ValueError(
+                f"Invalid DEK ciphertext length ({dek_ct_len}) for payload of {len(payload)} bytes"
+            )
+        dek_ct = payload[16:16 + dek_ct_len]
+        ct = payload[16 + dek_ct_len:]
+
+        dek = self._dek_cache.get(dek_ct.hex())
+        if dek is None:
+            try:
+                resp = self._client.decrypt(CiphertextBlob=dek_ct)
+            except Exception as exc:
+                logger.error("KMS decrypt of DEK failed", extra={"error": str(exc)})
+                raise RuntimeError(f"AWS KMS decrypt failed: {exc}") from exc
+            dek = resp["Plaintext"]
+            self._dek_cache[dek_ct.hex()] = dek
+
+        aesgcm = AESGCM(dek)
+        aad = self._encode_aad(context)
+        try:
+            plaintext = aesgcm.decrypt(nonce, ct, aad)
+        except Exception as exc:
+            logger.error("AES-GCM decrypt failed", extra={"error": str(exc)})
+            raise
+        return plaintext.decode("utf-8")
 
     def key_id(self) -> str:
         return self._key_arn
+
+    @staticmethod
+    def _encode_aad(context: dict[str, str] | None) -> bytes:
+        if not context:
+            return b""
+        return json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -323,37 +390,97 @@ class GcpKMS(KMSInterface):
 # ---------------------------------------------------------------------------
 
 
+def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInterface:
+    """Factory: returns an ``AwsKMS`` if ``BASTION_AWS_KMS_KEY_ARN`` is
+    configured, otherwise falls back to a local AES-256-GCM key.
+
+    Catches boto3 operational exceptions (network, credentials, disabled
+    key) and falls back to ``LocalKMS`` with a warning.  Lets ``ImportError``
+    and ``ValueError`` propagate so missing dependencies or misconfiguration
+    are surfaced immediately.
+    """
+    resolved = key_arn or os.environ.get("BASTION_AWS_KMS_KEY_ARN", "")
+    if resolved:
+        try:
+            return AwsKMS(key_arn=resolved, region=region)
+        except ImportError:
+            raise
+        except ValueError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "AwsKMS initialization failed, falling back to LocalKMS",
+                extra={"key_arn": resolved, "error": str(exc)},
+            )
+    return LocalKMS(generate=True)
+
+
 class EncryptedMemoryWrapper:
     """Transparently encrypts/decrypts memory content via a ``KMSInterface``.
 
-    All content stored through this wrapper is encrypted at rest.
-    The embedding (used for search) is computed *after* encryption
-    so the ciphertext is indexed — semantic similarity search over
-    encrypted content will **not** work meaningfully.  Search results
-    will be ranked by ciphertext similarity, which is unrelated to
-    plaintext semantics. Use keyword / metadata fallback filters for
-    retrieval of encrypted content.
+    Uses the zero-knowledge pattern: computes the embedding on plaintext
+    *before* encrypting, so semantic vector search works correctly on
+    encrypted content.
 
-    For searchable encryption, consider using deterministic tags in
-    metadata rather than relying on vector similarity over ciphertext.
+    Usage::
+
+        from bastion.kms import EncryptedMemoryWrapper
+
+        wrapper = EncryptedMemoryWrapper(memory)  # auto-detects KMS
+
+        record = wrapper.store("fact", "secret content")
+        results = wrapper.search("secret")
     """
 
-    def __init__(self, memory: Any, kms: KMSInterface):
+    def __init__(self, memory: Any, kms: KMSInterface | None = None, region: str | None = None):
         self._memory = memory
-        self._kms = kms
+        self._kms = kms or create_kms(region=region)
 
-    def store(self, memory_type: str, content: str, metadata: dict | None = None) -> Any:
+    # Encryption overhead (base64 expansion ~33% + headers):
+    # AwsKMS: 12(IV) + 4(DEK_CT_len) + ~1KB(DEK_CT) + 16(tag) -> raw ~= content*1.0 + 1048
+    # LocalKMS: 1(version) + 12(IV) + 16(tag) -> raw ~= content*1.0 + 29
+    # After base64: raw * 4/3
+    # Worst case margin: plaintext must stay under ~73KB when limit is 100KB
+    _ENCRYPTION_OVERHEAD_BYTES = 2048  # safe upper bound for all KMS implementations
+
+    def store(
+        self,
+        memory_type: str,
+        content: str,
+        metadata: dict | None = None,
+        expires_in_seconds: int | None = None,
+        region: str | None = None,
+    ) -> Any:
+        from bastion.memory import _MAX_CONTENT_LENGTH
+
+        if not content or not isinstance(content, str):
+            raise ValueError(f"content must be a non-empty string, got {type(content).__name__}")
+
+        estimated_encoded = len(content) * 4 // 3 + self._ENCRYPTION_OVERHEAD_BYTES
+        if estimated_encoded > _MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"content too long for encryption ({len(content)} chars -> ~{estimated_encoded} bytes "
+                f"encoded, limit {_MAX_CONTENT_LENGTH})"
+            )
+
         ctx = {"agent_id": self._memory.agent_id}
-        # Zero-Knowledge: compute the vector embedding on plaintext BEFORE encrypting it
-        embedding = self._memory._embed(content)
+        embed_fn = getattr(self._memory, "_embed", None)
+        embedding = None
+        if embed_fn is not None:
+            try:
+                embedding = embed_fn(content)
+            except Exception:
+                logger.warning("Embedding computation failed, continuing without precomputed embedding")
+                embedding = None
         encrypted = self._kms.encrypt(content, ctx)
         meta = {
             **(metadata or {}),
             "_encrypted": True,
             "_key_id": self._kms.key_id(),
-            "_precomputed_embedding": embedding,
         }
-        return self._memory.store(memory_type, encrypted, meta)
+        if embedding is not None:
+            meta["_precomputed_embedding"] = embedding
+        return self._memory.store(memory_type, encrypted, meta, expires_in_seconds, region, _skip_guard=True)
 
     def search(self, query: str, **kwargs: Any) -> list:
         ctx = {"agent_id": self._memory.agent_id}
@@ -368,6 +495,38 @@ class EncryptedMemoryWrapper:
                     )
                     r.content = "<encrypted:decryption_failed>"
         return results
+
+    def list_all(
+        self,
+        memory_type: str | None = None,
+        namespace_scope: str = "own",
+        region_filter: str | None = None,
+    ) -> list:
+        ctx = {"agent_id": self._memory.agent_id}
+        results: list = self._memory.list_all(memory_type, namespace_scope, region_filter=region_filter)
+        for r in results:
+            if getattr(r, "metadata", {}).get("_encrypted"):
+                try:
+                    r.content = self._kms.decrypt(r.content, ctx)
+                except Exception:
+                    logger.exception(
+                        "KMS decrypt failed on list_all result", extra={"memory_id": getattr(r, "memory_id", "")}
+                    )
+                    r.content = "<encrypted:decryption_failed>"
+        return results
+
+    def get_memory(self, memory_id: str) -> Any | None:
+        r = self._memory.get_memory(memory_id)
+        if r is not None and getattr(r, "metadata", {}).get("_encrypted"):
+            ctx = {"agent_id": self._memory.agent_id}
+            try:
+                r.content = self._kms.decrypt(r.content, ctx)
+            except Exception:
+                logger.exception(
+                    "KMS decrypt failed on get_memory result", extra={"memory_id": memory_id}
+                )
+                r.content = "<encrypted:decryption_failed>"
+        return r
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list:
         ctx = {"agent_id": agent_id or self._memory.agent_id}

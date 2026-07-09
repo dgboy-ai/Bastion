@@ -27,8 +27,8 @@ class TestBastionSettings:
         assert settings.aws_region == "ap-south-1"
         assert settings.bedrock_read_timeout == 10
         assert settings.bedrock_connect_timeout == 10
-        assert settings.pool_min_size == 2
-        assert settings.pool_max_size == 10
+        assert settings.pool_min_size == 1
+        assert settings.pool_max_size == 2
         assert settings.pool_max_idle_seconds == 300
         assert settings.circuit_breaker_failure_threshold == 5
         assert settings.circuit_breaker_recovery_timeout == 30
@@ -47,7 +47,7 @@ class TestBastionSettings:
         assert settings.reinforce_boost == 1.0
         assert settings.log_level == "INFO"
         assert settings.compliance_mode is None
-        assert settings.api_key == ""
+        assert settings.api_key.get_secret_value() == ""
 
     def test_reads_from_env(self, monkeypatch):
         monkeypatch.setenv("BASTION_CONNECTION_STRING", "postgres://localhost:26257")
@@ -148,4 +148,8 @@ class TestEnvVarMapping:
         monkeypatch.setenv(env_var, str(expected))
         settings = BastionSettings()
         actual = getattr(settings, field)
-        assert actual == expected or str(actual) == str(expected)
+        from pydantic import SecretStr
+        if isinstance(actual, SecretStr):
+            assert actual.get_secret_value() == expected
+        else:
+            assert actual == expected or str(actual) == str(expected)

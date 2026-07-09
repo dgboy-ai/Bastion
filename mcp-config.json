@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server", "--mock"],
+      "env": {
+        "BASTION_MOCK": "true"
+      }
+    }
+  }
+}

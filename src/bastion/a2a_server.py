@@ -26,6 +26,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict, deque
+from functools import partial
 from typing import Any
 
 import anyio
@@ -123,6 +124,7 @@ def create_a2a_server(
         "graph_query": "graph_query",
         "reinforce": "reinforce",
         "broadcast": "broadcast",
+        "resolve_conflict": "resolve_conflict",
     }
 
     # -- A2A Agent Card ---------------------------------------------------
@@ -200,7 +202,7 @@ def create_a2a_server(
 
     _tasks: dict[str, dict[str, Any]] = {}
 
-    def _store_task(
+    async def _store_task(
         tid: str,
         status: str,
         artifacts: list[dict[str, Any]] | None = None,
@@ -209,25 +211,21 @@ def create_a2a_server(
         now = time.time()
         mono = time.monotonic()
 
-        # Try DB-backed storage first
         if not memory._mock:
-            try:
-                task_record = memory.store_a2a_task(tid, agent_id, "unknown", status, callback_url)
-                task: dict[str, Any] = {
-                    "id": task_record["task_id"],
-                    "status": {"state": task_record["status"]},
-                    "artifacts": artifacts or [],
-                    "_created_at": now,
-                    "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
-                    "_cm": mono,
-                    "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
-                }
-                _tasks[tid] = task
-                return task
-            except Exception:
-                logger.exception("DB task store failed, falling back to in-memory", extra={"task_id": tid})
+            task_record = await anyio.to_thread.run_sync(
+                memory.store_a2a_task, tid, agent_id, "unknown", status, callback_url,
+            )
+            return {
+                "id": task_record["task_id"],
+                "status": {"state": task_record["status"]},
+                "artifacts": artifacts or [],
+                "_created_at": now,
+                "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
+                "_cm": mono,
+                "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
+            }
 
-        # Fallback: in-memory
+        # Mock mode: in-memory only
         task = {
             "id": tid,
             "status": {"state": status},
@@ -246,53 +244,46 @@ def create_a2a_server(
             _tasks.pop(oldest, None)
         return task
 
-    def _get_task(tid: str) -> dict[str, Any] | None:
-        # Try DB first
+    async def _get_task(tid: str) -> dict[str, Any] | None:
         if not memory._mock:
-            try:
-                record = memory.get_a2a_task(tid)
-                if record:
-                    now = time.time()
-                    mono = time.monotonic()
-                    task = {
-                        "id": record["task_id"],
-                        "status": {"state": record["status"]},
-                        "artifacts": record.get("artifacts") or [],
-                        "_created_at": now,
-                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                        "_cm": mono,
-                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                    }
-                    _tasks[tid] = task
-                    return task
-            except Exception:
-                logger.exception("DB task get failed, falling back to in-memory", extra={"task_id": tid})
+            record = await anyio.to_thread.run_sync(memory.get_a2a_task, tid)
+            if record:
+                now = time.time()
+                mono = time.monotonic()
+                return {
+                    "id": record["task_id"],
+                    "status": {"state": record["status"]},
+                    "artifacts": record.get("artifacts") or [],
+                    "_created_at": now,
+                    "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    "_cm": mono,
+                    "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                }
+            return None
 
+        # Mock mode: in-memory only
         return _tasks.get(tid)
 
-    def _update_task(tid: str, status: str, artifacts: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
-        """Update task status in DB and in-memory cache."""
+    async def _update_task(
+        tid: str, status: str, artifacts: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
         if not memory._mock:
-            try:
-                record = memory.update_a2a_task(tid, status, artifacts)
-                if record:
-                    now = time.time()
-                    mono = time.monotonic()
-                    task = {
-                        "id": record["task_id"],
-                        "status": {"state": record["status"]},
-                        "artifacts": record.get("artifacts") or [],
-                        "_created_at": now,
-                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                        "_cm": mono,
-                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                    }
-                    _tasks[tid] = task
-                    return task
-            except Exception:
-                logger.exception("DB task update failed", extra={"task_id": tid})
+            record = await anyio.to_thread.run_sync(memory.update_a2a_task, tid, status, artifacts)
+            if record:
+                now = time.time()
+                mono = time.monotonic()
+                return {
+                    "id": record["task_id"],
+                    "status": {"state": record["status"]},
+                    "artifacts": record.get("artifacts") or [],
+                    "_created_at": now,
+                    "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    "_cm": mono,
+                    "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                }
+            return None
 
-        # Fallback: update in-memory
+        # Mock mode: in-memory only
         task = _tasks.get(tid)
         if task:
             task["status"]["state"] = status
@@ -354,8 +345,12 @@ def create_a2a_server(
 
     # -- Signature verification -------------------------------------------
 
+    from bastion.a2a_signing import verify_card_signed
+
     _sender_key_cache: dict[str, tuple[str, float]] = {}  # url -> (pem, expiry)
     _signature_cache_ttl = 86400  # 24 hours
+    _signature_cache_maxsize = 100  # prevent unbounded memory growth (DoS)
+    _strict_auth = os.environ.get("BASTION_A2A_STRICT", "").lower() in ("true", "1", "yes")
 
     async def _verify_sender_signature(request: Request, body: bytes) -> bool:
         """Verify Ed25519 signature on incoming SendMessage requests."""
@@ -382,12 +377,19 @@ def create_a2a_server(
                         logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
                         return False
                     card = resp.json()
+                    if not verify_card_signed(card):
+                        logger.warning("Sender card signature verification FAILED", extra={"sender_url": sender_url})
+                        return False
                     sig_info = card.get("signature", {})
                     pubkey_pem = sig_info.get("publicKeyPem", "")
                     if not pubkey_pem:
                         logger.warning("Sender card missing publicKeyPem", extra={"sender_url": sender_url})
                         return False
                     _sender_key_cache[sender_url] = (pubkey_pem, now + _signature_cache_ttl)
+                    # Evict oldest entry if cache exceeds max size
+                    if len(_sender_key_cache) > _signature_cache_maxsize:
+                        oldest = min(_sender_key_cache, key=lambda k: _sender_key_cache[k][1])
+                        _sender_key_cache.pop(oldest)
             except Exception:
                 logger.exception("Error fetching sender agent card", extra={"sender_url": sender_url})
                 return False
@@ -419,6 +421,14 @@ def create_a2a_server(
 
     # -- Middleware --------------------------------------------------------
 
+    _has_otel_api = False
+    try:
+        from opentelemetry import context as _otel_context
+        from opentelemetry import propagate as _otel_propagate
+        _has_otel_api = True
+    except ImportError:
+        pass
+
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
         nonlocal _metrics_requests_total, _metrics_durations, _metrics_rate_limit_hits
@@ -435,6 +445,12 @@ def create_a2a_server(
             _metrics_rate_limit_hits += 1
             logger.warning("Rate limit exceeded", extra={"request_id": request_id, "client_ip": client_ip})
             return JSONResponse({"error": "Too many requests"}, status_code=429)
+
+        # Propagate OpenTelemetry trace context from incoming traceparent header
+        _otel_token = None
+        if _has_otel_api:
+            ctx = _otel_propagate.extract(dict(request.headers))
+            _otel_token = _otel_context.attach(ctx)
 
         logger.info(
             "Request started",
@@ -457,6 +473,9 @@ def create_a2a_server(
         except Exception:
             logger.exception("Request failed", extra={"request_id": request_id})
             raise
+        finally:
+            if _otel_token is not None:
+                _otel_context.detach(_otel_token)
         _elapsed = time.monotonic() - _start_time
         _metrics_requests_total[(request.method, request.url.path, response.status_code)] += 1
         _metrics_durations[(request.method, request.url.path)].append(_elapsed)
@@ -535,11 +554,11 @@ def create_a2a_server(
             if method == "SendMessage":
                 return await _handle_send_message(params, rid, req_id, raw, request)
             elif method == "GetTask":
-                return _handle_get_task(params, req_id)
+                return await _handle_get_task(params, req_id)
             elif method == "CancelTask":
-                return _handle_cancel_task(params, req_id)
+                return await _handle_cancel_task(params, req_id)
             elif method == "setTaskPushNotification":
-                return _handle_set_push_notification(params, req_id)
+                return await _handle_set_push_notification(params, req_id)
             elif method == "getTaskPushNotification":
                 return _handle_get_push_notification(params, req_id)
             else:
@@ -569,17 +588,18 @@ def create_a2a_server(
 
     @app.get("/tasks/{task_id}")
     async def rest_get_task(task_id: str):
-        task = _get_task(task_id)
+        task = await _get_task(task_id)
         if not task:
             return JSONResponse({"error": "Task not found"}, status_code=404)
         return JSONResponse(_strip_internal(task))
 
     @app.post("/tasks/{task_id}:cancel")
     async def rest_cancel_task(task_id: str):
-        task = _get_task(task_id)
+        task = await _get_task(task_id)
         if not task:
             return JSONResponse({"error": "Task not found"}, status_code=404)
-        task["status"]["state"] = "CANCELED"
+        await _update_task(task_id, "CANCELED")
+        task = (await _get_task(task_id)) or task
         return JSONResponse(_strip_internal(task))
 
     # ----------------------------------------------------------------------
@@ -593,7 +613,8 @@ def create_a2a_server(
     @app.get("/readyz")
     async def readyz():
         try:
-            if memory.is_connected:
+            connected = await anyio.to_thread.run_sync(lambda: memory.is_connected)
+            if connected:
                 return JSONResponse({"status": "ok"})
             return JSONResponse({"status": "not ready", "detail": "database not connected"}, status_code=503)
         except Exception:
@@ -675,10 +696,21 @@ def create_a2a_server(
         raw_body: bytes = b"",
         request: Request | None = None,
     ) -> JSONResponse:
-        # Verify sender signature if headers are present
+        # Verify sender signature
         if request and raw_body:
             sender_url = request.headers.get("X-Sender-URL", "")
             sender_sig = request.headers.get("X-Sender-Signature", "")
+
+            if _strict_auth and not (sender_url and sender_sig):
+                logger.warning(
+                    "Strict auth: missing signature headers",
+                    extra={"request_id": rid, "sender_url": sender_url},
+                )
+                return JSONResponse(
+                    {"error": "Missing required signature headers (X-Sender-URL, X-Sender-Signature)"},
+                    status_code=401,
+                )
+
             if sender_url and sender_sig:
                 try:
                     verified = await _verify_sender_signature(request, raw_body)
@@ -720,42 +752,42 @@ def create_a2a_server(
         method = skill_map.get(skill_id)
 
         if not method:
-            task = _store_task(uuid.uuid4().hex, "FAILED")
+            task = await _store_task(uuid.uuid4().hex, "FAILED")
             return _rpc_result(_strip_internal(task), req_id)
 
         task_id = uuid.uuid4().hex
-        _store_task(task_id, "WORKING")
+        await _store_task(task_id, "WORKING")
 
         try:
             result = await anyio.to_thread.run_sync(_execute_skill, memory, method, skill_params)
             parts_out = [{"text": json.dumps(result, default=str)}]
-            _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
+            await _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
         except Exception:
             logger.exception("Skill execution failed", extra={"request_id": rid, "skill": skill_id})
-            _update_task(task_id, "FAILED")
+            await _update_task(task_id, "FAILED")
 
-        task = _get_task(task_id) or _tasks.get(task_id, {"id": task_id, "status": {"state": "FAILED"}})
+        task = (await _get_task(task_id)) or _tasks.get(task_id, {"id": task_id, "status": {"state": "FAILED"}})
         return _rpc_result(_strip_internal(task), req_id)
 
-    def _handle_get_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
+    async def _handle_get_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
         if isinstance(params, list):
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "params must be an object", req_id)
         task_id = params.get("id", "") if isinstance(params, dict) else ""
-        task = _get_task(task_id)
+        task = await _get_task(task_id)
         if not task:
             return _rpc_error(_A2A_TASK_NOT_FOUND, f"Task not found: {task_id}", req_id)
         return _rpc_result(_strip_internal(task), req_id)
 
-    def _handle_cancel_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
+    async def _handle_cancel_task(params: dict[str, Any], req_id: Any) -> JSONResponse:
         task_id = params.get("id", "")
-        task = _get_task(task_id)
+        task = await _get_task(task_id)
         if not task:
             return _rpc_error(_A2A_TASK_NOT_FOUND, f"Task not found: {task_id}", req_id)
-        _update_task(task_id, "CANCELED")
-        task = _get_task(task_id) or task
+        await _update_task(task_id, "CANCELED")
+        task = (await _get_task(task_id)) or task
         return _rpc_result(_strip_internal(task), req_id)
 
-    def _handle_set_push_notification(params: dict[str, Any], req_id: Any) -> JSONResponse:
+    async def _handle_set_push_notification(params: dict[str, Any], req_id: Any) -> JSONResponse:
         task_id = params.get("id", "")
         if not task_id:
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing task id", req_id)
@@ -763,12 +795,10 @@ def create_a2a_server(
         if not callback_url:
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing callback url", req_id)
         _push_notifications[task_id] = callback_url
-        # Persist callback_url to DB so CDC Lambda can dispatch webhook
         if not memory._mock:
-            try:
-                memory.update_a2a_task(task_id, "WORKING", callback_url=callback_url)
-            except Exception:
-                logger.exception("Failed to persist callback_url to DB", extra={"task_id": task_id})
+            await anyio.to_thread.run_sync(
+                partial(memory.update_a2a_task, task_id, "WORKING", callback_url=callback_url),
+            )
         logger.info("Push notification registered", extra={"task_id": task_id, "callback_url": callback_url})
         return _rpc_result({"task_id": task_id, "url": callback_url}, req_id)
 
@@ -845,6 +875,17 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         ns = params.get("namespace")
         msg = mem.broadcast(event_type, payload, ns)
         return msg.to_dict()
+    elif method == "resolve_conflict":
+        from bastion.groq_callback import groq_merge
+
+        fact_a = params.get("fact_a", "")
+        fact_b = params.get("fact_b", "")
+        context = params.get("context")
+        contents = [f for f in (fact_a, fact_b) if f]
+        if not contents:
+            return {"error": "Missing fact_a or fact_b"}
+        merged = groq_merge(contents, context or "a2a_conflict")
+        return {"merged": merged, "facts": contents}
     return {"error": f"Unknown method: {method}"}
 
 

@@ -15,7 +15,8 @@ from typing import Any
 from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
 from bastion.config import get_settings
-from bastion.errors import BastionPoolExhaustedError
+from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
+from bastion.guard import MemoryGuard
 from bastion.log_setup import get_logger
 from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
 from bastion.pool import ConnectionPool
@@ -79,7 +80,8 @@ _MEMORY_COLS = (
     "memory_id, agent_id, memory_type, content, embedding, "
     "metadata, previous_hash, cryptographic_hash, "
     "created_at, expires_at, access_count, importance_score, "
-    "trust_level, source_provenance, overwrite_count"
+    "trust_level, source_provenance, overwrite_count, "
+    "is_pinned, pin_priority"
 )
 
 _MAX_CONTENT_LENGTH = 100_000
@@ -189,6 +191,8 @@ class BastionMemory:
             jitter_factor=settings.retry_jitter_factor,
         )
 
+        self._guard = MemoryGuard()
+
         if self._mock:
             _mock.mock_register_namespace(agent_id, self.namespace)
         elif not self._conn_str:
@@ -227,11 +231,23 @@ class BastionMemory:
             pool.release(conn)
 
     def _set_rls_context(self, conn: Any) -> None:
-        """Set agent context for RLS filtering within a transaction."""
+        """Set agent context for RLS filtering within a transaction.
+
+        ``SET LOCAL`` requires an active transaction to take effect.
+        If the connection is in autocommit mode, the setting would be
+        session-persistent or silently ignored — a warning is emitted.
+        """
         if not self._rls_enabled:
             return
         try:
             with conn.cursor() as cur:
+                autocommit = getattr(conn, 'autocommit', False)
+                if autocommit:
+                    logger.warning(
+                        "Connection is in autocommit mode — SET LOCAL requires a transaction "
+                        "and will have no effect on subsequent operations",
+                        extra={"agent_id": self.agent_id},
+                    )
                 cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
         except Exception as exc:
             logger.warning(
@@ -266,13 +282,29 @@ class BastionMemory:
         content: str,
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
+        region: str | None = None,
+        _skip_guard: bool = False,
     ) -> MemoryRecord:
         _validate_memory_type(memory_type)
         _validate_content(content)
         _validate_expires_in(expires_in_seconds)
+        if region is not None and (not isinstance(region, str) or not region.strip()):
+            raise ValueError(f"region must be a non-empty string when provided, got {region!r}")
+
+        if not _skip_guard:
+            report = self._guard.check(content)
+            if not report.is_safe:
+                details = "; ".join(f"{f.detector}: {f.detail}" for f in report.findings)
+                raise SecurityBlockError(
+                    f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}",
+                    report=report,
+                )
+
         if self._mock:
-            return _mock.mock_store_memory(self.agent_id, memory_type, content, metadata, expires_in_seconds)
-        return self._store_real(memory_type, content, metadata, expires_in_seconds)
+            return _mock.mock_store_memory(
+                self.agent_id, memory_type, content, metadata, expires_in_seconds, region=region
+            )
+        return self._store_real(memory_type, content, metadata, expires_in_seconds, region=region)
 
     def reinforce(self, memory_id: str, success: bool = True) -> dict:
         if not memory_id or not isinstance(memory_id, str):
@@ -281,6 +313,64 @@ class BastionMemory:
             return _mock.mock_reinforce(self.agent_id, memory_id, success)
         return self._reinforce_real(memory_id, success)
 
+    def pin(
+        self,
+        memory_type: str,
+        content: str,
+        pin_priority: int = 2,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryRecord:
+        """Pin a safety-critical memory. Pinned memories survive context compaction
+        and are re-injected before every query. pin_priority: 0=normal, 1=important, 2=CRITICAL."""
+        if pin_priority not in (0, 1, 2):
+            raise ValueError(f"pin_priority must be 0, 1, or 2, got {pin_priority}")
+        _validate_memory_type(memory_type)
+        _validate_content(content)
+        if self._mock:
+            return _mock.mock_pin_memory(self.agent_id, memory_type, content, pin_priority, metadata)
+        return self._pin_real(memory_type, content, pin_priority, metadata)
+
+    def unpin(self, memory_id: str) -> bool:
+        """Remove pin from a memory. Returns True if unpinned."""
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
+        if self._mock:
+            return _mock.mock_unpin_memory(self.agent_id, memory_id)
+        return self._unpin_real(memory_id)
+
+    def get_pinned(self, min_priority: int = 1) -> list[MemoryRecord]:
+        """Get all pinned memories with priority >= min_priority.
+        Called automatically before every search to inject safety rules."""
+        if self._mock:
+            return _mock.mock_get_pinned(self.agent_id, min_priority)
+        return self._get_pinned_real(min_priority)
+
+    def list_memories(
+        self,
+        memory_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MemoryRecord]:
+        """List all memories for the current agent. User-facing governance tool."""
+        if self._mock:
+            return _mock.mock_list_memories(self.agent_id, memory_type, limit, offset)
+        return self._list_memories_real(memory_type, limit, offset)
+
+    def correct_memory(self, memory_id: str, new_content: str, metadata: dict[str, Any] | None = None) -> MemoryRecord | None:
+        """Update a memory's content. User-facing governance tool."""
+        if not memory_id or not isinstance(memory_id, str):
+            raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
+        _validate_content(new_content)
+        if self._mock:
+            return _mock.mock_correct_memory(self.agent_id, memory_id, new_content, metadata)
+        return self._correct_memory_real(memory_id, new_content, metadata)
+
+    def memory_health(self) -> dict[str, Any]:
+        """Return memory health metrics: count, freshness distribution, pinned count."""
+        if self._mock:
+            return _mock.mock_memory_health(self.agent_id)
+        return self._memory_health_real()
+
     def search(
         self,
         query: str,
@@ -288,26 +378,33 @@ class BastionMemory:
         threshold: float = 0.8,
         memory_type: str | None = None,
         namespace_scope: str = "own",
+        region_filter: str | None = None,
     ) -> list[MemoryRecord]:
         _validate_content(query)
         _validate_k(k)
         _validate_threshold(threshold)
         _validate_namespace_scope(namespace_scope)
+        if region_filter is not None and (not isinstance(region_filter, str) or not region_filter.strip()):
+            raise ValueError(f"region_filter must be a non-empty string when provided, got {region_filter!r}")
         ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
-            return _mock.mock_search_memory(ns_agent_id, query, k, threshold, memory_type, namespace_scope)
-        return self._search_real(query, k, threshold, memory_type, namespace_scope)
+            return _mock.mock_search_memory(
+                ns_agent_id, query, k, threshold, memory_type, namespace_scope,
+                region_filter=region_filter,
+            )
+        return self._search_real(query, k, threshold, memory_type, namespace_scope, region_filter=region_filter)
 
     def list_all(
         self,
         memory_type: str | None = None,
         namespace_scope: str = "own",
+        region_filter: str | None = None,
     ) -> list[MemoryRecord]:
         _validate_namespace_scope(namespace_scope)
         ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
-            return _mock.mock_list_all(ns_agent_id, memory_type, namespace_scope)
-        return self._list_all_real(memory_type, namespace_scope)
+            return _mock.mock_list_all(ns_agent_id, memory_type, namespace_scope, region_filter=region_filter)
+        return self._list_all_real(memory_type, namespace_scope, region_filter=region_filter)
 
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
         if not timestamp or not isinstance(timestamp, str):
@@ -322,6 +419,13 @@ class BastionMemory:
         if self._mock:
             return _mock.mock_get_audit(agent_id)
         return self._audit_real(agent_id)
+
+    def store_audit(self, action: str, details: dict[str, Any] | str, agent_id: str | None = None) -> None:
+        agent_id = agent_id or self.agent_id
+        if self._mock:
+            _mock.mock_store_audit(agent_id, action, details)
+        else:
+            self._store_audit_real(agent_id, action, details)
 
     def heal(self, agent_id: str | None = None) -> dict[str, Any]:
         agent_id = agent_id or self.agent_id
@@ -491,6 +595,10 @@ class BastionMemory:
             return _mock.mock_get_memory_by_id(self.agent_id, memory_id)
         return self._get_memory_by_id_real(memory_id)
 
+    def delete_memory(self, memory_id: str) -> bool:
+        """Publicly delete a memory by ID. Returns True if deleted."""
+        return self._delete_by_id(memory_id)
+
     def _delete_by_id(self, memory_id: str) -> bool:
         if not memory_id or not isinstance(memory_id, str):
             raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
@@ -527,6 +635,7 @@ class BastionMemory:
         content: str,
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
+        region: str | None = None,
     ) -> MemoryRecord:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
@@ -552,22 +661,26 @@ class BastionMemory:
                 source_prov = "agent_direct"
                 meta.pop("_trust_level", None)
                 meta.pop("_source_provenance", None)
+                cols = (
+                    "agent_id, memory_type, content, embedding, metadata, "
+                    "previous_hash, cryptographic_hash, expires_at, importance_score, "
+                    "trust_level, source_provenance"
+                )
+                placeholders = "%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s"
+                params = [
+                    self.agent_id, memory_type, content, embedding_str,
+                    json.dumps(meta), prev_hash, crypto_hash,
+                    expires_dt.isoformat() if expires_dt else None,
+                    trust_level, source_prov,
+                ]
+                if region is not None:
+                    cols += ", crdb_region"
+                    placeholders += ", %s"
+                    params.append(region)
                 cur.execute(
-                    "INSERT INTO agent_memory (agent_id, memory_type, content, embedding, metadata, "
-                    "previous_hash, cryptographic_hash, expires_at, importance_score, trust_level, source_provenance) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s) RETURNING memory_id, created_at",
-                    (
-                        self.agent_id,
-                        memory_type,
-                        content,
-                        embedding_str,
-                        json.dumps(meta),
-                        prev_hash,
-                        crypto_hash,
-                        expires_dt.isoformat() if expires_dt else None,
-                        trust_level,
-                        source_prov,
-                    ),
+                    f"INSERT INTO agent_memory ({cols}) "
+                    f"VALUES ({placeholders}) RETURNING memory_id, created_at",
+                    params,
                 )
                 row = cur.fetchone()
                 if row is None:
@@ -618,6 +731,7 @@ class BastionMemory:
         threshold: float,
         memory_type: str | None,
         namespace_scope: str = "own",
+        region_filter: str | None = None,
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
@@ -630,6 +744,12 @@ class BastionMemory:
             agent_filter = "agent_id LIKE %s"
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
 
+            region_clause = ""
+            region_param: list[str] = []
+            if region_filter is not None:
+                region_clause = "AND crdb_region = %s"
+                region_param = [region_filter]
+
             with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
@@ -637,9 +757,10 @@ class BastionMemory:
                         "(1.0 - (embedding <=> %s::vector)) * importance_score / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
                         "FROM agent_memory "
-                        f"WHERE {agent_filter} AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} AND memory_type = %s {region_clause} "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        (query_vector_str, decay_rate, agent_param, memory_type, k),
+                        [query_vector_str, decay_rate, agent_param, memory_type, *region_param, k],
                     )
                 else:
                     cur.execute(
@@ -647,9 +768,10 @@ class BastionMemory:
                         "(1.0 - (embedding <=> %s::vector)) * importance_score / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
                         "FROM agent_memory "
-                        f"WHERE {agent_filter} AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} {region_clause} "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        (query_vector_str, decay_rate, agent_param, k),
+                        [query_vector_str, decay_rate, agent_param, *region_param, k],
                     )
                 rows = cur.fetchall()
                 results = []
@@ -668,6 +790,7 @@ class BastionMemory:
         self,
         memory_type: str | None = None,
         namespace_scope: str = "own",
+        region_filter: str | None = None,
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
@@ -675,20 +798,29 @@ class BastionMemory:
         try:
             agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
+
+            region_clause = ""
+            region_param: list[str] = []
+            if region_filter is not None:
+                region_clause = "AND crdb_region = %s"
+                region_param = [region_filter]
+
             with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory "
-                        f"WHERE {agent_filter} AND memory_type = %s AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} AND memory_type = %s {region_clause} "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY created_at DESC",
-                        (agent_param, memory_type),
+                        [agent_param, memory_type, *region_param],
                     )
                 else:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory "
-                        f"WHERE {agent_filter} AND (expires_at IS NULL OR expires_at > now()) "
+                        f"WHERE {agent_filter} {region_clause} "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY created_at DESC",
-                        (agent_param,),
+                        [agent_param, *region_param],
                     )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
         except Exception as e:
@@ -759,6 +891,26 @@ class BastionMemory:
         except Exception as e:
             logger.exception("audit query failed", extra={"agent_id": agent_id})
             raise RuntimeError(f"Audit query failed for agent {agent_id}: {e}") from e
+        finally:
+            pool.release(conn)
+
+    def _store_audit_real(self, agent_id: str, action: str, details: dict[str, Any] | str) -> None:
+        import uuid
+
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                details_json = details if isinstance(details, str) else json.dumps(details)
+                cur.execute(
+                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                    (agent_id, str(uuid.uuid4()), action, details_json),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.exception("store_audit failed", extra={"agent_id": agent_id, "action": action})
+            raise RuntimeError(f"store_audit failed for agent {agent_id}: {e}") from e
         finally:
             pool.release(conn)
 
@@ -937,6 +1089,146 @@ class BastionMemory:
                     "memory_id": memory_id,
                     "importance_score": new_imp,
                     "delta": round(new_imp - base_imp, 2),
+                }
+        finally:
+            pool.release(conn)
+
+    def _pin_real(
+        self,
+        memory_type: str,
+        content: str,
+        pin_priority: int,
+        metadata: dict[str, Any] | None,
+    ) -> MemoryRecord:
+        record = self._store_real(memory_type, content, metadata, None, _skip_guard=True)
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE agent_memory SET is_pinned = true, pin_priority = %s "
+                    "WHERE memory_id = %s AND agent_id = %s",
+                    (pin_priority, record.memory_id, self.agent_id),
+                )
+            conn.commit()
+        finally:
+            pool.release(conn)
+        record.is_pinned = True
+        record.pin_priority = pin_priority
+        return record
+
+    def _unpin_real(self, memory_id: str) -> bool:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE agent_memory SET is_pinned = false, pin_priority = 0 "
+                    "WHERE memory_id = %s AND agent_id = %s AND is_pinned = true",
+                    (memory_id, self.agent_id),
+                )
+                deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            pool.release(conn)
+
+    def _get_pinned_real(self, min_priority: int) -> list[MemoryRecord]:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    "WHERE agent_id = %s AND is_pinned = true AND pin_priority >= %s "
+                    "ORDER BY pin_priority DESC, created_at DESC",
+                    (self.agent_id, min_priority),
+                )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        finally:
+            pool.release(conn)
+
+    def _list_memories_real(
+        self, memory_type: str | None, limit: int, offset: int
+    ) -> list[MemoryRecord]:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                if memory_type:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        "WHERE agent_id = %s AND memory_type = %s "
+                        "ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                        (self.agent_id, memory_type, limit, offset),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        "WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                        (self.agent_id, limit, offset),
+                    )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        finally:
+            pool.release(conn)
+
+    def _correct_memory_real(
+        self, memory_id: str, new_content: str, metadata: dict[str, Any] | None
+    ) -> MemoryRecord | None:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata) "
+                    "WHERE memory_id = %s AND agent_id = %s RETURNING " + _MEMORY_COLS,
+                    (new_content, json.dumps(metadata) if metadata else None, memory_id, self.agent_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                conn.commit()
+                return MemoryRecord.from_row(row)
+        finally:
+            pool.release(conn)
+
+    def _memory_health_real(self) -> dict[str, Any]:
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*), "
+                    "COUNT(*) FILTER (WHERE is_pinned), "
+                    "COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '7 days'), "
+                    "COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '30 days'), "
+                    "AVG(access_count), "
+                    "AVG(importance_score) "
+                    "FROM agent_memory WHERE agent_id = %s",
+                    (self.agent_id,),
+                )
+                row = cur.fetchone()
+                total = row[0] or 0
+                pinned = row[1] or 0
+                week = row[2] or 0
+                month = row[3] or 0
+                avg_access = float(row[4] or 0)
+                avg_importance = float(row[5] or 0)
+                freshness = week / max(total, 1)
+                return {
+                    "total_memories": total,
+                    "pinned_memories": pinned,
+                    "memories_last_7_days": week,
+                    "memories_last_30_days": month,
+                    "freshness_ratio": round(freshness, 4),
+                    "avg_access_count": round(avg_access, 2),
+                    "avg_importance_score": round(avg_importance, 2),
                 }
         finally:
             pool.release(conn)
@@ -1277,6 +1569,9 @@ class BastionMemory:
         Falls back to a deterministic hash-based vector if Bedrock is unavailable
         (no AWS credentials, network error, or BASTION_MOCK mode).
         """
+        if self._mock:
+            return _hash_fallback_embed(text)
+
         import random
         import time
 

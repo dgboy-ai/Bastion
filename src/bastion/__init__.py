@@ -20,9 +20,11 @@ from bastion.errors import (
     BastionSerializationError,
     BastionTimeoutError,
     BastionValidationError,
+    SecurityBlockError,
 )
 from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
+from bastion.guard import ToolScanResult, multilang_scan, scan_tool_manifest
 from bastion.limiter import RequestLimiter
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory, MemoryRouter
@@ -111,4 +113,8 @@ __all__ = [
     "BastionConfigError",
     "BastionNotFoundError",
     "BastionAuthError",
+    "SecurityBlockError",
+    "ToolScanResult",
+    "scan_tool_manifest",
+    "multilang_scan",
 ]

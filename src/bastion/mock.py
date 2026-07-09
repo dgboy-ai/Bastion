@@ -47,6 +47,7 @@ def mock_store_memory(
     content: str,
     metadata: dict[str, Any] | None = None,
     expires_in_seconds: int | None = None,
+    region: str | None = None,
 ) -> MemoryRecord:
     with _lock:
         if agent_id not in _agent_data:
@@ -75,7 +76,9 @@ def mock_store_memory(
         importance_score=5.0,
     )
 
-    _agent_data[agent_id].append(record.to_dict())
+    record_dict = record.to_dict()
+    record_dict["region"] = region
+    _agent_data[agent_id].append(record_dict)
     _audit_log.append({
         "audit_id": str(uuid.uuid4()),
         "agent_id": agent_id,
@@ -95,6 +98,7 @@ def mock_search_memory(
     threshold: float = 0.8,
     memory_type: str | None = None,
     namespace_scope: str = "own",
+    region_filter: str | None = None,
 ) -> list[MemoryRecord]:
     if namespace_scope == "shared":
         agent_ids = _namespace_map.get(agent_id, {agent_id})
@@ -106,6 +110,8 @@ def mock_search_memory(
         records = _agent_data.get(agent_id, [])
     if memory_type:
         records = [r for r in records if r["memory_type"] == memory_type]
+    if region_filter is not None:
+        records = [r for r in records if r.get("region") == region_filter]
 
     now = datetime.now(UTC)
     valid = []
@@ -158,6 +164,7 @@ def mock_list_all(
     agent_id: str,
     memory_type: str | None = None,
     namespace_scope: str = "own",
+    region_filter: str | None = None,
 ) -> list[MemoryRecord]:
     if namespace_scope == "shared":
         agent_ids = _namespace_map.get(agent_id, {agent_id})
@@ -169,6 +176,8 @@ def mock_list_all(
         records = _agent_data.get(agent_id, [])
     if memory_type:
         records = [r for r in records if r["memory_type"] == memory_type]
+    if region_filter is not None:
+        records = [r for r in records if r.get("region") == region_filter]
 
     now = datetime.now(UTC)
     valid = []
@@ -199,6 +208,121 @@ def mock_reinforce(agent_id: str, memory_id: str, success: bool = True) -> dict:
                 "delta": round(new_imp - base, 2),
             }
     return {"status": "not_found"}
+
+
+def mock_pin_memory(
+    agent_id: str, memory_type: str, content: str, pin_priority: int, metadata: dict | None
+) -> MemoryRecord:
+    record = mock_store_memory(agent_id, memory_type, content, metadata, None)
+    records = _agent_data.get(agent_id, [])
+    for r in records:
+        if r.get("memory_id") == record.memory_id:
+            r["is_pinned"] = True
+            r["pin_priority"] = pin_priority
+            break
+    record.is_pinned = True
+    record.pin_priority = pin_priority
+    return record
+
+
+def mock_unpin_memory(agent_id: str, memory_id: str) -> bool:
+    records = _agent_data.get(agent_id, [])
+    for r in records:
+        if r.get("memory_id") == memory_id and r.get("is_pinned"):
+            r["is_pinned"] = False
+            r["pin_priority"] = 0
+            return True
+    return False
+
+
+def mock_get_pinned(agent_id: str, min_priority: int = 1) -> list[MemoryRecord]:
+    records = _agent_data.get(agent_id, [])
+    result = []
+    for r in records:
+        if r.get("is_pinned") and r.get("pin_priority", 0) >= min_priority:
+            result.append(MemoryRecord(
+                memory_id=r["memory_id"],
+                agent_id=r["agent_id"],
+                memory_type=r["memory_type"],
+                content=r["content"],
+                embedding=r.get("embedding"),
+                metadata=r.get("metadata"),
+                previous_hash=r.get("previous_hash"),
+                cryptographic_hash=r["cryptographic_hash"],
+                created_at=r["created_at"],
+                expires_at=r.get("expires_at"),
+                access_count=r.get("access_count", 0),
+                importance_score=r.get("importance_score", 5.0),
+                trust_level=r.get("trust_level", 0.5),
+                is_pinned=r.get("is_pinned", False),
+                pin_priority=r.get("pin_priority", 0),
+            ))
+    result.sort(key=lambda m: m.pin_priority, reverse=True)
+    return result
+
+
+def mock_list_memories(
+    agent_id: str, memory_type: str | None, limit: int, offset: int
+) -> list[MemoryRecord]:
+    records = _agent_data.get(agent_id, [])
+    filtered = records
+    if memory_type:
+        filtered = [r for r in records if r.get("memory_type") == memory_type]
+    filtered.sort(key=lambda r: r.get("created_at", datetime.min.replace(tzinfo=UTC)), reverse=True)
+    page = filtered[offset:offset + limit]
+    return [
+        MemoryRecord(
+            memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
+            content=r["content"], embedding=r.get("embedding"), metadata=r.get("metadata"),
+            previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
+            created_at=r["created_at"], expires_at=r.get("expires_at"),
+            access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
+            is_pinned=r.get("is_pinned", False), pin_priority=r.get("pin_priority", 0),
+        )
+        for r in page
+    ]
+
+
+def mock_correct_memory(
+    agent_id: str, memory_id: str, new_content: str, metadata: dict | None
+) -> MemoryRecord | None:
+    records = _agent_data.get(agent_id, [])
+    for r in records:
+        if r.get("memory_id") == memory_id:
+            r["content"] = new_content
+            if metadata:
+                r["metadata"] = {**(r.get("metadata") or {}), **metadata}
+            return MemoryRecord(
+                memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
+                content=r["content"], embedding=r.get("embedding"), metadata=r.get("metadata"),
+                previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
+                created_at=r["created_at"], expires_at=r.get("expires_at"),
+                access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
+                is_pinned=r.get("is_pinned", False), pin_priority=r.get("pin_priority", 0),
+            )
+    return None
+
+
+def mock_memory_health(agent_id: str) -> dict:
+    records = _agent_data.get(agent_id, [])
+    now = datetime.now(UTC)
+    total = len(records)
+    pinned = sum(1 for r in records if r.get("is_pinned"))
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    week = sum(1 for r in records if r.get("created_at", datetime.min.replace(tzinfo=UTC)) > week_ago)
+    month = sum(1 for r in records if r.get("created_at", datetime.min.replace(tzinfo=UTC)) > month_ago)
+    avg_access = sum(r.get("access_count", 0) for r in records) / max(total, 1)
+    avg_importance = sum(r.get("importance_score", 5.0) for r in records) / max(total, 1)
+    return {
+        "total_memories": total,
+        "pinned_memories": pinned,
+        "memories_last_7_days": week,
+        "memories_last_30_days": month,
+        "freshness_ratio": round(week / max(total, 1), 4),
+        "avg_access_count": round(avg_access, 2),
+        "avg_importance_score": round(avg_importance, 2),
+    }
 
 
 def mock_broadcast(sender_agent_id: str, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
@@ -271,6 +395,17 @@ def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]
     return results
 
 
+def mock_store_audit(agent_id: str, action: str, details: dict[str, Any] | str) -> None:
+    _audit_log.append({
+        "audit_id": str(uuid.uuid4()),
+        "agent_id": agent_id,
+        "workflow_id": str(uuid.uuid4()),
+        "action": action,
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "details": details if isinstance(details, str) else json.dumps(details),
+    })
+
+
 def mock_get_audit(agent_id: str) -> list[AuditEntry]:
     entries = [e for e in _audit_log if e["agent_id"] == agent_id]
     result = []
@@ -278,12 +413,15 @@ def mock_get_audit(agent_id: str) -> list[AuditEntry]:
         recorded_at = e["recorded_at"]
         if isinstance(recorded_at, str):
             recorded_at = datetime.fromisoformat(recorded_at)
+        details = e["details"]
+        if isinstance(details, str):
+            details = json.loads(details)
         result.append(AuditEntry(
             audit_id=e["audit_id"],
             agent_id=e["agent_id"],
             workflow_id=e["workflow_id"],
             action=e["action"],
-            details=e["details"],
+            details=details,
             recorded_at=recorded_at,
         ))
     return result

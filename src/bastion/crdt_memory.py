@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import logging
 import uuid
@@ -9,6 +11,7 @@ from typing import Any
 
 from bastion.memory import BastionMemory
 from bastion.models import MemoryRecord
+from bastion.retry import SerializationRetryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +168,11 @@ class CRDTMemory:
 
         Returns the winning (merged) record and stores the resolution
         as a new memory with a merged clock.
+
+        In real (non-mock) mode, the resolution is executed inside a
+        CockroachDB ``SERIALIZABLE`` transaction with ``SELECT FOR UPDATE``
+        on the conflicting rows, preventing write-skew anomalies when two
+        agents resolve the same fact_key concurrently.
         """
         if len(candidates) <= 1:
             return candidates[0]
@@ -188,6 +196,17 @@ class CRDTMemory:
             },
         )
 
+        if self._memory._mock:
+            return self._resolve_unlocked(candidates, clocks, fact_key)
+        return self._resolve_with_locks(candidates, clocks, fact_key)
+
+    def _resolve_unlocked(
+        self,
+        candidates: list[MemoryRecord],
+        clocks: list[VectorClock],
+        fact_key: str,
+    ) -> MemoryRecord:
+        """Resolve without DB locking (mock mode)."""
         if self._strategy == "lww":
             winner = self._resolve_lww(candidates, clocks)
         elif self._strategy == "semantic" and self._llm_merge is not None:
@@ -195,7 +214,6 @@ class CRDTMemory:
         else:
             winner = self._resolve_lww(candidates, clocks)
 
-        # Store the resolved value with a merged clock
         merged_clock = clocks[0]
         for c in clocks[1:]:
             merged_clock = merged_clock.merge(c)
@@ -203,8 +221,138 @@ class CRDTMemory:
 
         meta = {**(winner.metadata or {}), "_vector_clock": merged_clock.to_dict(), "_resolved": True}
         resolved = self._memory.store("fact", winner.content, meta)
-        logger.info("CRDT conflict resolved", extra={"fact_key": fact_key, "resolved_id": resolved.memory_id})
+        logger.info(
+            "CRDT conflict resolved",
+            extra={"fact_key": fact_key, "resolved_id": resolved.memory_id, "strategy": self._strategy},
+        )
         return resolved
+
+    def _resolve_with_locks(
+        self,
+        candidates: list[MemoryRecord],
+        clocks: list[VectorClock],
+        fact_key: str,
+    ) -> MemoryRecord:
+        """Resolve concurrent writes inside a SERIALIZABLE transaction with SELECT FOR UPDATE.
+
+        Prevents write-skew anomalies by locking the candidate rows before
+        inserting the resolved record, with automatic retry on CockroachDB
+        serialization conflicts (code 40001).
+        """
+        if self._strategy == "lww":
+            winner = self._resolve_lww(candidates, clocks)
+        elif self._strategy == "semantic" and self._llm_merge is not None:
+            winner = self._resolve_semantic(candidates, clocks, fact_key)
+        else:
+            winner = self._resolve_lww(candidates, clocks)
+
+        merged_clock = clocks[0]
+        for c in clocks[1:]:
+            merged_clock = merged_clock.merge(c)
+        merged_clock = merged_clock.tick(self.agent_id)
+
+        meta: dict[str, Any] = {
+            **(winner.metadata or {}),
+            "_vector_clock": merged_clock.to_dict(),
+            "_resolved": True,
+        }
+
+        memory_ids = [r.memory_id for r in candidates]
+        content = winner.content
+        meta_json = json.dumps(meta, sort_keys=True)
+
+        def _execute(cur: Any) -> MemoryRecord:
+            cur.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            cur.execute(
+                "SELECT memory_id FROM agent_memory WHERE memory_id = ANY(%s) FOR UPDATE",
+                (memory_ids,),
+            )
+            cur.execute(
+                "SELECT cryptographic_hash FROM agent_memory "
+                "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                (self.agent_id,),
+            )
+            row = cur.fetchone()
+            prev_hash = str(row[0]) if row else None
+
+            crypto_hash = hashlib.sha256(
+                (content + meta_json + (prev_hash or "")).encode()
+            ).hexdigest()
+
+            cur.execute(
+                "INSERT INTO agent_memory "
+                "(agent_id, memory_type, content, embedding, metadata, "
+                "previous_hash, cryptographic_hash, expires_at, importance_score, "
+                "trust_level, source_provenance) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING memory_id, created_at",
+                (
+                    self.agent_id,
+                    "fact",
+                    content,
+                    "[]",
+                    meta_json,
+                    prev_hash,
+                    crypto_hash,
+                    None,
+                    5.0,
+                    2,
+                    "agent_direct",
+                ),
+            )
+            insert_row = cur.fetchone()
+            if insert_row is None:
+                raise RuntimeError("INSERT RETURNING did not return a row")
+
+            row_map = insert_row._mapping if hasattr(insert_row, "_mapping") else {
+                "memory_id": insert_row[0], "created_at": insert_row[1],
+            }
+
+            workflow_id = str(uuid.uuid4())
+            cur.execute(
+                "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                (self.agent_id, workflow_id, "crdt_resolve", json.dumps({
+                    "fact_key": fact_key,
+                    "candidates": memory_ids,
+                    "strategy": self._strategy,
+                })),
+            )
+
+            return MemoryRecord(
+                memory_id=str(row_map["memory_id"]),
+                agent_id=self.agent_id,
+                memory_type="fact",
+                content=content,
+                embedding=[],
+                metadata=meta,
+                previous_hash=prev_hash,
+                cryptographic_hash=crypto_hash,
+                created_at=row_map["created_at"],
+                expires_at=None,
+                importance_score=5.0,
+                trust_level=2,
+                source_provenance="agent_direct",
+            )
+
+        pool = self._memory.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            engine = SerializationRetryEngine()
+            result = engine.execute(conn, _execute)
+            logger.info(
+                "CRDT conflict resolved",
+                extra={
+                    "fact_key": fact_key, "resolved_id": result.memory_id,
+                    "strategy": self._strategy, "locking": True,
+                },
+            )
+            return result
+        except Exception:
+            with contextlib.suppress(Exception):
+                conn.rollback()
+            raise
+        finally:
+            pool.release(conn)
 
     def get_clock(self) -> VectorClock:
         """Return the current vector clock snapshot."""

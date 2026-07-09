@@ -23,6 +23,21 @@ class MemoryRecord(BaseModel):
     trust_level: int = 2
     source_provenance: str = "agent_direct"
     overwrite_count: int = 0
+    is_pinned: bool = False
+    pin_priority: int = 0
+
+    @property
+    def freshness_score(self) -> float:
+        """1.0 = fresh, 0.0 = stale. Combines age + access frequency."""
+        import math
+        now = datetime.now(UTC)
+        created = self.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        days_old = (now - created).days
+        age_factor = math.exp(-0.01 * days_old)
+        access_factor = min(self.access_count / 10, 1.0)
+        return round((age_factor * 0.6) + (access_factor * 0.4), 4)
 
     @classmethod
     def from_dict(cls, d: dict) -> MemoryRecord:
@@ -194,6 +209,7 @@ _MEMORY_FIELDS = [
     "metadata", "previous_hash", "cryptographic_hash",
     "created_at", "expires_at", "access_count", "importance_score",
     "trust_level", "source_provenance", "overwrite_count",
+    "is_pinned", "pin_priority",
 ]
 
 _ENTITY_FIELDS = [

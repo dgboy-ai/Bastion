@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from typing import Any
 
 import anyio
@@ -32,6 +33,7 @@ from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl, AnyUrl
 
 from bastion.auth_provider import BastionOAuthProvider, is_oauth_enabled
+from bastion.errors import SecurityBlockError
 from bastion.limiter import RequestLimiter
 from bastion.memory import BastionMemory
 from bastion.pool import ConnectionPool
@@ -52,6 +54,7 @@ async def _notify_resource_updated(ctx: Context, uri: str) -> None:
 _SHARED_POOL: ConnectionPool | None = None
 _API_KEYS: set[str] | None = None
 _RATE_LIMITER: RequestLimiter | None = None
+_LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 
 
 def _load_api_keys() -> set[str]:
@@ -79,6 +82,7 @@ def _get_limiter() -> RequestLimiter:
             max_concurrent=int(os.environ.get("BASTION_MCP_MAX_CONCURRENT", "20")),
             max_queue=int(os.environ.get("BASTION_MCP_MAX_QUEUE", "200")),
             timeout_seconds=int(os.environ.get("BASTION_MCP_TIMEOUT", "60")),
+            instance_id=_LIMITER_INSTANCE_ID,
         )
     return _RATE_LIMITER
 
@@ -425,13 +429,30 @@ def create_server(
         expires_in_seconds: int | None = None,
     ) -> str:
         mem = _resolve_memory(ctx)
-        record = await anyio.to_thread.run_sync(
-            mem.store,
-            memory_type,
-            content,
-            metadata,
-            expires_in_seconds,
-        )
+        try:
+            record = await anyio.to_thread.run_sync(
+                mem.store,
+                memory_type,
+                content,
+                metadata,
+                expires_in_seconds,
+            )
+        except SecurityBlockError as exc:
+            logger.warning("Memory store blocked by guard: %s", exc)
+            report = getattr(exc, "report", None)
+            result = {
+                "error": "security_block",
+                "detail": str(exc),
+                "is_safe": False,
+            }
+            if report:
+                result["findings"] = [
+                    {"detector": f.detector, "threat_type": f.threat_type, "severity": f.severity, "detail": f.detail}
+                    for f in report.findings
+                ]
+                result["trust_score"] = report.trust_score
+                result["poisoning_risk"] = report.poisoning_risk
+            return json.dumps(result, indent=2)
         await _notify_resource_updated(ctx, "bastion://stats")
         await _notify_resource_updated(ctx, f"bastion://memory/{record.memory_id}")
         return json.dumps(record.to_dict(), indent=2, default=str)
@@ -526,6 +547,132 @@ def create_server(
         return json.dumps({"deleted": memory_id, "status": "ok"}, indent=2)
 
     @mcp.tool(
+        name="memory_pin",
+        title="Pin Safety-Critical Memory",
+        description=(
+            "Pin a safety-critical memory that survives context compaction. "
+            "Pinned memories are re-injected before every query. "
+            "pin_priority: 0=normal, 1=important, 2=CRITICAL."
+        ),
+        annotations=ToolAnnotations(
+            title="Pin Safety-Critical Memory",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def memory_pin(
+        ctx: Context,
+        content: str,
+        memory_type: str = "safety_rule",
+        pin_priority: int = 2,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        record = await anyio.to_thread.run_sync(
+            mem.pin, memory_type, content, pin_priority, metadata,
+        )
+        await _notify_resource_updated(ctx, "bastion://stats")
+        return json.dumps(record.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="memory_get_pinned",
+        title="Get Pinned Memories",
+        description=(
+            "Retrieve all pinned memories with priority >= min_priority. "
+            "Called automatically before every search to inject safety rules."
+        ),
+        annotations=ToolAnnotations(
+            title="Get Pinned Memories",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def memory_get_pinned(
+        ctx: Context,
+        min_priority: int = 1,
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        results = await anyio.to_thread.run_sync(mem.get_pinned, min_priority)
+        return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+
+    @mcp.tool(
+        name="memory_list",
+        title="List Agent Memories",
+        description=(
+            "List all memories for the current agent. Supports filtering by type "
+            "and pagination. User-facing governance tool."
+        ),
+        annotations=ToolAnnotations(
+            title="List Agent Memories",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def memory_list(
+        ctx: Context,
+        memory_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
+        return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+
+    @mcp.tool(
+        name="memory_correct",
+        title="Correct Memory Content",
+        description=(
+            "Update a memory's content. User-facing governance tool for "
+            "correcting stored information."
+        ),
+        annotations=ToolAnnotations(
+            title="Correct Memory Content",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def memory_correct(
+        ctx: Context,
+        memory_id: str,
+        new_content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        record = await anyio.to_thread.run_sync(mem.correct_memory, memory_id, new_content, metadata)
+        if record is None:
+            return json.dumps({"error": f"Memory {memory_id} not found"})
+        await _notify_resource_updated(ctx, "bastion://stats")
+        return json.dumps(record.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="memory_health",
+        title="Memory Health Metrics",
+        description=(
+            "Return memory health metrics: total count, pinned count, "
+            "freshness ratio, average access/importance scores."
+        ),
+        annotations=ToolAnnotations(
+            title="Memory Health Metrics",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def memory_health(ctx: Context) -> str:
+        mem = _resolve_memory(ctx)
+        health = await anyio.to_thread.run_sync(mem.memory_health)
+        return json.dumps(health, indent=2, default=str)
+
+    @mcp.tool(
         name="resolve_conflict",
         title="Resolve Memory Conflict",
         description=("Resolve conflicting memories from multiple agents using SERIALIZABLE isolation."),
@@ -618,6 +765,31 @@ def create_server(
             {
                 "name": "a2a_bridge",
                 "description": "A2A Agent Card for inter-agent discovery",
+                "read_only": True,
+            },
+            {
+                "name": "memory_pin",
+                "description": "Pin safety-critical memories that survive context compaction",
+                "read_only": False,
+            },
+            {
+                "name": "memory_get_pinned",
+                "description": "Get all pinned memories for safety rule injection",
+                "read_only": True,
+            },
+            {
+                "name": "memory_list",
+                "description": "List all memories with filtering and pagination",
+                "read_only": True,
+            },
+            {
+                "name": "memory_correct",
+                "description": "Update a memory's content for governance",
+                "read_only": False,
+            },
+            {
+                "name": "memory_health",
+                "description": "Memory health metrics: count, freshness, pinned",
                 "read_only": True,
             },
         ]

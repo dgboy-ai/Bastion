@@ -234,6 +234,10 @@ class AsyncConnectionPool:
     async def release(self, conn: Any) -> None:
         if self._pool is None:
             return
+        try:
+            await conn.execute("RESET ALL")
+        except Exception:
+            logger.warning("Failed to reset connection session context during async release")
         await self._pool.release(conn)
         self._total_released += 1
 

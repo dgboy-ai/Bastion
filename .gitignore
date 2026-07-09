@@ -23,9 +23,13 @@ bastion-memory-*.tgz
 dashboard/playwright-report/
 dashboard/test-results/
 later-work.md
+laterwork.md
 future.md
 futurescope.md
 research/
+knowledge.md
+knowledge_mimo_Ana.md
+production.md
 test_real_crdb.py
 htmlcov/
 *.log

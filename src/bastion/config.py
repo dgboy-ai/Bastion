@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,8 +21,8 @@ class BastionSettings(BaseSettings):
     aws_region: str = "ap-south-1"
     bedrock_read_timeout: int = 10
     bedrock_connect_timeout: int = 10
-    pool_min_size: int = 2
-    pool_max_size: int = 10
+    pool_min_size: int = 1
+    pool_max_size: int = 2
     pool_max_idle_seconds: int = 300
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: int = 30
@@ -40,7 +41,7 @@ class BastionSettings(BaseSettings):
     reinforce_boost: float = 1.0
     log_level: str = "INFO"
     compliance_mode: str | None = None
-    api_key: str = ""
+    api_key: SecretStr = SecretStr("")
 
 
 _settings: BastionSettings | None = None

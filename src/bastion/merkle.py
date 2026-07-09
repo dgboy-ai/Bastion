@@ -19,6 +19,12 @@ class MerkleTree:
     can verify that a specific memory block belongs to the chain without
     downloading the entire chain.
 
+    **Cryptographic domain separation** (0x00 for leaves, 0x01 for inner
+    nodes) prevents duplicate-structure collisions (Bitcoin CVE-2012-2459),
+    ensuring adversarial actors cannot forge valid unlearning receipts or
+    audit trails.  The leaf array is padded to the next power of 2 with
+    dummy sentinels rather than copying odd leaves upward.
+
     Usage:
         >>> leaves = ["a", "b", "c", "d"]
         >>> tree = MerkleTree(leaves)
@@ -29,7 +35,13 @@ class MerkleTree:
     def __init__(self, leaves: list[str]) -> None:
         if not leaves:
             raise ValueError("Cannot build Merkle tree from empty leaf list")
+        self._original_count = len(leaves)
         self._leaves = [self._hash(leaf) for leaf in leaves]
+        next_pow2 = 1
+        while next_pow2 < len(self._leaves):
+            next_pow2 <<= 1
+        sentinel = self._hash("")
+        self._leaves += [sentinel] * (next_pow2 - len(self._leaves))
         self._root, self._levels = self._build(self._leaves)
 
     @property
@@ -39,7 +51,7 @@ class MerkleTree:
 
     @property
     def size(self) -> int:
-        return len(self._leaves)
+        return self._original_count
 
     def proof(self, index: int) -> list[tuple[str, int]]:
         """
@@ -50,8 +62,8 @@ class MerkleTree:
 
         Raises ``IndexError`` if *index* is out of range.
         """
-        if index < 0 or index >= len(self._leaves):
-            raise IndexError(f"Leaf index {index} out of range (0-{len(self._leaves)-1})")
+        if index < 0 or index >= self._original_count:
+            raise IndexError(f"Leaf index {index} out of range (0-{self._original_count-1})")
         proof: list[tuple[str, int]] = []
         for level in self._levels:
             sibling_index = index ^ 1
@@ -72,9 +84,9 @@ class MerkleTree:
         current = MerkleTree._hash(leaf)
         for sibling, is_left in proof:
             if is_left:
-                current = MerkleTree._hash(sibling + current)
+                current = MerkleTree._pair_hash(sibling, current)
             else:
-                current = MerkleTree._hash(current + sibling)
+                current = MerkleTree._pair_hash(current, sibling)
         return current == root
 
     # ------------------------------------------------------------------
@@ -83,11 +95,13 @@ class MerkleTree:
 
     @staticmethod
     def _hash(data: str) -> str:
-        return hashlib.sha256(data.encode("utf-8")).hexdigest()
+        """Leaf node hash with domain separation prefix 0x00."""
+        return hashlib.sha256(b'\x00' + data.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _pair_hash(left: str, right: str) -> str:
-        return MerkleTree._hash(left + right)
+        """Inner node hash with domain separation prefix 0x01."""
+        return hashlib.sha256(b'\x01' + left.encode("utf-8") + right.encode("utf-8")).hexdigest()
 
     def _build(self, leaves: list[str]) -> tuple[str, list[list[str]]]:
         """Build the tree bottom-up and return ``(root, levels)``."""
@@ -97,10 +111,7 @@ class MerkleTree:
             levels.append(current[:])
             next_level: list[str] = []
             for i in range(0, len(current), 2):
-                if i + 1 < len(current):
-                    next_level.append(self._pair_hash(current[i], current[i + 1]))
-                else:
-                    next_level.append(current[i])  # odd leaf carries upward
+                next_level.append(self._pair_hash(current[i], current[i + 1]))
             current = next_level
         root = current[0] if current else self._hash("")
         return root, levels
