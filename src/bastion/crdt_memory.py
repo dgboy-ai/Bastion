@@ -363,12 +363,27 @@ class CRDTMemory:
         return VectorClock()
 
     def _resolve_lww(self, candidates: list[MemoryRecord], clocks: list[VectorClock]) -> MemoryRecord:
-        """Last-writer-wins: pick the record with the most advanced clock."""
-        paired = list(zip(candidates, clocks, strict=True))
-        def _clock_total(pair: tuple[MemoryRecord, VectorClock]) -> int:
-            return sum(pair[1].to_dict().values())
-        paired.sort(key=_clock_total)
-        return paired[-1][0]
+        """Last-writer-wins: pick the causally most advanced record.
+
+        Uses proper vector clock dominance: if one clock happens-before
+        the other, that one wins. If concurrent (both have entries the
+        other lacks), falls back to created_at timestamp.
+        """
+        best = candidates[0]
+        best_clock = clocks[0]
+        for i in range(1, len(candidates)):
+            if clocks[i].happens_before(best_clock):
+                continue
+            if best_clock.happens_before(clocks[i]):
+                best = candidates[i]
+                best_clock = clocks[i]
+            elif clocks[i].is_concurrent_with(best_clock):
+                ts_i = candidates[i].created_at or datetime.min.replace(tzinfo=UTC)
+                ts_best = best.created_at or datetime.min.replace(tzinfo=UTC)
+                if ts_i > ts_best:
+                    best = candidates[i]
+                    best_clock = clocks[i]
+        return best
 
     def _resolve_semantic(
         self,

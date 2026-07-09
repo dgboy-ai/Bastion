@@ -333,10 +333,15 @@ def create_a2a_server(
             return False
         bucket.append(now)
         _rate_checks += 1
+        # Periodic cleanup: evict empty or stale buckets, cap at 10k distinct IPs
         if _rate_checks % 1000 == 0:
             stale = [ip for ip, ts in _rate_buckets.items() if not ts]
             for ip in stale:
                 del _rate_buckets[ip]
+            if len(_rate_buckets) > 10000:
+                sorted_ips = sorted(_rate_buckets, key=lambda ip: _rate_buckets[ip][-1] if _rate_buckets[ip] else 0)
+                for ip in sorted_ips[:-5000]:
+                    del _rate_buckets[ip]
         return True
 
     def _check_version(request: Request) -> bool:

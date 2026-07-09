@@ -166,7 +166,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
       })
       .attr("tabIndex", 0)
       .attr("role", "button")
-      .attr("aria-label", (d) => `${d.label || d.id} - ${d.type || 'node'}`)
+      .attr("aria-label", (d) => `${d.name || d.id} - ${d.type || 'node'}`)
       .on("keydown", (event, d) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();

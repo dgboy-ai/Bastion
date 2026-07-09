@@ -1,28 +1,43 @@
-# Bastion — Docker Compose Stack
+# Bastion — Docker Compose Stack (Development)
 # One-command local development: docker compose up
 #
 # This spins up:
-# - CockroachDB (single-node for local dev)
+# - CockroachDB (single-node, TLS-enabled for local dev)
 # - Bastion Dashboard (Next.js at localhost:3000)
 # - Pre-seeded demo agent with sample memories
 #
-# For production, use CockroachDB Cloud + AWS Lambda.
+# TLS certificates are auto-generated on first run via the certs-init service.
+# For production, use CockroachDB Cloud + AWS Lambda (see lambda/template.yaml).
 
 services:
+  # ── TLS Certificate Initializer ──────────────────────────────────────────
+  certs-init:
+    image: cockroachdb/cockroach:latest
+    volumes:
+      - certs:/certs
+      - ./scripts:/scripts:ro
+    entrypoint: ["sh", "/scripts/generate-certs.sh"]
+    restart: "no"
+
   # ── CockroachDB ──────────────────────────────────────────────────────────
   cockroachdb:
     image: cockroachdb/cockroach:latest
-    command: start-single-node --insecure --accept-payloads-for-urls=/
+    depends_on:
+      certs-init:
+        condition: service_completed_successfully
+    command: start-single-node --certs-dir=/certs --accept-payloads-for-urls=/
     ports:
       - "26257:26257"
       - "8080:8080"
     volumes:
+      - certs:/certs:ro
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     networks:
       - bastion-net
 
@@ -33,25 +48,21 @@ services:
       cockroachdb:
         condition: service_healthy
     volumes:
-      - ./schema:/schemas
+      - certs:/certs:ro
+      - ./schema:/schemas:ro
     entrypoint: >
       sh -c "
         echo 'Waiting for CockroachDB...'
-        sleep 5
-        echo 'Applying schema 001_agent_checkpoints...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/001_agent_checkpoints.sql || true
-        echo 'Applying schema 002_agent_memory...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/002_agent_memory.sql || true
-        echo 'Applying schema 003_agent_audit...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/003_agent_audit.sql || true
-        echo 'Applying schema 004_agent_coordination...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/004_agent_coordination.sql || true
-        echo 'Applying schema 005_agent_entities...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/005_agent_entities.sql || true
-        echo 'Applying schema 006_agent_relations...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/006_agent_relations.sql || true
-        echo 'Applying schema 007_memory_decay...'
-        cockroach sql --insecure --host=cockroachdb -f /schemas/007_memory_decay.sql || true
+        for i in \$(seq 1 30); do
+          cockroach sql --certs-dir=/certs --host=cockroachdb -e 'SELECT 1' >/dev/null 2>&1 && break
+          echo \"  attempt \${i}...\"
+          sleep 2
+        done
+        echo 'Applying schemas...'
+        for f in /schemas/0*.sql; do
+          echo \"  -> \$(basename \$f)\"
+          cockroach sql --certs-dir=/certs --host=cockroachdb -f \"\$f\" 2>&1 || echo \"  [warn] \$(basename \$f) may have already been applied\"
+        done
         echo 'Schema applied successfully!'
       "
     networks:
@@ -64,12 +75,13 @@ services:
       schema-init:
         condition: service_completed_successfully
     volumes:
-      - ./scripts:/scripts
-      - ./src:/app/src
-      - ./pyproject.toml:/app/pyproject.toml
+      - certs:/certs:ro
+      - ./scripts:/scripts:ro
+      - ./src:/app/src:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
     working_dir: /app
     environment:
-      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
     entrypoint: >
       sh -c "
         echo 'Installing dependencies...'
@@ -88,8 +100,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - certs:/certs:ro
     environment:
-      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
       - BASTION_MOCK=false
     depends_on:
       cockroachdb:
@@ -98,6 +112,7 @@ services:
       - bastion-net
 
 volumes:
+  certs:
   cockroach-data:
 
 networks:

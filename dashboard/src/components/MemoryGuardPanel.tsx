@@ -33,18 +33,20 @@ const SEVERITY_COLORS: Record<string, string> = {
 export default function MemoryGuardPanel() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [scanInput, setScanInput] = useState("");
   const [scanResult, setScanResult] = useState<{ isSafe: boolean; findings: { detector: string; severity: string; detail: string }[] } | null>(null);
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const ac = new AbortController();
     fetch("/api/asi06", { signal: ac.signal })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(setReport)
-      .catch((err) => { console.error("[MemoryGuardPanel] fetch failed:", err); })
-      .finally(() => setLoading(false));
-    return () => ac.abort();
+      .then((data) => { if (!cancelled) setReport(data); })
+      .catch(() => { if (!cancelled) setFetchError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; ac.abort(); };
   }, []);
 
   const handleScan = async () => {
@@ -64,6 +66,16 @@ export default function MemoryGuardPanel() {
       setScanning(false);
     }
   };
+
+  if (fetchError) {
+    return (
+      <div className="p-6 rounded-xl bg-gray-900/50 border border-gray-700">
+        <div className="text-sm text-red-400 text-center py-8">
+          Failed to load guard data. Check your connection.
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="p-6 rounded-xl bg-gray-900/50 border border-gray-700 animate-pulse h-64" />;

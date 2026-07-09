@@ -166,14 +166,15 @@ def mock_list_all(
     namespace_scope: str = "own",
     region_filter: str | None = None,
 ) -> list[MemoryRecord]:
-    if namespace_scope == "shared":
-        agent_ids = _namespace_map.get(agent_id, {agent_id})
-        records = []
-        for aid in agent_ids:
-            recs = _agent_data.get(aid, [])
-            records.extend(recs)
-    else:
-        records = _agent_data.get(agent_id, [])
+    with _lock:
+        if namespace_scope == "shared":
+            agent_ids = _namespace_map.get(agent_id, {agent_id})
+            records = []
+            for aid in agent_ids:
+                recs = _agent_data.get(aid, [])
+                records.extend(recs)
+        else:
+            records = _agent_data.get(agent_id, [])
     if memory_type:
         records = [r for r in records if r["memory_type"] == memory_type]
     if region_filter is not None:
