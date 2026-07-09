@@ -46,7 +46,6 @@ jobs:
           pip install -e ".[dev,all]" pytest-xdist --upgrade pip
       - name: Run tests (parallel)
         run: pytest -xvs --tb=short -n auto
-        working-directory: src
         env:
           BASTION_MOCK: "true"
       - name: Upload coverage
