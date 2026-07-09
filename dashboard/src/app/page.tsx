@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -36,7 +36,7 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; time: string; value: string } | null>(null);
-  
+
   const [queryLatency, setQueryLatency] = useState<number | null>(null);
 
   // Interactive states
@@ -55,6 +55,10 @@ export default function OverviewPage() {
     latest: { overall_drift_score: number; status: string; top_drift_signals: string[]; recommendation: string } | null;
     timeSeries: { score: number; timestamp: string; status: string }[];
   } | null>(null);
+
+  const prevStatsRef = useRef<string>("");
+  const prevTrustKey = useRef<string>("");
+  const prevDriftKey = useRef<string>("");
 
   const fetchData = useCallback(async () => {
     const controller = new AbortController();
@@ -75,12 +79,24 @@ export default function OverviewPage() {
       const trustData = trustRes.ok ? await trustRes.json() : null;
       const driftRaw = driftRes.ok ? await driftRes.json() : null;
 
-      setStats(statsData.data || statsData);
-      setTrustSummary((trustData?.data || trustData)?.summary ?? null);
-      setTrustAlerts((trustData?.data || trustData)?.alerts ?? []);
+      const statsKey = JSON.stringify(statsData);
+      if (statsKey !== prevStatsRef.current) {
+        prevStatsRef.current = statsKey;
+        setStats(statsData.data || statsData);
+      }
+      const trustKey = JSON.stringify(trustData);
+      if (trustKey !== prevTrustKey.current) {
+        prevTrustKey.current = trustKey;
+        setTrustSummary((trustData?.data || trustData)?.summary ?? null);
+        setTrustAlerts((trustData?.data || trustData)?.alerts ?? []);
+      }
       if (driftRaw) {
-        const driftData = driftRaw.data || driftRaw;
-        setDriftData({ latest: driftData.latest, timeSeries: driftData.timeSeries });
+        const driftKey = JSON.stringify(driftRaw);
+        if (driftKey !== prevDriftKey.current) {
+          prevDriftKey.current = driftKey;
+          const driftData = driftRaw.data || driftRaw;
+          setDriftData({ latest: driftData.latest, timeSeries: driftData.timeSeries });
+        }
       }
       setError(null);
 
@@ -105,6 +121,42 @@ export default function OverviewPage() {
     const interval = setInterval(fetchData, 3000);
     return () => { clearTimeout(id); clearInterval(interval); };
   }, [fetchData]);
+
+  const decayPoints = useMemo(() => stats?.decayCurve ? stats.decayCurve.map((pt, idx) => {
+    const x = 30 + idx * 50;
+    const y = 80 - (pt.value / 10) * 60;
+    return { x, y, time: pt.label, value: `${pt.value.toFixed(2)}` };
+  }) : [], [stats?.decayCurve]);
+
+  const { pathD, areaD } = useMemo(() => {
+    let p = "";
+    let a = "";
+    if (decayPoints.length > 0) {
+      p = `M${decayPoints[0].x},${decayPoints[0].y}`;
+      for (let i = 1; i < decayPoints.length; i++) {
+        const prev = decayPoints[i - 1];
+        const curr = decayPoints[i];
+        p += ` C${prev.x + 25},${prev.y} ${curr.x - 25},${curr.y} ${curr.x},${curr.y}`;
+      }
+      a = `${p} L${decayPoints[decayPoints.length - 1].x},90 L${decayPoints[0].x},90 Z`;
+    }
+    return { pathD: p, areaD: a };
+  }, [decayPoints]);
+
+  const { facts, semCache, episodic } = useMemo(() => {
+    const f = stats?.memories ? Math.round(stats.memories * 0.6) : 15;
+    const s = stats?.memories ? Math.round(stats.memories * 0.25) : 6;
+    const e = stats?.memories ? Math.max(1, stats.memories - f - s) : 3;
+    return { facts: f, semCache: s, episodic: e };
+  }, [stats?.memories]);
+
+  const filteredAudits = useMemo(() => stats?.recentAudits
+    ? stats.recentAudits.filter((log) => {
+        if (!selectedFilter) return true;
+        const detailsString = JSON.stringify(log.details).toLowerCase();
+        return detailsString.includes(selectedFilter.toLowerCase());
+      })
+    : [], [stats?.recentAudits, selectedFilter]);
 
   if (loading) {
     return (
@@ -137,36 +189,6 @@ export default function OverviewPage() {
       </div>
     );
   }
-
-  const decayPoints = stats?.decayCurve ? stats.decayCurve.map((pt, idx) => {
-    const x = 30 + idx * 50;
-    const y = 80 - (pt.value / 10) * 60;
-    return { x, y, time: pt.label, value: `${pt.value.toFixed(2)}` };
-  }) : [];
-
-  let pathD = "";
-  let areaD = "";
-  if (decayPoints.length > 0) {
-    pathD = `M${decayPoints[0].x},${decayPoints[0].y}`;
-    for (let i = 1; i < decayPoints.length; i++) {
-      const prev = decayPoints[i - 1];
-      const curr = decayPoints[i];
-      pathD += ` C${prev.x + 25},${prev.y} ${curr.x - 25},${curr.y} ${curr.x},${curr.y}`;
-    }
-    areaD = `${pathD} L${decayPoints[decayPoints.length - 1].x},90 L${decayPoints[0].x},90 Z`;
-  }
-
-  const facts = stats?.memories ? Math.round(stats.memories * 0.6) : 15;
-  const semCache = stats?.memories ? Math.round(stats.memories * 0.25) : 6;
-  const episodic = stats?.memories ? Math.max(1, stats.memories - facts - semCache) : 3;
-
-  const filteredAudits = stats?.recentAudits
-    ? stats.recentAudits.filter((log) => {
-        if (!selectedFilter) return true;
-        const detailsString = JSON.stringify(log.details).toLowerCase();
-        return detailsString.includes(selectedFilter.toLowerCase());
-      })
-    : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
