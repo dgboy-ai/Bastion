@@ -106,3 +106,23 @@ Serve interactive documentation from the server:
 - OpenAPI 3.1 spec at `/.well-known/openapi.json`
 - MCP documentation page with tool/resource/prompt reference
 - Auto-generated from FastMCP schema
+
+---
+
+## DataHub Hackathon Integration Roadmap (Post-CockroachDB Finish)
+
+To submit Bastion to **Build with DataHub: The Agent Hackathon** (Deadline: August 11, 2026), we will implement a dedicated metadata context bridge.
+
+### 1. DataHub MCP Bridge (`datahub_bridge.py`)
+- **Work Item:** Create an ingestion adapter inside `src/bastion/adapters/datahub.py` that maps DataHub's context graph.
+- **Functionality:** 
+    *   Pull column lineages, database schemas, and data ownership definitions via the DataHub MCP Server.
+    *   Store retrieved schemas inside Bastion's episodic memory database under a dedicated namespace (`datahub_metadata`).
+
+### 2. Metadata Poisoning Pre-Scanner (OWASP Guard integration)
+- **Work Item:** Direct Bastion's `guard.py` scanner to inspect incoming DataHub schemas and table descriptions before letting coding agents read them, blocking potential indirect prompt injection vectors.
+
+### 3. Dual Repository Submission Setup
+- **Work Item:** Prepare a separate repository branch (`release/datahub`) using the **Apache 2.0 license file** (specifically required by DataHub).
+- **Video & Demo:** Record a separate 3-minute video showing a data developer agent using Bastion's pinned constraints and safety checks to write schema-correct, secure database code retrieved from DataHub.
+- **Lineage Contribution:** Write generated code relationships back to the DataHub metadata lineage chart, satisfying the "meaningful contribution to the graph" judging criteria.
