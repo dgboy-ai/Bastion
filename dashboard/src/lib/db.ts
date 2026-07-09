@@ -11,8 +11,6 @@ if (!connectionString) {
   console.log("[Bastion] BASTION_CONN configured, connecting to CockroachDB...");
 }
 
-const isDev = process.env.NODE_ENV === "development";
-
 export const pool = connectionString
   ? new Pool({
       connectionString,
@@ -57,6 +55,7 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
   } catch (err) {
+    if (isProduction) throw err;
     console.warn("[DB Query] failed, falling back to mock:", err);
     return { rows: [], mock: true } as unknown as SafeQueryResult;
   }
