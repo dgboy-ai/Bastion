@@ -185,8 +185,7 @@ class CognitiveRulesEngine:
         best_weight = 0.0
 
         for rule in self.get_active_rules():
-            if self._rule_matches_context(rule, context):
-                if rule.weight > best_weight:
+            if self._rule_matches_context(rule, context) and rule.weight > best_weight:
                     best = RuleRecommendation(
                         rule_id=rule.rule_id,
                         category=rule.category,
@@ -331,6 +330,4 @@ class CognitiveRulesEngine:
                 return True
         # Also check if the action name appears in the trigger
         action = context.get("action", "")
-        if action and action.lower() in trigger_lower:
-            return True
-        return False
+        return bool(action and action.lower() in trigger_lower)

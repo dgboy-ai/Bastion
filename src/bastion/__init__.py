@@ -117,4 +117,6 @@ __all__ = [
     "ToolScanResult",
     "scan_tool_manifest",
     "multilang_scan",
+    "MemoryLocality",
+    "DataRegion",
 ]

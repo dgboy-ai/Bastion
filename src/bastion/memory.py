@@ -356,7 +356,9 @@ class BastionMemory:
             return _mock.mock_list_memories(self.agent_id, memory_type, limit, offset)
         return self._list_memories_real(memory_type, limit, offset)
 
-    def correct_memory(self, memory_id: str, new_content: str, metadata: dict[str, Any] | None = None) -> MemoryRecord | None:
+    def correct_memory(
+        self, memory_id: str, new_content: str, metadata: dict[str, Any] | None = None,
+    ) -> MemoryRecord | None:
         """Update a memory's content. User-facing governance tool."""
         if not memory_id or not isinstance(memory_id, str):
             raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
