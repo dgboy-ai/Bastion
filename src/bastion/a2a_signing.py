@@ -72,10 +72,14 @@ class AgentCardSigner:
                 return cls(raw)
         return cls(raw)
 
+    def sign_data(self, data: bytes) -> bytes:
+        """Sign arbitrary bytes with the Ed25519 private key."""
+        return self._private_key.sign(data)
+
     def sign_card(self, card: dict[str, Any]) -> dict[str, Any]:
         signed = deepcopy(card)
         card_json = json.dumps(card, sort_keys=True, separators=(",", ":")).encode()
-        signature = self._private_key.sign(card_json)
+        signature = self.sign_data(card_json)
         signed["signature"] = {
             "algorithm": "ed25519",
             "value": base64.b64encode(signature).decode(),

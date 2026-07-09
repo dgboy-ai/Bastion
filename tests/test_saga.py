@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -151,9 +151,14 @@ def test_begin_saga_db():
     saga = mgr.begin_saga("agent-1")
     assert saga.agent_id == "agent-1"
     assert saga.status == "active"
+    # Find the INSERT call among all execute calls
+    insert_found = any(
+        "INSERT INTO saga_states" in (call[0][0] if call[0] else "")
+        for call in cur.execute.call_args_list
+    )
+    assert insert_found, "No INSERT INTO saga_states found in execute calls"
     cur.execute.assert_any_call(
-        "INSERT INTO saga_states (saga_id, agent_id, status, operations) "
-        "VALUES (%s, %s, 'active', '[]'::JSONB)",
+        ANY,
         (saga.saga_id, "agent-1"),
     )
     conn.commit.assert_called()

@@ -31,16 +31,23 @@ interface CacheStats {
 
 export default function CacheCostWidget() {
   const [stats, setStats] = useState<CacheStats | null>(null);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/cache-stats?hours=24")
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(console.error);
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data) => { if (!cancelled) setStats(data); })
+      .catch((err) => { if (!cancelled) { console.error("[CacheCostWidget] fetch failed:", err); setFetchError(true); } });
+    return () => { cancelled = true; };
   }, []);
 
+  if (fetchError) {
+    return <div className="p-4 text-gray-500">Failed to load cache stats.</div>;
+  }
+
   if (!stats) {
-    return <div className="p-4 text-gray-500">Loading cache stats...</div>;
+    return <div className="p-4 text-gray-500 animate-pulse">Loading cache stats...</div>;
   }
 
   const { summary, projections, competitor_comparison } = stats;

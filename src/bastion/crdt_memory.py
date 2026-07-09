@@ -200,13 +200,13 @@ class CRDTMemory:
             return self._resolve_unlocked(candidates, clocks, fact_key)
         return self._resolve_with_locks(candidates, clocks, fact_key)
 
-    def _resolve_unlocked(
+    def _resolve_candidates(
         self,
         candidates: list[MemoryRecord],
         clocks: list[VectorClock],
         fact_key: str,
-    ) -> MemoryRecord:
-        """Resolve without DB locking (mock mode)."""
+    ) -> tuple[MemoryRecord, VectorClock, dict[str, Any]]:
+        """Resolve winner and merge clocks — shared between locked and unlocked paths."""
         if self._strategy == "lww":
             winner = self._resolve_lww(candidates, clocks)
         elif self._strategy == "semantic" and self._llm_merge is not None:
@@ -220,6 +220,16 @@ class CRDTMemory:
         merged_clock = merged_clock.tick(self.agent_id)
 
         meta = {**(winner.metadata or {}), "_vector_clock": merged_clock.to_dict(), "_resolved": True}
+        return winner, merged_clock, meta
+
+    def _resolve_unlocked(
+        self,
+        candidates: list[MemoryRecord],
+        clocks: list[VectorClock],
+        fact_key: str,
+    ) -> MemoryRecord:
+        """Resolve without DB locking (mock mode)."""
+        winner, _merged_clock, meta = self._resolve_candidates(candidates, clocks, fact_key)
         resolved = self._memory.store("fact", winner.content, meta)
         logger.info(
             "CRDT conflict resolved",
@@ -239,23 +249,7 @@ class CRDTMemory:
         inserting the resolved record, with automatic retry on CockroachDB
         serialization conflicts (code 40001).
         """
-        if self._strategy == "lww":
-            winner = self._resolve_lww(candidates, clocks)
-        elif self._strategy == "semantic" and self._llm_merge is not None:
-            winner = self._resolve_semantic(candidates, clocks, fact_key)
-        else:
-            winner = self._resolve_lww(candidates, clocks)
-
-        merged_clock = clocks[0]
-        for c in clocks[1:]:
-            merged_clock = merged_clock.merge(c)
-        merged_clock = merged_clock.tick(self.agent_id)
-
-        meta: dict[str, Any] = {
-            **(winner.metadata or {}),
-            "_vector_clock": merged_clock.to_dict(),
-            "_resolved": True,
-        }
+        winner, _merged_clock, meta = self._resolve_candidates(candidates, clocks, fact_key)
 
         memory_ids = [r.memory_id for r in candidates]
         content = winner.content

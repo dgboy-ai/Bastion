@@ -88,6 +88,10 @@ _MAX_CONTENT_LENGTH = 100_000
 _MAX_AGENT_ID_LENGTH = 255
 _MAX_MEMORY_TYPE_LENGTH = 100
 
+# Allowlisted SQL fragments for agent filtering — prevents f-string injection
+_ALLOWED_AGENT_FILTERS = frozenset({"agent_id = %s", "agent_id LIKE %s"})
+_ALLOWED_REGION_CLAUSES = frozenset({"", "AND crdb_region = %s"})
+
 
 def _validate_memory_type(memory_type: str) -> None:
     if not memory_type or not isinstance(memory_type, str):
@@ -730,7 +734,8 @@ class BastionMemory:
                     trust_level=trust_level,
                     source_provenance=source_prov,
                 )
-        except Exception:
+        except Exception as exc:
+            logger.exception("store_real failed", extra={"agent_id": self.agent_id, "error": str(exc)})
             try:
                 conn.rollback()
             except Exception as rb_exc:
@@ -758,12 +763,14 @@ class BastionMemory:
             settings = get_settings()
             decay_rate = settings.decay_rate
             agent_filter = "agent_id LIKE %s"
+            assert agent_filter in _ALLOWED_AGENT_FILTERS, f"Unexpected agent_filter: {agent_filter}"
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
 
             region_clause = ""
             region_param: list[str] = []
             if region_filter is not None:
                 region_clause = "AND crdb_region = %s"
+                assert region_clause in _ALLOWED_REGION_CLAUSES, f"Unexpected region_clause: {region_clause}"
                 region_param = [region_filter]
 
             with conn.cursor() as cur:
@@ -813,12 +820,14 @@ class BastionMemory:
         self._set_rls_context(conn)
         try:
             agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
+            assert agent_filter in _ALLOWED_AGENT_FILTERS, f"Unexpected agent_filter: {agent_filter}"
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
 
             region_clause = ""
             region_param: list[str] = []
             if region_filter is not None:
                 region_clause = "AND crdb_region = %s"
+                assert region_clause in _ALLOWED_REGION_CLAUSES, f"Unexpected region_clause: {region_clause}"
                 region_param = [region_filter]
 
             with conn.cursor() as cur:
@@ -1344,6 +1353,7 @@ class BastionMemory:
                     result.append((str(t[0]), str(t[1]), str(t[2]), str(t[3]), float(t[4])))
             return result if result else triples
         except Exception:
+            logger.exception("LLM triple verification failed, falling back to unverified triples")
             return triples
 
     def _store_with_graph_real(

@@ -184,6 +184,13 @@ export default function GraphPage() {
             <span>Error</span> RENDER FAILED
           </div>
           <div className="alert-desc">{error}</div>
+          <button
+            className="btn btn-outline"
+            style={{ marginTop: "8px", fontSize: "12px", padding: "4px 14px" }}
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
         </div>
       )}
 

@@ -42,7 +42,7 @@ export default function MemoryGuardPanel() {
     fetch("/api/asi06", { signal: ac.signal })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(setReport)
-      .catch(() => { /* mock fallback handled silently */ })
+      .catch((err) => { console.error("[MemoryGuardPanel] fetch failed:", err); })
       .finally(() => setLoading(false));
     return () => ac.abort();
   }, []);
@@ -58,6 +58,8 @@ export default function MemoryGuardPanel() {
       });
       const data = await res.json();
       setScanResult(data);
+    } catch (err) {
+      console.error("[MemoryGuardPanel] scan failed:", err);
     } finally {
       setScanning(false);
     }

@@ -24,7 +24,7 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 60000,
     env: {
-      BASTION_API_KEY: 'bastion-demo-key-2026',
+      BASTION_API_KEY: process.env.BASTION_API_KEY || 'change-me-local-dev-only',
     },
   },
 })
