@@ -19,7 +19,7 @@ export default function HealthPage() {
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
-      .then(setHealth)
+      .then((json) => setHealth(json.data || json))
       .catch(() => setError("Failed to load health metrics"));
   }, []);
 

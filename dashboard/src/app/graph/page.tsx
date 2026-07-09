@@ -81,7 +81,8 @@ export default function GraphPage() {
         if (!res.ok) {
           throw new Error("Failed to fetch knowledge graph state");
         }
-        const data = await res.json();
+        const json = await res.json();
+        const data = json.data || json;
         
         setNodes(data.nodes as Node[]);
         setLinks(data.links as Link[]);
