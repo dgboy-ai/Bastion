@@ -23,6 +23,8 @@ We have separated Bastion's detailed technical operations, database designs, and
 | **Deployment Guide** | [docs/DEPLOYMENT.md](file:///c:/projects/bastion/docs/DEPLOYMENT.md) | AWS Lambda pools, Vercel scaling setups, and Docker Compose scripts. |
 | **Development Setup** | [docs/DEVELOPMENT.md](file:///c:/projects/bastion/docs/DEVELOPMENT.md) | Local mock mode configs, migrations, and MCP startup guides. |
 | **Repository Map** | [docs/REPO_MAP.md](file:///c:/projects/bastion/docs/REPO_MAP.md) | Complete codebase tree mapping modules to architectural roles. |
+| **CockroachDB Tools** | [docs/COCKROACHDB_TOOLS.md](file:///c:/projects/bastion/docs/COCKROACHDB_TOOLS.md) | How we use MCP Server, C-SPANN, ccloud CLI, and Agent Skills. |
+| **AWS Services** | [docs/AWS_SERVICES.md](file:///c:/projects/bastion/docs/AWS_SERVICES.md) | Bedrock embeddings, KMS encryption, and architecture diagram. |
 
 ---
 
