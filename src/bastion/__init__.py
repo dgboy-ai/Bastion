@@ -6,9 +6,6 @@ from bastion.config import BastionSettings, get_settings, reset_settings
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA, SchemaEvolution
 from bastion.drift import BehavioralDriftDetector, DriftReport
-from bastion.rules import CognitiveRulesEngine, CognitiveRule, ExecutionLog, RuleCategory
-from bastion.thought_chain import ThoughtChain, ThoughtNode, ThoughtType
-from bastion.locality import MemoryLocality, DataRegion
 from bastion.errors import (
     BastionAuthError,
     BastionConfigError,
@@ -26,6 +23,7 @@ from bastion.firewall import CognitiveFirewall
 from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.guard import ToolScanResult, multilang_scan, scan_tool_manifest
 from bastion.limiter import RequestLimiter
+from bastion.locality import DataRegion, MemoryLocality
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory, MemoryRouter
 from bastion.merkle import MerkleHashChain, MerkleTree
@@ -42,8 +40,10 @@ from bastion.models import (
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
+from bastion.rules import CognitiveRule, CognitiveRulesEngine, ExecutionLog, RuleCategory
 from bastion.saga import SagaBoundary, SagaMemoryManager
 from bastion.telemetry import TracedBastionMemory
+from bastion.thought_chain import ThoughtChain, ThoughtNode, ThoughtType
 from bastion.trust import TrustLevel, TrustReport, compute_trust_score
 
 __all__ = [
@@ -119,4 +119,11 @@ __all__ = [
     "multilang_scan",
     "MemoryLocality",
     "DataRegion",
+    "CognitiveRulesEngine",
+    "CognitiveRule",
+    "ExecutionLog",
+    "RuleCategory",
+    "ThoughtChain",
+    "ThoughtNode",
+    "ThoughtType",
 ]
