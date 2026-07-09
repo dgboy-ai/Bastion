@@ -11,6 +11,8 @@ export default function NavBar() {
     { href: "/", label: "Dashboard", icon: "📊" },
     { href: "/graph", label: "Knowledge Graph", icon: "🕸️" },
     { href: "/logs", label: "Memory Logs", icon: "📜" },
+    { href: "/health", label: "Health", icon: "💓" },
+    { href: "/compliance", label: "Compliance", icon: "⚖️" },
   ];
 
   return (
