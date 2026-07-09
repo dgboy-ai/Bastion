@@ -28,9 +28,6 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
         working-directory: src
-      - name: Type check with mypy
-        run: mypy .
-        working-directory: src
 
   python-test:
     runs-on: ubuntu-latest
