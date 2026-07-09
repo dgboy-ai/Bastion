@@ -79,7 +79,7 @@ export default function HealthPage() {
               background: "linear-gradient(90deg, rgba(0,255,102,0.2), rgba(0,255,102,0.4))",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 13, fontWeight: 600, color: "var(--accent-emerald)",
-              borderRight: freshPct > 0 ? "1px solid var(--glass-border)" : "none",
+              borderRight: Number(freshnessPct) > 0 ? "1px solid var(--glass-border)" : "none",
             }}
           >
             {freshnessPct}% fresh
