@@ -117,7 +117,7 @@ describe('OverviewPage', () => {
     render(<OverviewPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Hello Divyansh/)).toBeDefined()
+      expect(screen.getByText(/Hello Agent/)).toBeDefined()
     })
     expect(screen.getByText(/Memory Trust Score/)).toBeDefined()
     expect(screen.getByText(/Agent Stability Index/)).toBeDefined()
@@ -147,7 +147,7 @@ describe('OverviewPage', () => {
     render(<OverviewPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Hello Divyansh/)).toBeDefined()
+      expect(screen.getByText(/Hello Agent/)).toBeDefined()
     })
   })
 })

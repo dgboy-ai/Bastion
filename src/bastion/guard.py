@@ -89,7 +89,7 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
 
 _SECRET_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
-    (re.compile(r"\b(?![a-f0-9\-]{20,}\b)[A-Za-z0-9_-]{20,}\b"), "Potential API key or token", ThreatSeverity.HIGH),
+    (re.compile(r"\b(?![a-f0-9\-]{32,}\b)[A-Za-z0-9_-]{32,}\b"), "Potential API key or token", ThreatSeverity.HIGH),
     (
         re.compile(r"(?i)(?:sk|pk|api)[-_]?[a-z0-9]{20,}"),
         "Structured API key pattern",
@@ -167,6 +167,9 @@ class MemoryGuard:
         # 2. Secret/PII scan
         findings.extend(self._scan_secrets(content))
 
+        # 2.5 PII scan (email, phone, SSN, credit card)
+        findings.extend(self._scan_pii(content))
+
         # 3. LLM semantic classification (controlled by BASTION_LLM_GUARD)
         findings.extend(self._classify_with_llm(content))
 
@@ -241,6 +244,19 @@ class MemoryGuard:
                     confidence=0.90,
                 ))
                 break
+        return findings
+
+    def _scan_pii(self, content: str) -> list[Finding]:
+        findings: list[Finding] = []
+        _, detected = pii_scan(content)
+        if detected:
+            findings.append(Finding(
+                detector="pii_detection",
+                threat_type="ASI06: PII Leakage",
+                severity=ThreatSeverity.MEDIUM,
+                detail=f"PII detected: {', '.join(detected)}",
+                confidence=0.85,
+            ))
         return findings
 
     def _check_content_size(self, content: str) -> list[Finding]:

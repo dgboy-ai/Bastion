@@ -71,15 +71,15 @@ export default function NavBar() {
         </nav>
       </div>
 
-      {/* Sidebar Footer / User Profile */}
+      {/* Sidebar Footer / Agent Identity */}
       <div className="sidebar-footer">
-        <div className="profile-avatar">DB</div>
+        <div className="profile-avatar">BA</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
           <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
-            Divyansh Gupta
+            Bastion Agent
           </span>
           <span style={{ fontSize: "10px", color: "var(--mute)", fontFamily: "var(--font-mono)" }}>
-            bastion-admin
+            v0.6.0
           </span>
         </div>
       </div>

@@ -5,7 +5,7 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Tests-594%20passed-brightgreen)](#-test-verification-suite)
+[![Tests](https://img.shields.io/badge/Tests-820%20passed-brightgreen)](#-test-verification-suite)
 
 > **The system of record for autonomous AI systems. A persistent, secure, and self-healing memory engine that survives serverless crashes—so your agent swarms never forget.**
 
@@ -97,6 +97,61 @@ Bastion is a production-grade Agentic Memory framework built directly on **Cockr
          │  │  └───────────────────────────┴────────────────────────────┘  │ │
          │  └──────────────────────────────────────────────────────────────┘ │
          └───────────────────────────────────────────────────────────────────┘
+```
+```mermaid
+graph TB
+    subgraph Agents["AGENT CLIENTS"]
+        A1["Claude Desktop (MCP stdio)"]
+        A2["Custom Agent (LangGraph / CrewAI)"]
+        A3["A2A Agent (Google ADK)"]
+    end
+
+    subgraph Bastion["BASTION SERVICE LAYER"]
+        MCP["MCP Server (FastMCP)"]
+        A2A["A2A Server (FastAPI + Ed25519)"]
+        SDK["Python / TypeScript SDK"]
+    end
+
+    subgraph Guards["SECURITY & GUARDS"]
+        PG["Prompt Injection Guard (OWASP ASI06)"]
+        PII["PII Scrubber (Email / Phone / SSN)"]
+        MC["Merkle Hash Chain (Anti-Poisoning Ledger)"]
+        SSRF["SSRF Blocker (Private IP Deny)"]
+        RL["Rate Limiter (CockroachDB Slot Lock)"]
+    end
+
+    subgraph Storage["COCKROACHDB CLUSTER"]
+        AM["agent_memory (C-SPANN Vector Index)"]
+        AA["agent_audit (Hash Chain Audit Log)"]
+        AL["agent_limiter (Distributed Slots)"]
+        AC["agent_checkpoints (Time-Travel Snapshots)"]
+        AT["a2a_tasks (Protocol Persistence)"]
+    end
+
+    subgraph AWS["AWS SERVERLESS LAYER"]
+        CDC["Lambda: CDC Handler (Hash Verify + Snapshot)"]
+        WD["Lambda: Webhook Dispatcher (A2A Callback Push)"]
+        S3["S3: Memory Archives (Lifecycle to Glacier)"]
+        SNS["SNS: Alert Topic (Chain Break Alerts)"]
+        SQS["SQS: Retry Queue (Webhook Backlog)"]
+        EB["EventBridge: Keep-Alive (Cold Start Mitigation)"]
+    end
+
+    A1 -- "JSON-RPC stdio" --> MCP
+    A2 -- "JSON-RPC SSE/HTTP" --> MCP
+    A2 -- "A2A v1.0" --> A2A
+    A3 -- "A2A v1.0" --> A2A
+    SDK -- "Direct Connection" --> Storage
+    MCP --> Guards
+    A2A --> Guards
+    Guards --> Storage
+    Storage -- "CDC Changefeed" --> CDC
+    CDC --> S3
+    CDC --> SNS
+    Storage -- "CDC Changefeed" --> WD
+    WD --> SQS
+    EB --> CDC
+    EB --> WD
 ```
 
 ---
@@ -228,7 +283,7 @@ All modules are verified using continuous integration tests:
 python -m pytest --tb=short -q
 ```
 ```
-594 passed, 19 skipped, 0 failed
+820 passed, 41 skipped, 0 failed
 ├── test_memory.py          — Store, vector search, hash chains, time travel
 ├── test_agent.py           — Agent logic, RLS boundaries, checkpointing
 ├── test_limiter.py         — Distributed concurrency lock verification

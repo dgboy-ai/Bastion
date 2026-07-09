@@ -19,30 +19,45 @@ export default function LiveEventFeed() {
   const tailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const es = new EventSource("/api/events");
+    let retryDelay = 1000;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let es: EventSource | null = null;
 
-    es.onopen = () => {
-      setConnected(true);
-    };
+    function connect() {
+      es = new EventSource("/api/events");
 
-    es.onmessage = (msg) => {
-      try {
-        const data = JSON.parse(msg.data) as LiveEvent;
-        setEvents((prev) => {
-          const next = [...prev, data];
-          return next.length > 50 ? next.slice(-50) : next;
-        });
-      } catch {
-        // ignore parse errors
-      }
-    };
+      es.onopen = () => {
+        setConnected(true);
+        retryDelay = 1000;
+      };
 
-    es.onerror = () => {
-      setConnected(false);
-    };
+      es.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data) as LiveEvent;
+          setEvents((prev) => {
+            const next = [...prev, data];
+            return next.length > 50 ? next.slice(-50) : next;
+          });
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      es.onerror = () => {
+        setConnected(false);
+        es?.close();
+        retryTimer = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 30000);
+          connect();
+        }, retryDelay);
+      };
+    }
+
+    connect();
 
     return () => {
-      es.close();
+      es?.close();
+      if (retryTimer) clearTimeout(retryTimer);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);

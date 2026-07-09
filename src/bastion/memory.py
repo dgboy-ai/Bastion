@@ -16,7 +16,7 @@ from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
 from bastion.config import get_settings
 from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
-from bastion.guard import MemoryGuard
+from bastion.guard import MemoryGuard, pii_scan
 from bastion.log_setup import get_logger
 from bastion.models import AuditEntry, ClusterInfo, EntityRecord, MemoryRecord, MessageRecord, RelationRecord
 from bastion.pool import ConnectionPool
@@ -713,7 +713,7 @@ class BastionMemory:
                         self.agent_id,
                         workflow_id,
                         "memory_store",
-                        json.dumps({"memory_type": memory_type, "content_preview": content[:100]}),
+                        json.dumps({"memory_type": memory_type, "content_preview": pii_scan(content[:200])[0]}),
                     ),
                 )
                 conn.commit()
@@ -1290,27 +1290,43 @@ class BastionMemory:
         finally:
             pool.release(conn)
 
+    _TRIPLE_PATTERNS = [
+        (re.compile(r"(\w+)\s+is\s+a\s+(\w+)", re.IGNORECASE), "is_a", "entity_type"),
+        (re.compile(r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", re.IGNORECASE), "is", "attribute"),
+        (re.compile(r"(\w+)\s+loves\s+(\w+)", re.IGNORECASE), "loves", "relation"),
+        (re.compile(r"(\w+)\s+likes\s+(\w+)", re.IGNORECASE), "likes", "relation"),
+        (re.compile(r"(\w+)\s+uses\s+(\w+)", re.IGNORECASE), "uses", "relation"),
+        (re.compile(r"(\w+)\s+builds\s+(\w+)", re.IGNORECASE), "builds", "relation"),
+        (re.compile(r"(\w+)\s+works\s+on\s+(\w+)", re.IGNORECASE), "works_on", "relation"),
+        (re.compile(r"(\w+)\s+created\s+(\w+)", re.IGNORECASE), "created", "relation"),
+        (re.compile(r"(\w+)\s+owns\s+(\w+)", re.IGNORECASE), "owns", "relation"),
+        (re.compile(r"(\w+)\s+manages\s+(\w+)", re.IGNORECASE), "manages", "relation"),
+        (re.compile(r"(\w+)\s+reports\s+to\s+(\w+)", re.IGNORECASE), "reports_to", "relation"),
+        (re.compile(r"(\w+)\s+belongs\s+to\s+(\w+)", re.IGNORECASE), "belongs_to", "relation"),
+    ]
+
     def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
+        if len(text) > 5000:
+            text = text[:5000]
         triples: list[tuple[str, str, str, str, float]] = []
-        patterns = [
-            (r"(\w+)\s+is\s+a\s+(\w+)", "is_a", "entity_type"),
-            (r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", "is", "attribute"),
-            (r"(\w+)\s+loves\s+(\w+)", "loves", "relation"),
-            (r"(\w+)\s+likes\s+(\w+)", "likes", "relation"),
-            (r"(\w+)\s+uses\s+(\w+)", "uses", "relation"),
-            (r"(\w+)\s+builds\s+(\w+)", "builds", "relation"),
-            (r"(\w+)\s+works\s+on\s+(\w+)", "works_on", "relation"),
-            (r"(\w+)\s+created\s+(\w+)", "created", "relation"),
-            (r"(\w+)\s+owns\s+(\w+)", "owns", "relation"),
-            (r"(\w+)\s+manages\s+(\w+)", "manages", "relation"),
-            (r"(\w+)\s+reports\s+to\s+(\w+)", "reports_to", "relation"),
-            (r"(\w+)\s+belongs\s+to\s+(\w+)", "belongs_to", "relation"),
-        ]
-        for pattern, rel_type, kind in patterns:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
+        for compiled, rel_type, kind in self._TRIPLE_PATTERNS:
+            for match in compiled.finditer(text):
                 src, tgt = match.group(1).lower(), match.group(2).lower()
                 triples.append((src, tgt, rel_type, kind, 1.0))
         return triples
+
+    _groq_client: Any = None
+
+    def _get_groq_client(self) -> Any:
+        if self._groq_client is not None:
+            return self._groq_client
+        import os
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return None
+        from groq import Groq
+        self._groq_client = Groq(api_key=api_key)
+        return self._groq_client
 
     def _self_check_triples(
         self, content: str, triples: list[tuple[str, str, str, str, float]]
@@ -1323,12 +1339,9 @@ class BastionMemory:
         if not triples:
             return triples
         try:
-            import os
-            api_key = os.environ.get("GROQ_API_KEY")
-            if not api_key:
+            client = self._get_groq_client()
+            if client is None:
                 return triples
-            from groq import Groq
-            client = Groq(api_key=api_key)
             triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
             resp = client.chat.completions.create(
                 model="meta-llama/llama-4-scout-17b-16e-instruct",

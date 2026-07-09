@@ -59,6 +59,17 @@ _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 _INIT_LOCK = threading.Lock()
 
 
+def close_shared_pool() -> None:
+    global _SHARED_POOL
+    pool = _SHARED_POOL
+    _SHARED_POOL = None
+    if pool is not None:
+        try:
+            pool.close_all()
+        except Exception:
+            logger.exception("Error closing shared connection pool")
+
+
 def _load_api_keys() -> set[str]:
     global _API_KEYS
     if _API_KEYS is None:
@@ -66,6 +77,11 @@ def _load_api_keys() -> set[str]:
             if _API_KEYS is None:
                 raw = os.environ.get("BASTION_MCP_API_KEYS", "")
                 _API_KEYS = {k.strip() for k in raw.split(",") if k.strip()} if raw else set()
+                if not _API_KEYS:
+                    logger.warning(
+                        "BASTION_MCP_API_KEYS not set — MCP server is running without authentication. "
+                        "Set BASTION_MCP_API_KEYS to a comma-separated list of API keys."
+                    )
     return _API_KEYS
 
 

@@ -171,7 +171,7 @@ export default function OverviewPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Welcome Greeting & Subtext */}
       <div>
-        <div className="welcome-title">Hello Divyansh! 👋</div>
+        <div className="welcome-title">Hello Agent! 👋</div>
         <div className="welcome-subtitle">Here&apos;s what&apos;s happening with your agent&apos;s memory ledger today. Click cards and filters to inspect.</div>
       </div>
 

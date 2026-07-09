@@ -68,10 +68,11 @@ class AutonomousDBA:
                     "threshold_ms": self.threshold_ms,
                     "queries": slow_queries[:5],
                 }
-            return {"error": result.stderr, "slow_queries": []}
+            logger.warning("ccloud query latency check failed: %s", result.stderr)
+            return {"error": "ccloud CLI error (see server logs)", "slow_queries": []}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to inspect query latency: %s", e)
-            return {"error": str(e), "slow_queries": []}
+            return {"error": "ccloud operation failed", "slow_queries": []}
 
     def get_cluster_status(self) -> dict[str, Any]:
         """Get cluster status via ccloud CLI."""
@@ -88,10 +89,11 @@ class AutonomousDBA:
             if result.returncode == 0:
                 result_dict: dict[str, Any] = json.loads(result.stdout)
                 return result_dict
-            return {"error": result.stderr}
+            logger.warning("ccloud cluster status failed: %s", result.stderr)
+            return {"error": "ccloud CLI error (see server logs)"}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to get cluster status: %s", e)
-            return {"error": str(e)}
+            return {"error": "ccloud operation failed"}
 
     def scale_up_cluster(self, storage_gib: int | None = None, num_nodes: int | None = None) -> dict[str, Any]:
         """Trigger scale-up via ccloud CLI."""
@@ -128,10 +130,11 @@ class AutonomousDBA:
                     "num_nodes": num_nodes,
                     "timestamp": now.isoformat(),
                 }
-            return {"error": result.stderr}
+            logger.warning("ccloud cluster update failed: %s", result.stderr)
+            return {"error": "ccloud CLI error (see server logs)"}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to scale cluster: %s", e)
-            return {"error": str(e)}
+            return {"error": "ccloud operation failed"}
 
     def health_check(self) -> dict[str, Any]:
         """Run a comprehensive health check."""
@@ -309,10 +312,11 @@ class SchemaEvolution:
                     "column_type": col_type,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-            return {"status": "error", "error": result.stderr, "ddl": ddl}
+            logger.warning("ccloud migration failed: %s", result.stderr)
+            return {"status": "error", "error": "ccloud CLI error (see server logs)", "ddl": ddl}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to execute migration: %s", e)
-            return {"status": "error", "error": str(e), "ddl": ddl}
+            return {"status": "error", "error": "ccloud operation failed", "ddl": ddl}
 
     def _validate_table_name(self, table_name: str) -> str | None:
         """Validate table name to prevent SQL injection. Returns None if valid, error message if invalid."""
@@ -363,7 +367,8 @@ class SchemaEvolution:
                     "columns": columns,
                     "column_count": len(columns),
                 }
-            return {"error": result.stderr}
+            logger.warning("ccloud list columns failed: %s", result.stderr)
+            return {"error": "ccloud CLI error (see server logs)"}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning("Failed to list columns: %s", e)
-            return {"error": str(e)}
+            return {"error": "ccloud operation failed"}

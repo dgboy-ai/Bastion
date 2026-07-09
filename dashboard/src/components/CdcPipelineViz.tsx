@@ -31,6 +31,7 @@ export default function CdcPipelineViz({ refreshInterval = 2000 }: CdcPipelineVi
     anomalyCount: 0,
     eventsPerSecond: 0,
   });
+  const [fetchError, setFetchError] = useState(false);
   const [activeParticles, setActiveParticles] = useState<
     Array<{ id: string; stage: number; startTime: number }>
   >([]);
@@ -81,8 +82,8 @@ export default function CdcPipelineViz({ refreshInterval = 2000 }: CdcPipelineVi
             return [...prev.slice(-8), newParticle];
           });
         }
-      } catch (err) {
-        console.error("[CdcPipelineViz] fetch failed:", err);
+      } catch {
+        setFetchError(true);
       }
     }
 
@@ -124,6 +125,22 @@ export default function CdcPipelineViz({ refreshInterval = 2000 }: CdcPipelineVi
       y: 50,
     };
   };
+
+  if (fetchError) {
+    return (
+      <div className="panel" style={{ padding: "20px" }}>
+        <div className="panel-header" style={{ marginBottom: "16px" }}>
+          <span className="title-sm">CDC Pipeline</span>
+          <span style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--accent-sunset)" }}>
+            ERROR
+          </span>
+        </div>
+        <div style={{ color: "var(--mute)", fontSize: "11px", textAlign: "center", padding: "20px" }}>
+          Failed to load pipeline data. Check your connection.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="panel" style={{ padding: "20px" }}>
