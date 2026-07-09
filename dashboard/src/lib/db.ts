@@ -6,7 +6,9 @@ export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
 
 if (!connectionString) {
-  console.warn("WARNING: BASTION_CONN environment variable is not defined — running in mock mode");
+  console.warn("[Bastion] BASTION_CONN not set — running in mock mode");
+} else {
+  console.log("[Bastion] BASTION_CONN configured, connecting to CockroachDB...");
 }
 
 const isDev = process.env.NODE_ENV === "development";
@@ -14,18 +16,23 @@ const isDev = process.env.NODE_ENV === "development";
 export const pool = connectionString
   ? new Pool({
       connectionString,
-      ssl: isDev
-        ? { rejectUnauthorized: false }
-        : { rejectUnauthorized: true },
-      connectionTimeoutMillis: 10000,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
-      max: 20,
+      max: 5,
     })
   : null;
 
+// Test connection on startup
+if (pool) {
+  pool.query("SELECT 1 as ping")
+    .then(() => console.log("[Bastion] CockroachDB connection OK"))
+    .catch((err) => console.error("[Bastion] CockroachDB connection FAILED:", err.message));
+}
+
 export async function query(text: string, params?: unknown[]) {
   if (!pool) {
-    throw new Error("BASTION_CONN not configured");
+    throw new Error("BASTION_CONN not configured — running in mock mode");
   }
   const start = Date.now();
   try {
