@@ -1,24 +1,26 @@
-import { pool, query } from "@/lib/db";
+import { pool, safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess } from "@/lib/api-response";
+
+const defaultHealth = {
+  total_memories: 0,
+  pinned_memories: 0,
+  memories_last_7_days: 0,
+  memories_last_30_days: 0,
+  freshness_ratio: 0,
+  avg_access_count: 0,
+  avg_importance_score: 0,
+};
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   if (!pool) {
-    return apiSuccess({
-      total_memories: 0,
-      pinned_memories: 0,
-      memories_last_7_days: 0,
-      memories_last_30_days: 0,
-      freshness_ratio: 0,
-      avg_access_count: 0,
-      avg_importance_score: 0,
-    }, "short", { mock: true });
+    return apiSuccess(defaultHealth, "short", { mock: true });
   }
 
   try {
-    const res = await query(`
+    const res = await safeQuery(`
       SELECT
         COUNT(*) as total_memories,
         COUNT(*) FILTER (WHERE is_pinned) as pinned_memories,
@@ -28,6 +30,11 @@ export async function GET(request: Request) {
         AVG(importance_score) as avg_importance_score
       FROM agent_memory
     `);
+    
+    if (res.mock) {
+      return apiSuccess(defaultHealth, "short", { mock: true });
+    }
+    
     const row = res.rows[0];
     const total = Number(row.total_memories) || 0;
     const week = Number(row.memories_last_7_days) || 0;
@@ -41,14 +48,6 @@ export async function GET(request: Request) {
       avg_importance_score: Number(Number(row.avg_importance_score || 0).toFixed(2)),
     });
   } catch {
-    return apiSuccess({
-      total_memories: 0,
-      pinned_memories: 0,
-      memories_last_7_days: 0,
-      memories_last_30_days: 0,
-      freshness_ratio: 0,
-      avg_access_count: 0,
-      avg_importance_score: 0,
-    });
+    return apiSuccess(defaultHealth);
   }
 }
