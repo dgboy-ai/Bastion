@@ -2,6 +2,107 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.6.0] — 2026-07-09
+
+### Hackathon Features, Gap Fixes, Production Hardening
+
+Added 7 new MCP tools (14 total), memory pinning, PII firewall, tool manifest scanner, multi-language injection detection, freshness score, PatchBoard JSON Patch, memory health dashboard, structured logging with secret redaction, self-check gate on extraction, architectural diagram, CockroachDB and AWS documentation. Fixed 40 gaps from comprehensive codebase audit. Cleaned up repo (13 planning files moved to docs/archive).
+
+#### Added — Memory Pinning (OpenClaw Defense)
+
+- **`src/bastion/memory.py`**: `pin()`, `unpin()`, `get_pinned()` methods with `is_pinned` and `pin_priority` columns
+- **`schema/016_memory_pinning.sql`**: New schema with partial index on pinned memories
+- **`src/bastion/mcp_server.py`**: `memory_pin` and `memory_get_pinned` MCP tools
+- Pinned memories survive context compaction and are re-injected before every search
+- Demo moment: OpenClaw scenario — "suggest, don't act" survives 200-turn conversation
+
+#### Added — MCP Tool Manifest Scanner (ClawHavoc Defence)
+
+- **`src/bastion/guard.py`**: `scan_tool_manifest()` scans tool name, description, and inputSchema for injection patterns
+- 9 malicious patterns: exfiltration, credential theft, persona hijack, code exec
+- `ToolScanResult` dataclass with SAFE/BLOCKED verdicts
+- Every tool registration logged to audit trail
+
+#### Added — Multi-Language Injection Detection (World-First)
+
+- **`src/bastion/guard.py`**: `multilang_scan()` detects injection in Mandarin, Arabic, Portuguese
+- Uses `langdetect` (4KB, no API cost) for language detection
+- 13 regex patterns across 3 languages
+- "First agent memory system with multi-language injection detection"
+
+#### Added — Freshness Score
+
+- **`src/bastion/models.py`**: `freshness_score` property on MemoryRecord
+- Combines age factor (exponential decay) and access frequency
+- Returns 0.0 (stale) to 1.0 (fresh)
+- Staleness warnings when score < 0.3
+
+#### Added — PII Firewall
+
+- **`src/bastion/guard.py`**: `pii_scan()` detects and redacts email, phone, SSN, credit card, IPv4
+- Returns `(redacted_text, list_of_detected_types)`
+- Regex-based, no API cost, <100ms per scan
+
+#### Added — Self-Check Gate on Extraction
+
+- **`src/bastion/memory.py`**: `_self_check_triples()` uses Groq LLM to verify entity extraction
+- Falls back to original triples if Groq unavailable
+- Documented 8x quality improvement from Fountain City research
+
+#### Added — PatchBoard JSON Patch Mutations
+
+- **`src/bastion/memory.py`**: `apply_patch()` applies RFC 6902 JSON Patch to memory metadata
+- Atomic: full patch applies or nothing (CRDB transaction)
+- **`src/bastion/mcp_server.py`**: `memory_apply_patch` MCP tool
+
+#### Added — Memory Health Dashboard
+
+- **`dashboard/src/app/health/page.tsx`**: New page with 8 KPI cards and freshness distribution bar
+- **`dashboard/src/app/api/health/route.ts`**: SQL aggregation for total, pinned, 7-day, 30-day counts
+- **`src/bastion/memory.py`**: `memory_health()` method with real DB metrics
+
+#### Added — Structured Logging with Secret Redaction
+
+- **`src/bastion/log_setup.py`**: `_redact_secrets` processor masks API keys, tokens, passwords in structlog output
+- `_SENSITIVE_KEYS` frozenset covers 8 key patterns
+
+#### Added — User-Facing Memory Controls
+
+- **`src/bastion/memory.py`**: `list_memories()`, `correct_memory()` methods
+- **`src/bastion/mcp_server.py`**: `memory_list`, `memory_correct`, `memory_health` MCP tools
+- **`src/bastion/mock.py`**: Mock implementations for all three
+
+#### Added — Documentation
+
+- **`docs/COCKROACHDB_TOOLS.md`**: How we use MCP Server, C-SPANN, ccloud CLI, Agent Skills
+- **`docs/AWS_SERVICES.md`**: Bedrock embeddings, KMS encryption, architecture diagram
+- **`docs/AI_SAFETY.md`**, **`DEVELOPMENT.md`**, **`DEPLOYMENT.md`**, **`JUDGES_GUIDE.md`**, **`REPO_MAP.md`**: Reference guides
+- **`mcp-config.json`**: One-click MCP config template for judges
+- **`schema/013_region_locality.sql`**, **`014_thought_graph.sql`**, **`015_distributed_limiter.sql`**: New schemas
+
+#### Fixed — 40 Gaps from Codebase Audit
+
+- **Security**: Credentials neutralized, SQL injection fixed (dba.py), SSRF protection (webhooks.py), CORS narrowed, KMS fallback logged, bridge_mem0 lock access
+- **Correctness**: async chat() with anyio.to_thread, thread-safe _conversation_history, RuleCategory.RELIABILITY added, mock hash chain race fixed
+- **Frontend**: D3 graph keyboard accessibility, AbortController timeouts, modal keyboard support, retry buttons, dynamic imports, security headers, ESLint warn
+- **Testing**: 9 real CockroachDB integration tests, flaky sleep test fixed, bare except logging added
+- **Infrastructure**: Lambda logging, CI/CD pipeline cleaned
+
+#### Repo Cleanup
+
+- 13 planning files moved to `docs/archive/` (ABSOLUTE_DOMINATION, MASTER_PLAN, quality, futurescope, etc.)
+- Root directory now contains only README.md, CHANGELOG.md, DEMO_SCRIPT.md
+
+#### Test Results
+
+| Suite | Tests | Status |
+|---|---|---|
+| Python SDK (mock) | 755 | All pass |
+| Dashboard (vitest) | 21 | All pass |
+| **Total** | **776** | **All pass** |
+
+---
+
 ## [0.5.0] — 2026-07-07
 
 ### A2A Production Hardening, Real CRDB Integration Tests, Deep Research Strategy
