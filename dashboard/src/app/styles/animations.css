@@ -1,0 +1,71 @@
+/* ─────────────────────────────────────────────────────────────
+ * BASTION ANIMATIONS — Keyframes, transitions, hover effects
+ * ───────────────────────────────────────────────────────────── */
+
+/* Scanning laser */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.35), transparent);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+  z-index: 999;
+  pointer-events: none;
+  animation: radarScan 8s linear infinite;
+}
+@keyframes radarScan { 0% { top: -2%; } 100% { top: 102%; } }
+
+/* KPI sweep glow */
+@keyframes sweepGlow {
+  0% { transform: translate(-40%, -40%); }
+  50% { transform: translate(40%, 40%); }
+  100% { transform: translate(-40%, -40%); }
+}
+
+/* Donut chart spin */
+.chart-donut-container svg {
+  transform: rotate(-90deg);
+  transform-origin: center;
+  animation: donutSpin 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes donutSpin {
+  from { transform: rotate(-270deg) scale(0.9); opacity: 0; }
+  to { transform: rotate(-90deg) scale(1); opacity: 1; }
+}
+
+/* Fade in */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn 0.4s ease-out forwards; }
+
+/* Pulse glow */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(0, 240, 255, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(0, 240, 255, 0.4); }
+}
+.pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
+
+/* Skeleton loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* Hover glow on interactive elements */
+.glow-hover { transition: box-shadow 0.3s, transform 0.3s; }
+.glow-hover:hover { box-shadow: var(--shadow-glow); transform: translateY(-2px); }
+
+/* Status indicators */
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block;
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+.status-dot.green { background: var(--accent-emerald); }
+.status-dot.red { background: var(--accent-sunset); }
+.status-dot.blue { background: var(--accent-breeze); }
