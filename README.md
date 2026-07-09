@@ -11,6 +11,21 @@
 
 ---
 
+## 📖 Quick Reference Guide
+
+We have separated Bastion's detailed technical operations, database designs, and evaluation pathways into dedicated guide modules for easy review:
+
+| Guide Name | Clickable Link | What It Covers |
+| :--- | :--- | :--- |
+| **System Architecture** | [docs/ARCHITECTURE.md](file:///c:/projects/bastion/docs/ARCHITECTURE.md) | CockroachDB tables, primary/foreign keys, connection pooling, and C-SPANN settings. |
+| **AI Safety & Guards** | [docs/AI_SAFETY.md](file:///c:/projects/bastion/docs/AI_SAFETY.md) | OWASP ASI06 defenses, regex filters, Groq LLM validation rules, and multi-lang checks. |
+| **Judge's Walkthrough** | [docs/JUDGES_GUIDE.md](file:///c:/projects/bastion/docs/JUDGES_GUIDE.md) | Step-by-step scoring walkthrough for database, AI safety, and serverless tracks. |
+| **Deployment Guide** | [docs/DEPLOYMENT.md](file:///c:/projects/bastion/docs/DEPLOYMENT.md) | AWS Lambda pools, Vercel scaling setups, and Docker Compose scripts. |
+| **Development Setup** | [docs/DEVELOPMENT.md](file:///c:/projects/bastion/docs/DEVELOPMENT.md) | Local mock mode configs, migrations, and MCP startup guides. |
+| **Repository Map** | [docs/REPO_MAP.md](file:///c:/projects/bastion/docs/REPO_MAP.md) | Complete codebase tree mapping modules to architectural roles. |
+
+---
+
 ## 💡 Why Bastion?
 
 Traditional databases are optimized for human-scale reads and writes. Autonomous AI agents are fundamentally different: they spawn dynamically, read and write constantly, execute infinite loops, and require context state that persists across serverless lifecycle boundaries, container recycles, and region outages. 
