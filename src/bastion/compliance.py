@@ -236,7 +236,7 @@ class VerifiableUnlearning:
                 {k: v for k, v in receipt.items() if k != "signature"},
                 sort_keys=True, separators=(",", ":"), default=str,
             ).encode()
-            sig_value = self._signer._private_key.sign(receipt_json)
+            sig_value = self._signer.sign_data(receipt_json)
             receipt["signature"] = {
                 "algorithm": "ed25519",
                 "value": base64.b64encode(sig_value).decode(),
@@ -251,15 +251,4 @@ class VerifiableUnlearning:
             return hashlib.sha256(b"\x00").hexdigest()
         from bastion.merkle import MerkleTree
 
-        current = list(hashes)
-        next_pow2 = 1
-        while next_pow2 < len(current):
-            next_pow2 <<= 1
-        sentinel = MerkleTree._hash("")
-        current += [sentinel] * (next_pow2 - len(current))
-        while len(current) > 1:
-            next_level = []
-            for i in range(0, len(current), 2):
-                next_level.append(MerkleTree._pair_hash(current[i], current[i + 1]))
-            current = next_level
-        return current[0]
+        return MerkleTree.from_hashes(hashes).root

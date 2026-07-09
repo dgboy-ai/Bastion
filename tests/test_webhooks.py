@@ -87,21 +87,21 @@ class TestWebhookNotifier:
         assert n1 is n2
 
     def test_disabled_when_no_urls(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": ""}):
             n = WebhookNotifier()
             assert n._enabled is False
             assert n._urls == []
 
     def test_parses_urls_from_env(self):
         env = {"BASTION_WEBHOOK_URLS": "https://a.com/webhook,https://b.com/webhook"}
-        with mock.patch.dict("os.environ", env, clear=True):
+        with mock.patch.dict("os.environ", env):
             n = WebhookNotifier()
             assert n._enabled is True
             assert len(n._urls) == 2
             assert n._urls == ["https://a.com/webhook", "https://b.com/webhook"]
 
     def test_send_does_nothing_when_disabled(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {}, ):
             n = WebhookNotifier()
             event = WebhookEvent(event_type="test", severity=EventSeverity.INFO, title="T", message="M")
             n.send(event)
@@ -111,7 +111,7 @@ class TestWebhookNotifier:
     def test_http_post_success(self, sample_event):
         env = {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/test"}
         with (
-            mock.patch.dict("os.environ", env, clear=True),
+            mock.patch.dict("os.environ", env, ),
             mock.patch("urllib.request.urlopen") as mock_urlopen,
         ):
             mock_urlopen.return_value.__enter__.return_value.status = 200
@@ -123,7 +123,7 @@ class TestWebhookNotifier:
 
     def test_http_post_failure(self, sample_event):
         with (
-            mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/bad"}, clear=True),
+            mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/bad"}, ),
             mock.patch("urllib.request.urlopen", side_effect=ConnectionError("unreachable")),
         ):
             n = WebhookNotifier()
@@ -137,7 +137,6 @@ class TestWebhookNotifier:
             mock.patch.dict(
                 "os.environ",
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
-                clear=True,
             ),
             mock.patch("urllib.request.urlopen") as mock_urlopen,
         ):
@@ -161,7 +160,6 @@ class TestWebhookNotifier:
             mock.patch.dict(
                 "os.environ",
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
-                clear=True,
             ),
             mock.patch("urllib.request.urlopen", side_effect=_side_effect),
         ):
@@ -172,7 +170,7 @@ class TestWebhookNotifier:
             assert stats["failed"] == 1
 
     def test_send_async_alias(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {}, ):
             n = WebhookNotifier()
             event = WebhookEvent(event_type="t", severity=EventSeverity.INFO, title="T", message="M")
             n.send_async(event)
@@ -193,7 +191,7 @@ class TestWebhookNotifier:
         assert event.details["score"] == 0.7
 
     def test_get_stats_endpoints(self):
-        with mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://a.com,https://b.com"}, clear=True):
+        with mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://a.com,https://b.com"}, ):
             n = WebhookNotifier()
             stats = n.get_stats()
             assert stats["endpoints"] == 2

@@ -81,12 +81,14 @@ class TestMockMode:
         limiter.max_queue = 2
         limiter.timeout_seconds = 5
         # Hold all 5 slots on background threads so main-thread acquires block
+        acquired = [threading.Event() for _ in range(5)]
         hold_events = [threading.Event() for _ in range(5)]
         workers = []
         for i in range(5):
             t = threading.Thread(
                 target=lambda idx=i: (
                     limiter.acquire(),
+                    acquired[idx].set(),
                     hold_events[idx].wait(10),
                     limiter.release(),
                 ),
@@ -94,28 +96,29 @@ class TestMockMode:
             t.daemon = True
             t.start()
             workers.append(t)
-        time.sleep(0.3)
+        for e in acquired:
+            e.wait(5)
         # Now all 5 slots held. Queue capacity is 2.
         # Fill the queue: 2 blocking acquires
-        blocked = [threading.Event() for _ in range(2)]
         for i in range(2):
             t = threading.Thread(
                 target=lambda idx=i: (
                     limiter.acquire(timeout=3),
-                    blocked[idx].set(),
                     limiter.release(),
                 ),
             )
             t.daemon = True
             t.start()
-        time.sleep(0.3)
+            workers.append(t)
+        time.sleep(0.5)  # Allow blocking acquires to start and fill queue
         # Queue is full — next acquire should reject immediately
         assert limiter.acquire(timeout=0.1) is False
         assert limiter._total_rejected == 1
         # Clean up
         for e in hold_events:
             e.set()
-        time.sleep(0.5)
+        for t in workers:
+            t.join(2)
 
     def test_acquire_zero_timeout_returns_immediately(self, limiter):
         for _ in range(5):

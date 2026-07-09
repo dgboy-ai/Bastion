@@ -93,6 +93,26 @@ class MerkleTree:
     # Internal
     # ------------------------------------------------------------------
 
+    @classmethod
+    def from_hashes(cls, hashes: list[str]) -> MerkleTree:
+        """Build a Merkle tree from pre-hashed leaf values (skip leaf hashing).
+
+        Useful when the caller already holds hex digests and does not need
+        the domain-separated leaf hash applied again.
+        """
+        if not hashes:
+            raise ValueError("Cannot build Merkle tree from empty hash list")
+        tree = cls.__new__(cls)
+        tree._original_count = len(hashes)
+        tree._leaves = hashes[:]
+        next_pow2 = 1
+        while next_pow2 < len(tree._leaves):
+            next_pow2 <<= 1
+        sentinel = tree._hash("")
+        tree._leaves += [sentinel] * (next_pow2 - len(tree._leaves))
+        tree._root, tree._levels = tree._build(tree._leaves)
+        return tree
+
     @staticmethod
     def _hash(data: str) -> str:
         """Leaf node hash with domain separation prefix 0x00."""

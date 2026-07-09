@@ -1,16 +1,30 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import * as d3 from "d3";
+import {
+  drag,
+  forceCenter,
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  select,
+  zoom as d3Zoom,
+} from "d3";
+import type {
+  D3DragEvent,
+  SimulationLinkDatum,
+  SimulationNodeDatum,
+} from "d3";
 
-interface Node extends d3.SimulationNodeDatum {
+interface Node extends SimulationNodeDatum {
   id: string;
   name: string;
   type: string;
   attributes: Record<string, unknown>;
 }
 
-interface Link extends d3.SimulationLinkDatum<Node> {
+interface Link extends SimulationLinkDatum<Node> {
   id: string;
   source: string | Node;
   target: string | Node;
@@ -22,10 +36,14 @@ interface KnowledgeGraphProps {
   nodes: Node[];
   links: Link[];
   onNodeClick: (node: Node) => void;
+  width?: number;
+  height?: number;
 }
 
 export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const onNodeClickRef = useRef(onNodeClick);
+  useEffect(() => { onNodeClickRef.current = onNodeClick; });
 
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -34,7 +52,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     const height = svgRef.current.clientHeight || 600;
 
     // Clear previous drawing
-    const svg = d3.select(svgRef.current);
+    const svg = select(svgRef.current);
     svg.selectAll("*").remove();
 
     const defs = svg.append("defs");
@@ -94,19 +112,19 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     const container = svg.append("g");
 
     // Pan & Zoom controls
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
+    const zoomBehavior = d3Zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.3, 3])
       .on("zoom", (event) => {
         container.attr("transform", event.transform);
       });
-    svg.call(zoom);
+    svg.call(zoomBehavior);
 
     // Dynamic layout constraints
-    const simulation = d3.forceSimulation<Node>(nodes)
-      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(240))
-      .force("charge", d3.forceManyBody().strength(-850))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(85));
+    const simulation = forceSimulation<Node>(nodes)
+      .force("link", forceLink<Node, Link>(links).id(d => d.id).distance(240))
+      .force("charge", forceManyBody().strength(-850))
+      .force("center", forceCenter(width / 2, height / 2))
+      .force("collision", forceCollide().radius(85));
 
     // Render connection edges (links)
     const linkGroup = container.append("g").attr("class", "links");
@@ -138,13 +156,22 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
       .append("g")
       .attr("class", "node")
       .call(
-        d3.drag<SVGGElement, Node>()
+        drag<SVGGElement, Node>()
           .on("start", dragstarted)
           .on("drag", dragged)
           .on("end", dragended)
       )
       .on("click", (event, d) => {
-        onNodeClick(d);
+        onNodeClickRef.current(d);
+      })
+      .attr("tabIndex", 0)
+      .attr("role", "button")
+      .attr("aria-label", (d) => `${d.label || d.id} - ${d.type || 'node'}`)
+      .on("keydown", (event, d) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onNodeClickRef.current(d);
+        }
       });
 
     // Node glows (Outer bounds)
@@ -215,18 +242,18 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     });
 
     // Drag handlers
-    function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
+    function dragstarted(event: D3DragEvent<SVGGElement, Node, Node>, d: Node) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       d.fx = d.x;
       d.fy = d.y;
     }
 
-    function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
+    function dragged(event: D3DragEvent<SVGGElement, Node, Node>, d: Node) {
       d.fx = event.x;
       d.fy = event.y;
     }
 
-    function dragended(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
+    function dragended(event: D3DragEvent<SVGGElement, Node, Node>, d: Node) {
       if (!event.active) simulation.alphaTarget(0);
       d.fx = null;
       d.fy = null;
@@ -235,7 +262,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     return () => {
       simulation.stop();
     };
-  }, [nodes, links, onNodeClick]);
+  }, [nodes, links]);
 
   return <svg ref={svgRef} className="graph-container" style={{ width: "100%", height: "100%" }} />;
 }

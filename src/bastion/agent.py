@@ -26,10 +26,13 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+
+import anyio
 
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, MemoryRecord
@@ -260,8 +263,9 @@ class BastionAgent:
                 self.memory, consolidation_interval
             )
 
-        # Conversation history for context
+        # Conversation history for context (thread-safe)
         self._conversation_history: list[dict[str, str]] = []
+        self._history_lock = threading.Lock()
 
     async def chat(self, user_message: str) -> str:
         """
@@ -278,48 +282,61 @@ class BastionAgent:
         if self.enable_pii_redaction:
             user_message, redactions = redact_pii(user_message)
             if redactions:
-                self.memory.store(
-                    "system_event",
-                    f"PII redacted: {[r['type'] for r in redactions]}",
+                await anyio.to_thread.run_sync(
+                    lambda: self.memory.store(
+                        "system_event",
+                        f"PII redacted: {[r['type'] for r in redactions]}",
+                    )
                 )
 
         # 2. Store user message
-        self.memory.store(
-            "user_message",
-            user_message,
-            metadata={
-                "role": "user",
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
+        await anyio.to_thread.run_sync(
+            lambda: self.memory.store(
+                "user_message",
+                user_message,
+                metadata={
+                    "role": "user",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+            )
         )
 
-        # 3. Search for relevant context
-        context = self.memory.search(user_message, k=5, threshold=0.5)
+        # 3. Search for relevant context (offloaded to thread)
+        context = await anyio.to_thread.run_sync(
+            lambda: self.memory.search(user_message, k=5, threshold=0.5)
+        )
 
-        # 4. Generate response
+        # 4. Generate response (offloaded to thread for sync LLM callback)
         if self._llm_callback:
-            response = self._llm_callback(user_message, context)
+            response = await anyio.to_thread.run_sync(
+                lambda: self._llm_callback(user_message, context)
+            )
         else:
             response = self._mock_response(user_message, context)
 
         # 5. Store response
-        self.memory.store(
-            "agent_response",
-            response,
-            metadata={
-                "role": "assistant",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "context_count": len(context),
-            },
+        await anyio.to_thread.run_sync(
+            lambda: self.memory.store(
+                "agent_response",
+                response,
+                metadata={
+                    "role": "assistant",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "context_count": len(context),
+                },
+            )
         )
 
-        # 6. Update conversation history
-        self._conversation_history.append({"role": "user", "content": user_message})
-        self._conversation_history.append({"role": "assistant", "content": response})
+        # 6. Update conversation history (thread-safe)
+        with self._history_lock:
+            self._conversation_history.append({"role": "user", "content": user_message})
+            self._conversation_history.append({"role": "assistant", "content": response})
 
         # 7. Reinforce relevant memories
         for mem in context:
-            self.memory.reinforce(mem.memory_id, success=True)
+            await anyio.to_thread.run_sync(
+                lambda mem_id=mem.memory_id: self.memory.reinforce(mem_id, success=True)
+            )
 
         return response
 

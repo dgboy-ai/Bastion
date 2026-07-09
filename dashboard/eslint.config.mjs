@@ -16,7 +16,7 @@ const eslintConfig = defineConfig([
   {
     files: ["src/app/api/**/route.ts"],
     rules: {
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 ]);

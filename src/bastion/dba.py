@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from datetime import UTC, datetime
 from typing import Any
@@ -41,7 +42,6 @@ class AutonomousDBA:
             return {"error": "No cluster_id configured", "slow_queries": []}
 
         # Security: Validate cluster_id to prevent argument injection
-        import re
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format", "slow_queries": []}
 
@@ -79,7 +79,6 @@ class AutonomousDBA:
             return {"error": "No cluster_id configured"}
 
         # Security: Validate cluster_id
-        import re
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
@@ -100,7 +99,6 @@ class AutonomousDBA:
             return {"error": "No cluster_id configured"}
 
         # Security: Validate cluster_id
-        import re
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
@@ -282,6 +280,12 @@ class SchemaEvolution:
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
+        # Validate default_value to prevent SQL injection
+        if default_value is not None:
+            dv_err = self._validate_default_value(default_value)
+            if dv_err:
+                return {"status": "rejected", "errors": [dv_err]}
+
         # Build DDL
         col_type = column_type.upper()
         ddl = f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {col_type}"
@@ -310,10 +314,39 @@ class SchemaEvolution:
             logger.warning("Failed to execute migration: %s", e)
             return {"status": "error", "error": str(e), "ddl": ddl}
 
+    def _validate_table_name(self, table_name: str) -> str | None:
+        """Validate table name to prevent SQL injection. Returns None if valid, error message if invalid."""
+        if not table_name or not isinstance(table_name, str):
+            return "table_name must be a non-empty string"
+        if not table_name.isidentifier():
+            return f"Invalid table name: {table_name}"
+        if len(table_name) > 128:
+            return f"table_name too long ({len(table_name)} > 128)"
+        return None
+
+    _SAFE_DEFAULT_RE = re.compile(r"^[a-zA-Z0-9_'()\-.,\s\[\]]+$")
+
+    def _validate_default_value(self, default_value: str) -> str | None:
+        """Validate DEFAULT value to prevent SQL injection. Returns None if valid, error message if invalid."""
+        if not default_value or not isinstance(default_value, str):
+            return "default_value must be a non-empty string"
+        if len(default_value) > 256:
+            return f"default_value too long ({len(default_value)} > 256)"
+        if not self._SAFE_DEFAULT_RE.match(default_value):
+            return (
+                "default_value contains unsafe characters. "
+                "Only alphanumeric, quotes, parens, commas, and basic punctuation allowed."
+            )
+        return None
+
     def list_columns(self, table_name: str) -> dict[str, Any]:
         """List current columns for a table via SHOW COLUMNS."""
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
+
+        err = self._validate_table_name(table_name)
+        if err:
+            return {"error": err}
 
         try:
             sql = f"SHOW COLUMNS FROM {table_name}"

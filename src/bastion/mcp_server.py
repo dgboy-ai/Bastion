@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from typing import Any
 
@@ -55,13 +56,16 @@ _SHARED_POOL: ConnectionPool | None = None
 _API_KEYS: set[str] | None = None
 _RATE_LIMITER: RequestLimiter | None = None
 _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
+_INIT_LOCK = threading.Lock()
 
 
 def _load_api_keys() -> set[str]:
     global _API_KEYS
     if _API_KEYS is None:
-        raw = os.environ.get("BASTION_MCP_API_KEYS", "")
-        _API_KEYS = {k.strip() for k in raw.split(",") if k.strip()} if raw else set()
+        with _INIT_LOCK:
+            if _API_KEYS is None:
+                raw = os.environ.get("BASTION_MCP_API_KEYS", "")
+                _API_KEYS = {k.strip() for k in raw.split(",") if k.strip()} if raw else set()
     return _API_KEYS
 
 
@@ -78,12 +82,14 @@ def _check_auth(headers: dict[str, str]) -> bool:
 def _get_limiter() -> RequestLimiter:
     global _RATE_LIMITER
     if _RATE_LIMITER is None:
-        _RATE_LIMITER = RequestLimiter(
-            max_concurrent=int(os.environ.get("BASTION_MCP_MAX_CONCURRENT", "20")),
-            max_queue=int(os.environ.get("BASTION_MCP_MAX_QUEUE", "200")),
-            timeout_seconds=int(os.environ.get("BASTION_MCP_TIMEOUT", "60")),
-            instance_id=_LIMITER_INSTANCE_ID,
-        )
+        with _INIT_LOCK:
+            if _RATE_LIMITER is None:
+                _RATE_LIMITER = RequestLimiter(
+                    max_concurrent=int(os.environ.get("BASTION_MCP_MAX_CONCURRENT", "20")),
+                    max_queue=int(os.environ.get("BASTION_MCP_MAX_QUEUE", "200")),
+                    timeout_seconds=int(os.environ.get("BASTION_MCP_TIMEOUT", "60")),
+                    instance_id=_LIMITER_INSTANCE_ID,
+                )
     return _RATE_LIMITER
 
 

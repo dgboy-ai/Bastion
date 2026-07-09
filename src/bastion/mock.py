@@ -57,28 +57,28 @@ def mock_store_memory(
         prev_hash = records[-1]["cryptographic_hash"] if records else None
         meta = dict(metadata) if metadata is not None else {}
         precomputed_embedding = meta.pop("_precomputed_embedding", None)
-    crypto_hash = _compute_hash(content, meta, prev_hash)
-    now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
+        crypto_hash = _compute_hash(content, meta, prev_hash)
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
 
-    record = MemoryRecord(
-        memory_id=str(uuid.uuid4()),
-        agent_id=agent_id,
-        memory_type=memory_type,
-        content=content,
-        embedding=precomputed_embedding if precomputed_embedding is not None else ([0.0] * 1024),
-        metadata=meta,
-        previous_hash=prev_hash,
-        cryptographic_hash=crypto_hash,
-        created_at=now,
-        expires_at=expires_at,
-        access_count=0,
-        importance_score=5.0,
-    )
+        record = MemoryRecord(
+            memory_id=str(uuid.uuid4()),
+            agent_id=agent_id,
+            memory_type=memory_type,
+            content=content,
+            embedding=precomputed_embedding if precomputed_embedding is not None else ([0.0] * 1024),
+            metadata=meta,
+            previous_hash=prev_hash,
+            cryptographic_hash=crypto_hash,
+            created_at=now,
+            expires_at=expires_at,
+            access_count=0,
+            importance_score=5.0,
+        )
 
-    record_dict = record.to_dict()
-    record_dict["region"] = region
-    _agent_data[agent_id].append(record_dict)
+        record_dict = record.to_dict()
+        record_dict["region"] = region
+        _agent_data[agent_id].append(record_dict)
     _audit_log.append({
         "audit_id": str(uuid.uuid4()),
         "agent_id": agent_id,

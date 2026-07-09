@@ -309,8 +309,8 @@ def create_a2a_server(
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "Accept"],
     )
 
     # -- Metrics state -----------------------------------------------------
@@ -418,6 +418,11 @@ def create_a2a_server(
     # -- Authentication ----------------------------------------------------
 
     _api_key = os.environ.get("BASTION_API_KEY", "")
+    if not _api_key:
+        logger.warning(
+            "BASTION_API_KEY is not set — authentication is DISABLED. "
+            "Set BASTION_API_KEY in your environment or .env file."
+        )
 
     # -- Middleware --------------------------------------------------------
 

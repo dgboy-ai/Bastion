@@ -91,19 +91,20 @@ class TestBastionAgent:
         response = asyncio.run(
             agent.chat("Hello, my name is Alice")
         )
-        assert response is not None
-        assert len(response) > 0
+        assert "Alice" in response
+        assert "Hello, my name is Alice" in response
 
         # Check that memories were stored
         memories = agent.search_memory("Alice")
         assert len(memories) > 0
+        assert any("Alice" in m.content for m in memories)
 
     def test_chat_returns_response(self, agent):
         response = asyncio.run(
             agent.chat("What is CockroachDB?")
         )
         assert isinstance(response, str)
-        assert len(response) > 0
+        assert "CockroachDB" in response
 
     def test_chat_with_context(self, agent):
         # Store some memories first
@@ -114,7 +115,8 @@ class TestBastionAgent:
         response = asyncio.run(
             agent.chat("What does Alice do?")
         )
-        assert response is not None
+        assert "Acme Corp" in response
+        assert "Alice" in response
 
     def test_chat_with_pii_redaction(self):
         agent = BastionAgent("pii-test", mock=True, enable_pii_redaction=True)

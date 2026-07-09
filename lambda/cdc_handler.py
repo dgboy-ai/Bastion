@@ -15,10 +15,14 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import time
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 try:
     import boto3
@@ -61,7 +65,10 @@ def _record_failure():
     _failure_count += 1
     if _failure_count >= FAILURE_THRESHOLD:
         _circuit_open_until = time.time() + CIRCUIT_BREAKER_WINDOW
-        print(f"CIRCUIT BREAKER OPEN: {_failure_count} failures in {CIRCUIT_BREAKER_WINDOW}s window")
+        logger.warning(
+            "Circuit breaker OPEN",
+            extra={"failure_count": _failure_count, "window": CIRCUIT_BREAKER_WINDOW},
+        )
 
 
 def _record_success():

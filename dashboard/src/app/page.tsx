@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import TrustRing from "@/components/TrustRing";
+import dynamic from "next/dynamic";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
-import DriftChart from "@/components/DriftChart";
-import MemoryGuardPanel from "@/components/MemoryGuardPanel";
-import LiveEventFeed from "@/components/LiveEventFeed";
+
+const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false });
+const DriftChart = dynamic(() => import("@/components/DriftChart"), { ssr: false });
+const MemoryGuardPanel = dynamic(() => import("@/components/MemoryGuardPanel"), { ssr: false });
+const LiveEventFeed = dynamic(() => import("@/components/LiveEventFeed"), { ssr: false });
 
 interface Stats {
   memories: number;
@@ -35,8 +37,7 @@ export default function OverviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; time: string; value: string } | null>(null);
   
-  // Latency telemetry simulation for user visibility (proves real-time query pipeline)
-  const [queryLatency, setQueryLatency] = useState<number>(12);
+  const [queryLatency, setQueryLatency] = useState<number | null>(null);
 
   // Interactive states
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
@@ -55,48 +56,54 @@ export default function OverviewPage() {
     timeSeries: { score: number; timestamp: string; status: string }[];
   } | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      const startTime = performance.now();
-      try {
-        const [statsRes, trustRes, driftRes] = await Promise.all([
-          fetch("/api/stats"),
-          fetch("/api/trust?limit=100"),
-          fetch("/api/drift?limit=50"),
-        ]);
+  const fetchData = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const startTime = performance.now();
+    try {
+      const [statsRes, trustRes, driftRes] = await Promise.all([
+        fetch("/api/stats", { signal: controller.signal }),
+        fetch("/api/trust?limit=100", { signal: controller.signal }),
+        fetch("/api/drift?limit=50", { signal: controller.signal }),
+      ]);
 
-        if (!statsRes.ok) {
-          throw new Error("Failed to fetch dashboard telemetry");
-        }
-
-        const statsData = await statsRes.json();
-        const trustData = trustRes.ok ? await trustRes.json() : null;
-        const driftRaw = driftRes.ok ? await driftRes.json() : null;
-
-        setStats(statsData);
-        setTrustSummary(trustData?.summary ?? null);
-        setTrustAlerts(trustData?.alerts ?? []);
-        if (driftRaw) {
-          setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
-        }
-        setError(null);
-        
-        // Calculate real fetch latency from CockroachDB api call
-        const endTime = performance.now();
-        setQueryLatency(Math.round(endTime - startTime));
-      } catch (err: unknown) {
-        console.error("Telemetry fetch error:", err);
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
+      if (!statsRes.ok) {
+        throw new Error("Failed to fetch dashboard telemetry");
       }
+
+      const statsData = await statsRes.json();
+      const trustData = trustRes.ok ? await trustRes.json() : null;
+      const driftRaw = driftRes.ok ? await driftRes.json() : null;
+
+      setStats(statsData);
+      setTrustSummary(trustData?.summary ?? null);
+      setTrustAlerts(trustData?.alerts ?? []);
+      if (driftRaw) {
+        setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
+      }
+      setError(null);
+
+      const endTime = performance.now();
+      setQueryLatency(Math.round(endTime - startTime));
+    } catch (err: unknown) {
+      console.error("Telemetry fetch error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("abort")) {
+        setError("Request timed out after 10 seconds");
+      } else {
+        setError(message);
+      }
+    } finally {
+      clearTimeout(timeout);
     }
-
-    fetchData();
-
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    const id = setTimeout(fetchData, 0);
+    const interval = setInterval(fetchData, 3000);
+    return () => { clearTimeout(id); clearInterval(interval); };
+  }, [fetchData]);
 
   if (loading) {
     return (
@@ -119,20 +126,21 @@ export default function OverviewPage() {
         <p className="paragraph">
           Error description: {error}. Please verify that BASTION_CONN in .env.local is correct and the CockroachDB cluster is accessible.
         </p>
+        <button
+          className="btn btn-outline"
+          style={{ marginTop: "16px", fontSize: "13px", padding: "8px 20px" }}
+          onClick={() => { setLoading(true); setError(null); fetchData(); }}
+        >
+          Retry Connection
+        </button>
       </div>
     );
   }
 
-  // Map coordinates to fit a compact 260px width curve view
   const decayPoints = stats?.decayCurve ? stats.decayCurve.map((pt, idx) => {
-    const x = 30 + idx * 50; // Spans 30 to 230
+    const x = 30 + idx * 50;
     const y = 80 - (pt.value / 10) * 60;
-    return {
-      x,
-      y,
-      time: pt.label,
-      value: `${pt.value.toFixed(2)}`
-    };
+    return { x, y, time: pt.label, value: `${pt.value.toFixed(2)}` };
   }) : [];
 
   let pathD = "";
@@ -142,11 +150,7 @@ export default function OverviewPage() {
     for (let i = 1; i < decayPoints.length; i++) {
       const prev = decayPoints[i - 1];
       const curr = decayPoints[i];
-      const cp1x = prev.x + 25;
-      const cp1y = prev.y;
-      const cp2x = curr.x - 25;
-      const cp2y = curr.y;
-      pathD += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${curr.x},${curr.y}`;
+      pathD += ` C${prev.x + 25},${prev.y} ${curr.x - 25},${curr.y} ${curr.x},${curr.y}`;
     }
     areaD = `${pathD} L${decayPoints[decayPoints.length - 1].x},90 L${decayPoints[0].x},90 Z`;
   }
@@ -316,8 +320,11 @@ export default function OverviewPage() {
                   stroke="var(--accent-breeze)"
                   strokeWidth="1.5"
                   style={{ cursor: "pointer", transition: "all 0.3s ease-out" }}
+                  tabIndex={0}
                   onMouseEnter={() => setHoveredPoint({ x: pt.x - 45, y: pt.y - 45, time: pt.time, value: pt.value })}
                   onMouseLeave={() => setHoveredPoint(null)}
+                  onFocus={() => setHoveredPoint({ x: pt.x - 45, y: pt.y - 45, time: pt.time, value: pt.value })}
+                  onBlur={() => setHoveredPoint(null)}
                 />
               ))}
             </svg>
@@ -406,7 +413,7 @@ export default function OverviewPage() {
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent-emerald)", boxShadow: "0 0 6px var(--accent-emerald)" }} />
               Live DB Pipe Connected
             </span>
-            <span>Query Latency: <span style={{ color: "var(--accent-breeze)" }}>{queryLatency}ms</span> (CockroachDB Serverless)</span>
+            <span>Query Latency: <span style={{ color: "var(--accent-breeze)" }}>{queryLatency !== null ? `${queryLatency}ms` : "—"}</span> (CockroachDB Serverless)</span>
           </div>
         </div>
 
@@ -528,7 +535,13 @@ export default function OverviewPage() {
 
       {/* 🔮 Interactive Details Modal Overlay */}
       {activeModal && (
-        <div 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={activeModal === "memories" ? "Vector Memories Ledger" : "Cognitive Score Details"}
+          tabIndex={-1}
+          ref={(el) => { if (el) el.focus(); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setActiveModal(null); }}
           style={{
             position: "fixed",
             inset: 0,
@@ -555,7 +568,7 @@ export default function OverviewPage() {
           >
             <div className="panel-header">
               <span className="title-sm" style={{ margin: 0 }}>
-                {activeModal === "memories" ? "💾 Vector Memories Ledger" : "🧠 Cognitive Score Details"}
+                {activeModal === "memories" ? "Vector Memories Ledger" : "Cognitive Score Details"}
               </span>
               <button 
                 className="btn btn-outline" 

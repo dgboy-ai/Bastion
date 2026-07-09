@@ -34,7 +34,7 @@ export default function LogsPage() {
         const data = await res.json();
         setMemories(data.memories || []);
       } catch (err: unknown) {
-        setError((err as Error).message);
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -61,6 +61,13 @@ export default function LogsPage() {
             <span>Error</span> FETCH FAILED
           </div>
           <div className="alert-desc">{error}</div>
+          <button
+            className="btn btn-outline"
+            style={{ marginTop: "8px", fontSize: "12px", padding: "4px 14px" }}
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
         </div>
       )}
 

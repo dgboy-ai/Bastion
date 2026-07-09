@@ -16,7 +16,7 @@ interface CspannHudProps {
 export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
   const [readings, setReadings] = useState<LatencyReading[]>([]);
   const [currentLatency, setCurrentLatency] = useState(0);
-  const [cacheHitRate, setCacheHitRate] = useState(94.2);
+  const [cacheHitRate, setCacheHitRate] = useState<number | null>(null);
   const [p99Latency, setP99Latency] = useState(0);
 
   useEffect(() => {
@@ -55,8 +55,8 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
             return updated;
           });
         }
-      } catch {
-        // Silent fail on network issues
+      } catch (err) {
+        console.error("[CspannHud] fetch failed:", err);
       }
     }
 
@@ -189,7 +189,7 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
                 fontFamily: "var(--font-mono)",
               }}
             >
-              {cacheHitRate}%
+              {cacheHitRate !== null ? `${cacheHitRate}%` : "—"}
             </span>
           </div>
 

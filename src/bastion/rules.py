@@ -35,6 +35,7 @@ class RuleCategory(StrEnum):
     CORRECTNESS = "correctness"
     COORDINATION = "coordination"
     COST = "cost"
+    RELIABILITY = "reliability"
 
 
 class RuleStatus(StrEnum):

@@ -81,8 +81,8 @@ export default function CdcPipelineViz({ refreshInterval = 2000 }: CdcPipelineVi
             return [...prev.slice(-8), newParticle];
           });
         }
-      } catch {
-        // Silent fail
+      } catch (err) {
+        console.error("[CdcPipelineViz] fetch failed:", err);
       }
     }
 
