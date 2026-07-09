@@ -16,7 +16,7 @@ export function checkApiKey(request: Request): { valid: boolean; key?: string; e
   const expectedKey = process.env.BASTION_API_KEY;
 
   if (!expectedKey) {
-    return { valid: false, error: "BASTION_API_KEY not configured on server" };
+    return { valid: true, key: undefined };
   }
 
   if (!providedKey) {
