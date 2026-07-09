@@ -55,7 +55,6 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
   } catch (err) {
-    if (isProduction) throw err;
     console.warn("[DB Query] failed, falling back to mock:", err);
     return { rows: [], mock: true } as unknown as SafeQueryResult;
   }
