@@ -31,7 +31,8 @@ export default function LogsPage() {
         if (!res.ok) {
           throw new Error("Failed to fetch memories");
         }
-        const data = await res.json();
+        const json = await res.json();
+        const data = json.data || json;
         setMemories(data.memories || []);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));

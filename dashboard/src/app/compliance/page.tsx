@@ -27,7 +27,8 @@ export default function CompliancePage() {
     const ac = new AbortController();
     fetch("/api/compliance", { signal: ac.signal })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(data => {
+      .then(json => {
+        const data = json.data || json;
         setReport({
           reportId: data.report_id ?? data.reportId,
           agentId: data.agent_id ?? data.agentId,

@@ -75,11 +75,12 @@ export default function OverviewPage() {
       const trustData = trustRes.ok ? await trustRes.json() : null;
       const driftRaw = driftRes.ok ? await driftRes.json() : null;
 
-      setStats(statsData);
-      setTrustSummary(trustData?.summary ?? null);
-      setTrustAlerts(trustData?.alerts ?? []);
+      setStats(statsData.data || statsData);
+      setTrustSummary((trustData?.data || trustData)?.summary ?? null);
+      setTrustAlerts((trustData?.data || trustData)?.alerts ?? []);
       if (driftRaw) {
-        setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
+        const driftData = driftRaw.data || driftRaw;
+        setDriftData({ latest: driftData.latest, timeSeries: driftData.timeSeries });
       }
       setError(null);
 
