@@ -6,6 +6,7 @@ import threading
 from typing import Any
 
 from bastion.models import MemoryRecord
+from bastion.log_setup import get_logger
 
 _GROQ_MODEL = os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 _HAS_GROQ: bool = False
@@ -33,7 +34,7 @@ def _get_client() -> Any:
         return _client
 
 
-_logger = logging.getLogger("bastion.groq")
+_logger = get_logger("bastion.groq")
 
 
 def groq_chat(user_message: str, context: list[MemoryRecord]) -> str:

@@ -240,6 +240,9 @@ class MemoryDreamer:
         """Find groups of similar memories that could be consolidated."""
         candidates = []
 
+        # Cap at 200 to bound O(n²) complexity
+        memories = memories[:200]
+
         # Simple O(n^2) similarity check — fine for <200 memories
         for i, mem_a in enumerate(memories):
             for mem_b in memories[i + 1:]:

@@ -358,15 +358,18 @@ class ContradictionDetector:
                 error=str(exc),
             )
 
-        # Log in audit trail
+        # Log in audit trail (redact content to avoid leaking secrets)
         try:
+            content_preview = (old_memory.content or "")[:100]
+            # Basic redaction: mask likely secrets
+            content_preview = re.sub(r"(api[_-]?key|secret|password|token)\s*[=:]\s*\S+", r"\1=***", content_preview, flags=re.IGNORECASE)
             self._memory.store_audit(
                 action="contradiction_auto_supersede",
                 details={
                     "superseded_id": old_memory.memory_id,
                     "superseded_by": new_memory_id,
                     "reason": reason,
-                    "old_content_preview": (old_memory.content or "")[:200],
+                    "old_content_preview": content_preview,
                 },
             )
         except Exception:

@@ -65,7 +65,7 @@ export default function RegionMapWidget() {
 
       {/* World map with dots */}
       <div className="relative bg-gray-800/50 rounded-lg mb-6" style={{ paddingBottom: "45%" }}>
-        <svg viewBox="0 0 100 60" className="absolute inset-0 w-full h-full">
+        <svg viewBox="0 0 100 60" className="absolute inset-0 w-full h-full" role="img" aria-label="Multi-region memory distribution map">
           {/* Grid lines */}
           {[0, 15, 30, 45, 60].map((y) => (
             <line key={`h${y}`} x1="0" y1={y} x2="100" y2={y} stroke="#374151" strokeWidth="0.2" />

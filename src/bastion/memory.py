@@ -84,6 +84,13 @@ _MEMORY_COLS = (
     "is_pinned, pin_priority"
 )
 
+_CORE_MEMORY_COLS = (
+    "memory_id, agent_id, memory_type, content, embedding, "
+    "metadata, previous_hash, cryptographic_hash, "
+    "created_at, expires_at, access_count, importance_score, "
+    "trust_level, source_provenance, overwrite_count"
+)
+
 _MAX_CONTENT_LENGTH = 100_000
 _MAX_AGENT_ID_LENGTH = 255
 _MAX_MEMORY_TYPE_LENGTH = 100
@@ -304,6 +311,15 @@ class BastionMemory:
                     f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}",
                     report=report,
                 )
+            # PII scan: detect and redact sensitive data before storage
+            redacted_content, pii_types = pii_scan(content)
+            if pii_types:
+                logger.warning(
+                    "PII detected in memory content — storing with redacted copy",
+                    agent_id=self.agent_id,
+                    pii_types=pii_types,
+                )
+                content = redacted_content
 
         if self._mock:
             record = _mock.mock_store_memory(
@@ -819,6 +835,13 @@ class BastionMemory:
                         results.append(MemoryRecord.from_row(r[:-1]))
                 return results[:k]
         except Exception as e:
+            if "does not exist" in str(e).lower():
+                logger.warning(
+                    "Schema may be missing columns. Run: "
+                    "ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS is_pinned BOOL DEFAULT FALSE; "
+                    "ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS pin_priority INT DEFAULT 0;",
+                    extra={"agent_id": self.agent_id},
+                )
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             raise RuntimeError(f"Search failed for agent {self.agent_id}: {e}") from e
         finally:
@@ -866,6 +889,14 @@ class BastionMemory:
                     )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
         except Exception as e:
+            # If schema is missing newer columns, log a helpful migration message
+            if "does not exist" in str(e).lower():
+                logger.warning(
+                    "Schema may be missing columns. Run: "
+                    "ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS is_pinned BOOL DEFAULT FALSE; "
+                    "ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS pin_priority INT DEFAULT 0;",
+                    extra={"agent_id": self.agent_id},
+                )
             logger.exception("list_all query failed", extra={"agent_id": self.agent_id})
             raise RuntimeError(f"List all failed for agent {self.agent_id}: {e}") from e
         finally:
@@ -1297,7 +1328,26 @@ class BastionMemory:
                 if not row:
                     return None
                 current_metadata = dict(row[1]) if row[1] else {}
-                patched = jsonpatch.apply_patch(current_metadata, patch_ops)
+                # Fix patch ops: convert "replace" to "add" for non-existent keys
+                fixed_ops = []
+                for op in patch_ops:
+                    if op.get("op") == "replace":
+                        path_parts = op["path"].strip("/").split("/")
+                        target = current_metadata
+                        key_exists = True
+                        for part in path_parts:
+                            if isinstance(target, dict) and part in target:
+                                target = target[part]
+                            else:
+                                key_exists = False
+                                break
+                        if not key_exists:
+                            fixed_ops.append({**op, "op": "add"})
+                        else:
+                            fixed_ops.append(op)
+                    else:
+                        fixed_ops.append(op)
+                patched = jsonpatch.apply_patch(current_metadata, fixed_ops)
                 cur.execute(
                     "UPDATE agent_memory SET metadata = %s WHERE memory_id = %s AND agent_id = %s",
                     (_json.dumps(patched), memory_id, self.agent_id),
@@ -1713,7 +1763,7 @@ class BastionMemory:
 
         settings = get_settings()
         body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries + 1):
             try:
                 response = client.invoke_model(

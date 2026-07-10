@@ -41,6 +41,12 @@ from bastion.models import (
     RelationRecord,
 )
 from bastion.observations import Observation, ObservationDetector, ObservationReport
+from bastion.retrieval import MultiSignalRetriever, RetrievalResult
+from bastion.capture_hooks import CaptureHooks, CaptureEvent
+from bastion.tags import TagPreprocessor, TagExtraction
+from bastion.benchmark import RecallBenchmark, BenchmarkResult
+from bastion.session_memory import SessionMemory, SessionEntry
+from bastion.context_budget import ContextBudgetManager, PackResult
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
@@ -143,4 +149,16 @@ __all__ = [
     "ObservationDetector",
     "Observation",
     "ObservationReport",
+    "MultiSignalRetriever",
+    "RetrievalResult",
+    "CaptureHooks",
+    "CaptureEvent",
+    "TagPreprocessor",
+    "TagExtraction",
+    "RecallBenchmark",
+    "BenchmarkResult",
+    "SessionMemory",
+    "SessionEntry",
+    "ContextBudgetManager",
+    "PackResult",
 ]

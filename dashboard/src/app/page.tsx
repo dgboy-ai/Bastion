@@ -11,6 +11,9 @@ const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false }
 const DriftChart = dynamic(() => import("@/components/DriftChart"), { ssr: false });
 const MemoryGuardPanel = dynamic(() => import("@/components/MemoryGuardPanel"), { ssr: false });
 const LiveEventFeed = dynamic(() => import("@/components/LiveEventFeed"), { ssr: false });
+const LtmGatewayWidget = dynamic(() => import("@/components/LtmGatewayWidget"), { ssr: false });
+const RegionMapWidget = dynamic(() => import("@/components/RegionMapWidget"), { ssr: false });
+const ObservationsWidget = dynamic(() => import("@/components/ObservationsWidget"), { ssr: false });
 
 interface Stats {
   memories: number;
@@ -117,7 +120,7 @@ export default function OverviewPage() {
 
   useEffect(() => {
     const id = setTimeout(fetchData, 0);
-    const interval = setInterval(fetchData, 3000);
+    const interval = setInterval(fetchData, 10000);
     return () => { clearTimeout(id); clearInterval(interval); };
   }, [fetchData]);
 
@@ -228,7 +231,7 @@ export default function OverviewPage() {
             )}
           </div>
           <div className="chart-donut-container" style={{ gap: "16px", height: "120px" }}>
-            <svg width="70" height="70" viewBox="0 0 36 36" style={{ overflow: "visible", filter: "drop-shadow(0 0 4px rgba(0,229,255,0.15))" }}>
+            <svg width="70" height="70" viewBox="0 0 36 36" style={{ overflow: "visible", filter: "drop-shadow(0 0 4px rgba(0,229,255,0.15))" }} role="img" aria-label="Memory type distribution chart">
               <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.02)" strokeWidth="3.5" />
               <circle cx="18" cy="18" r="15.915" fill="none" stroke="var(--accent-breeze)" strokeWidth="3.8" strokeDasharray="60 40" strokeDashoffset="25" />
               <circle cx="18" cy="18" r="15.915" fill="none" stroke="var(--accent-dusk)" strokeWidth="3.8" strokeDasharray="25 75" strokeDashoffset="-35" />
@@ -599,6 +602,15 @@ export default function OverviewPage() {
           </div>
         </div>
       )}
+
+      {/* Row 3: Agentic Intelligence — LTM Gateway, Multi-Region, Observations */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          <LtmGatewayWidget />
+          <ObservationsWidget />
+        </div>
+        <RegionMapWidget />
+      </div>
 
         {/* Live SSE Event Stream */}
         <div className="panel" style={{ marginTop: "24px" }}>

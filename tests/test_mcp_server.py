@@ -29,7 +29,7 @@ def test_create_server_returns_fastmcp(mcp):
 
 def test_tools_list_has_nineteen_tools(mcp):
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 22
+    assert len(tools) == 25
     tool_names = [t.name for t in tools]
     assert "memory_search" in tool_names
     assert "memory_store" in tool_names
@@ -284,7 +284,7 @@ async def test_server_card_returns_valid_metadata(mcp):
     data = response.json()
     assert data["schemaVersion"] == "v1"
     assert data["name"] == "Bastion Memory"
-    assert len(data["tools"]) == 22
+    assert len(data["tools"]) == 25
     assert len(data["resources"]) == 4
     assert len(data["prompts"]) == 3
     assert data["capabilities"]["resources"] is True
