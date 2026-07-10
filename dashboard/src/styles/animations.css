@@ -252,22 +252,15 @@
 
 /* ── 3D Perspective Effects ─────────────────────────────────── */
 .perspective-container {
-  perspective: 1000px;
-  perspective-origin: center;
+  perspective: 1200px;
 }
 .perspective-card {
   transform-style: preserve-3d;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
 }
 .perspective-card:hover {
-  transform: rotateX(2deg) rotateY(-2deg) translateZ(10px);
-}
-.perspective-tilt {
-  transition: transform 0.3s ease;
-  transform-style: preserve-3d;
-}
-.perspective-tilt:hover {
-  transform: perspective(800px) rotateX(3deg) rotateY(-3deg);
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 0 20px 60px rgba(0, 229, 255, 0.08), 0 0 0 1px rgba(0, 229, 255, 0.15);
 }
 
 /* ── Micro-Interactions ─────────────────────────────────────── */
