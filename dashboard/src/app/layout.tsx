@@ -30,6 +30,9 @@ export default function RootLayout({
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
           }
+          html {
+            scroll-behavior: smooth;
+          }
         `}</style>
       </body>
     </html>
