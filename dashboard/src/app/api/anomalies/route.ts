@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       "SELECT content, created_at FROM agent_memory ORDER BY created_at DESC LIMIT 50"
     );
     if (!recentRes.mock) {
-      const contents = recentRes.rows.map((r: any) => r.content);
+      const contents = recentRes.rows.map((r: Record<string, unknown>) => r.content as string);
       const uniqueContents = new Set(contents);
       if (contents.length !== uniqueContents.size) {
         alerts.push({

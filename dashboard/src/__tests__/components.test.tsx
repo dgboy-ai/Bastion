@@ -20,7 +20,8 @@ class MockEventSource {
   onmessage: ((msg: { data: string }) => void) | null = null
   onerror: (() => void) | null = null
   close() {}
-  constructor(_url: string) {
+  constructor(url: string) {
+    void url;
     setTimeout(() => this.onopen?.(), 0)
   }
 }

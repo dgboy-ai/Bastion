@@ -47,13 +47,14 @@ export async function GET(request: Request) {
 
     const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
     const totalPages = Math.ceil(total / limit);
-    const memories = memoriesRes.rows.map((row: any) => ({
-      memoryId: row.memory_id,
-      content: row.content,
-      cryptographicHash: row.cryptographic_hash,
-      previousHash: row.previous_hash,
-      createdAt: row.created_at,
-      importanceScore: row.importance_score ?? 5.0,
+    type MemoryRow = Record<string, unknown>;
+    const memories = memoriesRes.rows.map((row: MemoryRow) => ({
+      memoryId: row.memory_id as string,
+      content: row.content as string,
+      cryptographicHash: row.cryptographic_hash as string,
+      previousHash: row.previous_hash as string,
+      createdAt: row.created_at as string,
+      importanceScore: (row.importance_score as number) ?? 5.0,
     }));
 
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');

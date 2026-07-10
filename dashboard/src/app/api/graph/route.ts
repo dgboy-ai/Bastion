@@ -30,19 +30,21 @@ export async function GET(request: Request) {
     }
     const relationsRes = await safeQuery(relationsSql, params);
 
-    const nodes = entitiesRes.rows.map((row: any) => ({
-      id: row.entity_id,
-      name: row.name,
-      type: row.entity_type,
-      attributes: row.attributes || {},
+    type EntityRow = Record<string, unknown>;
+    type RelationRow = Record<string, unknown>;
+    const nodes = entitiesRes.rows.map((row: EntityRow) => ({
+      id: row.entity_id as string,
+      name: row.name as string,
+      type: row.entity_type as string,
+      attributes: (row.attributes as Record<string, unknown>) || {},
     }));
 
-    const links = relationsRes.rows.map((row: any) => ({
-      id: row.relation_id,
-      source: row.source_entity_id,
-      target: row.target_entity_id,
-      type: row.relation_type,
-      confidence: row.confidence || 1.0,
+    const links = relationsRes.rows.map((row: RelationRow) => ({
+      id: row.relation_id as string,
+      source: row.source_entity_id as string,
+      target: row.target_entity_id as string,
+      type: row.relation_type as string,
+      confidence: (row.confidence as number) || 1.0,
     }));
 
     return apiSuccess({ nodes, links }, 'short');
