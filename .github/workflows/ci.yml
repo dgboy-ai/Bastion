@@ -102,3 +102,56 @@ jobs:
       - name: Run vitest
         run: npx vitest run --reporter=verbose
         working-directory: dashboard
+
+  # ── Real CRDB Integration Tests ────────────────────────────────────────
+  # This job runs a subset of tests against a real CockroachDB container
+  # to prove our SQL queries, vector search, and time-travel actually work.
+  crdb-integration:
+    runs-on: ubuntu-latest
+    services:
+      cockroachdb:
+        image: cockroachdb/cockroach:v24.2.0
+        ports:
+          - 26257:26257
+        options: >-
+          --health-cmd "cockroach node status --insecure --host=localhost:26257 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        env:
+          COCKROACH_DB: defaultdb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -e ".[dev,all]" --upgrade pip
+      - name: Wait for CockroachDB
+        run: |
+          for i in $(seq 1 30); do
+            if python -c "import psycopg; psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable').close(); print('Connected!')" 2>/dev/null; then
+              echo "CockroachDB is ready"
+              break
+            fi
+            echo "Waiting for CockroachDB... ($i/30)"
+            sleep 2
+          done
+      - name: Apply schema
+        run: |
+          python -c "
+          import psycopg
+          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
+          conn.autocommit = True
+          cur = conn.cursor()
+          cur.execute(open('schema/002_agent_memory.sql').read())
+          cur.execute(open('schema/003_agent_audit.sql').read())
+          cur.execute(open('schema/004_agent_coordination.sql').read())
+          print('Schema applied successfully')
+          conn.close()
+          "
+      - name: Run real CRDB integration tests
+        run: pytest tests/test_crdb_integration.py -v --tb=short
+        env:
+          BASTION_CONN: "postgresql://root:@localhost:26257/defaultdb?sslmode=disable"
