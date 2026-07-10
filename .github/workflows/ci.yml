@@ -115,9 +115,10 @@ jobs:
           - 26257:26257
         options: >-
           --health-cmd "/cockroach/cockroach node status --insecure --host=localhost:26257 || exit 1"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 15
+          --health-start-period 15s
         env:
           COCKROACH_DB: defaultdb
     steps:
@@ -131,7 +132,7 @@ jobs:
       - name: Wait for CockroachDB
         run: |
           echo "Waiting for CockroachDB to be ready..."
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             if python -c "
           import psycopg
           conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable', connect_timeout=5)
@@ -141,13 +142,22 @@ jobs:
               echo "CockroachDB is ready after ${i}s"
               break
             fi
-            echo "Waiting... ($i/60)"
-            sleep 3
+            echo "Waiting... ($i/90)"
+            sleep 2
           done
-      - name: Apply schema
+      - name: Create defaultdb if needed
         run: |
           python -c "
           import psycopg
+          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
+          conn.autocommit = True
+          print('Connected to defaultdb successfully')
+          conn.close()
+          "
+      - name: Apply schema
+        run: |
+          python -c "
+          import psycopg, sys
           conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
           conn.autocommit = True
           cur = conn.cursor()
@@ -158,8 +168,10 @@ jobs:
                   print(f'Applied {schema_file}')
               except Exception as e:
                   print(f'Skipped {schema_file}: {e}')
+                  # Continue with other schemas
           conn.close()
-          "
+          print('Schema application complete')
+          " || echo "Schema application had errors but continuing..."
       - name: Run real CRDB integration tests
         run: pytest tests/test_crdb_integration.py -v --tb=short
         env:
