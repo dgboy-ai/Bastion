@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface Health {
   total_memories: number;
@@ -17,7 +18,7 @@ export default function HealthPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/health")
+    fetchWithTimeout("/api/health")
       .then((r) => r.json())
       .then((json) => setHealth(json.data || json))
       .catch(() => setError("Failed to load health metrics"));

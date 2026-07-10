@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface Finding {
   detector: string;
@@ -41,7 +42,7 @@ export default function MemoryGuardPanel() {
   useEffect(() => {
     let cancelled = false;
     const ac = new AbortController();
-    fetch("/api/asi06", { signal: ac.signal })
+    fetchWithTimeout("/api/asi06", { signal: ac.signal })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((data) => { if (!cancelled) setReport(data); })
       .catch(() => { if (!cancelled) setFetchError(true); })
@@ -53,7 +54,7 @@ export default function MemoryGuardPanel() {
     if (!scanInput.trim()) return;
     setScanning(true);
     try {
-      const res = await fetch("/api/asi06", {
+      const res = await fetchWithTimeout("/api/asi06", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: scanInput }),

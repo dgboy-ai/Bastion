@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface LatencyReading {
   queryTime: number;
@@ -25,7 +26,7 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
       const startTime = performance.now();
       try {
         setFetchError(false);
-        const res = await fetch("/api/stats");
+        const res = await fetchWithTimeout("/api/stats");
         if (res.ok) {
           await res.json();
           const endTime = performance.now();

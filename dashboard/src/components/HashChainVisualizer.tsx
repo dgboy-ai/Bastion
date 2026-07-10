@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface MemoryBlock {
   memoryId: string;
@@ -24,7 +25,7 @@ export default function HashChainVisualizer({ agentId = "demo-agent" }: HashChai
   useEffect(() => {
     async function fetchChain() {
       try {
-        const res = await fetch(`/api/memories?agent_id=${agentId}`);
+        const res = await fetchWithTimeout(`/api/memories?agent_id=${agentId}`);
         if (!res.ok) throw new Error("Failed to fetch memories");
         const data = await res.json();
         const memories: MemoryBlock[] = data.memories || [];

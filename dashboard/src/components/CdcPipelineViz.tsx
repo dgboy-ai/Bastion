@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 import CdcPipelineSvg from "./cdc/CdcPipelineSvg";
 import CdcStatsGrid from "./cdc/CdcStatsGrid";
 import CdcEventList from "./cdc/CdcEventList";
@@ -35,7 +36,7 @@ export default function CdcPipelineViz({ refreshInterval = 3000 }: CdcPipelineVi
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/stats");
+        const res = await fetchWithTimeout("/api/stats");
         if (!res.ok) return;
         const data = await res.json();
 
