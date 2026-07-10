@@ -6,7 +6,6 @@ Falls back to local ``threading.Semaphore`` in BASTION_MOCK mode.
 
 from __future__ import annotations
 
-import logging
 import os
 import random
 import threading
@@ -14,8 +13,8 @@ import time
 import uuid
 from typing import Any
 
-from bastion.pool import ConnectionPool
 from bastion.log_setup import get_logger
+from bastion.pool import ConnectionPool
 
 logger = get_logger(__name__)
 

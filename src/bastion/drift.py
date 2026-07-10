@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import math
 import threading
 from collections import Counter
@@ -9,8 +8,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from bastion.memory import BastionMemory
 from bastion.log_setup import get_logger
+from bastion.memory import BastionMemory
 
 logger = get_logger(__name__)
 

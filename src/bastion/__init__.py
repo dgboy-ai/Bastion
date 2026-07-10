@@ -1,8 +1,11 @@
 from bastion.adapters import BastionChatMessageHistory, BastionShortTermMemory, BastionVectorStore
 from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, redact_pii
+from bastion.benchmark import BenchmarkResult, RecallBenchmark
+from bastion.capture_hooks import CaptureEvent, CaptureHooks
 from bastion.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
 from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
 from bastion.config import BastionSettings, get_settings, reset_settings
+from bastion.context_budget import ContextBudgetManager, PackResult
 from bastion.contradiction import Contradiction, ContradictionDetector, ContradictionScanResult
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA, SchemaEvolution
@@ -41,18 +44,15 @@ from bastion.models import (
     RelationRecord,
 )
 from bastion.observations import Observation, ObservationDetector, ObservationReport
-from bastion.retrieval import MultiSignalRetriever, RetrievalResult
-from bastion.capture_hooks import CaptureHooks, CaptureEvent
-from bastion.tags import TagPreprocessor, TagExtraction
-from bastion.benchmark import RecallBenchmark, BenchmarkResult
-from bastion.session_memory import SessionMemory, SessionEntry
-from bastion.context_budget import ContextBudgetManager, PackResult
-from bastion.procedural import ProceduralMemory, WorkflowPattern, DecisionPattern
 from bastion.pool import AsyncConnectionPool, ConnectionPool
+from bastion.procedural import DecisionPattern, ProceduralMemory, WorkflowPattern
+from bastion.retrieval import MultiSignalRetriever, RetrievalResult
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
 from bastion.rules import CognitiveRule, CognitiveRulesEngine, ExecutionLog, RuleCategory
 from bastion.saga import SagaBoundary, SagaMemoryManager
+from bastion.session_memory import SessionEntry, SessionMemory
+from bastion.tags import TagExtraction, TagPreprocessor
 from bastion.telemetry import TracedBastionMemory
 from bastion.thought_chain import ThoughtChain, ThoughtNode, ThoughtType
 from bastion.trust import TrustLevel, TrustReport, compute_trust_score

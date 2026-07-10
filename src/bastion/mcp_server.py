@@ -1132,10 +1132,25 @@ def create_server(
         if mem._mock:
             schema = {
                 "tables": {
-                    "agent_memory": {"columns": ["memory_id", "agent_id", "memory_type", "content", "embedding", "metadata", "created_at", "importance_score", "trust_level"]},
-                    "agent_audit": {"columns": ["audit_id", "agent_id", "action", "details", "recorded_at"]},
-                    "agent_entities": {"columns": ["entity_id", "agent_id", "entity_type", "name", "attributes"]},
-                    "agent_relations": {"columns": ["relation_id", "source_entity_id", "target_entity_id", "relation_type"]},
+                    "agent_memory": {
+                        "columns": [
+                            "memory_id", "agent_id", "memory_type", "content",
+                            "embedding", "metadata", "created_at",
+                            "importance_score", "trust_level",
+                        ]
+                    },
+                    "agent_audit": {
+                        "columns": ["audit_id", "agent_id", "action", "details", "recorded_at"]
+                    },
+                    "agent_entities": {
+                        "columns": ["entity_id", "agent_id", "entity_type", "name", "attributes"]
+                    },
+                    "agent_relations": {
+                        "columns": [
+                            "relation_id", "source_entity_id",
+                            "target_entity_id", "relation_type",
+                        ]
+                    },
                 }
             }
         else:

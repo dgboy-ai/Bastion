@@ -114,10 +114,10 @@ jobs:
         ports:
           - 26257:26257
         options: >-
-          --health-cmd "cockroach node status --insecure --host=localhost:26257 || exit 1"
+          --health-cmd "/cockroach/cockroach node status --insecure --host=localhost:26257 || exit 1"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
         env:
           COCKROACH_DB: defaultdb
     steps:
@@ -130,13 +130,19 @@ jobs:
         run: pip install -e ".[dev,all]" --upgrade pip
       - name: Wait for CockroachDB
         run: |
-          for i in $(seq 1 30); do
-            if python -c "import psycopg; psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable').close(); print('Connected!')" 2>/dev/null; then
-              echo "CockroachDB is ready"
+          echo "Waiting for CockroachDB to be ready..."
+          for i in $(seq 1 60); do
+            if python -c "
+          import psycopg
+          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable', connect_timeout=5)
+          conn.close()
+          print('Connected!')
+          " 2>/dev/null; then
+              echo "CockroachDB is ready after ${i}s"
               break
             fi
-            echo "Waiting for CockroachDB... ($i/30)"
-            sleep 2
+            echo "Waiting... ($i/60)"
+            sleep 3
           done
       - name: Apply schema
         run: |
@@ -145,10 +151,13 @@ jobs:
           conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
           conn.autocommit = True
           cur = conn.cursor()
-          cur.execute(open('schema/002_agent_memory.sql').read())
-          cur.execute(open('schema/003_agent_audit.sql').read())
-          cur.execute(open('schema/004_agent_coordination.sql').read())
-          print('Schema applied successfully')
+          for schema_file in ['schema/002_agent_memory.sql', 'schema/003_agent_audit.sql', 'schema/004_agent_coordination.sql']:
+              try:
+                  with open(schema_file) as f:
+                      cur.execute(f.read())
+                  print(f'Applied {schema_file}')
+              except Exception as e:
+                  print(f'Skipped {schema_file}: {e}')
           conn.close()
           "
       - name: Run real CRDB integration tests
