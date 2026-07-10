@@ -115,16 +115,26 @@ class TestConsolidate:
         mem.store("fact", "Fact two")
         mem.store("fact", "Fact one")  # duplicate
         await consolidator._consolidate()
+        all_mem = mem.list_all()
+        assert len(all_mem) >= 3, "Should preserve or expand records during consolidation"
+        assert any(m.content == "Fact one" for m in all_mem)
+        assert any(m.content == "Fact two" for m in all_mem)
+        # Verify anomaly detection still works
+        anomalies = mem.detect_anomalies()
+        assert isinstance(anomalies, list)
 
     @pytest.mark.asyncio
     async def test_consolidate_with_empty_memory(self, consolidator):
         await consolidator._consolidate()
+        assert consolidator.memory.list_all() == []
 
     @pytest.mark.asyncio
     async def test_consolidate_detects_anomalies(self, consolidator, memory):
         for i in range(15):
             memory.store("fact", f"Memory {i}")
         await consolidator._consolidate()
+        anomalies = memory.detect_anomalies()
+        assert isinstance(anomalies, list)
 
 
 class TestLifecycle:

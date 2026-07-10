@@ -73,12 +73,11 @@ class AgentCardSigner:
                 "Base64-decoded key from %s is %d bytes (expected 32 for Ed25519)",
                 env_var, len(raw_bytes),
             )
-        except Exception:
-            pass
-        logger.warning(
-            "Could not parse %s as PEM or raw base64 Ed25519 key, trying as PEM literal",
-            env_var,
-        )
+        except Exception as exc:
+            logger.warning(
+                "Failed to parse %s as base64 Ed25519 key: %s",
+                env_var, exc,
+            )
         return cls(raw)
 
     def sign_data(self, data: bytes) -> bytes:

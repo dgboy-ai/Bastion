@@ -1,5 +1,13 @@
+import pytest
+
 from bastion import BastionMemory
 from bastion.telemetry import TracedBastionMemory
+
+
+@pytest.fixture(autouse=True)
+def _no_otel(monkeypatch):
+    monkeypatch.setattr("bastion.telemetry._has_otel_api", False)
+    monkeypatch.setattr("bastion.telemetry._has_otel_sdk", False)
 
 
 def test_traced_store():
@@ -8,6 +16,8 @@ def test_traced_store():
     record = traced.store("fact", "Traced memory")
     assert record.content == "Traced memory"
     assert record.memory_type == "fact"
+    spans = traced._tracer._exported
+    assert any(s.name == "bastion.store" for s in spans)
 
 
 def test_traced_search():
@@ -16,6 +26,8 @@ def test_traced_search():
     traced.store("fact", "Searchable")
     results = traced.search("Searchable")
     assert len(results) > 0
+    spans = traced._tracer._exported
+    assert any(s.name == "bastion.search" for s in spans)
 
 
 def test_traced_agent_id():
@@ -30,6 +42,8 @@ def test_traced_heal():
     traced.store("fact", "Something")
     result = traced.heal()
     assert "records_before" in result
+    spans = traced._tracer._exported
+    assert any(s.name == "bastion.heal" for s in spans)
 
 
 def test_traced_resolve_conflict():
@@ -37,6 +51,8 @@ def test_traced_resolve_conflict():
     traced = TracedBastionMemory(inner)
     result = traced.resolve_conflict("A", "B")
     assert "A" in result
+    spans = traced._tracer._exported
+    assert any(s.name == "bastion.resolve_conflict" for s in spans)
 
 
 def test_traced_close():

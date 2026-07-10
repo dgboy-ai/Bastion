@@ -764,6 +764,71 @@ def mock_graph_stats(agent_id: str) -> dict[str, Any]:
     }
 
 
+def mock_detect_contradictions(agent_id: str, memory_id: str) -> dict:
+    """Simulate contradiction detection in mock mode."""
+    return {
+        "new_memory_id": memory_id,
+        "scanned_count": 0,
+        "contradictions_found": 0,
+        "auto_invalidated": 0,
+        "manual_review_needed": 0,
+        "contradictions": [],
+        "scan_duration_ms": 1,
+    }
+
+
+def mock_observations(agent_id: str) -> dict:
+    """Simulate observation detection in mock mode."""
+    return {
+        "agent_id": agent_id,
+        "total_memories_scanned": 0,
+        "observations": [],
+        "detected_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def mock_ltm_check_reuse(agent_id: str, query: str, threshold: float) -> dict | None:
+    """Simulate LTM Gateway reuse check in mock mode."""
+    memories = mock_search_memory(agent_id, query, k=5, threshold=threshold)
+    for mem in memories:
+        meta = mem.metadata or {}
+        if meta.get("analysis_result") or meta.get("workflow_output"):
+            similarity = min(1.0, mem.importance_score / 10.0)
+            if similarity >= threshold:
+                return {
+                    "memory_id": mem.memory_id,
+                    "content": mem.content,
+                    "similarity": round(similarity, 4),
+                    "cached_at": mem.created_at.isoformat() if mem.created_at else "",
+                    "reuse_count": mem.access_count,
+                    "tokens_saved": max(1, len(mem.content or "") // 4) * 3,
+                    "metadata": meta,
+                }
+    return None
+
+
+def mock_dream(agent_id: str) -> dict:
+    """Simulate dreaming consolidation in mock mode."""
+    from datetime import UTC, datetime, timedelta
+    memories = mock_list_all(agent_id, memory_type=None, namespace_scope="own")
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    recent = [
+        m for m in memories
+        if m.created_at and (m.created_at.replace(tzinfo=UTC) if m.created_at.tzinfo is None else m.created_at) >= cutoff
+    ]
+    return {
+        "agent_id": agent_id,
+        "memories_reviewed": len(recent),
+        "memories_consolidated": 0,
+        "memories_promoted": 0,
+        "memories_pruned": 0,
+        "patterns_found": 0,
+        "lessons_extracted": [],
+        "duration_ms": 12,
+        "status": "complete",
+    }
+
+
 def reset():
     _agent_data.clear()
     _audit_log.clear()

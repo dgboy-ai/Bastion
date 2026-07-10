@@ -44,14 +44,24 @@ def get_tracer(name: str = "bastion"):
 
 
 class _NullTracer:
+    def __init__(self):
+        self._exported: list[_NullSpan] = []
+
     def start_as_current_span(self, name, **kwargs):
-        return _NullSpan()
+        span = _NullSpan(name)
+        self._exported.append(span)
+        return span
 
     def start_span(self, name, **kwargs):
-        return _NullSpan()
+        span = _NullSpan(name)
+        self._exported.append(span)
+        return span
 
 
 class _NullSpan:
+    def __init__(self, name: str = ""):
+        self.name = name
+
     def __enter__(self):
         return self
 
@@ -86,7 +96,7 @@ class TracedBastionMemory:
     def _span(self, name: str, attrs: dict[str, Any] | None = None):
         if _has_otel_api:
             return self._tracer.start_as_current_span(name, kind=SpanKind.CLIENT, attributes=attrs or {})
-        return _NullContext()
+        return self._tracer.start_as_current_span(name)
 
     @property
     def agent_id(self) -> str:

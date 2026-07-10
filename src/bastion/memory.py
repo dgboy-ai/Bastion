@@ -288,6 +288,7 @@ class BastionMemory:
         expires_in_seconds: int | None = None,
         region: str | None = None,
         _skip_guard: bool = False,
+        _detect_contradictions: bool = False,
     ) -> MemoryRecord:
         _validate_memory_type(memory_type)
         _validate_content(content)
@@ -305,10 +306,22 @@ class BastionMemory:
                 )
 
         if self._mock:
-            return _mock.mock_store_memory(
+            record = _mock.mock_store_memory(
                 self.agent_id, memory_type, content, metadata, expires_in_seconds, region=region
             )
-        return self._store_real(memory_type, content, metadata, expires_in_seconds, region=region)
+        else:
+            record = self._store_real(memory_type, content, metadata, expires_in_seconds, region=region)
+
+        # Auto-detect contradictions if enabled
+        if _detect_contradictions and record is not None:
+            try:
+                from bastion.contradiction import ContradictionDetector
+                detector = ContradictionDetector(self)
+                detector.scan_after_store(record)
+            except Exception as exc:
+                logger.debug("Contradiction detection skipped: %s", exc)
+
+        return record
 
     def reinforce(self, memory_id: str, success: bool = True) -> dict:
         if not memory_id or not isinstance(memory_id, str):

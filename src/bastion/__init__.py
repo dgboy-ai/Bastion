@@ -3,8 +3,10 @@ from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, red
 from bastion.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
 from bastion.compliance import ComplianceMode, ComplianceReporter, IETFAATRecord, VerifiableUnlearning
 from bastion.config import BastionSettings, get_settings, reset_settings
+from bastion.contradiction import Contradiction, ContradictionDetector, ContradictionScanResult
 from bastion.crdt_memory import RGA, CRDTMemory, LWWRegister, ORMap, ORSet, PNCounter, VectorClock
 from bastion.dba import AutonomousDBA, SchemaEvolution
+from bastion.dreaming import DreamJournal, MemoryDreamer
 from bastion.drift import BehavioralDriftDetector, DriftReport
 from bastion.errors import (
     BastionAuthError,
@@ -24,8 +26,10 @@ from bastion.groq_callback import groq_chat, groq_merge, groq_query
 from bastion.guard import ToolScanResult, multilang_scan, pii_scan, scan_tool_manifest
 from bastion.limiter import RequestLimiter
 from bastion.locality import DataRegion, MemoryLocality
+from bastion.ltm_gateway import GatewayStats, LTMMemoryGateway, ReuseResult, StoreResult
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory, MemoryRouter
+from bastion.observations import Observation, ObservationDetector, ObservationReport
 from bastion.merkle import MerkleHashChain, MerkleTree
 from bastion.models import (
     AuditEntry,
@@ -127,4 +131,16 @@ __all__ = [
     "ThoughtChain",
     "ThoughtNode",
     "ThoughtType",
+    "LTMMemoryGateway",
+    "ReuseResult",
+    "StoreResult",
+    "GatewayStats",
+    "MemoryDreamer",
+    "DreamJournal",
+    "ContradictionDetector",
+    "Contradiction",
+    "ContradictionScanResult",
+    "ObservationDetector",
+    "Observation",
+    "ObservationReport",
 ]
