@@ -927,7 +927,6 @@ class BastionMemory:
         try:
             with conn.cursor() as cur:
                 # Use CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
-                # This reads the database state as it was at the specified timestamp
                 cur.execute(
                     "BEGIN AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,),
                 )
@@ -952,9 +951,12 @@ class BastionMemory:
                     )
                     results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
                 return results
+            except Exception as fallback_exc:
+                logger.warning("Time-travel fallback also failed: %s", fallback_exc)
+                return []
             finally:
                 pool.release(conn)
-        finally:
+        else:
             pool.release(conn)
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
@@ -1029,7 +1031,9 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         try:
-            merged = f"{fact_a}; {fact_b}"
+            # Try LLM-based merge first (uses Groq for speed, falls back to heuristic)
+            merged = self._smart_merge(fact_a, fact_b, context)
+
             with conn.cursor() as cur:
                 payload = json.dumps(
                     {
@@ -1050,8 +1054,37 @@ class BastionMemory:
         except Exception as e:
             logger.exception("resolve_conflict failed")
             raise RuntimeError(f"Conflict resolution failed: {e}") from e
-        finally:
-            pool.release(conn)
+
+    def _smart_merge(self, fact_a: str, fact_b: str, context: str) -> str:
+        """Merge two conflicting facts using LLM (Groq) or heuristic fallback.
+
+        The LLM merge produces a coherent statement that preserves information
+        from both facts. Falls back to a heuristic merge when LLM is unavailable.
+        """
+        # Try Groq LLM merge first
+        try:
+            from bastion.groq_callback import groq_merge
+            merged = groq_merge([fact_a, fact_b], context or "conflict_resolution")
+            if merged and merged != fact_a:
+                return merged
+        except Exception:
+            logger.debug("Groq merge unavailable, using heuristic fallback")
+
+        # Heuristic fallback: combine with structured format
+        # If facts share most words, pick the longer/more detailed one
+        words_a = set(fact_a.lower().split())
+        words_b = set(fact_b.lower().split())
+        overlap = len(words_a & words_b) / max(1, len(words_a | words_b))
+
+        if overlap > 0.7:
+            # Very similar — keep the longer/more detailed one
+            return fact_a if len(fact_a) >= len(fact_b) else fact_b
+        elif overlap > 0.3:
+            # Partially similar — combine with separator
+            return f"{fact_a}. Additionally: {fact_b}"
+        else:
+            # Very different — keep both with context
+            return f"{fact_a} | {fact_b}"
 
     def _get_last_hash(self, conn=None) -> str | None:
         if conn is None:
