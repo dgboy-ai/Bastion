@@ -104,7 +104,7 @@ jobs:
         working-directory: dashboard
 
   # ── Real CRDB Integration Tests ────────────────────────────────────────
-  # Uses docker-compose to run CockroachDB in single-node insecure mode.
+  # Uses Docker Compose for reliable CockroachDB startup in CI.
   crdb-integration:
     runs-on: ubuntu-latest
     steps:
@@ -114,28 +114,34 @@ jobs:
           python-version: "3.12"
           cache: "pip"
       - name: Install dependencies
-        run: pip install -e ".[dev,all]" --upgrade pip
-      - name: Start CockroachDB via Docker
+        run: pip install -e ".[dev,all]" docker-compose --upgrade pip
+      - name: Start CockroachDB
         run: |
-          docker run -d --name crdb \
-            -p 26257:26257 \
-            cockroachdb/cockroach:v24.1.0 \
-            start-single-node --insecure --accept-licenses
-          echo "Waiting for CockroachDB SQL interface..."
-          for i in $(seq 1 90); do
-            if docker exec crdb cockroach sql --insecure -e "SELECT 1" 2>/dev/null; then
-              echo "CockroachDB SQL ready after ${i}s"
-              break
-            fi
-            echo "Waiting for SQL... ($i/90)"
-            sleep 2
-          done
+          cat > docker-compose.crdb.yml << 'EOF'
+          version: "3.8"
+          services:
+            cockroachdb:
+              image: cockroachdb/cockroach:v24.1.0
+              command: start-single-node --insecure --accept-licenses
+              ports:
+                - "26257:26257"
+              healthcheck:
+                test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+                interval: 5s
+                timeout: 5s
+                retries: 20
+                start_period: 15s
+          EOF
+          docker-compose -f docker-compose.crdb.yml up -d
+          echo "Waiting for CockroachDB to be healthy..."
+          docker-compose -f docker-compose.crdb.yml up -d --wait
+          echo "CockroachDB is ready"
       - name: Create database and apply schema
         run: |
-          docker exec crdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
+          docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
           for f in schema/002_agent_memory.sql schema/003_agent_audit.sql schema/004_agent_coordination.sql; do
             echo "Applying $f..."
-            docker exec -i crdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues (may already exist)"
+            docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues"
           done
           echo "Schema setup complete"
       - name: Run real CRDB integration tests
@@ -144,4 +150,4 @@ jobs:
           BASTION_CONN: "postgresql://root:@localhost:26257/defaultdb?sslmode=disable"
       - name: Cleanup
         if: always()
-        run: docker rm -f crdb 2>/dev/null || true
+        run: docker-compose -f docker-compose.crdb.yml down -v 2>/dev/null || true
