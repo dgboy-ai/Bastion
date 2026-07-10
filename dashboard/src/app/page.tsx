@@ -32,7 +32,7 @@ function useInView(threshold = 0.15) {
   return { ref, visible };
 }
 
-/* ── 3D Particle Network ────────────────────────────────────── */
+/* ── Enhanced Particle Network with Glow ──────────────────────── */
 function ParticleNetwork() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -44,47 +44,68 @@ function ParticleNetwork() {
     const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
     window.addEventListener("resize", resize);
 
-    const particles = Array.from({ length: 80 }, () => ({
+    const particles = Array.from({ length: 100 }, () => ({
       x: Math.random() * w, y: Math.random() * h,
-      vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
-      r: Math.random() * 1.8 + 0.3,
-      o: Math.random() * 0.25 + 0.05,
-      z: Math.random(), // depth for parallax
+      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 2 + 0.5,
+      o: Math.random() * 0.3 + 0.1,
+      z: Math.random(),
+      pulse: Math.random() * Math.PI * 2,
     }));
 
     let raf: number;
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
-      // Sort by z for depth ordering
-      const sorted = [...particles].sort((a, b) => a.z - b.z);
-      for (const p of sorted) {
-        p.x += p.vx * (0.5 + p.z * 0.5);
-        p.y += p.vy * (0.5 + p.z * 0.5);
-        if (p.x < 0 || p.x > w) p.vx *= -1;
-        if (p.y < 0 || p.y > h) p.vy *= -1;
-        const alpha = p.o * (0.5 + p.z * 0.5);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * (0.5 + p.z * 0.5), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0, 229, 255, ${alpha})`;
-        ctx.fill();
-      }
-      // Draw connections with depth-based opacity
-      for (let i = 0; i < sorted.length; i++) {
-        for (let j = i + 1; j < sorted.length; j++) {
-          const dx = sorted[i].x - sorted[j].x;
-          const dy = sorted[i].y - sorted[j].y;
+
+      // Draw glowing connections first (behind particles)
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 100) {
-            const avgZ = (sorted[i].z + sorted[j].z) / 2;
+          if (dist < 140) {
+            const avgZ = (particles[i].z + particles[j].z) / 2;
+            const alpha = 0.12 * (1 - dist / 140) * (0.5 + avgZ * 0.5);
             ctx.beginPath();
-            ctx.moveTo(sorted[i].x, sorted[i].y);
-            ctx.lineTo(sorted[j].x, sorted[j].y);
-            ctx.strokeStyle = `rgba(0, 229, 255, ${0.08 * (1 - dist / 100) * (0.5 + avgZ * 0.5)})`;
-            ctx.lineWidth = 0.5 + avgZ * 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(0, 229, 255, ${alpha})`;
+            ctx.lineWidth = 0.8;
             ctx.stroke();
           }
         }
       }
+
+      // Draw particles with glow
+      for (const p of particles) {
+        p.x += p.vx * (0.5 + p.z * 0.5);
+        p.y += p.vy * (0.5 + p.z * 0.5);
+        p.pulse += 0.02;
+        if (p.x < 0 || p.x > w) p.vx *= -1;
+        if (p.y < 0 || p.y > h) p.vy *= -1;
+
+        const alpha = p.o * (0.5 + p.z * 0.5);
+        const size = p.r * (0.5 + p.z * 0.5) * (1 + Math.sin(p.pulse) * 0.15);
+
+        // Glow layer
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size * 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 229, 255, ${alpha * 0.15})`;
+        ctx.fill();
+
+        // Core particle
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 229, 255, ${alpha})`;
+        ctx.fill();
+
+        // Bright center
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size * 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+        ctx.fill();
+      }
+
       raf = requestAnimationFrame(draw);
     };
     draw();
@@ -159,13 +180,20 @@ function Hero() {
       justifyContent: "center", alignItems: "center", textAlign: "center",
       padding: "140px 48px 100px", position: "relative", zIndex: 1,
     }}>
-      {/* Gradient orb behind hero */}
+      {/* Glowing orb behind hero */}
       <div style={{
-        position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)",
-        width: "600px", height: "600px", borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%)",
-        filter: "blur(60px)", pointerEvents: "none",
+        position: "absolute", top: "15%", left: "50%", transform: "translateX(-50%)",
+        width: "700px", height: "700px", borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(0,229,255,0.08) 0%, rgba(124,58,237,0.04) 40%, transparent 70%)",
+        filter: "blur(80px)", pointerEvents: "none",
+        animation: "orbPulse 4s ease-in-out infinite",
       }} />
+      <style>{`
+        @keyframes orbPulse {
+          0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+          50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+        }
+      `}</style>
 
       <div style={{
         opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(40px)",
