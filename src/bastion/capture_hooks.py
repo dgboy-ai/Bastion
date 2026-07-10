@@ -252,6 +252,45 @@ class CaptureHooks:
         self._store_event(event, memory_type="database_activity")
         return event
 
+    def after_session_start(self, session_id: str = "", context: str = "") -> CaptureEvent | None:
+        """Capture memory at session start."""
+        content = f"Session started: {session_id}"
+        if context:
+            content += f" — {context[:200]}"
+        event = CaptureEvent(
+            event_type="session_start",
+            content=content,
+            metadata={"session_id": session_id},
+        )
+        self._store_event(event, memory_type="session_lifecycle")
+        return event
+
+    def after_session_end(self, session_id: str = "", summary: str = "") -> CaptureEvent | None:
+        """Capture memory at session end."""
+        content = f"Session ended: {session_id}"
+        if summary:
+            content += f" — {summary[:200]}"
+        event = CaptureEvent(
+            event_type="session_end",
+            content=content,
+            metadata={"session_id": session_id},
+        )
+        self._store_event(event, memory_type="session_lifecycle")
+        return event
+
+    def after_subagent_start(self, subagent_id: str, task: str = "") -> CaptureEvent | None:
+        """Capture memory when a sub-agent is spawned."""
+        content = f"Sub-agent started: {subagent_id}"
+        if task:
+            content += f" — {task[:200]}"
+        event = CaptureEvent(
+            event_type="subagent_start",
+            content=content,
+            metadata={"subagent_id": subagent_id, "task": task},
+        )
+        self._store_event(event, memory_type="agent_coordination")
+        return event
+
     def _store_event(self, event: CaptureEvent, memory_type: str) -> None:
         """Store a capture event as a memory."""
         try:
