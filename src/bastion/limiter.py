@@ -272,7 +272,8 @@ class RequestLimiter:
                     "WHERE instance_id IS NOT NULL"
                 )
                 return cur.fetchone()[0]
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to count occupied slots: %s", exc)
             return 0
         finally:
             self._pool.release(conn)

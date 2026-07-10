@@ -490,7 +490,8 @@ def multilang_scan(content: str) -> list[str]:
     try:
         import langdetect
         lang = langdetect.detect(content)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Language detection failed (content length=%d): %s", len(content), exc)
         return []
     patterns = MULTILANG_PATTERNS.get(lang, [])
     matched = []

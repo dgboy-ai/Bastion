@@ -27,9 +27,9 @@ def test_create_server_returns_fastmcp(mcp):
     assert hasattr(mcp, "_tool_manager")
 
 
-def test_tools_list_has_fourteen_tools(mcp):
+def test_tools_list_has_nineteen_tools(mcp):
     tools = mcp._tool_manager.list_tools()
-    assert len(tools) == 14
+    assert len(tools) == 22
     tool_names = [t.name for t in tools]
     assert "memory_search" in tool_names
     assert "memory_store" in tool_names
@@ -42,8 +42,14 @@ def test_tools_list_has_fourteen_tools(mcp):
     assert "memory_list" in tool_names
     assert "memory_correct" in tool_names
     assert "memory_health" in tool_names
+    assert "memory_apply_patch" in tool_names
     assert "resolve_conflict" in tool_names
     assert "a2a_bridge" in tool_names
+    assert "ltm_check_reuse" in tool_names
+    assert "ltm_store_analysis" in tool_names
+    assert "ltm_invalidate" in tool_names
+    assert "dream" in tool_names
+    assert "dream_history" in tool_names
 
 
 def test_tool_annotations_are_set(mcp):
@@ -278,7 +284,7 @@ async def test_server_card_returns_valid_metadata(mcp):
     data = response.json()
     assert data["schemaVersion"] == "v1"
     assert data["name"] == "Bastion Memory"
-    assert len(data["tools"]) == 14
+    assert len(data["tools"]) == 22
     assert len(data["resources"]) == 4
     assert len(data["prompts"]) == 3
     assert data["capabilities"]["resources"] is True

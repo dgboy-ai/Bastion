@@ -14,6 +14,14 @@ class TestMerkleTree:
     def test_two_leaves(self):
         tree = MerkleTree(["a", "b"])
         assert tree.size == 2
+        assert len(tree.root) == 64
+        assert isinstance(tree.root, str)
+        # Root is deterministic for same leaves
+        tree2 = MerkleTree(["a", "b"])
+        assert tree.root == tree2.root
+        # Different leaves produce different root
+        tree3 = MerkleTree(["a", "c"])
+        assert tree.root != tree3.root
 
     def test_three_leaves_odd(self):
         tree = MerkleTree(["a", "b", "c"])

@@ -147,9 +147,9 @@ export default function OverviewPage() {
   }, [decayPoints]);
 
   const { facts, semCache, episodic } = useMemo(() => {
-    const f = memCount ? Math.round(memCount * 0.6) : 15;
-    const s = memCount ? Math.round(memCount * 0.25) : 6;
-    const e = memCount ? Math.max(1, memCount - f - s) : 3;
+    const f = memCount ? Math.round(memCount * 0.6) : 0;
+    const s = memCount ? Math.round(memCount * 0.25) : 0;
+    const e = memCount ? Math.max(1, memCount - f - s) : 0;
     return { facts: f, semCache: s, episodic: e };
   }, [memCount]);
 

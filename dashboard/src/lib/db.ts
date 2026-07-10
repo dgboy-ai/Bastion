@@ -3,15 +3,31 @@ import { type QueryResult, Pool } from "pg";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
 
+const mockResult = (): SafeQueryResult => ({
+  rows: [],
+  rowCount: 0,
+  command: "",
+  oid: 0,
+  fields: [],
+  mock: true,
+});
+
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
+const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true";
+const isMockExplicitlyDisabled = process.env.BASTION_MOCK?.toLowerCase() === "false";
 
 if (!connectionString) {
+  if (isMockExplicitlyDisabled) {
+    throw new Error(
+      "[Bastion] BASTION_MOCK is false but no BASTION_CONN / BASTION_DB_URL set — cannot proceed without a database connection",
+    );
+  }
   console.warn("[Bastion] BASTION_CONN not set — running in mock mode");
 } else {
   console.log("[Bastion] BASTION_CONN configured, connecting to CockroachDB...");
 }
 
-export const pool = connectionString
+export const pool = connectionString && !isMockForced
   ? new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
@@ -47,7 +63,7 @@ export async function query(text: string, params?: unknown[]) {
 export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQueryResult> {
   try {
     if (!pool) {
-      return { rows: [], mock: true } as unknown as SafeQueryResult;
+      return mockResult();
     }
     const start = Date.now();
     const res = await pool.query(text, params);
@@ -56,6 +72,6 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     return res;
   } catch (err) {
     console.warn("[DB Query] failed, falling back to mock:", err);
-    return { rows: [], mock: true } as unknown as SafeQueryResult;
+    return mockResult();
   }
 }

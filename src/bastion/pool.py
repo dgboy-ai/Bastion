@@ -90,7 +90,8 @@ class ConnectionPool:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Connection health check failed: %s", exc)
             return False
 
     def acquire(self, timeout: float = 30.0) -> Any:

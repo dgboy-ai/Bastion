@@ -296,6 +296,14 @@ def create_server(
                     "memory_delete",
                     "resolve_conflict",
                     "a2a_bridge",
+                    "ltm_check_reuse",
+                    "ltm_store_analysis",
+                    "ltm_invalidate",
+                    "dream",
+                    "dream_history",
+                    "detect_contradictions",
+                    "scan_all_contradictions",
+                    "detect_observations",
                 ],
             },
             indent=2,
@@ -761,6 +769,268 @@ def create_server(
         return json.dumps({"merged": merged}, indent=2, default=str)
 
     @mcp.tool(
+        name="ltm_check_reuse",
+        title="LTM Gateway — Check Memory Reuse",
+        description=(
+            "Before running an expensive workflow, check if a similar analysis "
+            "already exists in long-term memory. Uses C-SPANN vector similarity "
+            "search to find cached results above a configurable threshold. "
+            "Returns the cached analysis if found, or None if the workflow "
+            "should be run fresh. This is the core pattern for avoiding "
+            "redundant LLM computation."
+        ),
+        annotations=ToolAnnotations(
+            title="LTM Gateway — Check Memory Reuse",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def ltm_check_reuse(
+        ctx: Context,
+        query: str,
+        threshold: float = 0.80,
+        analysis_type: str | None = None,
+    ) -> str:
+        from bastion.ltm_gateway import LTMMemoryGateway
+
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
+        if not 0.0 <= threshold <= 1.0:
+            return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
+
+        mem = _resolve_memory(ctx)
+        gateway = LTMMemoryGateway(mem, reuse_threshold=threshold)
+        result = await anyio.to_thread.run_sync(
+            gateway.check_reuse, query, threshold, analysis_type,
+        )
+        if result is None:
+            return json.dumps({
+                "reuse_found": False,
+                "query": query[:200],
+                "threshold": threshold,
+                "recommendation": "run_workflow",
+            }, indent=2)
+        return json.dumps({
+            "reuse_found": True,
+            **result.to_dict(),
+        }, indent=2, default=str)
+
+    @mcp.tool(
+        name="ltm_store_analysis",
+        title="LTM Gateway — Store Analysis Result",
+        description=(
+            "Store a completed agent analysis result in memory for future reuse "
+            "by the LTM Gateway. Tag it with analysis_type (analysis, research, "
+            "summary, report, etc.) and optionally include token usage for cost tracking."
+        ),
+        annotations=ToolAnnotations(
+            title="LTM Gateway — Store Analysis Result",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def ltm_store_analysis(
+        ctx: Context,
+        query: str,
+        result: str,
+        analysis_type: str = "analysis",
+        metadata: dict[str, Any] | None = None,
+        tokens_used: int | None = None,
+    ) -> str:
+        from bastion.ltm_gateway import LTMMemoryGateway
+
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
+        if not result or not result.strip():
+            return json.dumps({"error": "result must be a non-empty string"})
+
+        mem = _resolve_memory(ctx)
+        gateway = LTMMemoryGateway(mem)
+        store_result = await anyio.to_thread.run_sync(
+            gateway.store_analysis, query, result, analysis_type, metadata, tokens_used,
+        )
+        await _notify_resource_updated(ctx, "bastion://stats")
+        return json.dumps(store_result.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="ltm_invalidate",
+        title="LTM Gateway — Invalidate Stale Analyses",
+        description=(
+            "Mark cached agent analyses for a query as stale when new information "
+            "arrives that contradicts them. Preserves audit trail but tags "
+            "memory results for re-computation."
+        ),
+        annotations=ToolAnnotations(
+            title="LTM Gateway — Invalidate Stale Analyses",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def ltm_invalidate(
+        ctx: Context,
+        query: str,
+        reason: str = "outdated",
+    ) -> str:
+        from bastion.ltm_gateway import LTMMemoryGateway
+
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
+
+        mem = _resolve_memory(ctx)
+        gateway = LTMMemoryGateway(mem)
+        result = await anyio.to_thread.run_sync(gateway.invalidate, query, reason)
+        return json.dumps(result, indent=2, default=str)
+
+    @mcp.tool(
+        name="detect_contradictions",
+        title="Detect Memory Contradictions",
+        description=(
+            "Scan existing memories for contradictions against a newly stored "
+            "memory. Detects negation contradictions (X is true vs X is not true), "
+            "temporal contradictions (old fact vs updated fact), and semantic "
+            "contradictions (similar content, different claims). Auto-supersedes "
+            "high-confidence contradictions."
+        ),
+        annotations=ToolAnnotations(
+            title="Detect Memory Contradictions",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def detect_contradictions(
+        ctx: Context,
+        memory_id: str,
+    ) -> str:
+        from bastion.contradiction import ContradictionDetector
+
+        if not memory_id:
+            return json.dumps({"error": "memory_id is required"})
+
+        mem = _resolve_memory(ctx)
+        record = await anyio.to_thread.run_sync(mem.get_memory, memory_id)
+        if record is None:
+            return json.dumps({"error": f"Memory {memory_id} not found"})
+
+        detector = ContradictionDetector(mem)
+        result = await anyio.to_thread.run_sync(detector.scan_after_store, record)
+        return json.dumps(result.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="scan_all_contradictions",
+        title="Batch Contradiction Scan",
+        description=(
+            "Scan ALL agent memories for existing contradictions. Useful for "
+            "initial setup or periodic maintenance. Returns all detected "
+            "contradictions across the entire memory store."
+        ),
+        annotations=ToolAnnotations(
+            title="Batch Contradiction Scan",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def scan_all_contradictions(ctx: Context) -> str:
+        from bastion.contradiction import ContradictionDetector
+
+        mem = _resolve_memory(ctx)
+        detector = ContradictionDetector(mem)
+        results = await anyio.to_thread.run_sync(detector.scan_all)
+        return json.dumps(
+            [r.to_dict() for r in results],
+            indent=2,
+            default=str,
+        )
+
+    @mcp.tool(
+        name="dream",
+        title="Sleep-Time Memory Consolidation",
+        description=(
+            "Trigger a dreaming/consolidation cycle: reviews recent episodic "
+            "memories, extracts patterns and lessons, consolidates duplicates, "
+            "promotes high-value episodic memories to semantic knowledge, and "
+            "prunes low-value memories. All actions are logged in the audit "
+            "trail. Run this during agent idle time for autonomous learning."
+        ),
+        annotations=ToolAnnotations(
+            title="Sleep-Time Memory Consolidation",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def dream(ctx: Context, lookback_hours: int = 24) -> str:
+        from bastion.dreaming import MemoryDreamer
+
+        if lookback_hours < 1 or lookback_hours > 168:
+            return json.dumps({"error": "lookback_hours must be between 1 and 168"})
+
+        mem = _resolve_memory(ctx)
+        dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
+        await _report_progress(ctx, 0, 4, "Starting dream cycle...")
+        journal = await anyio.to_thread.run_sync(dreamer.dream)
+        await _report_progress(ctx, 4, 4, "Dream cycle complete")
+        await _notify_resource_updated(ctx, "bastion://stats")
+        return json.dumps(journal.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="dream_history",
+        title="Dream History",
+        description=(
+            "Retrieve past dreaming/consolidation sessions from the agent memory "
+            "audit trail. Shows what was consolidated, promoted, and pruned in each cycle."
+        ),
+        annotations=ToolAnnotations(
+            title="Dream History",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def dream_history(ctx: Context) -> str:
+        from bastion.dreaming import MemoryDreamer
+
+        mem = _resolve_memory(ctx)
+        dreamer = MemoryDreamer(mem)
+        history = await anyio.to_thread.run_sync(dreamer.get_dream_history)
+        return json.dumps(history, indent=2, default=str)
+
+    @mcp.tool(
+        name="detect_observations",
+        title="Detect Meta-Patterns in Agent Memory",
+        description=(
+            "Scan all agent memories to detect recurring themes, entity "
+            "co-occurrences, temporal trends, and entity clusters. Surfaces "
+            "global patterns beyond individual facts."
+        ),
+        annotations=ToolAnnotations(
+            title="Detect Meta-Patterns in Agent Memory",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def detect_observations(ctx: Context) -> str:
+        from bastion.observations import ObservationDetector
+
+        mem = _resolve_memory(ctx)
+        detector = ObservationDetector(mem)
+        report = await anyio.to_thread.run_sync(detector.detect)
+        return json.dumps(report.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
         name="a2a_bridge",
         title="A2A Agent Bridge",
         description=("Retrieve the A2A Agent Card for inter-agent discovery. Returns A2A-compliant metadata."),
@@ -854,6 +1124,47 @@ def create_server(
                 "description": "Apply RFC 6902 JSON Patch to memory metadata",
                 "read_only": False,
             },
+            {
+                "name": "ltm_check_reuse",
+                "description": "LTM Gateway: check if a similar analysis exists before running expensive workflows",
+                "read_only": True,
+            },
+            {
+                "name": "ltm_store_analysis",
+                "description": "LTM Gateway: store completed analysis results for future reuse",
+                "read_only": False,
+            },
+            {
+                "name": "ltm_invalidate",
+                "description": "LTM Gateway: mark cached analyses as stale when new info arrives",
+                "read_only": False,
+            },
+            {
+                "name": "dream",
+                "description": "Sleep-time memory consolidation: review, consolidate, promote, and prune memories",
+                "read_only": False,
+                "destructive": True,
+            },
+            {
+                "name": "dream_history",
+                "description": "View past dreaming/consolidation sessions from audit trail",
+                "read_only": True,
+            },
+            {
+                "name": "detect_contradictions",
+                "description": "Auto-detect contradictions between new and existing memories",
+                "read_only": False,
+            },
+            {
+                "name": "scan_all_contradictions",
+                "description": "Batch scan all agent memories for existing contradictions",
+                "read_only": True,
+            },
+            {
+                "name": "detect_observations",
+                "description": "Detect recurring themes, co-occurrences, and meta-patterns across memories",
+                "read_only": True,
+            },
         ]
         card = {
             "schemaVersion": "v1",
@@ -926,7 +1237,7 @@ def create_server(
             {
                 "status": "ok",
                 "service": "bastion-mcp",
-                "tools": 8,
+                "tools": 22,
             }
         )
 
@@ -947,6 +1258,14 @@ def create_server(
                     "memory_delete",
                     "resolve_conflict",
                     "a2a_bridge",
+                    "ltm_check_reuse",
+                    "ltm_store_analysis",
+                    "ltm_invalidate",
+                    "dream",
+                    "dream_history",
+                    "detect_contradictions",
+                    "scan_all_contradictions",
+                    "detect_observations",
                 ],
             }
         )
