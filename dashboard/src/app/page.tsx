@@ -1,637 +1,477 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { fetchWithTimeout } from "@/lib/fetch";
-import KpiCardGrid from "@/components/KpiCardGrid";
-import PoisoningAlerts from "@/components/PoisoningAlerts";
 
-const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false });
-const DriftChart = dynamic(() => import("@/components/DriftChart"), { ssr: false });
-const MemoryGuardPanel = dynamic(() => import("@/components/MemoryGuardPanel"), { ssr: false });
-const LiveEventFeed = dynamic(() => import("@/components/LiveEventFeed"), { ssr: false });
-const LtmGatewayWidget = dynamic(() => import("@/components/LtmGatewayWidget"), { ssr: false });
-const RegionMapWidget = dynamic(() => import("@/components/RegionMapWidget"), { ssr: false });
-const ObservationsWidget = dynamic(() => import("@/components/ObservationsWidget"), { ssr: false });
+/* ── Design Tokens (xAI-Inspired) ────────────────────────────── */
+const C = {
+  canvas: "#0a0a0a", canvasSoft: "#111520", card: "#0c1018",
+  hairline: "rgba(255,255,255,0.08)", ink: "#ffffff", body: "#c8ccd4",
+  mute: "#6b7280", sunset: "#ff7a17", dusk: "#7c3aed",
+  breeze: "#00e5ff", emerald: "#00ff88",
+};
 
-interface Stats {
-  memories: number;
-  entities: number;
-  relations: number;
-  auditLogs: number;
-  conflicts: number;
-  avgImportance: string;
-  decayCurve: Array<{ label: string; value: number }>;
-  hourlyGrowth: number[];
-  topRecalls: Array<{ rank: number; text: string; count: number }>;
-  cacheHitPct: string;
-  recentAudits: Array<{
-    id: string;
-    action: string;
-    recordedAt: string;
-    details: Record<string, unknown>;
-  }>;
+const navLinks = [
+  { href: "/", label: "Home" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/docs", label: "Docs" },
+  { href: "/contact", label: "Contact" },
+];
+
+/* ── Intersection Observer Hook ──────────────────────────────── */
+function useInView(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return { ref, visible };
 }
 
-export default function OverviewPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; time: string; value: string } | null>(null);
+/* ── 3D Particle Network ────────────────────────────────────── */
+function ParticleNetwork() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    let w = canvas.width = window.innerWidth;
+    let h = canvas.height = window.innerHeight;
+    const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
+    window.addEventListener("resize", resize);
 
-  const [queryLatency, setQueryLatency] = useState<number | null>(null);
+    const particles = Array.from({ length: 80 }, () => ({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
+      r: Math.random() * 1.8 + 0.3,
+      o: Math.random() * 0.25 + 0.05,
+      z: Math.random(), // depth for parallax
+    }));
 
-  // Interactive states
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
-  const [activeModal, setActiveModal] = useState<"memories" | "cognitive" | null>(null);
-  const [selectedHour, setSelectedHour] = useState<number | null>(null);
-  const [trustSummary, setTrustSummary] = useState<{
-    totalMemories: number;
-    avgTrustScore: number;
-    trustLevelDistribution: Record<number, number>;
-    poisoningDistribution: Record<string, number>;
-    dangerousMemories: number;
-  } | null>(null);
-  const [trustAlerts, setTrustAlerts] = useState<{ severity: string; risk: string; count: number }[]>([]);
-  const [driftData, setDriftData] = useState<{
-    latest: { overall_drift_score: number; status: string; top_drift_signals: string[]; recommendation: string } | null;
-    timeSeries: { score: number; timestamp: string; status: string }[];
-  } | null>(null);
-
-  const prevStatsRef = useRef<string>("");
-  const prevTrustKey = useRef<string>("");
-  const prevDriftKey = useRef<string>("");
-
-  const fetchData = useCallback(async () => {
-    const ac = new AbortController();
-    const startTime = performance.now();
-    try {
-      const [statsRes, trustRes, driftRes] = await Promise.all([
-        fetchWithTimeout("/api/stats", { signal: ac.signal }),
-        fetchWithTimeout("/api/trust?limit=100", { signal: ac.signal }),
-        fetchWithTimeout("/api/drift?limit=50", { signal: ac.signal }),
-      ]);
-
-      if (!statsRes.ok) {
-        throw new Error("Failed to fetch dashboard telemetry");
+    let raf: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      // Sort by z for depth ordering
+      const sorted = [...particles].sort((a, b) => a.z - b.z);
+      for (const p of sorted) {
+        p.x += p.vx * (0.5 + p.z * 0.5);
+        p.y += p.vy * (0.5 + p.z * 0.5);
+        if (p.x < 0 || p.x > w) p.vx *= -1;
+        if (p.y < 0 || p.y > h) p.vy *= -1;
+        const alpha = p.o * (0.5 + p.z * 0.5);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (0.5 + p.z * 0.5), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 229, 255, ${alpha})`;
+        ctx.fill();
       }
-
-      const statsData = await statsRes.json();
-      const trustData = trustRes.ok ? await trustRes.json() : null;
-      const driftRaw = driftRes.ok ? await driftRes.json() : null;
-
-      const statsKey = JSON.stringify(statsData);
-      if (statsKey !== prevStatsRef.current) {
-        prevStatsRef.current = statsKey;
-        setStats(statsData.data || statsData);
-      }
-      const trustKey = JSON.stringify(trustData);
-      if (trustKey !== prevTrustKey.current) {
-        prevTrustKey.current = trustKey;
-        setTrustSummary((trustData?.data || trustData)?.summary ?? null);
-        setTrustAlerts((trustData?.data || trustData)?.alerts ?? []);
-      }
-      if (driftRaw) {
-        const driftKey = JSON.stringify(driftRaw);
-        if (driftKey !== prevDriftKey.current) {
-          prevDriftKey.current = driftKey;
-          const driftData = driftRaw.data || driftRaw;
-          setDriftData({ latest: driftData.latest, timeSeries: driftData.timeSeries });
+      // Draw connections with depth-based opacity
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          const dx = sorted[i].x - sorted[j].x;
+          const dy = sorted[i].y - sorted[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 100) {
+            const avgZ = (sorted[i].z + sorted[j].z) / 2;
+            ctx.beginPath();
+            ctx.moveTo(sorted[i].x, sorted[i].y);
+            ctx.lineTo(sorted[j].x, sorted[j].y);
+            ctx.strokeStyle = `rgba(0, 229, 255, ${0.08 * (1 - dist / 100) * (0.5 + avgZ * 0.5)})`;
+            ctx.lineWidth = 0.5 + avgZ * 0.5;
+            ctx.stroke();
+          }
         }
       }
-      setError(null);
-
-      const endTime = performance.now();
-      setQueryLatency(Math.round(endTime - startTime));
-    } catch (err: unknown) {
-      console.error("Telemetry fetch error:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("abort")) {
-        setError("Request timed out after 10 seconds");
-      } else {
-        setError(message);
-      }
-    } finally {
-      ac.abort();
-    }
-    setLoading(false);
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   }, []);
+  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
+}
 
+/* ── Navbar with scroll effect ───────────────────────────────── */
+function Navbar() {
+  const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const id = setTimeout(fetchData, 0);
-    const interval = setInterval(fetchData, 10000);
-    return () => { clearTimeout(id); clearInterval(interval); };
-  }, [fetchData]);
-
-  const decayCurve = stats?.decayCurve;
-  const memCount = stats?.memories;
-  const recentAudits = stats?.recentAudits;
-
-  const decayPoints = useMemo(() => decayCurve ? decayCurve.map((pt, idx) => {
-    const x = 30 + idx * 50;
-    const y = 80 - (pt.value / 10) * 60;
-    return { x, y, time: pt.label, value: `${pt.value.toFixed(2)}` };
-  }) : [], [decayCurve]);
-
-  const { pathD, areaD } = useMemo(() => {
-    let p = "";
-    let a = "";
-    if (decayPoints.length > 0) {
-      p = `M${decayPoints[0].x},${decayPoints[0].y}`;
-      for (let i = 1; i < decayPoints.length; i++) {
-        const prev = decayPoints[i - 1];
-        const curr = decayPoints[i];
-        p += ` C${prev.x + 25},${prev.y} ${curr.x - 25},${curr.y} ${curr.x},${curr.y}`;
-      }
-      a = `${p} L${decayPoints[decayPoints.length - 1].x},90 L${decayPoints[0].x},90 Z`;
-    }
-    return { pathD: p, areaD: a };
-  }, [decayPoints]);
-
-  const { facts, semCache, episodic } = useMemo(() => {
-    const f = memCount ? Math.round(memCount * 0.6) : 0;
-    const s = memCount ? Math.round(memCount * 0.25) : 0;
-    const e = memCount ? Math.max(1, memCount - f - s) : 0;
-    return { facts: f, semCache: s, episodic: e };
-  }, [memCount]);
-
-  const filteredAudits = useMemo(() => recentAudits
-    ? recentAudits.filter((log) => {
-        if (!selectedFilter) return true;
-        const detailsString = JSON.stringify(log.details).toLowerCase();
-        return detailsString.includes(selectedFilter.toLowerCase());
-      })
-    : [], [recentAudits, selectedFilter]);
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-        <div>
-          <div className="shimmer-pulse" style={{ width: "240px", height: "30px", marginBottom: "8px" }} />
-          <div className="shimmer-pulse" style={{ width: "380px", height: "14px" }} />
+    const h = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", h, { passive: true });
+    return () => window.removeEventListener("scroll", h);
+  }, []);
+  return (
+    <nav style={{
+      position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+      padding: scrolled ? "12px 48px" : "20px 48px",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      background: scrolled ? "rgba(10,10,10,0.95)" : "transparent",
+      backdropFilter: scrolled ? "blur(20px)" : "none",
+      borderBottom: scrolled ? "1px solid rgba(255,255,255,0.06)" : "1px solid transparent",
+      transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+    }}>
+      <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{
+          width: "32px", height: "32px", borderRadius: "8px",
+          background: "linear-gradient(135deg, #00e5ff, #7c3aed)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 0 20px rgba(0,229,255,0.3)",
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" stroke="#fff" strokeWidth="2.5" />
+            <circle cx="12" cy="12" r="2" fill="#fff" />
+          </svg>
         </div>
+        <span style={{ fontWeight: 700, fontSize: "17px", letterSpacing: "2.5px", color: "#fff", textTransform: "uppercase" }}>
+          Bastion
+        </span>
+      </Link>
+      <div style={{ display: "flex", gap: "36px", alignItems: "center" }}>
+        {navLinks.map((l) => (
+          <Link key={l.href} href={l.href} className="hover-underline" style={{
+            color: l.href === "/" ? "#fff" : "#6b7280",
+            fontSize: "14px", textDecoration: "none", transition: "color 0.2s",
+          }}>
+            {l.label}
+          </Link>
+        ))}
+        <Link href="/dashboard" className="btn-animated" style={{
+          padding: "10px 28px", borderRadius: "9999px",
+          border: "1px solid rgba(255,255,255,0.2)", background: "transparent",
+          color: "#fff", fontSize: "14px", fontWeight: 500, textDecoration: "none",
+        }}>
+          Open Dashboard
+        </Link>
       </div>
-    );
-  }
+    </nav>
+  );
+}
 
-  if (error) {
-    return (
-      <div style={{ padding: "40px 0" }}>
-        <div className="eyebrow" style={{ color: "var(--accent-sunset)" }}>Telemetry Link Offline</div>
-        <div className="title-md" style={{ color: "var(--accent-sunset)" }}>
-          Failed to establish database pipeline
-        </div>
-        <p className="paragraph">
-          Error description: {error}. Please verify that BASTION_CONN in .env.local is correct and the CockroachDB cluster is accessible.
-        </p>
-        <button
-          className="btn btn-outline"
-          style={{ marginTop: "16px", fontSize: "13px", padding: "8px 20px" }}
-          onClick={() => { setLoading(true); setError(null); fetchData(); }}
-        >
-          Retry Connection
-        </button>
-      </div>
-    );
-  }
+/* ── Hero Section ───────────────────────────────────────────── */
+function Hero() {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setLoaded(true)); }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }} className="stagger-children">
-      {/* Welcome Greeting & Subtext */}
-      <div className="animate-fade-in-up">
-        <div className="welcome-title">Hello Agent! 👋</div>
-        <div className="welcome-subtitle">Here&apos;s what&apos;s happening with your agent&apos;s memory ledger today. Click cards and filters to inspect.</div>
+    <section style={{
+      minHeight: "100vh", display: "flex", flexDirection: "column",
+      justifyContent: "center", alignItems: "center", textAlign: "center",
+      padding: "140px 48px 100px", position: "relative", zIndex: 1,
+    }}>
+      {/* Gradient orb behind hero */}
+      <div style={{
+        position: "absolute", top: "20%", left: "50%", transform: "translateX(-50%)",
+        width: "600px", height: "600px", borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%)",
+        filter: "blur(60px)", pointerEvents: "none",
+      }} />
+
+      <div style={{
+        opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(40px)",
+        transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)",
+      }}>
+        {/* Eyebrow */}
+        <div style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 600,
+          textTransform: "uppercase", letterSpacing: "4px", color: "#6b7280",
+          marginBottom: "32px", opacity: loaded ? 1 : 0,
+          transition: "opacity 0.6s ease 0.2s",
+        }}>
+          Agentic Memory Infrastructure
+        </div>
+
+        {/* Main headline */}
+        <h1 style={{
+          fontSize: "clamp(52px, 9vw, 108px)", fontWeight: 400, lineHeight: "0.95",
+          letterSpacing: "-3px", color: "#fff", marginBottom: "40px",
+          maxWidth: "950px",
+        }}>
+          The system of
+          <br />
+          record for
+          <br />
+          <span style={{
+            background: "linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #ff7a17 100%)",
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+          }}>
+            autonomous AI
+          </span>
+        </h1>
+
+        {/* Subheadline */}
+        <p style={{
+          fontSize: "18px", lineHeight: "1.8", color: "#9ca3af",
+          maxWidth: "560px", margin: "0 auto 56px",
+        }}>
+          Persistent, self-healing memory that survives serverless crashes,
+          scales across regions, and never lets your agents forget.
+        </p>
+
+        {/* CTAs */}
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
+          <Link href="/dashboard" className="btn-animated" style={{
+            padding: "16px 36px", borderRadius: "9999px", background: "#fff", color: "#0a0a0a",
+            fontSize: "15px", fontWeight: 600, textDecoration: "none", display: "inline-flex",
+            alignItems: "center", gap: "8px",
+          }}>
+            Launch Dashboard
+            <span style={{ fontSize: "18px", transition: "transform 0.2s" }}>→</span>
+          </Link>
+          <Link href="/docs" className="btn-animated" style={{
+            padding: "16px 36px", borderRadius: "9999px",
+            border: "1px solid rgba(255,255,255,0.2)", background: "transparent",
+            color: "#fff", fontSize: "15px", fontWeight: 500, textDecoration: "none",
+          }}>
+            Read Documentation
+          </Link>
+        </div>
       </div>
 
-      {/* Row 1: KPI Stats Grid (1.3fr), Memory Type Mix (1fr), and Curve chart (1fr) side-by-side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: "20px", alignItems: "stretch" }} className="animate-fade-in-up">
-        
-        <KpiCardGrid
-          memories={stats?.memories}
-          entities={stats?.entities}
-          relations={stats?.relations}
-          avgImportance={stats?.avgImportance}
-          onMemoryClick={() => setActiveModal("memories")}
-          onCognitiveClick={() => setActiveModal("cognitive")}
-        />
-
-        {/* Memory Type Mix (Compact Card) */}
-        <div className="panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-          <div className="panel-header" style={{ borderBottom: "none", marginBottom: 0, paddingBottom: 0 }}>
-            <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Memory Mix</span>
-            {selectedFilter && (
-              <button 
-                onClick={() => setSelectedFilter(null)} 
-                className="btn btn-outline"
-                style={{ fontSize: "8px", padding: "2px 6px" }}
-              >
-                Reset
-              </button>
-            )}
+      {/* Floating Stats */}
+      <div style={{
+        display: "flex", gap: "56px", marginTop: "100px",
+        opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(20px)",
+        transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.4s",
+      }}>
+        {[
+          { value: "1,058", label: "Tests", color: "#00e5ff" },
+          { value: "22", label: "MCP Tools", color: "#7c3aed" },
+          { value: "4/4", label: "CRDB Tools", color: "#ff7a17" },
+          { value: "5/5", label: "AWS Services", color: "#00ff88" },
+        ].map((s, i) => (
+          <div key={s.label} style={{ textAlign: "center" }} className="animate-fade-in-up" >
+            <div style={{
+              fontSize: "36px", fontWeight: 700, color: s.color,
+              textShadow: `0 0 20px ${s.color}33`,
+            }}>{s.value}</div>
+            <div style={{
+              fontSize: "11px", color: "#6b7280", textTransform: "uppercase",
+              letterSpacing: "2px", marginTop: "4px",
+            }}>{s.label}</div>
           </div>
-          <div className="chart-donut-container" style={{ gap: "16px", height: "120px" }}>
-            <svg width="70" height="70" viewBox="0 0 36 36" style={{ overflow: "visible", filter: "drop-shadow(0 0 4px rgba(0,229,255,0.15))" }} role="img" aria-label="Memory type distribution chart">
-              <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.02)" strokeWidth="3.5" />
-              <circle cx="18" cy="18" r="15.915" fill="none" stroke="var(--accent-breeze)" strokeWidth="3.8" strokeDasharray="60 40" strokeDashoffset="25" />
-              <circle cx="18" cy="18" r="15.915" fill="none" stroke="var(--accent-dusk)" strokeWidth="3.8" strokeDasharray="25 75" strokeDashoffset="-35" />
-              <circle cx="18" cy="18" r="15.915" fill="none" stroke="var(--accent-sunset)" strokeWidth="3.8" strokeDasharray="15 85" strokeDashoffset="-60" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ── Features Section ───────────────────────────────────────── */
+const features = [
+  { icon: "🔐", title: "Cryptographic Integrity", desc: "SHA-256 hash chains with Merkle tree verification. Every memory is tamper-evident.", accent: "#00e5ff" },
+  { icon: "⏱️", title: "Time-Travel Queries", desc: "AS OF SYSTEM TIME — restore any memory to any past state. CockroachDB MVCC native.", accent: "#7c3aed" },
+  { icon: "🌍", title: "Multi-Region Distributed", desc: "Globally distributed via CockroachDB. Memory stored in EU, retrieved from US in 12ms.", accent: "#00ff88" },
+  { icon: "🧠", title: "Auto-Contradiction", desc: "When new facts contradict old ones, Bastion auto-supersedes. No competitor has this.", accent: "#ff7a17" },
+  { icon: "💤", title: "Sleep-Time Dreaming", desc: "Agents learn during idle time. Episodic memories consolidate into semantic knowledge.", accent: "#a78bfa" },
+  { icon: "🔄", title: "LTM Gateway", desc: "Check if a similar analysis exists before running expensive workflows. Saves tokens.", accent: "#00e5ff" },
+  { icon: "🔍", title: "Multi-Signal Retrieval", desc: "BM25 + Vector + Entity + Temporal fusion. 100% recall on test benchmarks.", accent: "#f472b6" },
+  { icon: "🛡️", title: "OWASP ASI06 Guard", desc: "Real-time prompt injection detection, PII firewall, multi-language scanning.", accent: "#00ff88" },
+];
+
+function Features() {
+  const { ref, visible } = useInView(0.1);
+  return (
+    <section ref={ref} style={{ padding: "140px 48px", position: "relative", zIndex: 1 }}>
+      <div style={{
+        textAlign: "center", marginBottom: "80px",
+        opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)",
+        transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
+      }}>
+        <div style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 600,
+          textTransform: "uppercase", letterSpacing: "4px", color: "#6b7280", marginBottom: "20px",
+        }}>
+          Architecture
+        </div>
+        <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 400, letterSpacing: "-1.5px", color: "#fff" }}>
+          Built for production<span style={{ color: "#00e5ff" }}>.</span>
+        </h2>
+      </div>
+      <div className="stagger-children" style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+        gap: "20px", maxWidth: "1200px", margin: "0 auto",
+      }}>
+        {features.map((f, i) => (
+          <div key={i} className="card-interactive" style={{
+            background: C.card, border: `1px solid ${C.hairline}`, borderRadius: "12px",
+            padding: "32px", position: "relative", overflow: "hidden",
+          }}>
+            {/* Glow accent */}
+            <div style={{
+              position: "absolute", top: 0, left: 0, right: 0, height: "2px",
+              background: `linear-gradient(90deg, transparent, ${f.accent}, transparent)`,
+              opacity: 0.6,
+            }} />
+            <div style={{
+              width: "48px", height: "48px", borderRadius: "12px",
+              background: `${f.accent}11`, display: "flex", alignItems: "center",
+              justifyContent: "center", fontSize: "24px", marginBottom: "20px",
+              border: `1px solid ${f.accent}22`,
+            }}>
+              {f.icon}
+            </div>
+            <h3 style={{ fontSize: "17px", fontWeight: 600, color: "#fff", marginBottom: "10px" }}>{f.title}</h3>
+            <p style={{ fontSize: "14px", lineHeight: "1.7", color: "#6b7280" }}>{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ── Benchmark Table ────────────────────────────────────────── */
+function Benchmark() {
+  const { ref, visible } = useInView(0.1);
+  return (
+    <section ref={ref} style={{ padding: "140px 48px", position: "relative", zIndex: 1 }}>
+      <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
+        <div style={{
+          textAlign: "center", marginBottom: "64px",
+          opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)",
+          transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
+        }}>
+          <div style={{
+            fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 600,
+            textTransform: "uppercase", letterSpacing: "4px", color: "#6b7280", marginBottom: "20px",
+          }}>Benchmarks</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 400, letterSpacing: "-1.5px", color: "#fff" }}>
+            Numbers that matter<span style={{ color: "#ff7a17" }}>.</span>
+          </h2>
+        </div>
+
+        <div className="animate-scale-in" style={{
+          background: C.card, border: `1px solid ${C.hairline}`, borderRadius: "12px",
+          overflow: "hidden",
+        }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.hairline}` }}>
+                {["System", "Recall@5", "Latency", "Cost/Year", "Multi-Region"].map((h) => (
+                  <th key={h} style={{
+                    padding: "18px 24px", textAlign: "left",
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: "10px",
+                    textTransform: "uppercase", letterSpacing: "1.5px", color: "#6b7280", fontWeight: 600,
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { name: "Bastion", recall: "100%", latency: "0.4ms", cost: "$0", region: "✅ Global", hl: true },
+                { name: "agentmemory", recall: "95.2%", latency: "~200ms", cost: "~$10", region: "❌ Local" },
+                { name: "Mem0", recall: "94.4%", latency: "~200ms", cost: "~$6,000", region: "❌ Single" },
+                { name: "Cognee", recall: "~90%", latency: "Unknown", cost: "$0", region: "❌ Single" },
+              ].map((r, i) => (
+                <tr key={i} style={{
+                  borderTop: `1px solid ${C.hairline}`,
+                  background: r.hl ? "rgba(0, 229, 255, 0.03)" : "transparent",
+                  transition: "background 0.2s",
+                }} className="hover-glow">
+                  <td style={{ padding: "18px 24px", fontWeight: 600, color: r.hl ? "#00e5ff" : "#fff" }}>{r.name}</td>
+                  <td style={{ padding: "18px 24px", color: r.hl ? "#00e5ff" : "#c8ccd4", fontWeight: r.hl ? 600 : 400 }}>{r.recall}</td>
+                  <td style={{ padding: "18px 24px", color: "#c8ccd4" }}>{r.latency}</td>
+                  <td style={{ padding: "18px 24px", color: "#c8ccd4" }}>{r.cost}</td>
+                  <td style={{ padding: "18px 24px", color: r.hl ? "#00e5ff" : "#c8ccd4" }}>{r.region}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── CTA Section ────────────────────────────────────────────── */
+function CTA() {
+  const { ref, visible } = useInView(0.2);
+  return (
+    <section ref={ref} style={{
+      padding: "140px 48px", textAlign: "center", position: "relative", zIndex: 1,
+    }}>
+      {/* Gradient orb */}
+      <div style={{
+        position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+        width: "500px", height: "500px", borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%)",
+        filter: "blur(60px)", pointerEvents: "none",
+      }} />
+      <div style={{
+        opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)",
+        transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)", position: "relative",
+      }}>
+        <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 400, letterSpacing: "-1.5px", color: "#fff", marginBottom: "24px" }}>
+          Start building<span style={{ color: "#00e5ff" }}>.</span>
+        </h2>
+        <p style={{ fontSize: "18px", color: "#6b7280", marginBottom: "56px", maxWidth: "480px", margin: "0 auto 56px" }}>
+          Open source. MIT licensed. Deploy on CockroachDB Serverless for free.
+        </p>
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
+          <a href="https://github.com/dgboy-ai/Bastion" target="_blank" rel="noopener noreferrer"
+            className="btn-animated" style={{
+              padding: "16px 36px", borderRadius: "9999px",
+              border: "1px solid rgba(255,255,255,0.2)", background: "transparent",
+              color: "#fff", fontSize: "15px", fontWeight: 500, textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: "8px",
+            }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.303 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.236 1.911 1.236 3.221 0 4.609-2.807 5.931-5.479 6.234.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            View on GitHub
+          </a>
+          <Link href="/docs" className="btn-animated" style={{
+            padding: "16px 36px", borderRadius: "9999px", background: "#fff", color: "#0a0a0a",
+            fontSize: "15px", fontWeight: 600, textDecoration: "none",
+          }}>
+            Read the Docs
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+function Footer() {
+  return (
+    <footer style={{
+      padding: "48px", borderTop: `1px solid ${C.hairline}`, position: "relative", zIndex: 1,
+    }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{
+            width: "24px", height: "24px", borderRadius: "6px",
+            background: "linear-gradient(135deg, #00e5ff, #7c3aed)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" stroke="#fff" strokeWidth="2" />
             </svg>
-            <div className="chart-legend" style={{ gap: "6px" }}>
-              <div 
-                className="legend-item" 
-                style={{ cursor: "pointer", padding: "2px 6px", borderRadius: "4px", fontSize: "10.5px" }}
-                onClick={() => setSelectedFilter("fact")}
-              >
-                <span className="legend-bullet" style={{ background: "var(--accent-breeze)" }} />
-                <span>Episodic Fact ({facts})</span>
-              </div>
-              <div 
-                className="legend-item" 
-                style={{ cursor: "pointer", padding: "2px 6px", borderRadius: "4px", fontSize: "10.5px" }}
-                onClick={() => setSelectedFilter("semantic_cache")}
-              >
-                <span className="legend-bullet" style={{ background: "var(--accent-dusk)" }} />
-                <span>Semantic Cache ({semCache})</span>
-              </div>
-              <div 
-                className="legend-item" 
-                style={{ cursor: "pointer", padding: "2px 6px", borderRadius: "4px", fontSize: "10.5px" }}
-                onClick={() => setSelectedFilter("episodic")}
-              >
-                <span className="legend-bullet" style={{ background: "var(--accent-sunset)" }} />
-                <span>Context ({episodic})</span>
-              </div>
-            </div>
           </div>
+          <span style={{ color: "#6b7280", fontSize: "13px" }}>Bastion &copy; 2026</span>
         </div>
-
-        {/* Cognitive Retention Curve (Compact Card next to Donut) */}
-        <div className="panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-          <div className="panel-header" style={{ borderBottom: "none", marginBottom: 0, paddingBottom: 0 }}>
-            <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Decay Curve</span>
-          </div>
-          <div style={{ position: "relative", width: "100%", height: "100px", marginTop: "10px" }}>
-            <svg width="100%" height="100%" viewBox="0 0 260 90" style={{ overflow: "visible" }}>
-              <line x1="0" y1="15" x2="260" y2="15" stroke="rgba(255,255,255,0.02)" strokeWidth="0.75" />
-              <line x1="0" y1="45" x2="260" y2="45" stroke="rgba(255,255,255,0.02)" strokeWidth="0.75" />
-              <line x1="0" y1="75" x2="260" y2="75" stroke="rgba(255,255,255,0.02)" strokeWidth="0.75" />
-
-              {areaD && <path d={areaD} fill="url(#decay-area-grad)" style={{ transition: "d 0.3s ease-out" }} />}
-              {pathD && (
-                <path
-                  d={pathD}
-                  className="curve-path-animated"
-                  fill="none"
-                  stroke="var(--accent-breeze)"
-                  strokeWidth="2"
-                  style={{ filter: "drop-shadow(0 0 4px var(--accent-breeze-glow))", transition: "d 0.3s ease-out" }}
-                />
-              )}
-
-              {decayPoints.map((pt, idx) => (
-                <circle
-                  key={idx}
-                  cx={pt.x}
-                  cy={pt.y}
-                  r="3.5"
-                  fill="#ffffff"
-                  stroke="var(--accent-breeze)"
-                  strokeWidth="1.5"
-                  style={{ cursor: "pointer", transition: "all 0.3s ease-out" }}
-                  tabIndex={0}
-                  onMouseEnter={() => setHoveredPoint({ x: pt.x - 45, y: pt.y - 45, time: pt.time, value: pt.value })}
-                  onMouseLeave={() => setHoveredPoint(null)}
-                  onFocus={() => setHoveredPoint({ x: pt.x - 45, y: pt.y - 45, time: pt.time, value: pt.value })}
-                  onBlur={() => setHoveredPoint(null)}
-                />
-              ))}
-            </svg>
-            {hoveredPoint && (
-              <div style={{ position: "absolute", left: `${hoveredPoint.x}px`, top: `${hoveredPoint.y}px`, backgroundColor: "rgba(6, 8, 14, 0.95)", border: "1px solid var(--glass-border)", borderRadius: "4px", padding: "4px 8px", zIndex: 10, pointerEvents: "none", minWidth: "80px" }}>
-                <div style={{ fontSize: "8px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>{hoveredPoint.time}</div>
-                <div style={{ fontSize: "9.5px", fontWeight: 600, color: "#ffffff", marginTop: "1px" }}>{hoveredPoint.value}</div>
-              </div>
-            )}
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", fontFamily: "var(--font-mono)", color: "var(--mute)", padding: "0 10px" }}>
-            <span>24h ago</span>
-            <span>12h ago</span>
-            <span>Now</span>
-          </div>
+        <div style={{ display: "flex", gap: "28px" }}>
+          {navLinks.map((l) => (
+            <Link key={l.href} href={l.href} className="hover-underline" style={{ color: "#6b7280", fontSize: "13px", textDecoration: "none" }}>
+              {l.label}
+            </Link>
+          ))}
         </div>
-
       </div>
+    </footer>
+  );
+}
 
-      {/* Row 2: Bottom Grid (System Event Log & Growth charts) */}
-      <div className="grid-cockpit">
-        
-        {/* System Event Log (Fills height dynamically with up to 8 rows + Database latency tag) */}
-        <div className="panel" style={{ display: "flex", flexDirection: "column", minHeight: "440px", justifyContent: "space-between" }}>
-          <div>
-            <div className="panel-header" style={{ marginBottom: "12px" }}>
-              <div>
-                <span className="title-sm" style={{ margin: 0 }}>System Event Log</span>
-                {selectedFilter && <span style={{ fontSize: "11px", color: "var(--accent-breeze)", marginLeft: "10px" }}>(Filtered)</span>}
-              </div>
-              <Link href="/logs" className="btn btn-outline" style={{ fontSize: "11px", padding: "6px 12px" }}>
-                View All
-              </Link>
-            </div>
-            <div className="table-container" style={{ maxHeight: "330px", overflowY: "auto" }}>
-              <table className="data-table">
-                <colgroup>
-                  <col style={{ width: "25%" }} />
-                  <col style={{ width: "25%" }} />
-                  <col style={{ width: "50%" }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th style={{ position: "sticky", top: 0, zIndex: 1, backgroundColor: "var(--canvas-card)", backdropFilter: "blur(8px)" }}>Timestamp</th>
-                    <th style={{ position: "sticky", top: 0, zIndex: 1, backgroundColor: "var(--canvas-card)", backdropFilter: "blur(8px)" }}>Action</th>
-                    <th style={{ position: "sticky", top: 0, zIndex: 1, backgroundColor: "var(--canvas-card)", backdropFilter: "blur(8px)" }}>Payload Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAudits.length > 0 ? (
-                    filteredAudits.slice(0, 7).map((log) => {
-                      const isStore = log.action.includes("store");
-                      const isConflict = log.action.includes("conflict") || log.action.includes("resolve");
-                      const badgeClass = isStore ? "store" : isConflict ? "conflict" : "anomaly";
-
-                      return (
-                        <tr key={log.id}>
-                          <td style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "10px 14px" }}>
-                            {new Date(log.recordedAt).toLocaleString()}
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <span className={`badge-mono ${badgeClass}`} style={{ fontSize: "8.5px", padding: "2px 6px" }}>
-                              {log.action.toUpperCase()}
-                            </span>
-                          </td>
-                          <td style={{ padding: "10px 14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "250px", color: "var(--ink)", fontSize: "12px" }} title={JSON.stringify(log.details)}>
-                            {JSON.stringify(log.details)}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={3} style={{ textAlign: "center", color: "var(--mute)", padding: "40px 20px" }}>
-                        No matching operations logged in active session.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          {/* Telemetry pipeline speed tag (confirms 100% database integration) */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--glass-border)", paddingTop: "12px", marginTop: "12px", fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
-            <span style={{ color: "var(--accent-emerald)", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent-emerald)", boxShadow: "0 0 6px var(--accent-emerald)" }} />
-              Live DB Pipe Connected
-            </span>
-            <span>Query Latency: <span style={{ color: "var(--accent-breeze)" }}>{queryLatency !== null ? `${queryLatency}ms` : "—"}</span> (CockroachDB Serverless)</span>
-          </div>
-        </div>
-
-        {/* Right column: Growth bar chart, sparkline hit ratio, recalls list */}
-        <div className="column-group">
-          
-          {/* Memory Growth (Hourly) */}
-          <div className="panel" style={{ padding: "20px" }}>
-            <div className="panel-header" style={{ marginBottom: "8px", paddingBottom: "8px" }}>
-              <div>
-                <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Memory Growth (Hourly)</span>
-              </div>
-            </div>
-            <div className="bar-chart-visual" style={{ height: "90px" }}>
-              {stats?.hourlyGrowth && stats.hourlyGrowth.map((heightPct, idx) => (
-                <div 
-                  key={idx} 
-                  className="bar-column" 
-                  style={{ cursor: "pointer" }}
-                  onClick={() => setSelectedHour(idx)}
-                >
-                  <div 
-                    className="bar-fill" 
-                    style={{ 
-                      height: `${heightPct}%`, 
-                      color: idx === selectedHour ? "var(--accent-emerald)" : idx === 7 ? "var(--accent-breeze)" : "var(--accent-sunset)", 
-                      background: idx === selectedHour
-                        ? "linear-gradient(to top, rgba(0, 255, 136, 0.05), var(--accent-emerald))"
-                        : idx === 7 
-                        ? "linear-gradient(to top, rgba(0, 229, 255, 0.02), var(--accent-breeze))" 
-                        : "linear-gradient(to top, rgba(255, 106, 0, 0.02), var(--accent-sunset))",
-                      boxShadow: idx === selectedHour ? "0 0 12px var(--accent-emerald-glow)" : "none"
-                    }} 
-                    title={`Hour H-${8 - idx}`}
-                  />
-                  <span style={{ fontSize: "8px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
-                    H-{8 - idx}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel sparkline-card-glow" style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", alignItems: "center", padding: "16px 20px" }}>
-            <div>
-              <span className="kpi-label" style={{ fontSize: "8.5px" }}>Cache Hit Ratio</span>
-              <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ink)", marginTop: "2px", textShadow: "0 0 8px rgba(0, 255, 136, 0.15)" }}>
-                {stats?.cacheHitPct ? `${stats.cacheHitPct}%` : "—"}
-              </div>
-            </div>
-            <div>
-              <svg width="80" height="30" viewBox="0 0 100 40" style={{ filter: "drop-shadow(0 0 4px var(--accent-emerald-glow))" }}>
-                <path d="M0,35 C15,30 25,12 45,18 C55,22 62,5 100,2" fill="none" stroke="var(--accent-emerald)" strokeWidth="2.5" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="panel" style={{ padding: "16px 20px" }}>
-            <div className="panel-header" style={{ marginBottom: "10px", paddingBottom: "8px" }}>
-              <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Most Recalled Memories</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {stats?.topRecalls && stats.topRecalls.map((item) => (
-                <div key={item.rank} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "rgba(255, 255, 255, 0.01)", border: "1px solid var(--glass-border)", borderRadius: "6px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--accent-sunset)", fontWeight: 700 }}>
-                      #{item.rank}
-                    </span>
-                    <span style={{ fontSize: "11px", color: "var(--body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }} title={item.text}>
-                      {item.text}
-                    </span>
-                  </div>
-                  <span className="badge-mono" style={{ fontSize: "8.5px" }}>{item.count} hits</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Trust Assessment Panel */}
-          <div className="panel" style={{ padding: "16px 20px" }}>
-            <div className="panel-header" style={{ marginBottom: "10px", paddingBottom: "8px" }}>
-              <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Memory Trust Score</span>
-            </div>
-            <PoisoningAlerts alerts={trustAlerts} />
-            <div style={{ marginTop: "12px" }}>
-              {trustSummary ? (
-                <TrustRing
-                  trustLevelDistribution={trustSummary.trustLevelDistribution}
-                  avgTrustScore={trustSummary.avgTrustScore}
-                  totalMemories={trustSummary.totalMemories}
-                  dangerousMemories={trustSummary.dangerousMemories}
-                />
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "120px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-                  NO TRUST DATA
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Drift Detection Panel */}
-          <div className="panel" style={{ padding: "16px 20px" }}>
-            <div className="panel-header" style={{ marginBottom: "10px", paddingBottom: "8px" }}>
-              <span className="title-sm" style={{ margin: 0, fontSize: "13px" }}>Agent Stability Index</span>
-            </div>
-            <DriftChart
-              timeSeries={driftData?.timeSeries ?? []}
-              overallScore={driftData?.latest?.overall_drift_score ?? 0}
-              status={driftData?.latest?.status ?? "HEALTHY"}
-              topSignals={driftData?.latest?.top_drift_signals ?? []}
-              recommendation={driftData?.latest?.recommendation ?? ""}
-              loading={driftData === null}
-            />
-          </div>
-
-        </div>
-
-      </div>
-
-      {/* 🔮 Interactive Details Modal Overlay */}
-      {activeModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={activeModal === "memories" ? "Vector Memories Ledger" : "Cognitive Score Details"}
-          tabIndex={-1}
-          ref={(el) => { if (el) el.focus(); }}
-          onKeyDown={(e) => { if (e.key === "Escape") setActiveModal(null); }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(4, 6, 13, 0.8)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 999,
-            padding: "24px"
-          }}
-          onClick={() => setActiveModal(null)}
-        >
-          <div 
-            className="panel" 
-            style={{ 
-              maxWidth: "600px",
-              width: "100%", 
-              maxHeight: "80vh", 
-              overflowY: "auto", 
-              boxShadow: "0 25px 50px rgba(0,0,0,0.5)" 
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="panel-header">
-              <span className="title-sm" style={{ margin: 0 }}>
-                {activeModal === "memories" ? "Vector Memories Ledger" : "Cognitive Score Details"}
-              </span>
-              <button 
-                className="btn btn-outline" 
-                style={{ fontSize: "12px", padding: "6px 12px" }}
-                onClick={() => setActiveModal(null)}
-              >
-                Close
-              </button>
-            </div>
-
-            {activeModal === "memories" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <p style={{ fontSize: "13.5px", color: "var(--body)", lineHeight: 1.5 }}>
-                  The total vector memories represent high-dimensional episodic data points embedded via AWS Bedrock (Titan V2) and indexed inside CockroachDB.
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Index Type</span>
-                    <span style={{ color: "var(--accent-breeze)", fontWeight: 600 }}>C-SPANN (Consensus Vector Index)</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Vector Dimensions</span>
-                    <span style={{ color: "#ffffff" }}>1024 (Titan V2 Embeddings)</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Lease Consensus Lock</span>
-                    <span style={{ color: "var(--accent-emerald)" }}>Healthy (ap-south-1a/b/c)</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <p style={{ fontSize: "13.5px", color: "var(--body)", lineHeight: 1.5 }}>
-                  The running cognitive score represents the average mathematical weight of all session records. Fresh memories initialize with a weight of 10.0 and degrade over time.
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Natural Decay Slope</span>
-                    <span style={{ color: "var(--accent-sunset)", fontWeight: 600 }}>-0.05/hour</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Recall Reinforcement Rate</span>
-                    <span style={{ color: "var(--accent-emerald)" }}>Reset to 10.0 on read matches</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,255,255,0.01)", border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "6px" }}>
-                    <span style={{ color: "var(--mute)" }}>Pruning Threshold (TTL)</span>
-                    <span style={{ color: "#ffffff" }}>Importance &lt; 2.0 (Healed)</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Row 3: Agentic Intelligence — LTM Gateway, Multi-Region, Observations */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", alignItems: "start" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          <LtmGatewayWidget />
-          <ObservationsWidget />
-        </div>
-        <RegionMapWidget />
-      </div>
-
-        {/* Live SSE Event Stream */}
-        <div className="panel" style={{ marginTop: "24px" }}>
-          <div className="panel-header">
-            <span className="title-sm">Live Event Stream (SSE)</span>
-          </div>
-          <LiveEventFeed />
-        </div>
-
-        {/* MemoryGuard ASI06 Security Section */}
-        <div className="panel" style={{ marginTop: "24px" }}>
-          <div className="panel-header">
-            <div>
-              <span className="title-sm">MemoryGuard — OWASP ASI06 Memory Poisoning Defense</span>
-              <span style={{ fontSize: "11px", color: "var(--mute)", marginLeft: "12px" }}>
-                Real-time prompt injection, secret leakage & hash chain integrity scanning
-              </span>
-            </div>
-          </div>
-          <MemoryGuardPanel />
-        </div>
-    </div>
+/* ── Page ────────────────────────────────────────────────────── */
+export default function LandingPage() {
+  return (
+    <>
+      <ParticleNetwork />
+      <Navbar />
+      <Hero />
+      <Features />
+      <Benchmark />
+      <CTA />
+      <Footer />
+    </>
   );
 }

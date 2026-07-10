@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import NavBar from "@/components/NavBar";
-import BackgroundParticles from "@/components/BackgroundParticles";
-import ErrorBoundary from "@/components/ErrorBoundary";
 import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bastion | AI Agentic Memory Engine",
-  description: "Globally persistent, transactionally resilient memory with time-travel and knowledge graph capabilities built natively on CockroachDB and AWS.",
+  title: "Bastion — The System of Record for Autonomous AI",
+  description: "Persistent, self-healing memory for AI agents. Built on CockroachDB. Zero downtime, zero data loss, zero re-explaining.",
 };
 
 export default function RootLayout({
@@ -17,35 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body style={{ background: "#0a0a0a", color: "#ffffff", fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif", margin: 0 }}>
         <GlobalErrorHandler />
-        <BackgroundParticles />
-        <div className="dashboard-layout">
-          {/* Vertical left navigation sidebar */}
-          <NavBar />
-          
-          {/* Main content frame with top header bar */}
-          <div className="main-viewport">
-            <header className="viewport-header">
-              <div className="header-search">
-                <span>🔍</span>
-                <input type="text" placeholder="Search cognitive memory context..." disabled />
-              </div>
-              <div className="header-actions">
-                <div className="badge-mono" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", padding: "6px 14px", border: "1px solid var(--glass-border)", borderRadius: "9999px" }}>
-                  <span style={{ width: "6px", height: "6px", background: "var(--accent-emerald)", borderRadius: "50%", boxShadow: "0 0 6px var(--accent-emerald)" }} />
-                  CockroachDB: ap-south-1
-                </div>
-              </div>
-            </header>
-            
-            <main className="page-container">
-              <ErrorBoundary>
-                {children}
-              </ErrorBoundary>
-            </main>
-          </div>
-        </div>
+        {children}
       </body>
     </html>
   );
