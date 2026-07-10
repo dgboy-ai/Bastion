@@ -11,7 +11,6 @@ Usage:
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -168,7 +167,7 @@ class ContextBudgetManager:
         scored.sort(key=lambda x: x[0], reverse=True)
         used_tokens = 0
 
-        for score, tokens, mem in scored:
+        for _score, tokens, mem in scored:
             if used_tokens + tokens <= remaining_budget:
                 packed = PackedMemory(
                     memory_id=mem.memory_id,

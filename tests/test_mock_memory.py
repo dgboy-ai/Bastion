@@ -91,6 +91,41 @@ def test_resolve_conflict():
     assert "Rust" in result
 
 
+def test_smart_merge_identical_facts():
+    """When facts are very similar (overlap > 0.7), keep the longer one."""
+    memory = BastionMemory(agent_id="merge-test", mock=True)
+    result = memory._smart_merge(
+        "The API is enabled by default for all users",
+        "The API is enabled by default for all users",
+        "configuration"
+    )
+    assert "API" in result
+
+
+def test_smart_merge_partial_overlap():
+    """When facts partially overlap (0.3 < overlap < 0.7), combine them."""
+    memory = BastionMemory(agent_id="merge-test", mock=True)
+    result = memory._smart_merge(
+        "User prefers Python",
+        "User prefers dark mode",
+        "preferences"
+    )
+    assert "Python" in result
+    assert "dark mode" in result
+
+
+def test_smart_merge_different_facts():
+    """When facts are very different (overlap < 0.3), keep both."""
+    memory = BastionMemory(agent_id="merge-test", mock=True)
+    result = memory._smart_merge(
+        "The server runs on port 8080",
+        "The database uses PostgreSQL",
+        "configuration"
+    )
+    assert "8080" in result
+    assert "PostgreSQL" in result
+
+
 def test_provision_cluster():
     memory = BastionMemory(agent_id="provision-test", mock=True)
     info = memory.provision_cluster("bastion-demo", region="us-east1", provider="aws")

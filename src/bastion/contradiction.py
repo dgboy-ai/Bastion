@@ -362,7 +362,10 @@ class ContradictionDetector:
         try:
             content_preview = (old_memory.content or "")[:100]
             # Basic redaction: mask likely secrets
-            content_preview = re.sub(r"(api[_-]?key|secret|password|token)\s*[=:]\s*\S+", r"\1=***", content_preview, flags=re.IGNORECASE)
+            secret_pattern = r"(api[_-]?key|secret|password|token)\s*[=:]\s*\S+"
+            content_preview = re.sub(
+                secret_pattern, r"\1=***", content_preview, flags=re.IGNORECASE,
+            )
             self._memory.store_audit(
                 action="contradiction_auto_supersede",
                 details={
