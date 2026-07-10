@@ -29,7 +29,6 @@ from bastion.locality import DataRegion, MemoryLocality
 from bastion.ltm_gateway import GatewayStats, LTMMemoryGateway, ReuseResult, StoreResult
 from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory, MemoryRouter
-from bastion.observations import Observation, ObservationDetector, ObservationReport
 from bastion.merkle import MerkleHashChain, MerkleTree
 from bastion.models import (
     AuditEntry,
@@ -41,6 +40,7 @@ from bastion.models import (
     MessageRecord,
     RelationRecord,
 )
+from bastion.observations import Observation, ObservationDetector, ObservationReport
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity

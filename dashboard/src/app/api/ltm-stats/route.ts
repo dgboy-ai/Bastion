@@ -44,7 +44,6 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get("agent_id");
     const hours = parseInt(searchParams.get("hours") || "24", 10);
     const since = new Date(Date.now() - hours * 3600000).toISOString();
 

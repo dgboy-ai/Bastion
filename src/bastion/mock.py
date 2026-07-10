@@ -814,7 +814,10 @@ def mock_dream(agent_id: str) -> dict:
     cutoff = datetime.now(UTC) - timedelta(hours=24)
     recent = [
         m for m in memories
-        if m.created_at and (m.created_at.replace(tzinfo=UTC) if m.created_at.tzinfo is None else m.created_at) >= cutoff
+        if m.created_at and (
+            m.created_at.replace(tzinfo=UTC) if m.created_at.tzinfo is None
+            else m.created_at
+        ) >= cutoff
     ]
     return {
         "agent_id": agent_id,

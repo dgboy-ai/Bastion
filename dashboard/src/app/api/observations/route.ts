@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     const observations = [];
     // Top recurring themes
     const topThemes = Object.entries(bigramCounts)
-      .filter(([_, v]) => v.count >= 3)
+      .filter(([, v]) => v.count >= 3)
       .sort((a, b) => b[1].count - a[1].count)
       .slice(0, 5);
     for (const [theme, data] of topThemes) {
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
 
     // Top entities
     const topEntities = Object.entries(entityCounts)
-      .filter(([_, v]) => v.count >= 3)
+      .filter(([, v]) => v.count >= 3)
       .sort((a, b) => b[1].count - a[1].count)
       .slice(0, 5);
     for (const [entity, data] of topEntities) {
