@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import logging
 import os
 import threading
 from typing import Any
 
-from bastion.models import MemoryRecord
 from bastion.log_setup import get_logger
+from bastion.models import MemoryRecord
 
 _GROQ_MODEL = os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 _HAS_GROQ: bool = False

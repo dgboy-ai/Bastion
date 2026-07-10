@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Any
+
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)

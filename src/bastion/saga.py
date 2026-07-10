@@ -7,11 +7,11 @@ compensating transactions to undo writes on failure.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)

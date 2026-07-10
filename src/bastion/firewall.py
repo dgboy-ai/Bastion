@@ -7,11 +7,11 @@ agent response latency under 2ms.
 
 from __future__ import annotations
 
-import logging
 import re
 import threading
 from datetime import UTC, datetime
 from typing import Any
+
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)

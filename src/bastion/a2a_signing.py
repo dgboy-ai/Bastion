@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 import os
 from copy import deepcopy
 from typing import Any
+
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
