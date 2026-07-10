@@ -33,3 +33,4 @@ production.md
 test_real_crdb.py
 htmlcov/
 *.log
+.hypothesis/

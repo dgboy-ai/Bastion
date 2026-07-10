@@ -24,12 +24,13 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from bastion.log_setup import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -408,9 +409,12 @@ def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInte
         except ValueError:
             raise
         except Exception as exc:
-            logger.warning(
-                "AwsKMS initialization failed, falling back to LocalKMS",
-                extra={"key_arn": resolved, "error": str(exc)},
+            logger.error(
+                "AwsKMS key '%s' exists but initialization FAILED — falling back to LocalKMS! "
+                "Production data will be encrypted with a local key, "
+                "NOT the configured AWS KMS key.",
+                resolved,
+                extra={"error": str(exc)},
             )
     return LocalKMS(generate=True)
 

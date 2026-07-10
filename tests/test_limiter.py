@@ -110,7 +110,11 @@ class TestMockMode:
             t.daemon = True
             t.start()
             workers.append(t)
-        time.sleep(0.5)  # Allow blocking acquires to start and fill queue
+        import time as _t
+        for _ in range(20):
+            if limiter._queue_count >= 2:
+                break
+            _t.sleep(0.025)
         # Queue is full — next acquire should reject immediately
         assert limiter.acquire(timeout=0.1) is False
         assert limiter._total_rejected == 1

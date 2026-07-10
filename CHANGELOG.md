@@ -464,10 +464,82 @@ This session focused on closing critical gaps identified in the hackathon readin
 
 ---
 
+## [0.7.0] — 2026-07-10
+
+### Deep Gap Fixing — Security, Correctness, UI/UX, CI/CD
+
+Fixed 30+ critical/high gaps from comprehensive codebase audit. Hardened backend security (SSRF, rate limiting, auth warnings), fixed threading bugs (race conditions, thread safety), optimized frontend (dynamic imports, React.memo, fetch timeouts, keyboard accessibility), improved CI/CD (npm audit, pre-deploy tests, Dependabot).
+
+#### Backend Security Fixes
+- **SSRF protection**: `webhooks.py` — `_validate_url()` blocks localhost, private IP ranges, link-local addresses before any HTTP request
+- **MCP auth warnings**: `mcp_server.py` — warning logged when `BASTION_MCP_API_KEYS` is empty; auth returns deny when no keys configured
+- **A2A auth warnings**: `a2a_server.py` — warning logged when `BASTION_API_KEY` is unset
+- **CORS hardening**: `a2a_server.py` — narrowed from wildcard to specific methods/headers
+- **Namespace search optimization**: `memory.py` — `agent_id = %s` with exact prefix match replaces `agent_id LIKE %s` for index-friendly query
+- **SQL f-string safety**: `memory.py` — allowlist-based validation for `agent_filter` and `region_clause`
+- **Rate limiting**: `dashboard/src/lib/api-auth.ts` — `checkRateLimit()` (120 req/min/IP) applied to all 13 dashboard API routes
+
+#### Backend Correctness Fixes
+- **Thread safety**: `mcp_server.py` — `_INIT_LOCK` with double-checked locking for singleton `_API_KEYS`/`_RATE_LIMITER`
+- **Hash chain race**: `mock.py` — `record_dict` append moved inside `_lock` scope
+- **Conversation history thread safety**: `agent.py` — `threading.Lock()` protecting `_conversation_history`
+- **Async chat**: `agent.py` — all blocking calls wrapped in `anyio.to_thread.run_sync()`
+- **RuleCategory enum**: `rules.py` — added `RELIABILITY = "reliability"` to prevent `AttributeError`
+- **CRDT sort key dedup**: `crdt_memory.py` — `_sort_key` uses `r.created_at` instead of duplicate `r.memory_id`
+- **Model field sync**: `models.py` — `_MEMORY_FIELDS` auto-derived from `MemoryRecord.model_fields` keys
+- **Saga state consistency**: `saga.py` — early return on DB insert failure to prevent orphan in-memory state
+- **LangChain pagination**: `langchain.py` — `list_all()` passes `limit=k` to DB instead of loading all records
+- **LlamaIndex delete**: `llamaindex.py` — `delete()` implemented (was no-op)
+- **Encapsulation**: `compliance.py` — uses public `sign_data()` instead of `_signer._private_key`
+
+#### Logging & Observability
+- **Lambda logging**: `lambda/cdc_handler.py` — `print()` replaced with structured `logging`
+- **get_logger migration**: 8 modules migrated from `logging.getLogger()` to `log_setup.get_logger()`: `dba.py`, `guard.py`, `kms.py`, `webhooks.py`, `circuit_breaker.py`, `crdt_memory.py`, `bridge_mem0.py`, `compliance.py`
+- **KMS fallback warning**: `kms.py` — `logger.warning()` when falling back to LocalKMS
+- **Connection pool cleanup**: `mcp_server.py` — `atexit.register(close_shared_pool)` ensures orphaned pools are closed
+
+#### Testing Fixes
+- **New feature tests**: `tests/test_new_features.py` — 42 tests covering `pin()`, `unpin()`, `get_pinned()`, `scan_tool_manifest()`, `multilang_scan()`, `freshness_score`, `memory_health()`, `apply_patch()`, `pii_scan()`, `_self_check_triples()`
+- **Integration tests**: `tests/test_integration_memory.py` — 9 real CockroachDB tests (store, search, hash chains, delete, cross-agent isolation, audit, update, export)
+- **Self-check tests**: `tests/test_new_features.py` — `test_self_check_triples_*` (3 tests for Groq fallback)
+- **FakeConn cursor API**: `tests/test_retry.py` — separated cursor class matching real DB cursor API
+- **Assertion fixes**: `test_consolidator.py` — added assertions; `test_drift.py` — documented `_stddev` behavior; `test_stress_concurrent.py` — added `match=` to `pytest.raises`
+- **Env isolation**: `test_groq_callback.py`, `test_log_setup.py` — targeted env patching instead of `clear=True`
+
+#### Frontend Fixes
+- **Dynamic imports**: `page.tsx` — `TrustRing`, `DriftChart`, `MemoryGuardPanel`, `LiveEventFeed` use `next/dynamic` with `ssr: false`
+- **React.memo**: `NavBar`, `CostComparison` wrapped with `memo()`
+- **Fetch timeouts**: All dashboard API calls now use `AbortController` with 10s timeout via `fetchWithTimeout`
+- **Error state retry buttons**: Added to main page, logs page, graph page
+- **Keyboard accessibility**: SVG circles in `page.tsx` have `tabIndex={0}`, `onFocus`, `onBlur` equivalents
+- **Modal keyboard support**: Escape key dismisses, `role="dialog"`, `aria-modal`, `aria-label`
+- **Error type safety**: `(err as Error).message` → `err instanceof Error ? err.message : String(err)`
+- **Component extraction**: `KpiCardGrid` extracted from 636-line god component `page.tsx`
+- **JSON diff optimization**: `page.tsx` — `useMemo` for JSON diff computation
+- **MCP tool validation**: `mcp_server.py` — Pydantic schema validation for `query`, `timestamp`, `agent_id`
+- **Silent catch blocks**: `CspannHud`, `MemoryGuardPanel` — fetch errors now surface user feedback
+- **TrustRing D3 import**: `^import \* as d3 from "d3"$` → individual packages (`d3-selection`, `d3-shape`, `d3-interpolate`, `d3-transition`)
+- **Rate limiting in auth**: `api-auth.ts` — all dashboard API routes rate-limited (120 req/min/IP)
+- **Health page skeleton**: Styled skeleton grid replaces plain "Loading..." text
+- **Responsive design**: Added `768px` breakpoint with compact sidebar, smaller cards/fonts
+
+#### CI/CD & Infrastructure
+- **npm audit**: Added to `dashboard-lint` job in `ci.yml` (with `continue-on-error: true`)
+- **Pre-deployment tests**: `deploy.yml` runs lint + vitest + npm audit before build + deploy
+- **Dependabot**: `.github/dependabot.yml` — weekly updates for pip, npm, GitHub Actions
+- **Security headers**: `next.config.ts` — added CSP, HSTS alongside existing XFO/XCTO/Referrer-Policy
+- **Docker**: `USER node` in `dashboard/Dockerfile` runner stage
+- **Lambda timeouts**: `template.yaml` — CDC handler 30→60s, webhook 10→30s
+- **Connection pool cleanup**: `mcp_server.py` — `atexit.register(close_shared_pool)`
+
+---
+
 ## Version History
 
 | Version | Date | Description |
-|---|---|---|
+|---|---|---|---|
+| 0.7.0 | 2026-07-10 | Deep gap fixing — security, correctness, UI/UX, CI/CD |
+| 0.6.0 | 2026-07-09 | Hackathon features, 7 new MCP tools, memory pinning, PII firewall, 40 gap fixes |
 | 0.5.0 | 2026-07-07 | A2A production hardening, real CRDB tests, deep research strategy |
 | 0.4.0 | 2026-07-07 | Production security, MCP Streamable HTTP, A2A signed cards, frontend polish |
 | 0.3.0 | 2026-07-06 | A2A v1.0 protocol, CRDT semantics, zero silent failures |

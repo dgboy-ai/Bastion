@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -29,7 +30,6 @@ class MemoryRecord(BaseModel):
     @property
     def freshness_score(self) -> float:
         """1.0 = fresh, 0.0 = stale. Combines age + access frequency."""
-        import math
         now = datetime.now(UTC)
         created = self.created_at
         if created.tzinfo is None:
@@ -204,13 +204,7 @@ class MessageRecord(BaseModel):
         return self.model_dump(mode="json")
 
 
-_MEMORY_FIELDS = [
-    "memory_id", "agent_id", "memory_type", "content", "embedding",
-    "metadata", "previous_hash", "cryptographic_hash",
-    "created_at", "expires_at", "access_count", "importance_score",
-    "trust_level", "source_provenance", "overwrite_count",
-    "is_pinned", "pin_priority",
-]
+_MEMORY_FIELDS = list(MemoryRecord.model_fields.keys())
 
 _ENTITY_FIELDS = [
     "entity_id", "agent_id", "entity_type", "name",

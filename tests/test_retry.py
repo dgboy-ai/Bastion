@@ -9,23 +9,13 @@ import pytest
 from bastion.retry import SerializationRetryEngine, _is_serialization_error
 
 
-class FakeConn:
-    """A fake connection that simulates CockroachDB serialization behavior."""
+class FakeCursor:
+    """A fake cursor that simulates CockroachDB cursor behavior."""
 
     def __init__(self, fail_count: int = 0, fail_on_attempt: list[int] | None = None):
         self._attempt = 0
         self._fail_count = fail_count
         self._fail_on_attempt = fail_on_attempt or []
-        self._rolled_back = False
-
-    def cursor(self):
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
 
     def execute(self, query):
         self._attempt += 1
@@ -34,6 +24,48 @@ class FakeConn:
         if self._attempt <= self._fail_count:
             raise Exception("40001: serialization failure")
         return "result"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return None
+
+    def close(self):
+        pass
+
+
+class FakeConn:
+    """A fake connection that simulates CockroachDB connection behavior."""
+
+    def __init__(self, fail_count: int = 0, fail_on_attempt: list[int] | None = None):
+        self._rolled_back = False
+        self._cursor = FakeCursor(fail_count, fail_on_attempt)
+
+    @property
+    def _fail_on_attempt(self):
+        return self._cursor._fail_on_attempt
+
+    @_fail_on_attempt.setter
+    def _fail_on_attempt(self, value):
+        self._cursor._fail_on_attempt = value
+
+    @property
+    def _attempt(self):
+        return self._cursor._attempt
+
+    @_attempt.setter
+    def _attempt(self, value):
+        self._cursor._attempt = value
+
+    def cursor(self):
+        return self._cursor
 
     def commit(self):
         pass

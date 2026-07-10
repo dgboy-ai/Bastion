@@ -37,9 +37,19 @@ export default function HealthPage() {
 
   if (!health) {
     return (
-      <div style={{ padding: "40px 0", textAlign: "center" }}>
-        <div className="eyebrow">Loading Health Metrics...</div>
-        <div style={{ marginTop: 16, color: "var(--mute)" }}>Querying CockroachDB</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div>
+          <div className="welcome-title">Memory Health Dashboard</div>
+          <div className="welcome-subtitle">Real-time health metrics for your CockroachDB memory store. Freshness, growth, and access patterns.</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="metrics-panel" style={{ padding: "16px", borderLeft: "3px solid var(--glass-border)" }}>
+              <div style={{ height: 12, width: "60%", background: "var(--glass-border)", borderRadius: 4, marginBottom: 12 }} />
+              <div style={{ height: 28, width: "40%", background: "var(--glass-border)", borderRadius: 4 }} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

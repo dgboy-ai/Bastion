@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 120;
+const _rateBuckets = new Map<string, number[]>();
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
@@ -7,6 +11,27 @@ function timingSafeEqual(a: string, b: string): boolean {
     result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return result === 0;
+}
+
+export function checkRateLimit(request: Request): NextResponse | null {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const now = Date.now();
+  let timestamps = _rateBuckets.get(ip);
+  if (!timestamps) {
+    timestamps = [];
+    _rateBuckets.set(ip, timestamps);
+  }
+  const cutoff = now - RATE_LIMIT_WINDOW_MS;
+  timestamps = timestamps.filter((t) => t > cutoff);
+  _rateBuckets.set(ip, timestamps);
+  if (timestamps.length >= RATE_LIMIT_MAX) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again later.", code: "RATE_LIMITED" },
+      { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } },
+    );
+  }
+  timestamps.push(now);
+  return null;
 }
 
 export function checkApiKey(request: Request): { valid: boolean; key?: string; error?: string } {
@@ -42,6 +67,8 @@ export function unauthorizedResponse(error: string): NextResponse {
 }
 
 export function requireAuth(request: Request): NextResponse | null {
+  const rateLimit = checkRateLimit(request);
+  if (rateLimit) return rateLimit;
   const auth = checkApiKey(request);
   if (!auth.valid) {
     return unauthorizedResponse(auth.error || "Authentication required");

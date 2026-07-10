@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface ComplianceReport {
   reportId: string;
@@ -25,7 +26,7 @@ export default function CompliancePage() {
 
   useEffect(() => {
     const ac = new AbortController();
-    fetch("/api/compliance", { signal: ac.signal })
+    fetchWithTimeout("/api/compliance", { signal: ac.signal })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(json => {
         const data = json.data || json;
@@ -66,7 +67,7 @@ export default function CompliancePage() {
               onClick={() => {
                 setError(null);
                 setLoading(true);
-                fetch("/api/compliance")
+                fetchWithTimeout("/api/compliance")
                   .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
                   .then(data => {
                     setReport({

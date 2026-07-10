@@ -6,14 +6,15 @@ Three states: CLOSED (normal), OPEN (failing fast), HALF_OPEN (testing recovery)
 
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections.abc import Callable
 from enum import StrEnum
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from bastion.log_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class CircuitState(StrEnum):

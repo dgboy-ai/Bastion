@@ -1,6 +1,8 @@
 "use client";
 
-export default function CostComparison() {
+import { memo } from "react";
+
+const CostComparison = memo(function CostComparison() {
   const competitors = [
     { name: "Bastion", monthly: 0, annual: 0, color: "#10b981", features: "Full SDK + Dashboard + CRDT + Compliance" },
     { name: "Mem0", monthly: 249, annual: 2988, color: "#ef4444", features: "Graph memory (Pro tier)" },
@@ -101,4 +103,6 @@ export default function CostComparison() {
       </div>
     </div>
   );
-}
+});
+
+export default CostComparison;

@@ -17,7 +17,7 @@ class TestGroqCallback:
     def test_groq_chat_no_api_key_fallback(self):
         from bastion.groq_callback import groq_chat
 
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {"GROQ_API_KEY": ""}):
             result = groq_chat("hello", [])
             assert result.startswith("[mock]")
 

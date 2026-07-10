@@ -27,4 +27,8 @@ class BastionVectorStore:
         return [r.to_dict() for r in results]
 
     def delete(self, ref_doc_id: str) -> None:
-        pass
+        memories = self.bastion.list_memories(limit=100)
+        for mem in memories:
+            if ref_doc_id in (mem.metadata or {}).get("ref_doc_id", ""):
+                self.bastion.delete_memory(mem.memory_id)
+                return

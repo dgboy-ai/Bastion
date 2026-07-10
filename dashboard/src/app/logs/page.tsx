@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface Memory {
   memoryId: string;
@@ -27,7 +28,7 @@ export default function LogsPage() {
       setLoading(true);
       try {
         const queryParams = search ? `?search=${encodeURIComponent(search)}` : "";
-        const res = await fetch(`/api/memories${queryParams}`);
+        const res = await fetchWithTimeout(`/api/memories${queryParams}`);
         if (!res.ok) {
           throw new Error("Failed to fetch memories");
         }

@@ -3,17 +3,17 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
+from bastion.log_setup import get_logger
 from bastion.memory import BastionMemory
 from bastion.models import MemoryRecord
 from bastion.retry import SerializationRetryEngine
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VectorClock:
@@ -687,7 +687,7 @@ class RGA:
         # Sort by position, then by agent_id, then by memory_id as tiebreaker
         def _sort_key(r: MemoryRecord) -> tuple[float, str, str]:
             pos = float((r.metadata or {}).get("_crdt_position", "0"))
-            return (pos, r.memory_id, r.memory_id)
+            return (pos, r.memory_id, str(r.created_at))
 
         target.sort(key=_sort_key)
 

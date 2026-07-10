@@ -18,11 +18,13 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
   const [currentLatency, setCurrentLatency] = useState(0);
   const [cacheHitRate, setCacheHitRate] = useState<number | null>(null);
   const [p99Latency, setP99Latency] = useState(0);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     async function measureLatency() {
       const startTime = performance.now();
       try {
+        setFetchError(false);
         const res = await fetch("/api/stats");
         if (res.ok) {
           await res.json();
@@ -57,6 +59,7 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
         }
       } catch (err) {
         console.error("[CspannHud] fetch failed:", err);
+        setFetchError(true);
       }
     }
 
@@ -103,11 +106,11 @@ export default function CspannHud({ refreshInterval = 3000 }: CspannHudProps) {
               width: "6px",
               height: "6px",
               borderRadius: "50%",
-              background: gaugeColor,
-              boxShadow: `0 0 6px ${gaugeColor}`,
+              background: fetchError ? "var(--accent-sunset)" : gaugeColor,
+              boxShadow: fetchError ? "0 0 6px var(--accent-sunset)" : `0 0 6px ${gaugeColor}`,
             }}
           />
-          LIVE
+          {fetchError ? "OFFLINE" : "LIVE"}
         </span>
       </div>
 

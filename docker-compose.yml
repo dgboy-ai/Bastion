@@ -38,6 +38,12 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
     networks:
       - bastion-net
 
@@ -61,7 +67,7 @@ services:
         echo 'Applying schemas...'
         for f in /schemas/0*.sql; do
           echo \"  -> \$(basename \$f)\"
-          cockroach sql --certs-dir=/certs --host=cockroachdb -f \"\$f\" 2>&1 || echo \"  [warn] \$(basename \$f) may have already been applied\"
+          cockroach sql --certs-dir=/certs --host=cockroachdb -f \"\$f\" 2>&1
         done
         echo 'Schema applied successfully!'
       "
@@ -87,7 +93,7 @@ services:
         echo 'Installing dependencies...'
         pip install psycopg[binary] --quiet 2>/dev/null
         echo 'Seeding demo data...'
-        python /scripts/seed_graph.py || echo 'Seed script requires src package - skipping'
+        python /scripts/seed_graph.py
         echo 'Seeding complete!'
       "
     networks:
@@ -108,6 +114,12 @@ services:
     depends_on:
       cockroachdb:
         condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
     networks:
       - bastion-net
 

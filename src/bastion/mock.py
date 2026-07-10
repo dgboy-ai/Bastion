@@ -311,8 +311,14 @@ def mock_memory_health(agent_id: str) -> dict:
     pinned = sum(1 for r in records if r.get("is_pinned"))
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
-    week = sum(1 for r in records if r.get("created_at", datetime.min.replace(tzinfo=UTC)) > week_ago)
-    month = sum(1 for r in records if r.get("created_at", datetime.min.replace(tzinfo=UTC)) > month_ago)
+    def _parse_dt(val: Any) -> datetime:
+        if isinstance(val, datetime):
+            return val
+        if isinstance(val, str):
+            return datetime.fromisoformat(val)
+        return datetime.min.replace(tzinfo=UTC)
+    week = sum(1 for r in records if _parse_dt(r.get("created_at")) > week_ago)
+    month = sum(1 for r in records if _parse_dt(r.get("created_at")) > month_ago)
     avg_access = sum(r.get("access_count", 0) for r in records) / max(total, 1)
     avg_importance = sum(r.get("importance_score", 5.0) for r in records) / max(total, 1)
     return {

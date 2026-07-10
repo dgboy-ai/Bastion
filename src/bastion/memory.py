@@ -762,15 +762,17 @@ class BastionMemory:
             query_vector_str = json.dumps(query_vector)
             settings = get_settings()
             decay_rate = settings.decay_rate
-            agent_filter = "agent_id LIKE %s"
-            assert agent_filter in _ALLOWED_AGENT_FILTERS, f"Unexpected agent_filter: {agent_filter}"
+            agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
+            if agent_filter not in _ALLOWED_AGENT_FILTERS:
+                raise ValueError(f"Unexpected agent_filter: {agent_filter}")
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
 
             region_clause = ""
             region_param: list[str] = []
             if region_filter is not None:
                 region_clause = "AND crdb_region = %s"
-                assert region_clause in _ALLOWED_REGION_CLAUSES, f"Unexpected region_clause: {region_clause}"
+                if region_clause not in _ALLOWED_REGION_CLAUSES:
+                    raise ValueError(f"Unexpected region_clause: {region_clause}")
                 region_param = [region_filter]
 
             with conn.cursor() as cur:
@@ -820,14 +822,16 @@ class BastionMemory:
         self._set_rls_context(conn)
         try:
             agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
-            assert agent_filter in _ALLOWED_AGENT_FILTERS, f"Unexpected agent_filter: {agent_filter}"
+            if agent_filter not in _ALLOWED_AGENT_FILTERS:
+                raise ValueError(f"Unexpected agent_filter: {agent_filter}")
             agent_param = f"{self.namespace}:%" if namespace_scope == "shared" else self.agent_id
 
             region_clause = ""
             region_param: list[str] = []
             if region_filter is not None:
                 region_clause = "AND crdb_region = %s"
-                assert region_clause in _ALLOWED_REGION_CLAUSES, f"Unexpected region_clause: {region_clause}"
+                if region_clause not in _ALLOWED_REGION_CLAUSES:
+                    raise ValueError(f"Unexpected region_clause: {region_clause}")
                 region_param = [region_filter]
 
             with conn.cursor() as cur:
