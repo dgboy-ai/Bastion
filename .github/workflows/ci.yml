@@ -104,23 +104,9 @@ jobs:
         working-directory: dashboard
 
   # ── Real CRDB Integration Tests ────────────────────────────────────────
-  # This job runs a subset of tests against a real CockroachDB container
-  # to prove our SQL queries, vector search, and time-travel actually work.
+  # Uses docker-compose to run CockroachDB in single-node insecure mode.
   crdb-integration:
     runs-on: ubuntu-latest
-    services:
-      cockroachdb:
-        image: cockroachdb/cockroach:v24.2.0
-        ports:
-          - 26257:26257
-        options: >-
-          --health-cmd "/cockroach/cockroach node status --insecure --host=localhost:26257 || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 15
-          --health-start-period 15s
-        env:
-          COCKROACH_DB: defaultdb
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -129,50 +115,33 @@ jobs:
           cache: "pip"
       - name: Install dependencies
         run: pip install -e ".[dev,all]" --upgrade pip
-      - name: Wait for CockroachDB
+      - name: Start CockroachDB via Docker
         run: |
-          echo "Waiting for CockroachDB to be ready..."
-          for i in $(seq 1 90); do
-            if python -c "
-          import psycopg
-          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable', connect_timeout=5)
-          conn.close()
-          print('Connected!')
-          " 2>/dev/null; then
-              echo "CockroachDB is ready after ${i}s"
+          docker run -d --name crdb \
+            -p 26257:26257 \
+            cockroachdb/cockroach:v24.1.0 \
+            start-single-node --insecure --accept-licenses
+          echo "Waiting for CockroachDB..."
+          for i in $(seq 1 60); do
+            if docker exec crdb cockroach node status --insecure 2>/dev/null; then
+              echo "CockroachDB ready after ${i}s"
               break
             fi
-            echo "Waiting... ($i/90)"
+            echo "Waiting... ($i/60)"
             sleep 2
           done
-      - name: Create defaultdb if needed
-        run: |
-          python -c "
-          import psycopg
-          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
-          conn.autocommit = True
-          print('Connected to defaultdb successfully')
-          conn.close()
-          "
+      - name: Create database
+        run: docker exec crdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
       - name: Apply schema
         run: |
-          python -c "
-          import psycopg, sys
-          conn = psycopg.connect('postgresql://root:@localhost:26257/defaultdb?sslmode=disable')
-          conn.autocommit = True
-          cur = conn.cursor()
-          for schema_file in ['schema/002_agent_memory.sql', 'schema/003_agent_audit.sql', 'schema/004_agent_coordination.sql']:
-              try:
-                  with open(schema_file) as f:
-                      cur.execute(f.read())
-                  print(f'Applied {schema_file}')
-              except Exception as e:
-                  print(f'Skipped {schema_file}: {e}')
-                  # Continue with other schemas
-          conn.close()
-          print('Schema application complete')
-          " || echo "Schema application had errors but continuing..."
+          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/002_agent_memory.sql || true
+          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/003_agent_audit.sql || true
+          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/004_agent_coordination.sql || true
+          echo "Schema applied"
       - name: Run real CRDB integration tests
         run: pytest tests/test_crdb_integration.py -v --tb=short
         env:
           BASTION_CONN: "postgresql://root:@localhost:26257/defaultdb?sslmode=disable"
+      - name: Cleanup
+        if: always()
+        run: docker rm -f crdb 2>/dev/null || true
