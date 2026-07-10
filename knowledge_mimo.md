@@ -185,7 +185,7 @@ These are NOT the same market:
 | **CRDT Conflict Resolution** | ✅ Vector clocks | ❌ | ❌ | ❌ |
 | **A2A Protocol** | ✅ Ed25519 | ❌ | ❌ | ❌ |
 | **GDPR/EU AI Act** | ✅ | ❌ | ❌ | ❌ |
-| **FIPS 140-3** | ✅ (CRDB v26.1) | ❌ | ❌ | ❌ |
+| **FIPS 140-3** | ⚠️ CRDB v26.1 native | ❌ | ❌ | ❌ |
 | **OWASP Guard** | ✅ ASI06 | ❌ | ⚠️ Basic | ❌ |
 | **4-Tier Memory** | ✅ (after fix) | ✅ | ❌ | ❌ |
 | **12 Lifecycle Hooks** | ⚠️ (after fix) | ✅ 12 | ❌ | ❌ |

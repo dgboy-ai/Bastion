@@ -24,6 +24,7 @@ _MENTION_PATTERN = re.compile(r"@(\w+)")
 _PRIORITY_PATTERN = re.compile(r"!(\w+)")
 _CATEGORY_PATTERN = re.compile(r"\[(\w+)\]")
 _NAMESPACE_PATTERN = re.compile(r"::(\w+)")
+_PRIVATE_PATTERN = re.compile(r"<private>(.*?)</private>", re.DOTALL)
 
 
 @dataclass
@@ -34,6 +35,7 @@ class TagExtraction:
     priorities: list[str] = field(default_factory=list)
     categories: list[str] = field(default_factory=list)
     namespaces: list[str] = field(default_factory=list)
+    private_content: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,7 +44,13 @@ class TagExtraction:
             "priorities": self.priorities,
             "categories": self.categories,
             "namespaces": self.namespaces,
+            "private_content": self.private_content,
         }
+
+    @property
+    def has_private(self) -> bool:
+        """Check if content contains private tags."""
+        return bool(self.private_content)
 
     @property
     def all_tags(self) -> list[str]:
@@ -82,6 +90,7 @@ class TagPreprocessor:
             priorities=list(set(_PRIORITY_PATTERN.findall(content))),
             categories=list(set(_CATEGORY_PATTERN.findall(content))),
             namespaces=list(set(_NAMESPACE_PATTERN.findall(content))),
+            private_content=_PRIVATE_PATTERN.findall(content),
         )
 
     def extract_as_metadata(self, content: str) -> dict[str, Any]:
@@ -111,7 +120,9 @@ class TagPreprocessor:
         """Remove inline tags from content, returning clean text."""
         if not content:
             return content
-        result = _HASHTAG_PATTERN.sub("", content)
+        # Strip private content first (largest blocks)
+        result = _PRIVATE_PATTERN.sub("[PRIVATE]", content)
+        result = _HASHTAG_PATTERN.sub("", result)
         result = _MENTION_PATTERN.sub("", result)
         result = _PRIORITY_PATTERN.sub("", result)
         result = _CATEGORY_PATTERN.sub("", result)

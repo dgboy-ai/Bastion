@@ -178,6 +178,80 @@ class CaptureHooks:
         self._store_event(event, memory_type="error_log")
         return event
 
+    def after_file_read(self, file_path: str, content_preview: str = "") -> CaptureEvent | None:
+        """Capture memory after a file is read by the agent."""
+        content = f"File read: {file_path}"
+        if content_preview:
+            content += f" — {content_preview[:200]}"
+        event = CaptureEvent(
+            event_type="file_read",
+            content=content,
+            metadata={"file_path": file_path, "preview_length": len(content_preview)},
+        )
+        self._store_event(event, memory_type="file_access")
+        return event
+
+    def after_file_write(self, file_path: str, content_preview: str = "") -> CaptureEvent | None:
+        """Capture memory after a file is written by the agent."""
+        content = f"File written: {file_path}"
+        if content_preview:
+            content += f" — {content_preview[:200]}"
+        event = CaptureEvent(
+            event_type="file_write",
+            content=content,
+            metadata={"file_path": file_path, "preview_length": len(content_preview)},
+        )
+        self._store_event(event, memory_type="file_access")
+        return event
+
+    def after_command(self, command: str, exit_code: int = 0, output_preview: str = "") -> CaptureEvent | None:
+        """Capture memory after a shell command executes."""
+        content = f"Command: {command} (exit={exit_code})"
+        if output_preview:
+            content += f" — {output_preview[:200]}"
+        event = CaptureEvent(
+            event_type="command",
+            content=content,
+            metadata={"command": command, "exit_code": exit_code},
+        )
+        self._store_event(event, memory_type="command_execution")
+        return event
+
+    def after_checkpoint(self, checkpoint_id: str, description: str = "") -> CaptureEvent | None:
+        """Capture memory after a checkpoint is saved."""
+        content = f"Checkpoint saved: {checkpoint_id}"
+        if description:
+            content += f" — {description}"
+        event = CaptureEvent(
+            event_type="checkpoint",
+            content=content,
+            metadata={"checkpoint_id": checkpoint_id},
+        )
+        self._store_event(event, memory_type="checkpoint")
+        return event
+
+    def after_network_request(self, url: str, method: str = "GET", status: int = 200) -> CaptureEvent | None:
+        """Capture memory after a network request."""
+        content = f"Network {method} {url} → {status}"
+        event = CaptureEvent(
+            event_type="network_request",
+            content=content,
+            metadata={"url": url, "method": method, "status": status},
+        )
+        self._store_event(event, memory_type="network_activity")
+        return event
+
+    def after_db_query(self, query: str, rows_affected: int = 0) -> CaptureEvent | None:
+        """Capture memory after a database query."""
+        content = f"DB query: {query[:200]} — {rows_affected} rows"
+        event = CaptureEvent(
+            event_type="db_query",
+            content=content,
+            metadata={"query_preview": query[:200], "rows_affected": rows_affected},
+        )
+        self._store_event(event, memory_type="database_activity")
+        return event
+
     def _store_event(self, event: CaptureEvent, memory_type: str) -> None:
         """Store a capture event as a memory."""
         try:
