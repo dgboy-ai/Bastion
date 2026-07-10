@@ -24,9 +24,6 @@ Usage:
 """
 from __future__ import annotations
 
-import json
-import math
-import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -177,7 +174,6 @@ class LTMMemoryGateway:
         # Find the best match that's an analysis result (not raw input)
         best = None
         for record in results:
-            content = record.content or ""
             meta = record.metadata or {}
             # Prefer records tagged as analysis results
             is_analysis = (

@@ -91,8 +91,8 @@ def _extract_ngrams(text: str, n: int = 2) -> list[str]:
 
 def _extract_entities(text: str) -> list[str]:
     """Extract likely entity names (capitalized words, technical terms)."""
-    # Match capitalized words and technical terms
-    entities = re.findall(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b", text)
+    # Match capitalized words (including PascalCase like CockroachDB)
+    entities = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", text)
     # Also match technical patterns
     tech = re.findall(r"\b(?:API|SQL|HTTP|REST|CRDB|C-SPANN|MCP|A2A|CDC|RLS|GDPR|HIPAA|SOC2|AWS|GCP|KMS)\b", text)
     return list(set(entities + tech))
@@ -259,7 +259,10 @@ class ObservationDetector:
                     observations.append(Observation(
                         observation_id=f"trend-{hash(theme) & 0xFFFFFF:06x}",
                         pattern_type="temporal_trend",
-                        description=f"Emerging trend: \"{theme}\" increased from {old_count} to {recent_count} occurrences",
+                        description=(
+                            f"Emerging trend: \"{theme}\" increased from "
+                            f"{old_count} to {recent_count} occurrences"
+                        ),
                         confidence=confidence,
                         frequency=recent_count,
                         metadata={"theme": theme, "recent_count": recent_count, "old_count": old_count},

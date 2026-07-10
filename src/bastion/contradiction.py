@@ -381,7 +381,7 @@ class ContradictionDetector:
         all_memories = self._memory.list_all(namespace_scope="own")
         results = []
 
-        for i, mem in enumerate(all_memories):
+        for _i, mem in enumerate(all_memories):
             # Only scan non-pinned, non-superseded memories
             meta = getattr(mem, "metadata", {}) or {}
             if meta.get("superseded") or getattr(mem, "is_pinned", False):

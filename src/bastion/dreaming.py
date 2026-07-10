@@ -27,7 +27,6 @@ Usage:
 """
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -256,9 +255,9 @@ class MemoryDreamer:
                 if jaccard >= 0.6:
                     # These are similar — check if one should be merged
                     if mem_a.importance_score >= mem_b.importance_score:
-                        primary, secondary = mem_a, mem_b
+                        _primary, secondary = mem_a, mem_b
                     else:
-                        primary, secondary = mem_b, mem_a
+                        _primary, secondary = mem_b, mem_a
 
                     # Keep the more important one, mark the other for merge
                     candidates.append(ConsolidationCandidate(
