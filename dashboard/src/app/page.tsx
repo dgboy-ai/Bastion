@@ -197,15 +197,15 @@ export default function OverviewPage() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }} className="stagger-children">
       {/* Welcome Greeting & Subtext */}
-      <div>
+      <div className="animate-fade-in-up">
         <div className="welcome-title">Hello Agent! 👋</div>
         <div className="welcome-subtitle">Here&apos;s what&apos;s happening with your agent&apos;s memory ledger today. Click cards and filters to inspect.</div>
       </div>
 
       {/* Row 1: KPI Stats Grid (1.3fr), Memory Type Mix (1fr), and Curve chart (1fr) side-by-side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: "20px", alignItems: "stretch" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: "20px", alignItems: "stretch" }} className="animate-fade-in-up">
         
         <KpiCardGrid
           memories={stats?.memories}

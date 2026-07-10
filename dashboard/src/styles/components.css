@@ -1,0 +1,42 @@
+/* ── Components ──────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; border: none; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-primary { background: var(--accent-breeze); color: #000; }
+.btn-primary:hover { background: #33eaff; box-shadow: 0 0 12px var(--accent-breeze-glow); }
+.btn-outline { background: transparent; border: 1px solid var(--glass-border); color: var(--body); }
+.btn-outline:hover { border-color: var(--accent-breeze); color: var(--accent-breeze); }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { text-align: left; padding: 10px 14px; color: var(--mute); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.data-table td { padding: 10px 14px; color: var(--body); border-top: 1px solid var(--glass-border); }
+.data-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.badge-mono {
+  display: inline-flex; padding: 3px 8px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+}
+.badge-mono.store { background: rgba(0,255,136,0.1); color: var(--accent-emerald); }
+.badge-mono.conflict { background: rgba(255,85,0,0.1); color: var(--accent-sunset); }
+.badge-mono.anomaly { background: rgba(124,58,237,0.1); color: var(--accent-dusk); }
+
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--mute); font-weight: 600; }
+
+.sparkline-card-glow {
+  position: relative;
+  overflow: hidden;
+}
+.sparkline-card-glow::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse at top right, rgba(0,255,136,0.04), transparent 70%);
+  pointer-events: none;
+}
+
+.table-container { overflow-y: auto; }
+.table-container::-webkit-scrollbar { width: 4px; }
+.table-container::-webkit-scrollbar-track { background: transparent; }
+.table-container::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }

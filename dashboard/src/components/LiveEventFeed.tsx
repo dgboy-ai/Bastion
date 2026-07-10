@@ -62,11 +62,8 @@ export default function LiveEventFeed() {
     };
   }, []);
 
-  useEffect(() => {
-    rafRef.current = requestAnimationFrame(() => {
-      tailRef.current?.scrollIntoView({ behavior: "smooth" });
-    });
-  }, [events]);
+  // Auto-scroll removed — users should control their own scroll position
+  // The feed updates in place without forcing scroll to bottom
 
   return (
     <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
