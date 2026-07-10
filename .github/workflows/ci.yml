@@ -121,23 +121,23 @@ jobs:
             -p 26257:26257 \
             cockroachdb/cockroach:v24.1.0 \
             start-single-node --insecure --accept-licenses
-          echo "Waiting for CockroachDB..."
-          for i in $(seq 1 60); do
-            if docker exec crdb cockroach node status --insecure 2>/dev/null; then
-              echo "CockroachDB ready after ${i}s"
+          echo "Waiting for CockroachDB SQL interface..."
+          for i in $(seq 1 90); do
+            if docker exec crdb cockroach sql --insecure -e "SELECT 1" 2>/dev/null; then
+              echo "CockroachDB SQL ready after ${i}s"
               break
             fi
-            echo "Waiting... ($i/60)"
+            echo "Waiting for SQL... ($i/90)"
             sleep 2
           done
-      - name: Create database
-        run: docker exec crdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
-      - name: Apply schema
+      - name: Create database and apply schema
         run: |
-          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/002_agent_memory.sql || true
-          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/003_agent_audit.sql || true
-          docker exec crdb cockroach sql --insecure -d defaultdb -f /dev/stdin < schema/004_agent_coordination.sql || true
-          echo "Schema applied"
+          docker exec crdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
+          for f in schema/002_agent_memory.sql schema/003_agent_audit.sql schema/004_agent_coordination.sql; do
+            echo "Applying $f..."
+            docker exec -i crdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues (may already exist)"
+          done
+          echo "Schema setup complete"
       - name: Run real CRDB integration tests
         run: pytest tests/test_crdb_integration.py -v --tb=short
         env:
