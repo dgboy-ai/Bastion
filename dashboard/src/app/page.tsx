@@ -422,11 +422,7 @@ function Hero() {
         }}>
           Strategic AI to Scale Your
           <br />
-          <span style={{
-            background: "linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #ff7a17 100%)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}>
+          <span className="gradient-text-animated">
             Business Growth.
           </span>
         </h1>
@@ -472,17 +468,19 @@ function Hero() {
         position: "relative", zIndex: 1,
       }}>
         {[
-          { value: "1,058", label: "Tests Passing", color: "#00e5ff" },
-          { value: "22", label: "MCP Tools", color: "#7c3aed" },
-          { value: "4/4", label: "CRDB Features", color: "#ff7a17" },
-          { value: "5/5", label: "AWS Services", color: "#00ff88" },
+          { value: 1058, suffix: "", label: "Tests Passing", color: "#00e5ff" },
+          { value: 22, suffix: "", label: "MCP Tools", color: "#7c3aed" },
+          { value: 4, suffix: "/4", label: "CRDB Features", color: "#ff7a17" },
+          { value: 5, suffix: "/5", label: "AWS Services", color: "#00ff88" },
         ].map((s, i) => (
           <div key={s.label} style={{ textAlign: "center" }}>
             <div style={{
               fontSize: "42px", fontWeight: 700, color: s.color,
               textShadow: `0 0 30px ${s.color}40`,
               lineHeight: 1,
-            }}>{s.value}</div>
+            }}>
+              <AnimatedCounter target={s.value} suffix={s.suffix} duration={1800} />
+            </div>
             <div style={{
               fontSize: "11px", color: "#6b7280", textTransform: "uppercase",
               letterSpacing: "2.5px", marginTop: "8px", fontWeight: 500,
@@ -693,14 +691,14 @@ function Features() {
 function Stats() {
   const { ref, visible } = useInView(0.2);
   const stats = [
-    { value: "7", label: "Production-Ready", sublabel: "Core Features", color: "#00e5ff" },
-    { value: "48+", label: "MCP Tools", sublabel: "Available Now", color: "#7c3aed" },
-    { value: "64%", label: "Cost Reduction", sublabel: "vs. Competitors", color: "#00ff88" },
+    { value: 7, suffix: "", label: "Production-Ready", sublabel: "Core Features", color: "#00e5ff" },
+    { value: 48, suffix: "+", label: "MCP Tools", sublabel: "Available Now", color: "#7c3aed" },
+    { value: 64, suffix: "%", label: "Cost Reduction", sublabel: "vs. Competitors", color: "#00ff88" },
   ];
 
   return (
     <section ref={ref} style={{
-      padding: "140px 48px", position: "relative", zIndex: 1,
+      padding: "160px 48px", position: "relative", zIndex: 1,
       background: "linear-gradient(180deg, transparent 0%, rgba(0,229,255,0.02) 50%, transparent 100%)",
     }}>
       <div className="stats-grid" style={{
@@ -711,26 +709,26 @@ function Stats() {
           <div key={i} style={{
             textAlign: "center",
             opacity: visible ? 1 : 0,
-            transform: visible ? "translateY(0)" : "translateY(40px)",
+            transform: visible ? "translateY(0) scale(1)" : "translateY(40px) scale(0.95)",
             transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.15}s`,
           }}>
             <div style={{
-              fontSize: "clamp(64px, 8vw, 96px)", fontWeight: 700, color: s.color,
-              textShadow: `0 0 40px ${s.color}30`,
-              lineHeight: 0.9, marginBottom: "16px",
+              fontSize: "clamp(72px, 8vw, 108px)", fontWeight: 700, color: s.color,
+              textShadow: `0 0 60px ${s.color}40, 0 0 120px ${s.color}20`,
+              lineHeight: 0.9, marginBottom: "20px",
               fontFamily: "'Space Grotesk', system-ui, sans-serif",
             }}>
-              {s.value}
+              <AnimatedCounter target={s.value} suffix={s.suffix} duration={2000} />
             </div>
             <div style={{
-              fontSize: "16px", fontWeight: 600, color: "#fff",
-              marginBottom: "4px",
+              fontSize: "17px", fontWeight: 600, color: "#fff",
+              marginBottom: "6px",
             }}>
               {s.label}
             </div>
             <div style={{
-              fontSize: "13px", color: "#6b7280",
-              letterSpacing: "1px", textTransform: "uppercase",
+              fontSize: "12px", color: "#6b7280",
+              letterSpacing: "1.5px", textTransform: "uppercase",
             }}>
               {s.sublabel}
             </div>
@@ -953,7 +951,7 @@ function CTA() {
           opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)",
           transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s",
         }}>
-          <div style={{
+          <div className="gradient-border glow-card" style={{
             background: C.card, border: `1px solid ${C.hairline}`,
             borderRadius: "20px", padding: "48px",
           }}>
