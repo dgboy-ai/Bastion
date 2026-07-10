@@ -925,38 +925,35 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
-                # Use CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
-                cur.execute(
-                    "BEGIN AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,),
-                )
-                cur.execute(
-                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
-                    "WHERE agent_id = %s "
-                    "ORDER BY created_at",
-                    (agent_id,),
-                )
-                results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
-            return results
-        except Exception:
-            # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
-            # use timestamp filtering as a degraded mode
+            # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
-                        "WHERE agent_id = %s AND created_at <= %s::TIMESTAMPTZ "
-                        "ORDER BY created_at",
-                        (agent_id, timestamp),
+                        "BEGIN AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,),
                     )
-                    results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
-                return results
-            except Exception as fallback_exc:
-                logger.warning("Time-travel fallback also failed: %s", fallback_exc)
-                return []
-            finally:
-                pool.release(conn)
-        else:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        "WHERE agent_id = %s "
+                        "ORDER BY created_at",
+                        (agent_id,),
+                    )
+                    return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+            except Exception:
+                # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
+                # use timestamp filtering as a degraded mode
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                            "WHERE agent_id = %s AND created_at <= %s::TIMESTAMPTZ "
+                            "ORDER BY created_at",
+                            (agent_id, timestamp),
+                        )
+                        return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+                except Exception as fallback_exc:
+                    logger.warning("Time-travel fallback also failed: %s", fallback_exc)
+                    return []
+        finally:
             pool.release(conn)
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
@@ -1054,6 +1051,8 @@ class BastionMemory:
         except Exception as e:
             logger.exception("resolve_conflict failed")
             raise RuntimeError(f"Conflict resolution failed: {e}") from e
+        finally:
+            pool.release(conn)
 
     def _smart_merge(self, fact_a: str, fact_b: str, context: str) -> str:
         """Merge two conflicting facts using LLM (Groq) or heuristic fallback.

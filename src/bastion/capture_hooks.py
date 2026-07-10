@@ -16,7 +16,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from bastion.log_setup import get_logger
 
@@ -274,10 +274,7 @@ class CaptureHooks:
     def _is_duplicate(self, content: str) -> bool:
         """Check if similar content was recently captured."""
         prefix = content[:100]
-        for recent_prefix, _ in self._recent_contents:
-            if recent_prefix == prefix:
-                return True
-        return False
+        return any(rp == prefix for rp, _ in self._recent_contents)
 
     def get_stats(self) -> dict[str, Any]:
         """Get capture statistics."""

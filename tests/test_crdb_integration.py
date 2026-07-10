@@ -155,9 +155,6 @@ class TestCRDBMemoryOps:
 class TestCRDBCDC:
     def test_cdc_table_exists(self, real_mem):
         """Verify the CDC changefeed table exists in the schema."""
-        # This test verifies the schema is correct for CDC
-        # The actual CDC processing happens in Lambda, but we can verify
-        # the table structure is correct for changefeed
         pool = real_mem.get_pool()
         conn = pool.acquire(timeout=10.0)
         try:

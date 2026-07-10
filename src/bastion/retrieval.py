@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from bastion.log_setup import get_logger
@@ -58,7 +58,11 @@ def _extract_entities(text: str) -> list[str]:
     # Capitalized words (potential proper nouns)
     entities = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", text)
     # Technical acronyms
-    tech = re.findall(r"\b(?:API|SQL|HTTP|REST|CRDB|C-SPANN|MCP|A2A|CDC|RLS|GDPR|HIPAA|SOC2|AWS|GCP|KMS|LLM|AI|ML)\b", text, re.IGNORECASE)
+    acronyms = (
+        "API|SQL|HTTP|REST|CRDB|C-SPANN|MCP|A2A|CDC|RLS|"
+        "GDPR|HIPAA|SOC2|AWS|GCP|KMS|LLM|AI|ML"
+    )
+    tech = re.findall(rf"\b(?:{acronyms})\b", text, re.IGNORECASE)
     return list(set(e.lower() for e in entities + tech))
 
 
