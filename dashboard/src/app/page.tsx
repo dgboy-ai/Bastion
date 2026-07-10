@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { fetchWithTimeout } from "@/lib/fetch";
 import KpiCardGrid from "@/components/KpiCardGrid";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
 
@@ -60,14 +61,13 @@ export default function OverviewPage() {
   const prevDriftKey = useRef<string>("");
 
   const fetchData = useCallback(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const ac = new AbortController();
     const startTime = performance.now();
     try {
       const [statsRes, trustRes, driftRes] = await Promise.all([
-        fetch("/api/stats", { signal: controller.signal }),
-        fetch("/api/trust?limit=100", { signal: controller.signal }),
-        fetch("/api/drift?limit=50", { signal: controller.signal }),
+        fetchWithTimeout("/api/stats", { signal: ac.signal }),
+        fetchWithTimeout("/api/trust?limit=100", { signal: ac.signal }),
+        fetchWithTimeout("/api/drift?limit=50", { signal: ac.signal }),
       ]);
 
       if (!statsRes.ok) {
@@ -110,7 +110,7 @@ export default function OverviewPage() {
         setError(message);
       }
     } finally {
-      clearTimeout(timeout);
+      ac.abort();
     }
     setLoading(false);
   }, []);
@@ -437,7 +437,7 @@ export default function OverviewPage() {
             <div>
               <span className="kpi-label" style={{ fontSize: "8.5px" }}>Cache Hit Ratio</span>
               <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--ink)", marginTop: "2px", textShadow: "0 0 8px rgba(0, 255, 136, 0.15)" }}>
-                {stats?.cacheHitPct ? `${stats.cacheHitPct}%` : "94.2%"}
+                {stats?.cacheHitPct ? `${stats.cacheHitPct}%` : "—"}
               </div>
             </div>
             <div>

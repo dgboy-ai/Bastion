@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchWithTimeout } from "@/lib/fetch";
 
 interface CacheStats {
   summary: {
@@ -35,7 +36,7 @@ export default function CacheCostWidget() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/cache-stats?hours=24")
+    fetchWithTimeout("/api/cache-stats?hours=24")
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((data) => { if (!cancelled) setStats(data); })
       .catch((err) => { if (!cancelled) { console.error("[CacheCostWidget] fetch failed:", err); setFetchError(true); } });
