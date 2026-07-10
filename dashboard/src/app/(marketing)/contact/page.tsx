@@ -20,8 +20,8 @@ function useInView(threshold = 0.1) {
   return { ref, visible };
 }
 
-/* ── Particle Network ──────────────────────────────────────── */
-function ParticleNetwork() {
+/* ── Fire Ember Particles ───────────────────────────────────── */
+function FireEmbers() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -29,80 +29,44 @@ function ParticleNetwork() {
     const ctx = canvas.getContext("2d")!;
     let w = (canvas.width = window.innerWidth);
     let h = (canvas.height = window.innerHeight);
-    const resize = () => {
-      w = canvas.width = window.innerWidth;
-      h = canvas.height = window.innerHeight;
-    };
+    const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
     window.addEventListener("resize", resize);
 
-    const particles = Array.from({ length: 60 }, () => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: (Math.random() - 0.5) * 0.2,
-      r: Math.random() * 1.5 + 0.3,
-      o: Math.random() * 0.2 + 0.05,
-      z: Math.random(),
-      pulse: Math.random() * Math.PI * 2,
+    const embers = Array.from({ length: 80 }, () => ({
+      x: Math.random() * w, y: h + Math.random() * 100,
+      vx: (Math.random() - 0.5) * 0.6,
+      vy: -(Math.random() * 1.2 + 0.4),
+      size: Math.random() * 2.5 + 0.8,
+      life: Math.random(),
+      decay: Math.random() * 0.006 + 0.002,
+      color: Math.random() > 0.3 ? "#ff4500" : Math.random() > 0.5 ? "#ff8c00" : "#9c27b0",
     }));
 
     let raf: number;
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 150) {
-            const alpha = 0.08 * (1 - dist / 150);
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(0, 229, 255, ${alpha})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-      for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.pulse += 0.012;
-        if (p.x < 0 || p.x > w) p.vx *= -1;
-        if (p.y < 0 || p.y > h) p.vy *= -1;
-        const alpha = p.o * (0.5 + p.z * 0.5);
-        const size = p.r * (1 + Math.sin(p.pulse) * 0.1);
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, size * 3, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0, 229, 255, ${alpha * 0.1})`;
+      for (const e of embers) {
+        e.x += e.vx + Math.sin(e.life * 4) * 0.2;
+        e.y += e.vy;
+        e.life -= e.decay;
+        if (e.life <= 0 || e.y < -20) { e.x = Math.random() * w; e.y = h + Math.random() * 50; e.life = 1; }
+        const alpha = e.life * 0.7;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.size * 4, 0, Math.PI * 2);
+        ctx.fillStyle = e.color === "#9c27b0" ? `rgba(156,39,176,${alpha * 0.06})` : `rgba(255,69,0,${alpha * 0.08})`;
         ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0, 229, 255, ${alpha})`;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+        ctx.fillStyle = e.color === "#9c27b0" ? `rgba(206,147,216,${alpha})` : `rgba(255,200,100,${alpha})`;
         ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, size * 0.3, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.4})`;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.size * 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.6})`;
         ctx.fill();
       }
       raf = requestAnimationFrame(draw);
     };
     draw();
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   }, []);
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
-    />
-  );
+  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
 }
 
 /* ── Skeleton Loader ──────────────────────────────────────── */
@@ -195,7 +159,7 @@ export default function ContactPage() {
   return (
     <>
       <SkeletonLoader />
-      <ParticleNetwork />
+      <FireEmbers />
       <Navbar />
 
       <div ref={ref} style={{ padding: "160px 48px 120px", maxWidth: "640px", margin: "0 auto", position: "relative", zIndex: 1 }}>
@@ -308,34 +272,27 @@ export default function ContactPage() {
       </div>
 
       <style>{`
-        @keyframes fadeOut {
-          from { opacity: 1; }
-          to { opacity: 0; pointer-events: none; }
-        }
-        @keyframes skeletonShimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        .skeleton {
-          background: linear-gradient(90deg, #0c1018 25%, #1a1f2e 50%, #0c1018 75%);
-          background-size: 200% 100%;
-          animation: skeletonShimmer 1.5s ease-in-out infinite;
-          border-radius: 8px;
-        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { background: #0a0510; }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; pointer-events: none; } }
+        @keyframes skeletonShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .skeleton { background: linear-gradient(90deg, #0c1018 25%, #1a1f2e 50%, #0c1018 75%); background-size: 200% 100%; animation: skeletonShimmer 1.5s ease-in-out infinite; border-radius: 8px; }
         .skeleton-text { height: 14px; border-radius: 4px; }
         .skeleton-title { height: 28px; border-radius: 6px; }
         .glow-card { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); position: relative; }
-        .glow-card::before { content: ''; position: absolute; inset: -1px; border-radius: inherit; background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(124,58,237,0.15)); opacity: 0; transition: opacity 0.4s ease; z-index: -1; filter: blur(8px); }
+        .glow-card::before { content: ''; position: absolute; inset: -1px; border-radius: inherit; background: linear-gradient(135deg, rgba(255,69,0,0.25), rgba(156,39,176,0.20)); opacity: 0; transition: opacity 0.4s ease; z-index: -1; filter: blur(10px); }
         .glow-card:hover::before { opacity: 1; }
-        .glow-card:hover { transform: translateY(-4px); border-color: rgba(0,229,255,0.2); }
-        .glow-btn { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        .glow-btn::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; background: linear-gradient(135deg, #00e5ff, #7c3aed); opacity: 0; filter: blur(12px); transition: opacity 0.3s ease; z-index: -1; }
-        .glow-btn:hover::after { opacity: 0.4; }
-        .glow-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,229,255,0.25); }
-        .glow-btn:active { transform: scale(0.97); }
-        .hover-underline { position: relative; transition: color 0.2s ease; }
-        .hover-underline::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 1px; background: #00e5ff; transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        .hover-underline:hover::after { width: 100%; }
+        .glow-card:hover { transform: translateY(-6px); border-color: rgba(255,69,0,0.3) !important; box-shadow: 0 20px 60px rgba(255,69,0,0.15); }
+        .btn-lava { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+        .btn-lava::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); transform: translateX(-100%); transition: transform 0.5s ease; }
+        .btn-lava:hover::before { transform: translateX(100%); }
+        .btn-lava:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(255,69,0,0.5), 0 0 80px rgba(255,69,0,0.2); }
+        .btn-lava:active { transform: scale(0.97); }
+        .nav-link { position: relative; transition: color 0.2s ease; }
+        .nav-link::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 2px; background: #ff4500; transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 0 8px rgba(255,69,0,0.6); }
+        .nav-link:hover { color: #ff6b35 !important; }
+        .nav-link:hover::after { width: 100%; }
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
       `}</style>
     </>
