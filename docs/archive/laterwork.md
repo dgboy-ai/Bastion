@@ -126,3 +126,25 @@ To submit Bastion to **Build with DataHub: The Agent Hackathon** (Deadline: Augu
 - **Work Item:** Prepare a separate repository branch (`release/datahub`) using the **Apache 2.0 license file** (specifically required by DataHub).
 - **Video & Demo:** Record a separate 3-minute video showing a data developer agent using Bastion's pinned constraints and safety checks to write schema-correct, secure database code retrieved from DataHub.
 - **Lineage Contribution:** Write generated code relationships back to the DataHub metadata lineage chart, satisfying the "meaningful contribution to the graph" judging criteria.
+
+---
+
+## Branch Protection (Pre-Submission)
+
+When flipping repo from private → public near deadline (Aug 19), enable classic branch protection in **Settings → Branches**:
+
+- Branch pattern: `main`
+- ✅ **Require status checks to pass**
+- ✅ **Require branches to be up to date**
+- Select these status checks:
+  - `CI / lint (3.11)`
+  - `CI / lint (3.12)`
+  - `CI / python-test (3.11)`
+  - `CI / python-test (3.12)`
+  - `CI / dashboard-lint`
+  - `CI / dashboard-build`
+  - `CI / dashboard-vitest`
+- ✅ **Include administrators**
+- Save
+
+This activates automatically once the repo is public. GitHub Free does not enforce branch protection on private repos.

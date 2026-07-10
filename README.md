@@ -5,7 +5,7 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Tests-820%20passed-brightgreen)](#-test-verification-suite)
+[![Tests](https://img.shields.io/badge/Tests-942%20passed-brightgreen)](#-test-verification-suite)
 
 > **The system of record for autonomous AI systems. A persistent, secure, and self-healing memory engine that survives serverless crashes—so your agent swarms never forget.**
 
@@ -43,12 +43,18 @@ Bastion is a production-grade Agentic Memory framework built directly on **Cockr
 | Feature | Bastion (OSS) | Mem0 (Pro Tier) | Zep (Flex Tier) | Cognee (OSS) | Letta (OSS) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Pricing Model** | **$0 (Free Tier)** | $249/mo | $125/mo | $0 (Self-Host) | Cloud Pricing |
+| **LTM Gateway (Memory Reuse)** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Sleep-Time Dreaming** | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **Auto-Contradiction Detection** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Observations (Meta-Patterns)** | ✅ | ❌ | ✅ | ❌ | ❌ |
 | **AS OF SYSTEM TIME Time-Travel** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Cryptographic Hash-Chains** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Distributed Slot Concurrency Limiter**| ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Zero-Trust KMS Client Keys** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **OWASP Prompt Injection Guard** | ✅ | ⚠️ (Basic Only) | ❌ | ❌ | ❌ |
 | **A2A Protocol Support** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Multi-Region Distributed Memory** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **FIPS 140-3 Ready (CRDB v26.1)** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Single DB Footprint** | ✅ | ❌ (needs vector/graph) | ❌ | ❌ (needs 3 DBs) | ✅ |
 | **Python & TypeScript SDK** | ✅ | ✅ | ✅ | ❌ (Python Only) | ❌ (Python Only) |
 

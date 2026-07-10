@@ -12,8 +12,9 @@ import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from bastion.log_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SagaBoundary:

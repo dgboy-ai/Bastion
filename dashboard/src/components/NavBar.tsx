@@ -21,7 +21,7 @@ const NavBar = memo(function NavBar() {
         {/* Brand Header */}
         <Link href="/" className="brand-logo-container" style={{ textDecoration: "none" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 0 4px var(--accent-breeze-glow))" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 0 4px var(--accent-breeze-glow))" }} role="img" aria-label="Bastion shield logo">
               <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" stroke="var(--accent-breeze)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M12 6l4 2.5v3.5c0 2.8-1.8 5.6-4 6.3-2.2-.7-4-3.5-4-6.3V8.5L12 6z" fill="var(--accent-breeze)" opacity="0.25" />
               <circle cx="12" cy="12" r="2" fill="var(--accent-emerald)" style={{ filter: "drop-shadow(0 0 3px var(--accent-emerald))" }} />

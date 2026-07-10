@@ -133,6 +133,10 @@ class ObservationDetector:
         if len(all_memories) < self._min_frequency:
             return report
 
+        # Cap at 500 memories to prevent O(n²) performance issues
+        if len(all_memories) > 500:
+            all_memories = all_memories[:500]
+
         # 1. Recurring themes
         themes = self._detect_recurring_themes(all_memories)
         report.observations.extend(themes)

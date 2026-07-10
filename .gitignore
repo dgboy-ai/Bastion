@@ -34,3 +34,21 @@ test_real_crdb.py
 htmlcov/
 *.log
 .hypothesis/
+# Sensitive files - never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+# Benchmark results (generated)
+benchmark_results.json
+# Schema migration scripts (generated)
+scripts/check_schema.py
+scripts/fix_schema.py
+scripts/test_bedrock.py
+scripts/add_react_memo.py
+# Win strategy (internal)
+win.md
+msme_ideas*.md

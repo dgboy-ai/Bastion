@@ -33,6 +33,7 @@ import anyio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from bastion.log_setup import get_logger
 
 _SAFE_ERROR_MSG = "Internal server error (see server logs for details)"
 _MAX_REQUEST_BYTES = 1_048_576
@@ -52,7 +53,7 @@ _JSONRPC_INTERNAL_ERROR = -32603
 _A2A_TASK_NOT_FOUND = -32001
 _A2A_VERSION_NOT_SUPPORTED = -32009
 
-logger = logging.getLogger("bastion-a2a")
+logger = get_logger("bastion-a2a")
 
 # ---------------------------------------------------------------------------
 # Structured logging

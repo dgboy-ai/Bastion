@@ -17,8 +17,9 @@ from typing import Any
 import structlog
 
 from bastion.errors import BastionPoolExhaustedError
+from bastion.log_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 structlog_logger = structlog.get_logger("bastion.pool")
 
 

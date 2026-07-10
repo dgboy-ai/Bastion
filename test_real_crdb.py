@@ -1,6 +1,6 @@
 """Real CRDB Integration Test — proves the code works against live CockroachDB."""
 
-CONN = "postgresql://divyansh:7_GfcNnRnL6UaflljIzOIw@bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
+CONN = "postgresql://divyansh:5DY7P76-kRIJh_zIM3X0pw@bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
 
 from datetime import UTC, datetime, timedelta
 from bastion.memory import BastionMemory, MemoryRouter

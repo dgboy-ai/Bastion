@@ -15,8 +15,9 @@ import uuid
 from typing import Any
 
 from bastion.pool import ConnectionPool
+from bastion.log_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RequestLimiter:

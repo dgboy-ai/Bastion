@@ -36,8 +36,9 @@ import anyio
 
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, MemoryRecord
+from bastion.log_setup import get_logger
 
-logger = logging.getLogger("bastion.agent")
+logger = get_logger("bastion.agent")
 
 # ── PII Patterns ─────────────────────────────────────────────────────────────
 

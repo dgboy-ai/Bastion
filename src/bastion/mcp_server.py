@@ -304,6 +304,7 @@ def create_server(
                     "detect_contradictions",
                     "scan_all_contradictions",
                     "detect_observations",
+                    "multi_signal_search",
                 ],
             },
             indent=2,
@@ -1031,6 +1032,145 @@ def create_server(
         return json.dumps(report.to_dict(), indent=2, default=str)
 
     @mcp.tool(
+        name="multi_signal_search",
+        title="Multi-Signal Memory Retrieval",
+        description=(
+            "Search agent memories using multi-signal fusion: vector cosine "
+            "similarity + BM25 keyword matching + entity matching + temporal "
+            "recency scoring. Combines 4 signals with configurable weights "
+            "for more accurate recall than pure vector search alone."
+        ),
+        annotations=ToolAnnotations(
+            title="Multi-Signal Memory Retrieval",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def multi_signal_search(
+        ctx: Context,
+        query: str,
+        k: int = 10,
+        threshold: float = 0.3,
+        memory_type: str | None = None,
+    ) -> str:
+        from bastion.retrieval import MultiSignalRetriever
+
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
+        if k < 1:
+            return json.dumps({"error": "k must be >= 1"})
+
+        mem = _resolve_memory(ctx)
+        retriever = MultiSignalRetriever(mem)
+        results = await anyio.to_thread.run_sync(
+            retriever.search, query, k, threshold, memory_type,
+        )
+        return json.dumps(
+            {
+                "results": [r.to_dict() for r in results],
+                "total": len(results),
+                "signals": ["vector", "keyword", "entity", "temporal"],
+            },
+            indent=2,
+            default=str,
+        )
+
+    @mcp.tool(
+        name="context_pack",
+        title="Context Budget Packer",
+        description=(
+            "Pack the most relevant memories into a token budget for LLM "
+            "context injection. Prioritizes pinned memories, high-importance "
+            "facts, and query-relevant content. Returns packed memories with "
+            "token counts and utilization metrics."
+        ),
+        annotations=ToolAnnotations(
+            title="Context Budget Packer",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def context_pack(
+        ctx: Context,
+        budget_tokens: int = 4000,
+        query: str | None = None,
+    ) -> str:
+        from bastion.context_budget import ContextBudgetManager
+
+        mem = _resolve_memory(ctx)
+        packer = ContextBudgetManager(mem)
+        result = await anyio.to_thread.run_sync(
+            packer.pack, budget_tokens, query,
+        )
+        return json.dumps(result.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="agent_schema",
+        title="Agent Schema Query",
+        description=(
+            "Query the agent's own database schema via MCP. Returns table "
+            "structures, indexes, and column definitions. Enables agents to "
+            "understand and reason about their own storage layer."
+        ),
+        annotations=ToolAnnotations(
+            title="Agent Schema Query",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def agent_schema(
+        ctx: Context,
+        table: str | None = None,
+    ) -> str:
+        mem = _resolve_memory(ctx)
+        if mem._mock:
+            schema = {
+                "tables": {
+                    "agent_memory": {"columns": ["memory_id", "agent_id", "memory_type", "content", "embedding", "metadata", "created_at", "importance_score", "trust_level"]},
+                    "agent_audit": {"columns": ["audit_id", "agent_id", "action", "details", "recorded_at"]},
+                    "agent_entities": {"columns": ["entity_id", "agent_id", "entity_type", "name", "attributes"]},
+                    "agent_relations": {"columns": ["relation_id", "source_entity_id", "target_entity_id", "relation_type"]},
+                }
+            }
+        else:
+            try:
+                pool = mem.get_pool()
+                conn = pool.acquire(timeout=10.0)
+                try:
+                    with conn.cursor() as cur:
+                        if table:
+                            cur.execute(
+                                "SELECT column_name, data_type, is_nullable "
+                                "FROM information_schema.columns "
+                                "WHERE table_name = %s ORDER BY ordinal_position",
+                                (table,),
+                            )
+                            rows = cur.fetchall()
+                            schema = {"table": table, "columns": [
+                                {"name": r[0], "type": r[1], "nullable": r[2] == "YES"}
+                                for r in rows
+                            ]}
+                        else:
+                            cur.execute(
+                                "SELECT table_name FROM information_schema.tables "
+                                "WHERE table_schema = 'public' ORDER BY table_name"
+                            )
+                            tables = [r[0] for r in cur.fetchall()]
+                            schema = {"tables": tables}
+                finally:
+                    pool.release(conn)
+            except Exception as e:
+                schema = {"error": str(e)}
+
+        return json.dumps(schema, indent=2, default=str)
+
+    @mcp.tool(
         name="a2a_bridge",
         title="A2A Agent Bridge",
         description=("Retrieve the A2A Agent Card for inter-agent discovery. Returns A2A-compliant metadata."),
@@ -1165,6 +1305,21 @@ def create_server(
                 "description": "Detect recurring themes, co-occurrences, and meta-patterns across memories",
                 "read_only": True,
             },
+            {
+                "name": "multi_signal_search",
+                "description": "Multi-signal retrieval: vector + BM25 keyword + entity + temporal fusion",
+                "read_only": True,
+            },
+            {
+                "name": "context_pack",
+                "description": "Pack memories into token budget for LLM context injection",
+                "read_only": True,
+            },
+            {
+                "name": "agent_schema",
+                "description": "Query agent's own database schema via MCP",
+                "read_only": True,
+            },
         ]
         card = {
             "schemaVersion": "v1",
@@ -1237,7 +1392,7 @@ def create_server(
             {
                 "status": "ok",
                 "service": "bastion-mcp",
-                "tools": 22,
+                "tools": 25,
             }
         )
 
@@ -1266,6 +1421,7 @@ def create_server(
                     "detect_contradictions",
                     "scan_all_contradictions",
                     "detect_observations",
+                    "multi_signal_search",
                 ],
             }
         )

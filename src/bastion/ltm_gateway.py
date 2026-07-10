@@ -314,9 +314,9 @@ class LTMMemoryGateway:
             meta = record.metadata or {}
             if meta.get("analysis_result") or meta.get("workflow_output"):
                 # Tag as stale via metadata patch
-                stale_meta = {**(meta or {}), "stale": True, "stale_reason": reason}
                 self._memory.apply_patch(record.memory_id, [
-                    {"op": "replace", "path": "/metadata", "value": stale_meta}
+                    {"op": "add", "path": "/stale", "value": True},
+                    {"op": "add", "path": "/stale_reason", "value": reason},
                 ])
                 invalidated += 1
 

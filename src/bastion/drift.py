@@ -10,8 +10,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from bastion.memory import BastionMemory
+from bastion.log_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DRIFT_DIMENSIONS = [
     "memory_access_pattern",
