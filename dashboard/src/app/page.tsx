@@ -211,7 +211,7 @@ function Hero() {
 
         {/* CTAs */}
         <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn-animated" style={{
+          <Link href="/dashboard" className="btn-animated btn-press" style={{
             padding: "16px 36px", borderRadius: "9999px", background: "#fff", color: "#0a0a0a",
             fontSize: "15px", fontWeight: 600, textDecoration: "none", display: "inline-flex",
             alignItems: "center", gap: "8px",
@@ -219,7 +219,7 @@ function Hero() {
             Launch Dashboard
             <span style={{ fontSize: "18px", transition: "transform 0.2s" }}>→</span>
           </Link>
-          <Link href="/docs" className="btn-animated" style={{
+          <Link href="/docs" className="btn-animated btn-press" style={{
             padding: "16px 36px", borderRadius: "9999px",
             border: "1px solid rgba(255,255,255,0.2)", background: "transparent",
             color: "#fff", fontSize: "15px", fontWeight: 500, textDecoration: "none",
@@ -290,12 +290,13 @@ function Features() {
       </div>
       <div className="stagger-children" style={{
         display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-        gap: "20px", maxWidth: "1200px", margin: "0 auto",
+        gap: "20px", maxWidth: "1200px", margin: "0 auto", perspective: "1000px",
       }}>
         {features.map((f, i) => (
-          <div key={i} className="card-interactive" style={{
+          <div key={i} className="card-interactive perspective-card" style={{
             background: C.card, border: `1px solid ${C.hairline}`, borderRadius: "12px",
             padding: "32px", position: "relative", overflow: "hidden",
+            transformStyle: "preserve-3d",
           }}>
             {/* Glow accent */}
             <div style={{
