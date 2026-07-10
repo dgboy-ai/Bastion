@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import { memo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function NavBar() {
+const NavBar = memo(function NavBar() {
   const pathname = usePathname();
 
   const links = [
@@ -87,4 +87,6 @@ export default function NavBar() {
       </div>
     </aside>
   );
-}
+});
+
+export default NavBar;

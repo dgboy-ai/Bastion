@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as d3 from "d3";
+import { interpolate } from "d3-interpolate";
+import { arc as d3Arc, pie as d3Pie, PieArcDatum } from "d3-shape";
+import { select } from "d3-selection";
+import "d3-transition";
 
 interface TrustRingProps {
   trustLevelDistribution: Record<number, number>;
@@ -48,11 +51,11 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
       }
     }
 
-    const selection = d3.select(svg);
-    selection.selectAll("g.trust-ring-group").remove();
+    const sel = select(svg);
+    sel.selectAll("g.trust-ring-group").remove();
 
-    const existingDefs = selection.select<SVGDefsElement>("defs");
-    const defs = existingDefs.empty() ? selection.append("defs") : existingDefs;
+    const existingDefs = sel.select<SVGDefsElement>("defs");
+    const defs = existingDefs.empty() ? sel.append("defs") : existingDefs;
     if (!existingDefs.empty()) {
       existingDefs.selectAll("*").remove();
     }
@@ -69,34 +72,34 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
     textMerge.append("feMergeNode").attr("in", "blur");
     textMerge.append("feMergeNode").attr("in", "SourceGraphic");
 
-    const group = selection.append("g").attr("class", "trust-ring-group").attr("transform", `translate(${cx},${cy})`);
+    const group = sel.append("g").attr("class", "trust-ring-group").attr("transform", `translate(${cx},${cy})`);
 
-    const pie = d3.pie<{ level: number; count: number; color: string }>().value((d) => d.count).sort(null);
-    const arcGen = d3.arc<d3.PieArcDatum<{ level: number; count: number; color: string }>>().innerRadius(innerR).outerRadius(outerR).cornerRadius(2);
+    const pie = d3Pie<{ level: number; count: number; color: string }>().value((d) => d.count).sort(null);
+    const arcGen = d3Arc<PieArcDatum<{ level: number; count: number; color: string }>>().innerRadius(innerR).outerRadius(outerR).cornerRadius(2);
 
     const segments = group.selectAll("path").data(pie(arcs)).enter().append("path")
       .attr("d", arcGen as unknown as string)
-      .attr("fill", (d: d3.PieArcDatum<{ level: number; count: number; color: string }>) => d.data.color)
+      .attr("fill", (d: PieArcDatum<{ level: number; count: number; color: string }>) => d.data.color)
       .attr("opacity", 0.85)
       .attr("stroke", "#020305")
       .attr("stroke-width", 1.5)
       .attr("filter", "url(#trust-ring-glow)")
       .style("cursor", "pointer")
       .style("transition", "opacity 0.2s")
-      .on("mouseenter", function (this: SVGPathElement, _event: unknown, d: d3.PieArcDatum<{ level: number; count: number; color: string }>) {
-        d3.select(this).attr("opacity", 1);
+      .on("mouseenter", function (this: SVGPathElement, _event: unknown, d: PieArcDatum<{ level: number; count: number; color: string }>) {
+        select(this).attr("opacity", 1);
         setHovered({ label: TRUST_LABELS[d.data.level], value: d.data.count, color: d.data.color });
       })
       .on("mouseleave", function (this: SVGPathElement) {
-        d3.select(this).attr("opacity", 0.85);
+        select(this).attr("opacity", 0.85);
         setHovered(null);
       });
 
     segments.transition()
       .duration(800)
-      .attrTween("d", function (d: d3.PieArcDatum<{ level: number; count: number; color: string }>) {
-        const interpolate = d3.interpolate({ startAngle: 0, endAngle: 0 }, d);
-        return (t: number) => arcGen(interpolate(t)) as string;
+      .attrTween("d", function (d: PieArcDatum<{ level: number; count: number; color: string }>) {
+        const interp = interpolate({ startAngle: 0, endAngle: 0 }, d);
+        return (t: number) => arcGen(interp(t)) as string;
       });
 
     const scoreColor = avgTrustScore >= 0.8 ? "#00ff88" : avgTrustScore >= 0.5 ? "#ffcc00" : avgTrustScore >= 0.2 ? "#ff6600" : "#ff3333";

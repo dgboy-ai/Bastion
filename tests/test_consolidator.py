@@ -85,8 +85,8 @@ class TestMergeGroup:
     def test_merge_single_item_does_nothing(self, consolidator):
         mem = consolidator.memory
         mem.store("fact", "Solo fact")
-        consolidator._merge_group([mem.store("fact", "Solo fact")])
-        # Should not crash or change anything
+        result = consolidator._merge_group([mem.store("fact", "Solo fact")])
+        assert result is None, "Merge single item should return None"
 
 
 class TestPruneByDecay:

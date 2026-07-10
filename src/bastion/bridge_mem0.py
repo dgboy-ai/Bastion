@@ -21,13 +21,13 @@ Usage::
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable
 from typing import Any
 
+from bastion.log_setup import get_logger
 from bastion.memory import BastionMemory
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BastionMem0Bridge:
@@ -148,11 +148,11 @@ class BastionMem0Bridge:
         agent_id = self._agent_id
         if filters:
             agent_id = filters.get("agent_id")
-            if agent_id is None:
+            if not agent_id:
                 agent_id = filters.get("user_id")
-            if agent_id is None:
+            if not agent_id:
                 agent_id = filters.get("run_id")
-            if agent_id is None:
+            if not agent_id:
                 agent_id = self._agent_id
 
         mtype = (filters or {}).get("memory_type") or kwargs.get("memory_type")

@@ -165,3 +165,10 @@ tr:hover td { background: rgba(0, 240, 255, 0.03); box-shadow: inset 3px 0 0 var
   border-radius: 999px;
   transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@media (max-width: 768px) {
+  .panel { padding: 20px; }
+  .kpi-card { padding: 18px; }
+  .metrics-panel { padding: 18px; }
+  .kpi-val { font-size: 24px; }
+}

@@ -54,9 +54,11 @@ class AgentCardSigner:
         if not raw:
             logger.info("No %s found in env, generating ephemeral Ed25519 keypair", env_var)
             return cls()
-        if "\n" not in raw and raw.count(".") == 2 and len(raw) > 40:
-            try:
-                raw_bytes = base64.b64decode(raw)
+        if "PRIVATE KEY" in raw and "\n" in raw:
+            return cls(raw)
+        try:
+            raw_bytes = base64.b64decode(raw, validate=True)
+            if len(raw_bytes) == 32:
                 from cryptography.hazmat.primitives import serialization
                 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -67,9 +69,16 @@ class AgentCardSigner:
                     encryption_algorithm=serialization.NoEncryption(),
                 ).decode()
                 return cls(pem)
-            except Exception as exc:
-                logger.warning("Failed to decode base64 key from %s: %s", env_var, exc)
-                return cls(raw)
+            logger.warning(
+                "Base64-decoded key from %s is %d bytes (expected 32 for Ed25519)",
+                env_var, len(raw_bytes),
+            )
+        except Exception:
+            pass
+        logger.warning(
+            "Could not parse %s as PEM or raw base64 Ed25519 key, trying as PEM literal",
+            env_var,
+        )
         return cls(raw)
 
     def sign_data(self, data: bytes) -> bytes:

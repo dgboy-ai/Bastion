@@ -109,6 +109,7 @@ class SagaMemoryManager:
                 conn.commit()
             except Exception:
                 logger.exception("Failed to persist saga begin for %s", saga.saga_id)
+                return saga
             finally:
                 pool.release(conn)
         else:

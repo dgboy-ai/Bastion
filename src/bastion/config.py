@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import ClassVar
 
 from pydantic import SecretStr
@@ -45,15 +46,19 @@ class BastionSettings(BaseSettings):
 
 
 _settings: BastionSettings | None = None
+_Settings_LOCK = threading.Lock()
 
 
 def get_settings() -> BastionSettings:
     global _settings
     if _settings is None:
-        _settings = BastionSettings()
+        with _Settings_LOCK:
+            if _settings is None:
+                _settings = BastionSettings()
     return _settings
 
 
 def reset_settings() -> None:
     global _settings
-    _settings = None
+    with _Settings_LOCK:
+        _settings = None

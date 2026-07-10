@@ -233,7 +233,7 @@ class TestEdgeCaseBoundaries:
         agent.store("fact", ok_content)
 
         # Beyond boundary
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="content too long"):
             agent.store("fact", "X" * (_MAX_CONTENT_LENGTH + 1))
 
     def test_extremely_long_agent_id(self):
@@ -244,13 +244,13 @@ class TestEdgeCaseBoundaries:
         agent = BastionMemory(ok_id, mock=True)
         agent.store("fact", "Test")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="agent_id too long"):
             BastionMemory("a" * (_MAX_AGENT_ID_LENGTH + 1), mock=True)
 
     def test_empty_store_raises(self):
         """Storing empty content must raise ValueError."""
         agent = BastionMemory("stress-empty", mock=True)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="non-empty string"):
             agent.store("fact", "")
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="non-empty string"):
             agent.store("", "content")

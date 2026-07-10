@@ -63,6 +63,10 @@ jobs:
       - name: Lint with ESLint
         run: npm run lint
         working-directory: dashboard
+      - name: Security audit
+        run: npm audit --audit-level=high
+        working-directory: dashboard
+        continue-on-error: true
 
   dashboard-build:
     runs-on: ubuntu-latest

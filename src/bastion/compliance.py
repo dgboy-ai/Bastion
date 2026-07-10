@@ -15,13 +15,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import logging
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from bastion.log_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class ComplianceMode(StrEnum):

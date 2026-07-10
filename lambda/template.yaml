@@ -7,7 +7,7 @@ Description: Bastion CDC Handler + A2A Webhook Dispatcher for AI agent memory
 
 Globals:
   Function:
-    Timeout: 30
+    Timeout: 60
     MemorySize: 256
     Runtime: python3.12
     Environment:
@@ -59,7 +59,7 @@ Resources:
       Handler: webhook_dispatcher.handler
       CodeUri: .
       Description: Dispatches A2A task state changes to registered callback URLs via CDC
-      Timeout: 10
+      Timeout: 30
       Events:
         WebhookEndpoint:
           Type: HttpApi

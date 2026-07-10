@@ -9,7 +9,7 @@ class TestLogSetup:
     def test_configure_logging_basic(self):
         from bastion.log_setup import configure_logging
 
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {"BASTION_LOG_LEVEL": "", "BASTION_LOG_JSON": "", "LOG_JSON": ""}):
             configure_logging()
 
     def test_configure_logging_debug_level(self):

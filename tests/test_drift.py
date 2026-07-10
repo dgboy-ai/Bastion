@@ -120,6 +120,7 @@ def test_word_frequencies():
 def test_stddev():
     from bastion.drift import _stddev
 
+    # _stddev returns 0.1 as safety floor for zero-variance and edge cases
     assert _stddev([1, 1, 1]) == 0.1
     assert _stddev([1, 2, 3, 4, 5]) > 0
     assert _stddev([]) == 0.1

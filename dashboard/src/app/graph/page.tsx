@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import KnowledgeGraph from "@/components/KnowledgeGraph";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { fetchWithTimeout } from "@/lib/fetch";
 import TrustRing from "@/components/TrustRing";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
 import DriftChart from "@/components/DriftChart";
@@ -77,7 +78,7 @@ export default function GraphPage() {
         const interval = INTERVALS[sliderVal].value;
         const queryParams = interval ? `?as_of=${encodeURIComponent(interval)}` : "";
         
-        const res = await fetch(`/api/graph${queryParams}`);
+        const res = await fetchWithTimeout(`/api/graph${queryParams}`);
         if (!res.ok) {
           throw new Error("Failed to fetch knowledge graph state");
         }

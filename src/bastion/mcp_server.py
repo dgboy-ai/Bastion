@@ -18,6 +18,7 @@ ASGI thread-pool offloading for non-blocking database operations.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import json
 import logging
@@ -88,7 +89,7 @@ def _load_api_keys() -> set[str]:
 def _check_auth(headers: dict[str, str]) -> bool:
     keys = _load_api_keys()
     if not keys:
-        return True
+        return False
     auth = headers.get("authorization") or headers.get("Authorization") or ""
     if auth.startswith("Bearer "):
         return auth.removeprefix("Bearer ").strip() in keys
@@ -390,6 +391,12 @@ def create_server(
         memory_type: str | None = None,
         cursor: str | None = None,
     ) -> str:
+        if k < 1:
+            return json.dumps({"error": "k must be >= 1"})
+        if not 0.0 <= threshold <= 1.0:
+            return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
         mem = _resolve_memory(ctx)
         internal_k = max(k, 200)
         results = await anyio.to_thread.run_sync(
@@ -1030,6 +1037,8 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+
+    atexit.register(close_shared_pool)
 
     mcp = create_server(
         mock=args.mock,

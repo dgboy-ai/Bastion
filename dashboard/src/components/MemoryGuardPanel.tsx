@@ -62,20 +62,11 @@ export default function MemoryGuardPanel() {
       setScanResult(data);
     } catch (err) {
       console.error("[MemoryGuardPanel] scan failed:", err);
+      setScanResult({ isSafe: false, findings: [{ detector: "system", severity: "high", detail: "Scan request failed — check network connectivity" }] });
     } finally {
       setScanning(false);
     }
   };
-
-  if (fetchError) {
-    return (
-      <div className="p-6 rounded-xl bg-gray-900/50 border border-gray-700">
-        <div className="text-sm text-red-400 text-center py-8">
-          Failed to load guard data. Check your connection.
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return <div className="p-6 rounded-xl bg-gray-900/50 border border-gray-700 animate-pulse h-64" />;
