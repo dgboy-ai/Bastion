@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import KpiCardGrid from "@/components/KpiCardGrid";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
@@ -32,7 +31,6 @@ interface Stats {
 }
 
 export default function OverviewPage() {
-  const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,11 +121,15 @@ export default function OverviewPage() {
     return () => { clearTimeout(id); clearInterval(interval); };
   }, [fetchData]);
 
-  const decayPoints = useMemo(() => stats?.decayCurve ? stats.decayCurve.map((pt, idx) => {
+  const decayCurve = stats?.decayCurve;
+  const memCount = stats?.memories;
+  const recentAudits = stats?.recentAudits;
+
+  const decayPoints = useMemo(() => decayCurve ? decayCurve.map((pt, idx) => {
     const x = 30 + idx * 50;
     const y = 80 - (pt.value / 10) * 60;
     return { x, y, time: pt.label, value: `${pt.value.toFixed(2)}` };
-  }) : [], [stats?.decayCurve]);
+  }) : [], [decayCurve]);
 
   const { pathD, areaD } = useMemo(() => {
     let p = "";
@@ -145,19 +147,19 @@ export default function OverviewPage() {
   }, [decayPoints]);
 
   const { facts, semCache, episodic } = useMemo(() => {
-    const f = stats?.memories ? Math.round(stats.memories * 0.6) : 15;
-    const s = stats?.memories ? Math.round(stats.memories * 0.25) : 6;
-    const e = stats?.memories ? Math.max(1, stats.memories - f - s) : 3;
+    const f = memCount ? Math.round(memCount * 0.6) : 15;
+    const s = memCount ? Math.round(memCount * 0.25) : 6;
+    const e = memCount ? Math.max(1, memCount - f - s) : 3;
     return { facts: f, semCache: s, episodic: e };
-  }, [stats?.memories]);
+  }, [memCount]);
 
-  const filteredAudits = useMemo(() => stats?.recentAudits
-    ? stats.recentAudits.filter((log) => {
+  const filteredAudits = useMemo(() => recentAudits
+    ? recentAudits.filter((log) => {
         if (!selectedFilter) return true;
         const detailsString = JSON.stringify(log.details).toLowerCase();
         return detailsString.includes(selectedFilter.toLowerCase());
       })
-    : [], [stats?.recentAudits, selectedFilter]);
+    : [], [recentAudits, selectedFilter]);
 
   if (loading) {
     return (

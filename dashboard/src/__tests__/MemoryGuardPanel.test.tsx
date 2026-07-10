@@ -130,7 +130,7 @@ describe('MemoryGuardPanel', () => {
     render(<MemoryGuardPanel />)
     
     await waitFor(() => {
-      expect(screen.getByText('Total Checks')).toBeDefined()
+      expect(screen.getByText('MemoryGuard API Offline')).toBeDefined()
     })
   })
 })

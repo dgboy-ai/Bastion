@@ -72,6 +72,21 @@ export default function MemoryGuardPanel() {
     return <div className="p-6 rounded-xl bg-gray-900/50 border border-gray-700 animate-pulse h-64" />;
   }
 
+  if (fetchError) {
+    return (
+      <div className="p-4 rounded-xl border border-red-700 bg-red-900/20 text-center">
+        <div className="text-sm font-medium text-red-400 mb-2">MemoryGuard API Offline</div>
+        <p className="text-xs text-gray-400">Could not load security report. Verify that the backend is running and reachable.</p>
+        <button
+          className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors"
+          onClick={() => { setFetchError(false); setLoading(true); }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   const s = report?.summary;
 
   return (

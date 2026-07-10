@@ -61,18 +61,19 @@ export async function GET(request: Request) {
 
     const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
     const totalPages = Math.ceil(total / limit);
-    const memories = dataRes.rows.map((row: any) => ({
-      memoryId: row.memory_id,
-      agentId: row.agent_id,
-      memoryType: row.memory_type,
-      content: row.content,
-      metadata: row.metadata || {},
-      previousHash: row.previous_hash,
-      cryptographicHash: row.cryptographic_hash,
-      importanceScore: row.importance_score ?? 5.0,
-      createdAt: row.created_at,
-      expiresAt: row.expires_at,
-      accessCount: row.access_count ?? 0,
+    type MemoryRow = Record<string, unknown>;
+    const memories = dataRes.rows.map((row: MemoryRow) => ({
+      memoryId: row.memory_id as string,
+      agentId: row.agent_id as string,
+      memoryType: row.memory_type as string,
+      content: row.content as string,
+      metadata: (row.metadata as Record<string, unknown>) || {},
+      previousHash: row.previous_hash as string,
+      cryptographicHash: row.cryptographic_hash as string,
+      importanceScore: (row.importance_score as number) ?? 5.0,
+      createdAt: row.created_at as string,
+      expiresAt: row.expires_at as string,
+      accessCount: (row.access_count as number) ?? 0,
     }));
 
     return apiSuccess({ memories, total, page, limit, totalPages }, "short");

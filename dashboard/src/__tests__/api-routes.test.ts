@@ -91,7 +91,7 @@ describe('Dashboard API Routes', () => {
   })
 
   itIfServer('/api/compliance validates month parameter', async () => {
-    const { ok, status } = await fetchApi('/api/compliance?month=invalid')
+    const { status } = await fetchApi('/api/compliance?month=invalid')
     expect([200, 400]).toContain(status)
   })
 
