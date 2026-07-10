@@ -54,7 +54,7 @@ Bastion is a production-grade Agentic Memory framework built directly on **Cockr
 | **OWASP Prompt Injection Guard** | ✅ | ⚠️ (Basic Only) | ❌ | ❌ | ❌ |
 | **A2A Protocol Support** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Multi-Region Distributed Memory** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **FIPS 140-3 Ready (CRDB v26.1)** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **FIPS 140-3 Ready (CRDB v26.1)** | ⚠️ CRDB native | ❌ | ❌ | ❌ | ❌ |
 | **Single DB Footprint** | ✅ | ❌ (needs vector/graph) | ❌ | ❌ (needs 3 DBs) | ✅ |
 | **Python & TypeScript SDK** | ✅ | ✅ | ✅ | ❌ (Python Only) | ❌ (Python Only) |
 

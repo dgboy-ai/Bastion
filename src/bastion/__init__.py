@@ -47,6 +47,7 @@ from bastion.tags import TagPreprocessor, TagExtraction
 from bastion.benchmark import RecallBenchmark, BenchmarkResult
 from bastion.session_memory import SessionMemory, SessionEntry
 from bastion.context_budget import ContextBudgetManager, PackResult
+from bastion.procedural import ProceduralMemory, WorkflowPattern, DecisionPattern
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
@@ -161,4 +162,7 @@ __all__ = [
     "SessionEntry",
     "ContextBudgetManager",
     "PackResult",
+    "ProceduralMemory",
+    "WorkflowPattern",
+    "DecisionPattern",
 ]
