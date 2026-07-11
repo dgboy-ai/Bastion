@@ -861,5 +861,4 @@ export default function LandingPage() {
     </div>
   );
 }
-/ /   v 2 . 1   -   F o r c e   f r e s h   d e p l o y   0 7 / 1 1 / 2 0 2 6   1 2 : 0 0 : 2 9  
- 
+// v2.1 - Force fresh deploy 07/11/2026 12:00:29
