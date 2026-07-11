@@ -198,11 +198,8 @@ function Hero() {
 
   return (
     <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", padding: "160px 48px 120px", position: "relative" }}>
-      {/* Video Background */}
-      <video autoPlay muted loop playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0, filter: "brightness(0.3) saturate(1.2)" }}>
-        <source src="https://cdn.pixabay.com/video/2020/07/30/45349-445269793_large.mp4" type="video/mp4" />
-      </video>
-      <div style={{ position: "absolute", inset: 0, zIndex: 0, background: "linear-gradient(180deg, rgba(10,5,16,0.85) 0%, rgba(26,10,10,0.7) 50%, rgba(10,5,16,0.9) 100%)" }} />
+      {/* Animated Gradient Background */}
+      <div className="hero-bg" style={{ position: "absolute", inset: 0, zIndex: 0 }} />
       <div style={{ position: "absolute", inset: 0, zIndex: 0, opacity: 0.04, backgroundImage: "linear-gradient(rgba(255,69,0,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,69,0,0.3) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
 
       <div style={{ position: "relative", zIndex: 2, opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(60px)", transition: "all 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}>
@@ -804,6 +801,21 @@ export default function LandingPage() {
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; pointer-events: none; } }
         @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 20px ${C.lava}30; } 50% { box-shadow: 0 0 40px ${C.lava}60; } }
         @keyframes lavaGlow { 0%, 100% { text-shadow: 0 0 20px ${C.lava}40; } 50% { text-shadow: 0 0 40px ${C.lava}70, 0 0 80px ${C.lava}30; } }
+        @keyframes heroBg { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+        .hero-bg {
+          background: linear-gradient(-45deg, #0a0510, #1a0a0a, #0a0510, #1a0520);
+          background-size: 400% 400%;
+          animation: heroBg 15s ease infinite;
+        }
+        .hero-bg::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(ellipse at 20% 80%, rgba(255,69,0,0.15) 0%, transparent 50%),
+                      radial-gradient(ellipse at 80% 20%, rgba(156,39,176,0.1) 0%, transparent 50%),
+                      radial-gradient(ellipse at 50% 50%, rgba(79,195,247,0.05) 0%, transparent 50%);
+        }
 
         .lava-text { animation: lavaGlow 3s ease-in-out infinite; }
 
