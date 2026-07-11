@@ -208,9 +208,9 @@ function Hero() {
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.lavaGlow }}>MEMORY FORTRESS ACTIVE</span>
         </div>
 
-        <h1 style={{ fontSize: "clamp(60px, 9vw, 120px)", fontWeight: 900, lineHeight: "0.88", letterSpacing: "-5px", color: "#fff", marginBottom: "32px", maxWidth: "1000px", fontFamily: "'Space Grotesk', sans-serif" }}>
+        <h1 style={{ fontSize: "clamp(60px, 9vw, 120px)", fontWeight: 900, lineHeight: "0.88", letterSpacing: "-5px", color: "#fff", marginBottom: "32px", maxWidth: "1000px", fontFamily: "'Space Grotesk', sans-serif", textShadow: "0 0 60px rgba(255,255,255,0.1)" }}>
           THE<br />
-          <span className="lava-text" style={{ background: `linear-gradient(135deg, ${C.lava} 0%, ${C.magma} 30%, ${C.portalPurple} 60%, ${C.soulFire} 100%)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>FORTRESS</span><br />
+          <span className="lava-text" style={{ background: `linear-gradient(135deg, ${C.lava} 0%, ${C.magma} 25%, ${C.portalPurple} 50%, ${C.soulFire} 75%, ${C.lava} 100%)`, backgroundSize: "200% 200%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", animation: "gradientShift 4s ease infinite" }}>FORTRESS</span><br />
           OF MEMORY
         </h1>
 
@@ -366,12 +366,12 @@ function Features() {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "20px" }}>
         {features.map((f, i) => (
-          <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", color: f.color, fontWeight: 700, textShadow: `0 0 12px ${f.color}60` }}>/{f.num}</span>
-              <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#fff", margin: 0, fontFamily: "'Space Grotesk', sans-serif" }}>{f.title}</h3>
+          <div key={i} className="feature-card" style={{ background: "rgba(15,8,20,0.9)", border: `1px solid ${C.hairline}`, borderRadius: "12px", padding: "36px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` } as React.CSSProperties}>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px", color: f.color, fontWeight: 700, textShadow: `0 0 16px ${f.color}70`, background: `${f.color}15`, padding: "6px 12px", borderRadius: "6px" }}>/{f.num}</span>
+              <h3 style={{ fontSize: "20px", fontWeight: 800, color: "#fff", margin: 0, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.5px" }}>{f.title}</h3>
             </div>
-            <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{f.desc}</p>
+            <p style={{ fontSize: "15px", lineHeight: "1.8", color: C.body, margin: 0 }}>{f.desc}</p>
           </div>
         ))}
       </div>
@@ -802,6 +802,8 @@ export default function LandingPage() {
         @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 20px ${C.lava}30; } 50% { box-shadow: 0 0 40px ${C.lava}60; } }
         @keyframes lavaGlow { 0%, 100% { text-shadow: 0 0 20px ${C.lava}40; } 50% { text-shadow: 0 0 40px ${C.lava}70, 0 0 80px ${C.lava}30; } }
         @keyframes heroBg { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 
         .hero-bg {
           background: linear-gradient(-45deg, #0a0510, #1a0a0a, #0a0510, #1a0520);
@@ -833,11 +835,20 @@ export default function LandingPage() {
         .btn-obsidian { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .btn-obsidian:hover { transform: translateY(-3px); border-color: ${C.lava}40 !important; box-shadow: 0 8px 32px ${C.lava}15; color: #fff !important; }
 
-        .glow-card { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); position: relative; }
-        .glow-card::before { content: ''; position: absolute; inset: -1px; border-radius: inherit; background: linear-gradient(135deg, ${C.lava}25, ${C.portalPurple}20, ${C.soulFire}15); opacity: 0; transition: opacity 0.4s ease; z-index: -1; filter: blur(10px); }
+        .glow-card { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); position: relative; border: 1px solid rgba(255,69,0,0.15); }
+        .glow-card::before { content: ''; position: absolute; inset: -2px; border-radius: inherit; background: linear-gradient(135deg, ${C.lava}40, ${C.portalPurple}30, ${C.soulFire}20); opacity: 0; transition: opacity 0.4s ease; z-index: -1; filter: blur(12px); }
+        .glow-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, rgba(255,69,0,0.08) 0%, transparent 50%); opacity: 0; transition: opacity 0.4s ease; }
         .glow-card:hover::before { opacity: 1; }
-        .glow-card:hover { transform: translateY(-6px); border-color: ${C.lava}30 !important; box-shadow: 0 20px 60px ${C.lava}15; }
-        .glow-card:hover h3 { color: ${C.lavaGlow} !important; }
+        .glow-card:hover::after { opacity: 1; }
+        .glow-card:hover { transform: translateY(-8px); border-color: ${C.lava}50 !important; box-shadow: 0 25px 80px ${C.lava}20, 0 0 0 1px ${C.lava}30; }
+        .glow-card:hover h3 { color: ${C.lavaGlow} !important; text-shadow: 0 0 20px ${C.lava}30; }
+
+        .feature-card { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); position: relative; border: 1px solid rgba(255,69,0,0.1); background: linear-gradient(135deg, rgba(15,8,20,0.9) 0%, rgba(10,5,16,0.95) 100%); }
+        .feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent, ${C.lava}), transparent); opacity: 0; transition: opacity 0.4s ease; }
+        .feature-card:hover { transform: translateY(-6px) scale(1.02); border-color: var(--accent, ${C.lava})40 !important; box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 30px var(--accent, ${C.lava})15; }
+        .feature-card:hover::before { opacity: 1; }
+
+        .stat-number { text-shadow: 0 0 40px var(--color, ${C.lava})60, 0 0 80px var(--color, ${C.lava})30; }
 
         @media (max-width: 1024px) { .cta-grid { grid-template-columns: 1fr !important; } }
         @media (max-width: 768px) { .hero-stats { flex-direction: column !important; gap: 32px !important; } section > div[style*="grid-template-columns: repeat(4"] { grid-template-columns: 1fr !important; } section > div[style*="grid-template-columns: repeat(3"] { grid-template-columns: 1fr !important; } section > div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; } }
