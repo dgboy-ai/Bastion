@@ -80,7 +80,7 @@ function useCountUp(target: number, duration = 2000) {
   return { ref, count, visible };
 }
 
-/* ── Fire Embers ───────────────────────────────────────────── */
+/* ── Fire Ember Particles ───────────────────────────────────── */
 function FireEmbers() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -179,9 +179,9 @@ function Navbar() {
       </Link>
       <div style={{ display: "flex", gap: "36px", alignItems: "center" }}>
         {[{ href: "/", label: "Home" }, { href: "/dashboard", label: "Dashboard" }, { href: "/docs", label: "Docs" }, { href: "/contact", label: "Contact" }].map((l) => (
-          <Link key={l.href} href={l.href} className="nav-link" style={{ color: l.href === "/" ? C.lavaGlow : "#9a8e7f", fontSize: "14px", textDecoration: "none", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>{l.label}</Link>
+          <Link key={l.href} href={l.href} className="nav-link" style={{ color: l.href === "/" ? C.lavaGlow : "#9a8e7f", fontSize: "14px", textDecoration: "none", fontWeight: 500 }}>{l.label}</Link>
         ))}
-        <Link href="/dashboard" className="btn-lava" style={{ padding: "12px 28px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "14px", fontWeight: 700, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px", boxShadow: `0 0 20px ${C.lava}40` }}>Launch</Link>
+        <Link href="/dashboard" className="glow-btn" style={{ padding: "12px 28px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "14px", fontWeight: 700, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px", boxShadow: `0 0 20px ${C.lava}40` }}>Launch</Link>
       </div>
     </nav>
   );
@@ -192,9 +192,13 @@ function Hero() {
   const [loaded, setLoaded] = useState(false);
   const scrollY = useParallax();
   useEffect(() => { requestAnimationFrame(() => setLoaded(true)); }, []);
+  const { ref: statsRef, count: testCount } = useCountUp(1133, 2000);
+  const { count: toolCount } = useCountUp(25, 1500);
+  const { count: regionCount } = useCountUp(6, 1000);
 
   return (
     <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", padding: "160px 48px 120px", position: "relative" }}>
+      {/* Video Background */}
       <video autoPlay muted loop playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0, filter: "brightness(0.3) saturate(1.2)" }}>
         <source src="https://cdn.pixabay.com/video/2020/07/30/45349-445269793_large.mp4" type="video/mp4" />
       </video>
@@ -213,12 +217,12 @@ function Hero() {
           OF MEMORY
         </h1>
 
-        <p style={{ fontSize: "18px", lineHeight: "1.8", color: C.body, maxWidth: "600px", margin: "0 auto 56px", fontFamily: "'Inter', sans-serif" }}>
+        <p style={{ fontSize: "18px", lineHeight: "1.8", color: C.body, maxWidth: "600px", margin: "0 auto 56px" }}>
           Persistent, self-healing memory that survives crashes, scales across 6 regions, and never lets your agents forget. Built on CockroachDB. Forged in fire.
         </p>
 
         <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn-lava" style={{ padding: "20px 48px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "16px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "2px", boxShadow: `0 0 30px ${C.lava}50, 0 0 60px ${C.lava}20`, display: "inline-flex", alignItems: "center", gap: "12px" }}>
+          <Link href="/dashboard" className="glow-btn" style={{ padding: "20px 48px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "16px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "2px", boxShadow: `0 0 30px ${C.lava}50, 0 0 60px ${C.lava}20`, display: "inline-flex", alignItems: "center", gap: "12px" }}>
             Enter the Fortress
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
           </Link>
@@ -226,28 +230,20 @@ function Hero() {
         </div>
       </div>
 
-      {/* Animated Stats */}
-      <div className="hero-stats" style={{ display: "flex", gap: "64px", marginTop: "120px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.5s", position: "relative", zIndex: 2 }}>
+      <div ref={statsRef} className="hero-stats" style={{ display: "flex", gap: "64px", marginTop: "120px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.5s", position: "relative", zIndex: 2 }}>
         {[
-          { target: 1133, suffix: "", label: "Tests Passing", color: C.lava },
-          { target: 25, suffix: "", label: "MCP Tools", color: C.portalPurple },
-          { target: 100, suffix: "%", label: "Recall@5", color: C.soulFire },
-          { target: 6, suffix: "", label: "Global Regions", color: C.magma },
+          { value: testCount, label: "Tests Passing", color: C.lava },
+          { value: toolCount, label: "MCP Tools", color: C.portalPurple },
+          { value: 100, suffix: "%", label: "Recall@5", color: C.soulFire },
+          { value: regionCount, label: "Global Regions", color: C.magma },
         ].map((s) => (
-          <StatCounter key={s.label} target={s.target} suffix={s.suffix} label={s.label} color={s.color} />
+          <div key={s.label} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "42px", fontWeight: 900, color: s.color, textShadow: `0 0 30px ${s.color}50`, lineHeight: 1, fontFamily: "'Space Grotesk', sans-serif" }}>{s.value}{s.suffix || ""}</div>
+            <div style={{ fontSize: "10px", color: C.mute, textTransform: "uppercase", letterSpacing: "3px", marginTop: "8px", fontWeight: 600 }}>{s.label}</div>
+          </div>
         ))}
       </div>
     </section>
-  );
-}
-
-function StatCounter({ target, suffix, label, color }: { target: number; suffix: string; label: string; color: string }) {
-  const { ref, count } = useCountUp(target, 2000);
-  return (
-    <div ref={ref} style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "42px", fontWeight: 900, color, textShadow: `0 0 30px ${color}50`, lineHeight: 1, fontFamily: "'Space Grotesk', sans-serif" }}>{count}{suffix}</div>
-      <div style={{ fontSize: "10px", color: C.mute, textTransform: "uppercase", letterSpacing: "3px", marginTop: "8px", fontWeight: 600 }}>{label}</div>
-    </div>
   );
 }
 
@@ -296,7 +292,63 @@ function ProblemSolution() {
   );
 }
 
-/* ── Features (8 real features) ────────────────────────────── */
+/* ── What is Bastion ─────────────────────────────────────────── */
+function WhatIsBastion() {
+  const { ref, visible } = useInView(0.1);
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "100px", alignItems: "center" }}>
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(-40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.lava, marginBottom: "24px" }}>What is Bastion?</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 48px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", lineHeight: "1.1", marginBottom: "24px", fontFamily: "'Space Grotesk', sans-serif" }}>
+            Persistent memory for<br /><span style={{ color: C.lavaGlow }}>autonomous AI agents.</span>
+          </h2>
+          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "24px" }}>
+            Bastion is a production-grade Agentic Memory framework built on <strong style={{ color: "#fff" }}>CockroachDB</strong> and <strong style={{ color: "#fff" }}>AWS</strong>. It provides persistent, self-healing memory with cryptographic integrity, time-travel queries, and multi-region distribution.
+          </p>
+          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "32px" }}>
+            Your agents never forget. Your agents never get poisoned. Your agents survive anything.
+          </p>
+          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+            {[
+              { icon: "🔐", text: "SHA-256 Hash Chains" },
+              { icon: "⏱️", text: "Time-Travel Queries" },
+              { icon: "🌍", text: "6 Global Regions" },
+              { icon: "🛡️", text: "OWASP ASI06 Guard" },
+            ].map((f, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "18px" }}>{f.icon}</span>
+                <span style={{ fontSize: "13px", color: C.body }}>{f.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s" }}>
+          <div style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "12px", padding: "48px", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.mute, marginBottom: "32px" }}>Architecture Overview</div>
+            {[
+              { label: "Database", value: "CockroachDB", color: C.lava },
+              { label: "Vector Index", value: "C-SPANN (94% smaller)", color: C.portalPurple },
+              { label: "Embeddings", value: "AWS Bedrock Titan V2", color: C.soulFire },
+              { label: "Encryption", value: "AES-256-GCM KMS", color: C.magma },
+              { label: "Protocol", value: "MCP + A2A v1.0", color: C.lava },
+              { label: "SDKs", value: "Python + TypeScript", color: C.portalPurple },
+              { label: "Regions", value: "6 global (12-42ms)", color: C.soulFire },
+              { label: "License", value: "MIT (Free Forever)", color: C.magma },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", borderBottom: i < 7 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                <span style={{ fontSize: "14px", color: C.mute }}>{item.label}</span>
+                <span style={{ fontSize: "14px", color: item.color, fontWeight: 600 }}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Features ───────────────────────────────────────────────── */
 function Features() {
   const { ref, visible } = useInView(0.1);
   const features = [
@@ -330,7 +382,49 @@ function Features() {
   );
 }
 
-/* ── Architecture Deep Dive ─────────────────────────────────── */
+/* ── All 25 MCP Tools ───────────────────────────────────────── */
+function AllMCPTools() {
+  const { ref, visible } = useInView(0.1);
+  const tools = [
+    { cat: "Core", items: ["memory_store", "memory_search", "memory_timetravel", "memory_audit", "memory_heal", "memory_delete", "resolve_conflict"] },
+    { cat: "Pinning", items: ["memory_pin", "memory_get_pinned"] },
+    { cat: "Governance", items: ["memory_list", "memory_correct", "memory_health", "memory_apply_patch"] },
+    { cat: "LTM Gateway", items: ["ltm_check_reuse", "ltm_store_analysis", "ltm_invalidate"] },
+    { cat: "Dreaming", items: ["dream", "dream_history"] },
+    { cat: "Contradictions", items: ["detect_contradictions", "scan_all_contradictions"] },
+    { cat: "Observations", items: ["detect_observations"] },
+    { cat: "Retrieval", items: ["multi_signal_search", "context_pack"] },
+    { cat: "Schema", items: ["agent_schema"] },
+    { cat: "A2A", items: ["a2a_bridge"] },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>MCP Server</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>All 25<span style={{ color: C.portalPurple }}> tools.</span></h2>
+          <p style={{ fontSize: "16px", color: C.body, maxWidth: "600px", margin: "20px auto 0" }}>The most comprehensive MCP memory server. Every tool backed by CockroachDB.</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "24px" }}>
+          {tools.map((cat, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "28px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: C.lava, marginBottom: "16px" }}>{cat.cat}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {cat.items.map((tool, j) => (
+                  <span key={j} style={{ padding: "6px 12px", borderRadius: "4px", background: "rgba(255,69,0,0.08)", border: "1px solid rgba(255,69,0,0.15)", fontSize: "12px", fontFamily: "'JetBrains Mono', monospace", color: C.body }}>
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Architecture ───────────────────────────────────────────── */
 function Architecture() {
   const { ref, visible } = useInView(0.1);
   const signals = [
@@ -403,6 +497,38 @@ function Benchmarks() {
   );
 }
 
+/* ── Security Features ──────────────────────────────────────── */
+function SecurityFeatures() {
+  const { ref, visible } = useInView(0.1);
+  const features = [
+    { title: "OWASP ASI06 Guard", desc: "9 injection patterns + LLM semantic classification blocks prompt injection attacks.", icon: "🛡️", color: C.lava },
+    { title: "PII Detection", desc: "5 types detected and redacted: email, phone, SSN, credit card, IPv4.", icon: "🔒", color: C.portalPurple },
+    { title: "Secret Blocking", desc: "6 patterns detect API keys, private keys, AWS credentials before storage.", icon: "🔑", color: C.soulFire },
+    { title: "OAuth 2.1 + PKCE", desc: "Full authentication flow with authorization code and PKCE.", icon: "🔐", color: C.magma },
+    { title: "Row-Level Security", desc: "Per-agent data isolation. Agents can only access their own memories.", icon: "👤", color: C.lava },
+    { title: "AES-256-GCM KMS", desc: "Zero-knowledge encryption via AWS KMS. Database never sees plaintext.", icon: "💎", color: C.portalPurple },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Security</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Production-grade<span style={{ color: C.lavaGlow }}> security.</span></h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
+          {features.map((f, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ fontSize: "32px", marginBottom: "16px" }}>{f.icon}</div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{f.title}</h3>
+              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── How It Works ───────────────────────────────────────────── */
 function HowItWorks() {
   const { ref, visible } = useInView(0.1);
@@ -426,6 +552,40 @@ function HowItWorks() {
               <div style={{ width: "48px", height: "2px", background: s.color, marginBottom: "24px", boxShadow: `0 0 12px ${s.color}60` }} />
               <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#fff", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif" }}>{s.title}</h3>
               <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body }}>{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Use Cases ──────────────────────────────────────────────── */
+function UseCases() {
+  const { ref, visible } = useInView(0.1);
+  const cases = [
+    { title: "Coding Agents", desc: "Remember security constraints, code patterns, and project context across sessions.", color: C.lava },
+    { title: "Customer Support", desc: "Remember user preferences, past issues, and resolution history.", color: C.portalPurple },
+    { title: "Finance Agents", desc: "Remember compliance rules, transaction history, and risk thresholds.", color: C.soulFire },
+    { title: "Healthcare", desc: "Remember patient history, treatment protocols, and medication schedules.", color: C.magma },
+    { title: "Enterprise Assistants", desc: "Remember meeting notes, project deadlines, and team preferences.", color: C.lava },
+    { title: "Research Agents", desc: "Remember papers, citations, and research findings across sessions.", color: C.portalPurple },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Use Cases</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Built for<span style={{ color: C.portalPurple }}> every agent.</span></h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
+          {cases.map((c, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: `${c.color}15`, border: `1px solid ${c.color}25`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
+                <div style={{ width: "24px", height: "24px", background: c.color, opacity: 0.6, clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }} />
+              </div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{c.title}</h3>
+              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{c.desc}</p>
             </div>
           ))}
         </div>
@@ -501,7 +661,7 @@ function Pricing() {
                   </div>
                 ))}
               </div>
-              <Link href="/contact" className="btn-lava" style={{ display: "block", textAlign: "center", padding: "14px", borderRadius: "4px", background: p.popular ? `linear-gradient(135deg, ${p.color}, ${p.color}cc)` : "transparent", border: p.popular ? "none" : `1px solid ${C.hairline}`, color: "#fff", fontSize: "14px", fontWeight: 700, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px" }}>Get Started</Link>
+              <Link href="/contact" className="glow-btn" style={{ display: "block", textAlign: "center", padding: "14px", borderRadius: "4px", background: p.popular ? `linear-gradient(135deg, ${p.color}, ${p.color}cc)` : "transparent", border: p.popular ? "none" : `1px solid ${C.hairline}`, color: "#fff", fontSize: "14px", fontWeight: 700, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px" }}>Get Started</Link>
             </div>
           ))}
         </div>
@@ -547,170 +707,6 @@ function FAQ() {
   );
 }
 
-/* ── What is Bastion ─────────────────────────────────────────── */
-function WhatIsBastion() {
-  const { ref, visible } = useInView(0.1);
-  return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "100px", alignItems: "center" }}>
-        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(-40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.lava, marginBottom: "24px" }}>What is Bastion?</div>
-          <h2 style={{ fontSize: "clamp(36px, 5vw, 48px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", lineHeight: "1.1", marginBottom: "24px", fontFamily: "'Space Grotesk', sans-serif" }}>
-            Persistent memory for<br /><span style={{ color: C.lavaGlow }}>autonomous AI agents.</span>
-          </h2>
-          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "24px" }}>
-            Bastion is a production-grade Agentic Memory framework built on <strong style={{ color: "#fff" }}>CockroachDB</strong> and <strong style={{ color: "#fff" }}>AWS</strong>. It provides persistent, self-healing memory with cryptographic integrity, time-travel queries, and multi-region distribution.
-          </p>
-          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "32px" }}>
-            Your agents never forget. Your agents never get poisoned. Your agents survive anything.
-          </p>
-          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
-            {[
-              { icon: "🔐", text: "SHA-256 Hash Chains" },
-              { icon: "⏱️", text: "Time-Travel Queries" },
-              { icon: "🌍", text: "6 Global Regions" },
-              { icon: "🛡️", text: "OWASP ASI06 Guard" },
-            ].map((f, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "18px" }}>{f.icon}</span>
-                <span style={{ fontSize: "13px", color: C.body }}>{f.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s" }}>
-          <div style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "12px", padding: "48px", backdropFilter: "blur(8px)" }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.mute, marginBottom: "32px" }}>Architecture Overview</div>
-            {[
-              { label: "Database", value: "CockroachDB", color: C.lava },
-              { label: "Vector Index", value: "C-SPANN (94% smaller)", color: C.portalPurple },
-              { label: "Embeddings", value: "AWS Bedrock Titan V2", color: C.soulFire },
-              { label: "Encryption", value: "AES-256-GCM KMS", color: C.magma },
-              { label: "Protocol", value: "MCP + A2A v1.0", color: C.lava },
-              { label: "SDKs", value: "Python + TypeScript", color: C.portalPurple },
-              { label: "Regions", value: "6 global (12-42ms)", color: C.soulFire },
-              { label: "License", value: "MIT (Free Forever)", color: C.magma },
-            ].map((item, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", borderBottom: i < 7 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
-                <span style={{ fontSize: "14px", color: C.mute }}>{item.label}</span>
-                <span style={{ fontSize: "14px", color: item.color, fontWeight: 600 }}>{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ── All 25 MCP Tools ───────────────────────────────────────── */
-function AllMCPTools() {
-  const { ref, visible } = useInView(0.1);
-  const tools = [
-    { cat: "Core", items: ["memory_store", "memory_search", "memory_timetravel", "memory_audit", "memory_heal", "memory_delete", "resolve_conflict"] },
-    { cat: "Pinning", items: ["memory_pin", "memory_get_pinned"] },
-    { cat: "Governance", items: ["memory_list", "memory_correct", "memory_health", "memory_apply_patch"] },
-    { cat: "LTM Gateway", items: ["ltm_check_reuse", "ltm_store_analysis", "ltm_invalidate"] },
-    { cat: "Dreaming", items: ["dream", "dream_history"] },
-    { cat: "Contradictions", items: ["detect_contradictions", "scan_all_contradictions"] },
-    { cat: "Observations", items: ["detect_observations"] },
-    { cat: "Retrieval", items: ["multi_signal_search", "context_pack"] },
-    { cat: "Schema", items: ["agent_schema"] },
-    { cat: "A2A", items: ["a2a_bridge"] },
-  ];
-  return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>MCP Server</div>
-          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>All 25<span style={{ color: C.portalPurple }}> tools.</span></h2>
-          <p style={{ fontSize: "16px", color: C.body, maxWidth: "600px", margin: "20px auto 0" }}>The most comprehensive MCP memory server. Every tool backed by CockroachDB.</p>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "24px" }}>
-          {tools.map((cat, i) => (
-            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "28px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: C.lava, marginBottom: "16px" }}>{cat.cat}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {cat.items.map((tool, j) => (
-                  <span key={j} style={{ padding: "6px 12px", borderRadius: "4px", background: "rgba(255,69,0,0.08)", border: "1px solid rgba(255,69,0,0.15)", fontSize: "12px", fontFamily: "'JetBrains Mono', monospace", color: C.body }}>
-                    {tool}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ── Security Features ──────────────────────────────────────── */
-function SecurityFeatures() {
-  const { ref, visible } = useInView(0.1);
-  const features = [
-    { title: "OWASP ASI06 Guard", desc: "9 injection patterns + LLM semantic classification blocks prompt injection attacks.", icon: "🛡️", color: C.lava },
-    { title: "PII Detection", desc: "5 types detected and redacted: email, phone, SSN, credit card, IPv4.", icon: "🔒", color: C.portalPurple },
-    { title: "Secret Blocking", desc: "6 patterns detect API keys, private keys, AWS credentials before storage.", icon: "🔑", color: C.soulFire },
-    { title: "OAuth 2.1 + PKCE", desc: "Full authentication flow with authorization code and PKCE.", icon: "🔐", color: C.magma },
-    { title: "Row-Level Security", desc: "Per-agent data isolation. Agents can only access their own memories.", icon: "👤", color: C.lava },
-    { title: "AES-256-GCM KMS", desc: "Zero-knowledge encryption via AWS KMS. Database never sees plaintext.", icon: "💎", color: C.portalPurple },
-  ];
-  return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Security</div>
-          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Production-grade<span style={{ color: C.lavaGlow }}> security.</span></h2>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
-          {features.map((f, i) => (
-            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
-              <div style={{ fontSize: "32px", marginBottom: "16px" }}>{f.icon}</div>
-              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{f.title}</h3>
-              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ── Use Cases ──────────────────────────────────────────────── */
-function UseCases() {
-  const { ref, visible } = useInView(0.1);
-  const cases = [
-    { title: "Coding Agents", desc: "Remember security constraints, code patterns, and project context across sessions.", color: C.lava },
-    { title: "Customer Support", desc: "Remember user preferences, past issues, and resolution history.", color: C.portalPurple },
-    { title: "Finance Agents", desc: "Remember compliance rules, transaction history, and risk thresholds.", color: C.soulFire },
-    { title: "Healthcare", desc: "Remember patient history, treatment protocols, and medication schedules.", color: C.magma },
-    { title: "Enterprise Assistants", desc: "Remember meeting notes, project deadlines, and team preferences.", color: C.lava },
-    { title: "Research Agents", desc: "Remember papers, citations, and research findings across sessions.", color: C.portalPurple },
-  ];
-  return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Use Cases</div>
-          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Built for<span style={{ color: C.portalPurple }}> every agent.</span></h2>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
-          {cases.map((c, i) => (
-            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
-              <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: `${c.color}15`, border: `1px solid ${c.color}25`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-                <div style={{ width: "24px", height: "24px", background: c.color, opacity: 0.6, clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }} />
-              </div>
-              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{c.title}</h3>
-              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{c.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ── CTA ────────────────────────────────────────────────────── */
 function CTA() {
   const { ref, visible } = useInView(0.2);
@@ -722,7 +718,7 @@ function CTA() {
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "24px" }}>Get Started</div>
           <h2 style={{ fontSize: "clamp(40px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-2px", color: "#fff", lineHeight: "1.05", marginBottom: "24px", fontFamily: "'Space Grotesk', sans-serif" }}>One Ecosystem,<br /><span style={{ color: C.lavaGlow }}>Infinite Power.</span></h2>
           <p style={{ fontSize: "17px", lineHeight: "1.8", color: C.body, maxWidth: "480px", marginBottom: "40px" }}>Deploy on CockroachDB Serverless for free. 25 MCP tools. 6 regions. Zero cost.</p>
-          <Link href="/dashboard" className="btn-lava" style={{ padding: "20px 48px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "16px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "2px", boxShadow: `0 0 30px ${C.lava}50`, display: "inline-flex", alignItems: "center", gap: "12px" }}>
+          <Link href="/dashboard" className="glow-btn" style={{ padding: "20px 48px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "16px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "2px", boxShadow: `0 0 30px ${C.lava}50`, display: "inline-flex", alignItems: "center", gap: "12px" }}>
             Enter the Fortress
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
           </Link>
@@ -816,11 +812,11 @@ export default function LandingPage() {
         .nav-link:hover { color: ${C.lavaGlow} !important; }
         .nav-link:hover::after { width: 100%; }
 
-        .btn-lava { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
-        .btn-lava::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); transform: translateX(-100%); transition: transform 0.5s ease; }
-        .btn-lava:hover::before { transform: translateX(100%); }
-        .btn-lava:hover { transform: translateY(-3px); box-shadow: 0 12px 40px ${C.lava}50, 0 0 80px ${C.lava}20; }
-        .btn-lava:active { transform: scale(0.97); }
+        .glow-btn { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+        .glow-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); transform: translateX(-100%); transition: transform 0.5s ease; }
+        .glow-btn:hover::before { transform: translateX(100%); }
+        .glow-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 40px ${C.lava}50, 0 0 80px ${C.lava}20; }
+        .glow-btn:active { transform: scale(0.97); }
 
         .btn-obsidian { position: relative; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .btn-obsidian:hover { transform: translateY(-3px); border-color: ${C.lava}40 !important; box-shadow: 0 8px 32px ${C.lava}15; color: #fff !important; }
