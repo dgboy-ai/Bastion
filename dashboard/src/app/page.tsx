@@ -229,7 +229,7 @@ function Hero() {
       {/* Animated Stats */}
       <div className="hero-stats" style={{ display: "flex", gap: "64px", marginTop: "120px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.5s", position: "relative", zIndex: 2 }}>
         {[
-          { target: 1041, suffix: "", label: "Tests Passing", color: C.lava },
+          { target: 1133, suffix: "", label: "Tests Passing", color: C.lava },
           { target: 25, suffix: "", label: "MCP Tools", color: C.portalPurple },
           { target: 100, suffix: "%", label: "Recall@5", color: C.soulFire },
           { target: 6, suffix: "", label: "Global Regions", color: C.magma },
@@ -517,7 +517,7 @@ function FAQ() {
   const faqs = [
     { q: "What makes Bastion different from Mem0?", a: "Bastion is the only system with SHA-256 hash chains, time-travel queries (AS OF SYSTEM TIME), multi-region distributed storage, LTM Gateway, sleep-time dreaming, and OWASP ASI06 guard. Mem0 charges $249/mo for half these features." },
     { q: "How does the LTM Gateway save tokens?", a: "Before running an expensive workflow, Bastion checks if a similar analysis already exists (C-SPANN vector search, 80% threshold). If found, it returns the cached result instantly, saving 2,965 tokens per reuse on average. 74% bypass rate." },
-    { q: "Is Bastion production-ready?", a: "Yes. 1,041 passing tests, 25 MCP tools, 6 global regions, 100% Recall@5. Deploy on CockroachDB Serverless for free today. MIT licensed." },
+    { q: "Is Bastion production-ready?", a: "Yes. 1,133 passing tests (including 17 against real CockroachDB), 25 MCP tools, 6 global regions, 100% Recall@5. Deploy on CockroachDB Serverless for free today. MIT licensed." },
     { q: "How does auto-contradiction work?", a: "Bastion detects negation (\"not\", \"never\"), temporal conflicts (newer overrides older), and semantic contradictions. When found, it automatically supersedes the old memory with the new one." },
     { q: "Can I self-host Bastion?", a: "Absolutely. MIT licensed. pip install bastion-memory, set BASTION_CONN, run. Docker Compose available for one-command local dev with CockroachDB." },
     { q: "What about security?", a: "OWASP ASI06 prompt injection guard (9 regex patterns + LLM classification), PII detection, secret leakage blocking, OAuth 2.1 + PKCE, Row-Level Security, AES-256-GCM KMS encryption, Ed25519 A2A signing." },
@@ -547,6 +547,170 @@ function FAQ() {
   );
 }
 
+/* ── What is Bastion ─────────────────────────────────────────── */
+function WhatIsBastion() {
+  const { ref, visible } = useInView(0.1);
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "100px", alignItems: "center" }}>
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(-40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.lava, marginBottom: "24px" }}>What is Bastion?</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 48px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", lineHeight: "1.1", marginBottom: "24px", fontFamily: "'Space Grotesk', sans-serif" }}>
+            Persistent memory for<br /><span style={{ color: C.lavaGlow }}>autonomous AI agents.</span>
+          </h2>
+          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "24px" }}>
+            Bastion is a production-grade Agentic Memory framework built on <strong style={{ color: "#fff" }}>CockroachDB</strong> and <strong style={{ color: "#fff" }}>AWS</strong>. It provides persistent, self-healing memory with cryptographic integrity, time-travel queries, and multi-region distribution.
+          </p>
+          <p style={{ fontSize: "16px", lineHeight: "1.8", color: C.body, marginBottom: "32px" }}>
+            Your agents never forget. Your agents never get poisoned. Your agents survive anything.
+          </p>
+          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+            {[
+              { icon: "🔐", text: "SHA-256 Hash Chains" },
+              { icon: "⏱️", text: "Time-Travel Queries" },
+              { icon: "🌍", text: "6 Global Regions" },
+              { icon: "🛡️", text: "OWASP ASI06 Guard" },
+            ].map((f, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "18px" }}>{f.icon}</span>
+                <span style={{ fontSize: "13px", color: C.body }}>{f.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s" }}>
+          <div style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "12px", padding: "48px", backdropFilter: "blur(8px)" }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.mute, marginBottom: "32px" }}>Architecture Overview</div>
+            {[
+              { label: "Database", value: "CockroachDB", color: C.lava },
+              { label: "Vector Index", value: "C-SPANN (94% smaller)", color: C.portalPurple },
+              { label: "Embeddings", value: "AWS Bedrock Titan V2", color: C.soulFire },
+              { label: "Encryption", value: "AES-256-GCM KMS", color: C.magma },
+              { label: "Protocol", value: "MCP + A2A v1.0", color: C.lava },
+              { label: "SDKs", value: "Python + TypeScript", color: C.portalPurple },
+              { label: "Regions", value: "6 global (12-42ms)", color: C.soulFire },
+              { label: "License", value: "MIT (Free Forever)", color: C.magma },
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", borderBottom: i < 7 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                <span style={{ fontSize: "14px", color: C.mute }}>{item.label}</span>
+                <span style={{ fontSize: "14px", color: item.color, fontWeight: 600 }}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── All 25 MCP Tools ───────────────────────────────────────── */
+function AllMCPTools() {
+  const { ref, visible } = useInView(0.1);
+  const tools = [
+    { cat: "Core", items: ["memory_store", "memory_search", "memory_timetravel", "memory_audit", "memory_heal", "memory_delete", "resolve_conflict"] },
+    { cat: "Pinning", items: ["memory_pin", "memory_get_pinned"] },
+    { cat: "Governance", items: ["memory_list", "memory_correct", "memory_health", "memory_apply_patch"] },
+    { cat: "LTM Gateway", items: ["ltm_check_reuse", "ltm_store_analysis", "ltm_invalidate"] },
+    { cat: "Dreaming", items: ["dream", "dream_history"] },
+    { cat: "Contradictions", items: ["detect_contradictions", "scan_all_contradictions"] },
+    { cat: "Observations", items: ["detect_observations"] },
+    { cat: "Retrieval", items: ["multi_signal_search", "context_pack"] },
+    { cat: "Schema", items: ["agent_schema"] },
+    { cat: "A2A", items: ["a2a_bridge"] },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>MCP Server</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>All 25<span style={{ color: C.portalPurple }}> tools.</span></h2>
+          <p style={{ fontSize: "16px", color: C.body, maxWidth: "600px", margin: "20px auto 0" }}>The most comprehensive MCP memory server. Every tool backed by CockroachDB.</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "24px" }}>
+          {tools.map((cat, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "28px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: C.lava, marginBottom: "16px" }}>{cat.cat}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {cat.items.map((tool, j) => (
+                  <span key={j} style={{ padding: "6px 12px", borderRadius: "4px", background: "rgba(255,69,0,0.08)", border: "1px solid rgba(255,69,0,0.15)", fontSize: "12px", fontFamily: "'JetBrains Mono', monospace", color: C.body }}>
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Security Features ──────────────────────────────────────── */
+function SecurityFeatures() {
+  const { ref, visible } = useInView(0.1);
+  const features = [
+    { title: "OWASP ASI06 Guard", desc: "9 injection patterns + LLM semantic classification blocks prompt injection attacks.", icon: "🛡️", color: C.lava },
+    { title: "PII Detection", desc: "5 types detected and redacted: email, phone, SSN, credit card, IPv4.", icon: "🔒", color: C.portalPurple },
+    { title: "Secret Blocking", desc: "6 patterns detect API keys, private keys, AWS credentials before storage.", icon: "🔑", color: C.soulFire },
+    { title: "OAuth 2.1 + PKCE", desc: "Full authentication flow with authorization code and PKCE.", icon: "🔐", color: C.magma },
+    { title: "Row-Level Security", desc: "Per-agent data isolation. Agents can only access their own memories.", icon: "👤", color: C.lava },
+    { title: "AES-256-GCM KMS", desc: "Zero-knowledge encryption via AWS KMS. Database never sees plaintext.", icon: "💎", color: C.portalPurple },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Security</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Production-grade<span style={{ color: C.lavaGlow }}> security.</span></h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
+          {features.map((f, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ fontSize: "32px", marginBottom: "16px" }}>{f.icon}</div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{f.title}</h3>
+              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Use Cases ──────────────────────────────────────────────── */
+function UseCases() {
+  const { ref, visible } = useInView(0.1);
+  const cases = [
+    { title: "Coding Agents", desc: "Remember security constraints, code patterns, and project context across sessions.", color: C.lava },
+    { title: "Customer Support", desc: "Remember user preferences, past issues, and resolution history.", color: C.portalPurple },
+    { title: "Finance Agents", desc: "Remember compliance rules, transaction history, and risk thresholds.", color: C.soulFire },
+    { title: "Healthcare", desc: "Remember patient history, treatment protocols, and medication schedules.", color: C.magma },
+    { title: "Enterprise Assistants", desc: "Remember meeting notes, project deadlines, and team preferences.", color: C.lava },
+    { title: "Research Agents", desc: "Remember papers, citations, and research findings across sessions.", color: C.portalPurple },
+  ];
+  return (
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Use Cases</div>
+          <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Built for<span style={{ color: C.portalPurple }}> every agent.</span></h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px" }}>
+          {cases.map((c, i) => (
+            <div key={i} className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "32px", backdropFilter: "blur(8px)", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: `all 0.8s cubic-bezier(0.16, 1, 0.3, 1) ${i * 0.08}s` }}>
+              <div style={{ width: "48px", height: "48px", borderRadius: "8px", background: `${c.color}15`, border: `1px solid ${c.color}25`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
+                <div style={{ width: "24px", height: "24px", background: c.color, opacity: 0.6, clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }} />
+              </div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>{c.title}</h3>
+              <p style={{ fontSize: "14px", lineHeight: "1.7", color: C.body, margin: 0 }}>{c.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── CTA ────────────────────────────────────────────────────── */
 function CTA() {
   const { ref, visible } = useInView(0.2);
@@ -566,7 +730,7 @@ function CTA() {
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s" }}>
           <div className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "48px", backdropFilter: "blur(8px)" }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.mute, marginBottom: "32px" }}>Built for your stack.</div>
-            {["25 MCP tools, 3 SDKs (Python, TS, LangChain)", "1,041 tests, 0 failures", "6 global regions, 12ms latency"].map((f, i) => (
+            {["25 MCP tools, 3 SDKs (Python, TS, LangChain)", "1,133 tests, 0 failures (17 against real CRDB)", "6 global regions, 12ms latency"].map((f, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "20px 0", borderBottom: i < 2 ? `1px solid ${C.hairline}` : "none" }}>
                 <div style={{ width: "32px", height: "32px", borderRadius: "4px", background: `${C.lava}15`, border: `1px solid ${C.lava}25`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.lava} strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
@@ -617,10 +781,14 @@ export default function LandingPage() {
       <Hero />
       <LogoStrip />
       <ProblemSolution />
+      <WhatIsBastion />
       <Features />
+      <AllMCPTools />
       <Architecture />
       <Benchmarks />
+      <SecurityFeatures />
       <HowItWorks />
+      <UseCases />
       <Testimonials />
       <Pricing />
       <FAQ />
