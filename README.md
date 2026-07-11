@@ -5,7 +5,7 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Tests-1041%20passed-brightgreen)](#-test-verification-suite)
+[![Tests](https://img.shields.io/badge/Tests-1133%20passed-brightgreen)](#-test-verification-suite)
 
 > **The system of record for autonomous AI systems. A persistent, secure, and self-healing memory engine that survives serverless crashes—so your agent swarms never forget.**
 
