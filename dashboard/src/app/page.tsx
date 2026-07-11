@@ -268,7 +268,7 @@ function LogoStrip() {
 function ProblemSolution() {
   const { ref, visible } = useInView(0.1);
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2 }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, background: "linear-gradient(180deg, rgba(26,10,10,0.3) 0%, rgba(10,5,16,0.8) 50%, rgba(26,10,10,0.3) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "80px", alignItems: "center" }}>
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(-40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.lava, marginBottom: "24px" }}>The Problem</div>
@@ -293,7 +293,7 @@ function ProblemSolution() {
 function WhatIsBastion() {
   const { ref, visible } = useInView(0.1);
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "100px", alignItems: "center" }}>
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(-40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.lava, marginBottom: "24px" }}>What is Bastion?</div>
@@ -359,7 +359,7 @@ function Features() {
     { num: "08", title: "OWASP ASI06 Guard", desc: "9 injection patterns + 6 secret patterns + 5 PII types + 3 languages. LLM semantic classification.", color: C.magma },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, maxWidth: "1400px", margin: "0 auto" }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, maxWidth: "1400px", margin: "0 auto", background: "linear-gradient(180deg, rgba(10,5,16,0.95) 0%, rgba(15,8,20,1) 50%, rgba(10,5,16,0.95) 100%)", borderRadius: "24px" }}>
       <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Architecture</div>
         <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-1.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Built for<span style={{ color: C.lavaGlow }}> production.</span></h2>
@@ -395,7 +395,7 @@ function AllMCPTools() {
     { cat: "A2A", items: ["a2a_bridge"] },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(20,10,25,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>MCP Server</div>
@@ -431,7 +431,7 @@ function Architecture() {
     { name: "Temporal Recency", weight: 15, color: C.magma, desc: "Access count + recency boost" },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Retrieval Engine</div>
@@ -456,7 +456,7 @@ function Architecture() {
 function Benchmarks() {
   const { ref, visible } = useInView(0.1);
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(10,5,16,1) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "64px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Benchmarks</div>
@@ -506,7 +506,7 @@ function SecurityFeatures() {
     { title: "AES-256-GCM KMS", desc: "Zero-knowledge encryption via AWS KMS. Database never sees plaintext.", icon: "💎", color: C.portalPurple },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Security</div>
@@ -536,7 +536,7 @@ function HowItWorks() {
     { num: "04", title: "Retrieve", desc: "multi_signal_search — 100% recall with 4-signal fusion", color: C.magma },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(20,10,15,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Process</div>
@@ -569,7 +569,7 @@ function UseCases() {
     { title: "Research Agents", desc: "Remember papers, citations, and research findings across sessions.", color: C.portalPurple },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Use Cases</div>
@@ -600,7 +600,7 @@ function Testimonials() {
     { name: "Aisha Patel", role: "VP Engineering", text: "We went from 200ms queries to 12ms with CockroachDB. Multi-region just works out of the box.", color: C.soulFire },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(10,5,16,1) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Testimonials</div>
@@ -634,7 +634,7 @@ function Pricing() {
     { name: "Enterprise", price: "Custom", period: "annual contract", desc: "Dedicated infrastructure", features: ["Everything in Pro", "Dedicated cluster", "SLA 99.99%", "On-premise deployment", "Dedicated success manager"], color: C.magma, popular: false },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>Pricing</div>
@@ -680,7 +680,7 @@ function FAQ() {
     { q: "What about security?", a: "OWASP ASI06 prompt injection guard (9 regex patterns + LLM classification), PII detection, secret leakage blocking, OAuth 2.1 + PKCE, Row-Level Security, AES-256-GCM KMS encryption, Ed25519 A2A signing." },
   ];
   return (
-    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}` }}>
+    <section ref={ref} style={{ padding: "160px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, background: "linear-gradient(180deg, rgba(10,5,16,0.9) 0%, rgba(15,8,20,0.95) 50%, rgba(10,5,16,0.9) 100%)" }}>
       <div style={{ maxWidth: "800px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "80px", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(30px)", transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "4px", color: C.mute, marginBottom: "20px" }}>FAQ</div>
