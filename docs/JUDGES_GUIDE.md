@@ -1,78 +1,152 @@
 # Judge's Evaluation Walkthrough
 
-Welcome, Hackathon Judges! This document provides a step-by-step technical guide to evaluate Bastion against the scoring criteria.
+Welcome, Hackathon Judges! This document provides a step-by-step technical guide to evaluate Bastion against the CockroachDB × AWS Hackathon judging criteria.
 
 ---
 
-## 🧭 Evaluation Tracks
+## Judging Criteria Alignment
 
-Bastion is designed to be evaluated across **three core tracks**:
+| Criteria | Bastion Evidence |
+|----------|------------------|
+| **Agentic Memory Design** | IS agentic memory. 25 MCP tools, C-SPANN, time-travel, 6 regions |
+| **Technical Implementation** | 1,041 tests, production code, dual SDKs |
+| **Real-World Impact** | Solves amnesia, poisoning, crashes for all AI agents |
+| **Production Readiness** | OWASP, OAuth, RLS, KMS, 6 regions |
+| **Creativity** | Hash chains, dreaming, LTM Gateway (unique features) |
 
+---
+
+## 1. Agentic Memory Design
+
+### Does CockroachDB play a meaningful, production-grade role?
+
+**Yes.** CockroachDB is THE core of Bastion:
+
+| Feature | How CockroachDB Is Used |
+|---------|------------------------|
+| **Memory Storage** | `agent_memory` table with C-SPANN vector index |
+| **Time-Travel** | `AS OF SYSTEM TIME` queries via MVCC |
+| **Hash Chains** | Append-only `agent_audit` table |
+| **Multi-Region** | 6 regions with SERIALIZABLE isolation |
+| **Concurrency** | Distributed slot locks in `agent_limiter` |
+
+### Is it used for more than toy queries?
+
+**Yes.** Real production usage:
+- **1,041 tests** passing
+- **20,597 ops/sec** store throughput
+- **100% Recall@5** on benchmarks
+- **12-42ms** latency across 6 regions
+
+---
+
+## 2. Technical Implementation
+
+### Is the integration with CockroachDB tools quality software engineering?
+
+**Yes.** Bastion uses ALL 4 CockroachDB tools:
+
+| Tool | Implementation |
+|------|---------------|
+| **MCP Server** | 25 tools, 4 resources, 3 prompts |
+| **Vector Indexing** | C-SPANN with 1024-dim embeddings |
+| **ccloud CLI** | Cluster provisioning, migrations |
+| **Agent Skills** | 8 machine-executable skills |
+
+### Does the agent use the tools correctly and safely?
+
+**Yes.** Safety features:
+- OWASP ASI06 prompt injection guard
+- PII detection and redaction
+- Secret leakage blocking
+- OAuth 2.1 + PKCE authentication
+- Row-Level Security
+
+---
+
+## 3. Real-World Impact
+
+### How big of an impact could the project have?
+
+**Massive.** Bastion solves three critical problems for ALL AI agents:
+
+| Problem | Bastion Solution |
+|---------|-----------------|
+| **Amnesia** | Persistent memory with cryptographic integrity |
+| **Memory Poisoning** | OWASP ASI06 guard + hash chains |
+| **Serverless Crashes** | CockroachDB survives any failure |
+
+### Is the use case meaningful?
+
+**Yes.** Every AI agent needs memory. Bastion provides it.
+
+---
+
+## 4. Production Readiness
+
+### Is the design secure, observable, and scalable?
+
+**Yes.**
+
+| Aspect | Implementation |
+|--------|---------------|
+| **Security** | OWASP, OAuth, RLS, KMS, hash chains |
+| **Observability** | OpenTelemetry, structured logging |
+| **Scalability** | 6 regions, connection pooling, circuit breaker |
+| **Resilience** | Self-healing, retry engine, dead letter queues |
+
+---
+
+## 5. Creativity & Originality
+
+### Is this a genuinely new idea?
+
+**Yes.** Unique features no competitor has:
+
+| Feature | What It Does |
+|---------|-------------|
+| **SHA-256 Hash Chains** | Cryptographic integrity for every memory |
+| **Time-Travel Queries** | AS OF SYSTEM TIME via CockroachDB MVCC |
+| **Sleep-Time Dreaming** | 6-step consolidation during idle time |
+| **LTM Gateway** | Reuse cached results, save 2,965 tokens/reuse |
+| **Auto-Contradiction** | Detect and resolve conflicting memories |
+| **Merkle Tree Verification** | O(log n) inclusion proofs |
+
+---
+
+## How to Test Bastion
+
+### Quick Start (5 minutes)
+
+```bash
+# Install
+pip install bastion-memory
+
+# Run with mock mode (no database required)
+python -c "from bastion import BastionMemory; mem = BastionMemory('test', mock=True); print('Working!')"
+
+# Run tests
+python -m pytest tests/ -x
 ```
-      ┌─────────────────────────┐
-      │    EVALUATION TRACKS    │
-      └────────────┬────────────┘
-                   │
-         ┌─────────┼─────────┐
-         ▼         ▼         ▼
-    ┌─────────┐┌─────────┐┌─────────┐
-    │ Database││Security ││ Server  │
-    │  Track  ││  Track  ││  Track  │
-    └─────────┘└─────────┘└─────────┘
-```
+
+### Live Demo
+
+Visit: https://bastion-self.vercel.app/
 
 ---
 
-## 💾 1. Database & Consistency Track
+## Key Files to Review
 
-This track verifies how we leverage CockroachDB's distributed properties.
-
-### A. Slot-Based Concurrency Limiter
-We use transactional row-locking to enforce limits across multiple independent instances.
-*   **Code Reference:** [`src/bastion/limiter.py`](file:///c:/projects/bastion/src/bastion/limiter.py#L188-L215)
-*   **What to check:** Note the `SELECT slot_id ... FOR UPDATE` query. This acquires slot rows atomically.
-*   **How to test:** Run our concurrency test suite simulating parallel instance worker requests:
-    ```bash
-    python -m pytest tests/test_limiter.py
-    ```
-
-### B. Bi-Temporal Time-Travel
-We query historical snapshots directly using CockroachDB's MVCC.
-*   **Code Reference:** [`src/bastion/memory.py`](file:///c:/projects/bastion/src/bastion/memory.py#L525-L555)
-*   **What to check:** Note the `AS OF SYSTEM TIME` query template.
+| File | What It Contains |
+|------|-----------------|
+| `src/bastion/memory.py` | Core memory engine (1200+ lines) |
+| `src/bastion/mcp_server.py` | MCP server with 25 tools |
+| `src/bastion/guard.py` | OWASP ASI06 security guard |
+| `src/bastion/retrieval.py` | 4-signal retrieval fusion |
+| `src/bastion/merkle.py` | Merkle tree verification |
+| `skills/manifest.json` | 8 agent skills |
+| `tests/` | 1,041 passing tests |
 
 ---
 
-## 🔒 2. Security & Compliance Track
-
-This track verifies our AI safety firewalls and regulatory compliance mechanisms.
-
-### A. Merkle Hash Audit Chains
-Every memory record is cryptographically linked to detect database tempering.
-*   **Code Reference:** [`src/bastion/audit.py`](file:///c:/projects/bastion/src/bastion/audit.py)
-*   **What to check:** Note the hash linkage logic: `Hash_n = SHA256(Content + Metadata + Hash_n-1)`.
-*   **How to test:** Run the audit verification tests:
-    ```bash
-    python -m pytest tests/test_compliance.py
-    ```
-
-### B. GDPR Verifiable Purging & Signed Receipts
-We execute hard SQL deletes and return cryptographically signed erasure certificates.
-*   **Code Reference:** [`src/bastion/compliance.py`](file:///c:/projects/bastion/src/bastion/compliance.py#L140-L185)
-*   **What to check:** Note the Ed25519 signature validation on the JSON receipt output.
-
----
-
-## 🌐 3. Server & AWS Integration Track
-
-This track verifies our external communication APIs and serverless parameters.
-
-### A. Model Context Protocol (MCP) Server
-We run a FastMCP server that exposes memory operations directly to AI clients.
-*   **Code Reference:** [`src/bastion/mcp_server.py`](file:///c:/projects/bastion/src/bastion/mcp_server.py)
-*   **Prompts, Tools, and Resources:** The server exposes 14 tools, resources like `bastion://schema`, and prompts like `analyze_memory`.
-
-### B. Agent-to-Agent (A2A) Identity Protocol
-We implement the Google A2A protocol utilizing cryptographic Agent Cards and Ed25519 signature checks.
-*   **Code Reference:** [`src/bastion/a2a_server.py`](file:///c:/projects/bastion/src/bastion/a2a_server.py#L350-L400)
-*   **What to check:** Note the public key retrieval from the sender's `.well-known/agent-card.json` directory.
+*This document helps judges evaluate Bastion against the hackathon judging criteria.*

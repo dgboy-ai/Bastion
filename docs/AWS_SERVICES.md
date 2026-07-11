@@ -4,37 +4,11 @@
 
 ---
 
-## 1. Amazon Bedrock (Foundation Models & Embeddings)
+## 1. Amazon Bedrock (Foundation Models & Embeddings) ✅
 
 ### How We Use It
 
 Bastion uses **Amazon Bedrock Titan V2** as the embedding engine for all memory vectorization. Every memory stored in Bastion is embedded via Bedrock before being indexed in CockroachDB's C-SPANN vector index.
-
-### Integration Code
-
-```python
-# src/bastion/kms.py
-import boto3
-
-def _get_bedrock_client():
-    """Lazy-init Bedrock Runtime client for embeddings."""
-    return boto3.client(
-        "bedrock-runtime",
-        region_name=settings.aws_region,
-        read_timeout=settings.bedrock_read_timeout,
-        connect_timeout=settings.bedrock_connect_timeout,
-    )
-
-def embed(self, text: str) -> list[float]:
-    """Generate embedding via Bedrock Titan V2."""
-    client = _get_bedrock_client()
-    response = client.invoke_model(
-        modelId="amazon.titan-embed-text-v2:0",
-        body=json.dumps({"inputText": text}),
-        contentType="application/json",
-    )
-    return json.loads(response["body"].read())["embedding"]
-```
 
 ### Configuration
 
@@ -47,102 +21,124 @@ def embed(self, text: str) -> list[float]:
 
 ### Free Tier Usage
 - First 50M tokens/month are free
-- At ~6,956 tokens/query (Mem0 benchmark), this covers ~7,200 queries/month for free
-- Our mock mode uses zero Bedrock calls — all embeddings are deterministic hashes
-
-### Why Bedrock
-- No API key management needed (IAM roles)
-- Native integration with CockroachDB (same AWS ecosystem)
-- Titan V2 produces 1024-dim vectors optimized for semantic search
-- Free tier covers hackathon-scale usage
+- Covers ~7,200 queries/month for free
+- Mock mode uses zero Bedrock calls
 
 ---
 
-## 2. AWS Bedrock for Future Enhancements (Planned)
+## 2. AWS Lambda ✅
 
-### Bedrock Guardrails (Not Yet Implemented)
-- Pre-screen content before LLM calls
-- Detect harmful content, PII, and prompt injections
-- Free to use with Bedrock models
+### Lambda Functions
 
-### Bedrock Agents (Not Yet Implemented)
-- Multi-step agentic workflows
-- Built-in knowledge bases
-- Could orchestrate Bastion's memory operations
+| Function | Purpose | Timeout | Memory |
+|----------|---------|---------|--------|
+| `CdcHandlerFunction` | CDC changefeed processor | 60s | 256MB |
+| `WebhookDispatcherFunction` | A2A webhook push | 30s | 128MB |
+| `WebhookDispatcherHealthFunction` | Health check | 10s | 128MB |
+
+### EventBridge Rules
+
+| Rule | Purpose | Rate |
+|------|---------|------|
+| `KeepAliveRule` | Cold start mitigation | Every 5 minutes |
 
 ---
 
-## 3. Architecture Diagram (Text-Based)
+## 3. Amazon S3 ✅
 
+### Usage
+- **Memory archives** with lifecycle to Glacier
+- **Snapshot storage** for self-healing
+- **Audit trail backups**
+
+### Bucket Structure
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AI AGENT CLIENT                              │
-│         (Claude Code / Cursor / OpenCode / Gemini CLI)         │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ MCP Protocol (stdio / HTTP)
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  BASTION MCP SERVER                             │
-│              (FastMCP, 14 tools, 4 resources)                   │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐     │
-│  │ memory_store │  │ memory_search│  │ memory_timetravel  │     │
-│  │ memory_pin   │  │ memory_list  │  │ memory_audit       │     │
-│  │ memory_heal  │  │ memory_health│  │ memory_apply_patch │     │
-│  └─────────────┘  └──────────────┘  └────────────────────┘     │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ psycopg2 (connection pool)
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  COCKROACHDB CLUSTER                            │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
-│  │   agent_memory   │  │    agent_audit   │  │ agent_entities│  │
-│  │ (C-SPANN Vectors)│  │ (Hash Chain Log) │  │ (Graph Nodes) │  │
-│  │ (AS OF SYSTEM    │  │ (Append-Only)    │  │ (Relations)   │  │
-│  │  TIME queries)   │  │                  │  │               │  │
-│  └──────────────────┘  └──────────────────┘  └──────────────┘  │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐  │
-│  │   a2a_tasks      │  │  saga_states     │  │agent_limiter │  │
-│  │ (Agent Queue)    │  │ (Multi-Agent TX) │  │(Distributed  │  │
-│  │                  │  │                  │  │ Rate Limit)  │  │
-│  └──────────────────┘  └──────────────────┘  └──────────────┘  │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ CDC Changefeed
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  AWS SERVICES LAYER                              │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                AWS Bedrock Runtime                        │   │
-│  │  ┌──────────────────────┐  ┌─────────────────────────┐  │   │
-│  │  │  Titan V2 Embeddings │  │  Guardrails (planned)   │  │   │
-│  │  │  (1024-dim vectors)  │  │  (Content screening)    │  │   │
-│  │  └──────────────────────┘  └─────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                AWS KMS (Encryption)                       │   │
-│  │  ┌──────────────────────┐  ┌─────────────────────────┐  │   │
-│  │  │  AES-256-GCM Encrypt │  │  Per-Tenant DEKs        │  │   │
-│  │  │  (Zero-Knowledge)    │  │  (Multi-Tenant Isolation)│  │   │
-│  │  └──────────────────────┘  └─────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              NEXT.JS DASHBOARD (Real-Time SSE)                  │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────┐ │
-│  │ Knowledge  │  │ Time-Travel│  │ Health     │  │ Compliance│ │
-│  │ Graph (D3) │  │ Slider     │  │ Dashboard  │  │ Report    │ │
-│  └────────────┘  └────────────┘  └────────────┘  └──────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+s3://bastion-{env}/
+├── archives/          # Memory archives
+├── snapshots/         # Self-healing snapshots
+└── audit/             # Audit trail backups
 ```
 
-### Key Data Flows
+---
 
-1. **Memory Store**: Agent → MCP `memory_store` → Bedrock embed → CockroachDB (vector + hash chain + graph)
-2. **Memory Search**: Agent → MCP `memory_search` → C-SPANN vector index → decay-weighted results
-3. **Time-Travel**: Agent → MCP `memory_timetravel` → `AS OF SYSTEM TIME` → historical state
-4. **Self-Healing**: CDC changefeed → Lambda → anomaly detection → auto-prune
-5. **Dashboard**: SSE stream → Next.js → D3.js knowledge graph + time-travel slider
+## 4. AWS KMS ✅
+
+### Usage
+- **AES-256-GCM** envelope encryption
+- **Per-tenant DEKs** for zero-knowledge search
+- **AAD bound to agent_id** for tenant isolation
+
+### Encryption Flow
+1. Generate Data Encryption Key (DEK) via KMS
+2. Encrypt memory content with DEK
+3. Store encrypted content + encrypted DEK in CockroachDB
+4. Embed plaintext vector for search
+5. Decrypt on retrieval only
+
+---
+
+## 5. Amazon SNS ✅
+
+### Usage
+- **Alert topic** for chain break alerts
+- **Notification** for critical security events
+
+### Alert Types
+- Hash chain break detected
+- Memory poisoning attempt
+- Confidentiality breach
+
+---
+
+## 6. Amazon SQS ✅
+
+### Usage
+- **Retry queue** for webhook backlog
+- **Dead letter queue** for failed dispatches
+
+### Queue Configuration
+- Visibility timeout: 30s
+- Max retries: 3
+- Dead letter queue after 3 failures
+
+---
+
+## 7. Amazon EventBridge ✅
+
+### Usage
+- **Keep-alive rule** for Lambda cold start mitigation
+- **Scheduled rule** every 5 minutes
+
+---
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    AGENT CLIENT                              │
+│           (Claude / Cursor / LangGraph)                     │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ MCP Protocol
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   BASTION MCP SERVER                         │
+│              (25 tools, 4 resources, 3 prompts)             │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    COCKROACHDB CLUSTER                       │
+│         (6 regions, SERIALIZABLE isolation)                  │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ CDC Changefeed
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       AWS LAYER                              │
+│  Bedrock (embeddings) │ Lambda (CDC) │ S3 (archives)        │
+│  KMS (encryption)     │ SNS (alerts) │ SQS (retries)        │
+│  EventBridge (keep-alive)                                    │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 

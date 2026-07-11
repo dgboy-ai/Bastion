@@ -1130,29 +1130,55 @@ def create_server(
     ) -> str:
         mem = _resolve_memory(ctx)
         if mem._mock:
-            schema = {
-                "tables": {
-                    "agent_memory": {
-                        "columns": [
-                            "memory_id", "agent_id", "memory_type", "content",
-                            "embedding", "metadata", "created_at",
-                            "importance_score", "trust_level",
-                        ]
-                    },
-                    "agent_audit": {
-                        "columns": ["audit_id", "agent_id", "action", "details", "recorded_at"]
-                    },
-                    "agent_entities": {
-                        "columns": ["entity_id", "agent_id", "entity_type", "name", "attributes"]
-                    },
-                    "agent_relations": {
-                        "columns": [
-                            "relation_id", "source_entity_id",
-                            "target_entity_id", "relation_type",
-                        ]
-                    },
-                }
+            mock_tables = {
+                "agent_memory": {
+                    "columns": [
+                        {"name": "memory_id", "type": "UUID", "nullable": False},
+                        {"name": "agent_id", "type": "STRING(255)", "nullable": False},
+                        {"name": "memory_type", "type": "STRING(50)", "nullable": False},
+                        {"name": "content", "type": "TEXT", "nullable": False},
+                        {"name": "embedding", "type": "VECTOR(1024)", "nullable": True},
+                        {"name": "metadata", "type": "JSONB", "nullable": True},
+                        {"name": "created_at", "type": "TIMESTAMPTZ", "nullable": False},
+                        {"name": "importance_score", "type": "FLOAT", "nullable": True},
+                        {"name": "trust_level", "type": "FLOAT", "nullable": True},
+                    ]
+                },
+                "agent_audit": {
+                    "columns": [
+                        {"name": "audit_id", "type": "UUID", "nullable": False},
+                        {"name": "agent_id", "type": "STRING(255)", "nullable": False},
+                        {"name": "action", "type": "STRING(100)", "nullable": False},
+                        {"name": "details", "type": "JSONB", "nullable": True},
+                        {"name": "recorded_at", "type": "TIMESTAMPTZ", "nullable": False},
+                    ]
+                },
+                "agent_entities": {
+                    "columns": [
+                        {"name": "entity_id", "type": "UUID", "nullable": False},
+                        {"name": "agent_id", "type": "STRING(255)", "nullable": False},
+                        {"name": "entity_type", "type": "STRING(50)", "nullable": False},
+                        {"name": "name", "type": "STRING(255)", "nullable": False},
+                        {"name": "attributes", "type": "JSONB", "nullable": True},
+                    ]
+                },
+                "agent_relations": {
+                    "columns": [
+                        {"name": "relation_id", "type": "UUID", "nullable": False},
+                        {"name": "source_entity_id", "type": "UUID", "nullable": False},
+                        {"name": "target_entity_id", "type": "UUID", "nullable": False},
+                        {"name": "relation_type", "type": "STRING(100)", "nullable": False},
+                    ]
+                },
             }
+            if table:
+                table_info = mock_tables.get(table)
+                if table_info is None:
+                    schema = {"error": f"Table '{table}' not found"}
+                else:
+                    schema = {"table": table, "columns": table_info["columns"]}
+            else:
+                schema = {"tables": {name: {"columns": [c["name"] for c in t["columns"]]} for name, t in mock_tables.items()}}
         else:
             try:
                 pool = mem.get_pool()
