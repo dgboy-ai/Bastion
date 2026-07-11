@@ -62,11 +62,15 @@ function useParallax() {
   return scrollY;
 }
 
-function useCountUp(target: number, duration = 2000) {
+function useCountUp(target: number, duration = 2000, delay = 500) {
   const [count, setCount] = useState(0);
-  const { ref, visible } = useInView(0.3);
+  const [started, setStarted] = useState(false);
   useEffect(() => {
-    if (!visible) return;
+    const timer = setTimeout(() => setStarted(true), delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+  useEffect(() => {
+    if (!started) return;
     const start = performance.now();
     const animate = (now: number) => {
       const elapsed = now - start;
@@ -76,8 +80,8 @@ function useCountUp(target: number, duration = 2000) {
       if (progress < 1) requestAnimationFrame(animate);
     };
     requestAnimationFrame(animate);
-  }, [visible, target, duration]);
-  return { ref, count, visible };
+  }, [started, target, duration]);
+  return count;
 }
 
 /* ── Fire Ember Particles ───────────────────────────────────── */
@@ -192,9 +196,9 @@ function Hero() {
   const [loaded, setLoaded] = useState(false);
   const scrollY = useParallax();
   useEffect(() => { requestAnimationFrame(() => setLoaded(true)); }, []);
-  const { ref: statsRef, count: testCount } = useCountUp(1133, 2000);
-  const { count: toolCount } = useCountUp(25, 1500);
-  const { count: regionCount } = useCountUp(6, 1000);
+  const testCount = useCountUp(1133, 2000, 800);
+  const toolCount = useCountUp(25, 1500, 1000);
+  const regionCount = useCountUp(6, 1000, 1200);
 
   return (
     <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", padding: "160px 48px 120px", position: "relative" }}>
@@ -227,7 +231,7 @@ function Hero() {
         </div>
       </div>
 
-      <div ref={statsRef} className="hero-stats" style={{ display: "flex", gap: "64px", marginTop: "120px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.5s", position: "relative", zIndex: 2 }}>
+      <div className="hero-stats" style={{ display: "flex", gap: "64px", marginTop: "120px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.5s", position: "relative", zIndex: 2 }}>
         {[
           { value: testCount, label: "Tests Passing", color: C.lava },
           { value: toolCount, label: "MCP Tools", color: C.portalPurple },
