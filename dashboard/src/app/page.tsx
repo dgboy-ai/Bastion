@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 
-/* ── Design Tokens (Nether Fortress) ───────────────────────── */
+/* ── Design Tokens (Nether Fortress Theme) ─────────────────── */
 const C = {
   obsidian: "#0a0510", lava: "#ff4500", lavaGlow: "#ff6b35",
   magma: "#ff8c00", soulFire: "#4fc3f7", portalPurple: "#9c27b0",
