@@ -773,7 +773,7 @@ function Footer() {
 /* ── Page ───────────────────────────────────────────────────── */
 export default function LandingPage() {
   return (
-    <div style={{ position: "relative", minHeight: "100vh" }}>
+    <div style={{ position: "relative", minHeight: "100vh", overflowY: "auto" }}>
       <CursorGlow />
       <ScrollProgressBar />
       <FireEmbers />

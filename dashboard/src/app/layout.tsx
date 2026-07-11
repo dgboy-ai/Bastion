@@ -17,7 +17,7 @@ export default function RootLayout({
       <body style={{
         background: "#0a0a0a", color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
-        margin: 0, minHeight: "100vh",
+        margin: 0, minHeight: "100vh", overflowY: "auto",
       }}>
         <GlobalErrorHandler />
         <div style={{
