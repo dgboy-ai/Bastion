@@ -118,6 +118,7 @@ class RetrievalResult:
         return {
             "memory_id": self.memory.memory_id if hasattr(self.memory, "memory_id") else "",
             "content": (self.memory.content or "")[:200] if hasattr(self.memory, "content") else "",
+            "memory_type": getattr(self.memory, "memory_type", "") if hasattr(self.memory, "memory_type") else "",
             "vector_score": round(self.vector_score, 4),
             "keyword_score": round(self.keyword_score, 4),
             "entity_score": round(self.entity_score, 4),
