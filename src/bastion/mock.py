@@ -354,29 +354,31 @@ def mock_broadcast(sender_agent_id: str, event_type: str, payload: dict | None, 
         event_type=event_type,
         payload=payload or {},
     )
-    _messages.append(record.to_dict())
+    with _lock:
+        _messages.append(record.to_dict())
     return record
 
 
 def mock_poll_messages(namespace: str) -> list[MessageRecord]:
     now = datetime.now(UTC)
     unread = []
-    for m in _messages:
-        expires = m.get("expires_at")
-        if expires:
-            expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
-            if expires_dt <= now:
-                continue
-        if m.get("namespace") == namespace and not m.get("read"):
-            m["read"] = True
-            record_data = dict(m)
-            for ts_field in ("created_at", "expires_at"):
-                if isinstance(record_data.get(ts_field), str):
-                    try:
-                        record_data[ts_field] = datetime.fromisoformat(record_data[ts_field])
-                    except (ValueError, TypeError):
-                        record_data[ts_field] = None
-            unread.append(MessageRecord(**record_data))
+    with _lock:
+        for m in _messages:
+            expires = m.get("expires_at")
+            if expires:
+                expires_dt = datetime.fromisoformat(expires) if isinstance(expires, str) else expires
+                if expires_dt <= now:
+                    continue
+            if m.get("namespace") == namespace and not m.get("read"):
+                m["read"] = True
+                record_data = dict(m)
+                for ts_field in ("created_at", "expires_at"):
+                    if isinstance(record_data.get(ts_field), str):
+                        try:
+                            record_data[ts_field] = datetime.fromisoformat(record_data[ts_field])
+                        except (ValueError, TypeError):
+                            record_data[ts_field] = None
+                unread.append(MessageRecord(**record_data))
     return unread
 
 
@@ -404,8 +406,40 @@ def mock_delete_memory(agent_id: str, memory_id: str) -> bool:
     return False
 
 
+def _parse_relative_timestamp(timestamp: str) -> datetime:
+    """Parse relative timestamps like '5 minutes ago', '2 hours ago', '1 day ago'."""
+    import re
+    ts = timestamp.strip().lower()
+    # Handle relative timestamps
+    match = re.match(r"(\d+)\s+(second|minute|hour|day|week|month)s?\s+ago", ts)
+    if match:
+        amount = int(match.group(1))
+        unit = match.group(2)
+        now = datetime.now(UTC)
+        if unit == "second":
+            return now - timedelta(seconds=amount)
+        elif unit == "minute":
+            return now - timedelta(minutes=amount)
+        elif unit == "hour":
+            return now - timedelta(hours=amount)
+        elif unit == "day":
+            return now - timedelta(days=amount)
+        elif unit == "week":
+            return now - timedelta(weeks=amount)
+        elif unit == "month":
+            return now - timedelta(days=amount * 30)
+    # Handle "now"
+    if ts == "now":
+        return datetime.now(UTC)
+    # Handle "just now"
+    if ts == "just now":
+        return datetime.now(UTC)
+    # Fall back to ISO format
+    return datetime.fromisoformat(timestamp)
+
+
 def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]:
-    target = datetime.fromisoformat(timestamp)
+    target = _parse_relative_timestamp(timestamp)
     records = _agent_data.get(agent_id, [])
     results = []
     for r in records:
@@ -631,23 +665,24 @@ def _extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
 
 
 def _ensure_entity(agent_id: str, name: str, entity_type: str = "concept") -> str:
-    if agent_id not in _entities:
-        _entities[agent_id] = []
-    for e in _entities[agent_id]:
-        if e["name"] == name:
-            return str(e["entity_id"])
-    eid = str(uuid.uuid4())
-    _entities[agent_id].append({
-        "entity_id": eid,
-        "agent_id": agent_id,
-        "entity_type": entity_type,
-        "name": name,
-        "attributes": {},
-        "valid_from": datetime.now(UTC).isoformat(),
-        "valid_until": None,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
-    return eid
+    with _lock:
+        if agent_id not in _entities:
+            _entities[agent_id] = []
+        for e in _entities[agent_id]:
+            if e["name"] == name:
+                return str(e["entity_id"])
+        eid = str(uuid.uuid4())
+        _entities[agent_id].append({
+            "entity_id": eid,
+            "agent_id": agent_id,
+            "entity_type": entity_type,
+            "name": name,
+            "attributes": {},
+            "valid_from": datetime.now(UTC).isoformat(),
+            "valid_until": None,
+            "created_at": datetime.now(UTC).isoformat(),
+        })
+        return eid
 
 
 def mock_store_with_graph(
@@ -661,25 +696,26 @@ def mock_store_with_graph(
     created_entities: list[EntityRecord] = []
     created_relations: list[RelationRecord] = []
 
-    for src_name, tgt_name, rel_type, kind, confidence in triples:
-        if kind == "entity_type":
-            _ensure_entity(agent_id, src_name, tgt_name)  # entity created, relation deferred
-        else:
-            eid_src = _ensure_entity(agent_id, src_name, "person" if kind == "relation" else "concept")
-            eid_tgt = _ensure_entity(agent_id, tgt_name, "concept")
-            rel = RelationRecord(
-                agent_id=agent_id,
-                source_entity_id=eid_src,
-                target_entity_id=eid_tgt,
-                relation_type=rel_type,
-                confidence=confidence,
-                source_memory_id=record.memory_id,
-            )
-            _relations.append(rel.to_dict())
-            created_relations.append(rel)
+    with _lock:
+        for src_name, tgt_name, rel_type, kind, confidence in triples:
+            if kind == "entity_type":
+                _ensure_entity(agent_id, src_name, tgt_name)  # entity created, relation deferred
+            else:
+                eid_src = _ensure_entity(agent_id, src_name, "person" if kind == "relation" else "concept")
+                eid_tgt = _ensure_entity(agent_id, tgt_name, "concept")
+                rel = RelationRecord(
+                    agent_id=agent_id,
+                    source_entity_id=eid_src,
+                    target_entity_id=eid_tgt,
+                    relation_type=rel_type,
+                    confidence=confidence,
+                    source_memory_id=record.memory_id,
+                )
+                _relations.append(rel.to_dict())
+                created_relations.append(rel)
 
-    for eid_dict in _entities.get(agent_id, []):
-        created_entities.append(EntityRecord.from_row(dict(eid_dict)))
+        for eid_dict in _entities.get(agent_id, []):
+            created_entities.append(EntityRecord.from_row(dict(eid_dict)))
 
     deduped = {e.entity_id: e for e in created_entities}
     return record, list(deduped.values()), created_relations
@@ -691,41 +727,43 @@ def mock_graph_query(
     relation_path: list[str] | None = None,
     hops: int = 2,
 ) -> list[dict[str, Any]]:
-    entities = {e["name"]: e for e in _entities.get(agent_id, [])}
-    start = entities.get(start_entity)
-    if not start:
-        return []
+    with _lock:
+        # Build lookup with lowercase keys for case-insensitive matching
+        entities = {e["name"].lower(): e for e in _entities.get(agent_id, [])}
+        start = entities.get(start_entity.lower())
+        if not start:
+            return []
 
-    found: list[dict[str, Any]] = []
-    visited: set[str] = set()
-    queue: list[tuple[str, int]] = [(start["entity_id"], 0)]
+        found: list[dict[str, Any]] = []
+        visited: set[str] = set()
+        queue: list[tuple[str, int]] = [(start["entity_id"], 0)]
 
-    while queue:
-        eid, depth = queue.pop(0)
-        if depth >= hops or eid in visited:
-            continue
-        visited.add(eid)
-
-        for rel in _relations:
-            if rel["source_entity_id"] != eid:
+        while queue:
+            eid, depth = queue.pop(0)
+            if depth >= hops or eid in visited:
                 continue
-            if relation_path and rel["relation_type"] not in relation_path:
-                continue
-            target = None
-            for e in _entities.get(agent_id, []):
-                if e["entity_id"] == rel["target_entity_id"]:
-                    target = e
-                    break
-            if target:
-                found.append({
-                    "source": start_entity,
-                    "target": target["name"],
-                    "relation": rel["relation_type"],
-                    "confidence": rel["confidence"],
-                    "depth": depth + 1,
-                })
-                queue.append((target["entity_id"], depth + 1))
-    return found
+            visited.add(eid)
+
+            for rel in _relations:
+                if rel["source_entity_id"] != eid:
+                    continue
+                if relation_path and rel["relation_type"] not in relation_path:
+                    continue
+                target = None
+                for e in _entities.get(agent_id, []):
+                    if e["entity_id"] == rel["target_entity_id"]:
+                        target = e
+                        break
+                if target:
+                    found.append({
+                        "source": start_entity,
+                        "target": target["name"],
+                        "relation": rel["relation_type"],
+                        "confidence": rel["confidence"],
+                        "depth": depth + 1,
+                    })
+                    queue.append((target["entity_id"], depth + 1))
+        return found
 
 
 def mock_graph_at_time(agent_id: str, timestamp: str, entity: str | None = None) -> dict[str, Any]:

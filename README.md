@@ -5,11 +5,47 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/Tests-1133%20passed-brightgreen)](#-test-verification-suite)
+[![Tests](https://img.shields.io/badge/Tests-1147%20passed-brightgreen)](#-test-verification-suite)
 
 > **The system of record for autonomous AI systems. A persistent, secure, and self-healing memory engine that survives serverless crashes—so your agent swarms never forget.**
 
 [Live Demo](https://bastion-self.vercel.app/) · [Dashboard](https://bastion-self.vercel.app/dashboard) · [Documentation](https://bastion-self.vercel.app/docs)
+
+---
+
+## ⚡ Judge's Quick Start (2 minutes)
+
+### Option 1: Docker (Recommended)
+```bash
+# Clone and start everything
+git clone https://github.com/dgboy-ai/Bastion
+cd Bastion
+docker compose -f docker-compose.demo.yml up
+
+# Dashboard: http://localhost:3000
+# CockroachDB: http://localhost:8080
+# MCP Server: python -m bastion.mcp_server
+```
+
+### Option 2: Python (No Docker)
+```bash
+pip install bastion-memory
+
+# Run demo with mock backend (no database needed)
+python scripts/demo.py
+
+# Or connect to CockroachDB
+export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=disable"
+python scripts/demo.py
+```
+
+### What You'll See
+1. **Memory Store** — SHA-256 hash chain integrity on every write
+2. **Semantic Search** — Vector + keyword fusion across 1024-dim embeddings
+3. **Time Travel** — AS OF SYSTEM TIME queries via CockroachDB MVCC
+4. **Security Guard** — OWASP ASI06 prompt injection blocking
+5. **Knowledge Graph** — Automatic entity extraction and traversal
+6. **MCP Server** — 25 tools for AI agents (Claude, Cursor, LangGraph)
 
 ---
 
@@ -201,10 +237,10 @@ const results = await mem.search("user preferences", { k: 5 });
 
 ## 🧪 Test Suite
 
-### Mock Tests (1,116 passed)
+### Mock Tests (1,147 passed)
 ```bash
 python -m pytest tests/ -v
-# 1116 passed, 58 skipped, 0 failed
+# 1147 passed, 58 skipped, 0 failed
 ```
 
 ### Integration Tests (17 passed against real CockroachDB)
@@ -213,7 +249,7 @@ BASTION_CONN="postgresql://..." python -m pytest tests/test_crdb_integration.py 
 # 17 passed, 0 failed
 ```
 
-### Total: 1,133 tests, 0 failures
+### Total: 1,164 tests, 0 failures
 
 **Test Coverage:**
 - Memory operations (store, search, time-travel, audit)
@@ -225,6 +261,12 @@ BASTION_CONN="postgresql://..." python -m pytest tests/test_crdb_integration.py 
 - Dreaming consolidation (6-step cycle)
 - Knowledge graph traversal
 - CRDT conflict resolution
+- Circuit breaker (state transitions, concurrency, recovery)
+- Cognitive firewall (PII detection, blocked agents, hash chain)
+- Groq LLM callbacks (fallback behavior)
+- Logging setup (secret redaction, configuration)
+- Autonomous DBA & schema evolution (validation, migrations)
+- Cognitive rules engine (pattern extraction, recommendations)
 - Stress/concurrency tests
 - **Real CockroachDB integration** (17 tests against live database)
 

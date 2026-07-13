@@ -16,6 +16,9 @@ from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
 
+# Maximum content length for memory storage
+_MAX_CONTENT_LENGTH = 100_000
+
 
 class CognitiveFirewall:
     """Thread-safe CDC Cognitive Firewall for agent validation."""
@@ -70,12 +73,12 @@ class CognitiveFirewall:
                 }
             )
 
-        if len(content) > 10000:
+        if len(content) > _MAX_CONTENT_LENGTH:
             violations.append(
                 {
                     "rule": "OVERSIZED_CONTENT",
                     "severity": "low",
-                    "detail": f"Content length {len(content)} exceeds 10000 chars",
+                    "detail": f"Content length {len(content)} exceeds {_MAX_CONTENT_LENGTH} chars",
                 }
             )
 

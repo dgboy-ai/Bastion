@@ -35,6 +35,7 @@ from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl, AnyUrl
 
 from bastion.auth_provider import BastionOAuthProvider, is_oauth_enabled
+from bastion.config import VERSION
 from bastion.errors import SecurityBlockError
 from bastion.limiter import RequestLimiter
 from bastion.memory import BastionMemory
@@ -113,7 +114,7 @@ def _get_limiter() -> RequestLimiter:
 def _build_a2a_card(agent_id: str) -> dict:
     return {
         "name": f"Bastion/{agent_id}",
-        "version": "1.0.0",
+        "version": VERSION,
         "agent_id": agent_id,
         "capabilities": {
             "memory_store": True,

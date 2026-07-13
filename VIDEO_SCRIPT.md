@@ -86,7 +86,7 @@
 **Text on screen:**
 - bastion-self.vercel.app
 - github.com/dgboy-ai/Bastion
-- 1,041 tests | 25 MCP tools | 6 regions
+- 1,147 tests | 25 MCP tools | 6 regions
 
 ---
 

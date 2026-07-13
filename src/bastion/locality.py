@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from bastion.config import LOCALITY_LIMIT
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
@@ -398,8 +399,8 @@ class MemoryLocality:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT DISTINCT crdb_region "
-                        "FROM agent_memory WHERE agent_id = %s LIMIT 10",
-                        (agent_id,),
+                        "FROM agent_memory WHERE agent_id = %s LIMIT %s",
+                        (agent_id, LOCALITY_LIMIT),
                     )
                     actual_regions = {str(r[0]) for r in cur.fetchall()}
                 expected_alias = _CRDB_REGION_ALIASES.get(region, region)
