@@ -13,6 +13,7 @@ import subprocess
 from datetime import UTC, datetime
 from typing import Any
 
+from bastion.config import DBA_SLOW_QUERY_LIMIT
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
@@ -50,7 +51,7 @@ class AutonomousDBA:
             sql = (
                 "SELECT key, count, max_total_time, max_service_latency "
                 "FROM crdb_internal.node_statement_statistics "
-                "ORDER BY max_service_latency DESC LIMIT 10"
+                f"ORDER BY max_service_latency DESC LIMIT {DBA_SLOW_QUERY_LIMIT}"
             )
             cmd = [
                 "ccloud", "sql", "--cluster", self.cluster_id,

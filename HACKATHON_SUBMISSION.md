@@ -20,7 +20,7 @@
 7. **Amazon EventBridge** — Keep-alive
 
 ### ✅ Production-Grade Features
-- 1,041 passing tests
+- 1,147 passing tests
 - SHA-256 hash chains
 - Time-travel queries (AS OF SYSTEM TIME)
 - 6 global regions
@@ -53,7 +53,7 @@
 | Criteria | Bastion Score | Evidence |
 |----------|---------------|----------|
 | Agentic Memory Design | ⭐⭐⭐⭐⭐ | IS agentic memory. 25 MCP tools, C-SPANN, time-travel |
-| Technical Implementation | ⭐⭐⭐⭐⭐ | 1,041 tests, production code, dual SDKs |
+| Technical Implementation | ⭐⭐⭐⭐⭐ | 1,147 tests, production code, dual SDKs |
 | Real-World Impact | ⭐⭐⭐⭐⭐ | Solves amnesia, poisoning, crashes for all AI agents |
 | Production Readiness | ⭐⭐⭐⭐⭐ | OWASP, OAuth, RLS, KMS, 6 regions |
 | Creativity | ⭐⭐⭐⭐⭐ | Hash chains, dreaming, LTM Gateway (unique features) |
@@ -88,7 +88,7 @@ Show:
 4. Auto-contradiction detection
 
 ### 2:30-3:00 — Call to Action
-"Bastion is open source, MIT licensed, and free forever. Deploy on CockroachDB Serverless today. 1,041 tests. 25 MCP tools. 6 regions. The fortress of memory."
+"Bastion is open source, MIT licensed, and free forever. Deploy on CockroachDB Serverless today. 1,147 tests. 25 MCP tools. 6 regions. The fortress of memory."
 
 ## Submission Checklist
 

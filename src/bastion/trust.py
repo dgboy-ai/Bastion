@@ -66,21 +66,29 @@ def compute_trust_score(
     level_map = {0: 0.0, 1: 0.4, 2: 0.7, 3: 0.9, 4: 1.0}
     score *= level_map.get(trust_level, 0.5)
 
-    if overwrite_count > 3:
+    # Trust score thresholds for overwrite penalty
+    OVERWRITE_WARN_THRESHOLD = 3
+    OVERWRITE_PENALTY_THRESHOLD = 5
+
+    if overwrite_count > OVERWRITE_WARN_THRESHOLD:
         flags.append("RAPID_OVERWRITE")
 
-    if overwrite_count > 5:
+    if overwrite_count > OVERWRITE_PENALTY_THRESHOLD:
         score *= 0.5
-    elif overwrite_count > 3:
+    elif overwrite_count > OVERWRITE_WARN_THRESHOLD:
         score *= 0.8
+
+    # Age-based decay thresholds (in hours)
+    AGE_OLD_HOURS = 2160   # 90 days
+    AGE_MATURE_HOURS = 720  # 30 days
 
     age_penalty = 0.0
     if created_at:
         age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
-        if age_hours > 2160:
+        if age_hours > AGE_OLD_HOURS:
             age_penalty = 0.5
             score *= (1.0 - age_penalty)
-        elif age_hours > 720:
+        elif age_hours > AGE_MATURE_HOURS:
             age_penalty = 0.3
             score *= (1.0 - age_penalty)
 

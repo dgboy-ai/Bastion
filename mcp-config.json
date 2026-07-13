@@ -2,9 +2,9 @@
   "mcpServers": {
     "bastion": {
       "command": "python",
-      "args": ["-m", "bastion.mcp_server", "--mock"],
+      "args": ["-m", "bastion.mcp_server"],
       "env": {
-        "BASTION_MOCK": "true"
+        "BASTION_CONN": "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
       }
     }
   }

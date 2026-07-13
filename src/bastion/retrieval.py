@@ -20,6 +20,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from bastion.config import SEARCH_RESULT_LIMIT
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
@@ -189,7 +190,7 @@ class MultiSignalRetriever:
             return []
 
         # Cap candidates to prevent O(n²) issues
-        candidates = candidates[:500]
+        candidates = candidates[:SEARCH_RESULT_LIMIT]
 
         # Step 2: Extract query features
         query_tokens = _tokenize(query)

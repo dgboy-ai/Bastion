@@ -1,0 +1,60 @@
+# Why Bastion Wins: The 30-Second Pitch
+
+## One Sentence
+
+> **Bastion is the only agentic memory layer with cryptographic integrity, time-travel, and multi-region distribution — built on CockroachDB.**
+
+## The Problem
+
+AI agents forget. They crash. They get poisoned. Traditional databases can't handle autonomous agents that spawn, write constantly, and need memory that persists across regions and failures.
+
+## The Solution
+
+Bastion gives agents **persistent memory** that:
+- **Never forgets** — SHA-256 hash chains prove every memory is tamper-evident
+- **Time-travels** — Query memory state at any past point (via CockroachDB MVCC)
+- **Self-heals** — Detects and repairs corruption automatically
+- **Stays secure** — OWASP ASI06 guard blocks prompt injection attacks
+- **Scales globally** — 6 CockroachDB regions with 12-42ms latency
+
+## Why CockroachDB (Not Postgres)
+
+| Feature | CockroachDB | Postgres |
+|---------|-------------|----------|
+| AS OF SYSTEM TIME | ✅ Native | ❌ Extensions |
+| Multi-Region | ✅ Automatic | ❌ Manual |
+| SERIALIZABLE | ✅ Default | ❌ READ COMMITTED |
+| C-SPANN Vector | ✅ Distributed | ❌ pgvector |
+| CDC Changefeeds | ✅ Built-in | ❌ Debezium |
+
+## What Makes It Different
+
+| Feature | Bastion | Mem0 | Zep | Cognee |
+|---------|:-------:|:----:|:---:|:------:|
+| Hash chains | ✅ | ❌ | ❌ | ❌ |
+| Time-travel | ✅ | ❌ | ❌ | ❌ |
+| CockroachDB-native | ✅ | ❌ | ❌ | ❌ |
+| SERIALIZABLE | ✅ | ❌ | ❌ | ❌ |
+| Multi-region | ✅ | ❌ | ❌ | ❌ |
+
+## Production Proof
+
+- **1,147 tests** passing
+- **25 MCP tools** for AI agents
+- **6 global regions** with 12-42ms latency
+- **OWASP ASI06** security guard
+- **OAuth 2.1 + PKCE** authentication
+
+## Try It Now
+
+```bash
+# One command
+docker compose -f docker-compose.demo.yml up
+# Dashboard: http://localhost:3000
+```
+
+## The Bottom Line
+
+Mem0 uses Postgres. Zep uses Neo4j. Cognee uses Neo4j. None of them can add hash chains or time-travel without rewriting their entire stack.
+
+**Bastion is the only memory system built on CockroachDB. That's our moat.**

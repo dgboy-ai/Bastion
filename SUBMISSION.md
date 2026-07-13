@@ -115,7 +115,7 @@ Bastion provides **8 machine-executable Agent Skills** in `skills/manifest.json`
 3. **Serverless Crashes** — Memory lost on restart. CockroachDB survives any failure.
 
 ### Production Stats
-- **1,041 tests** passing (0 failures)
+- **1,147 tests** passing (0 failures)
 - **20,597 ops/sec** store throughput
 - **0.16ms** search latency
 - **100% Recall@5** on benchmarks

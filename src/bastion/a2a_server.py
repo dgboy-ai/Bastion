@@ -34,6 +34,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from bastion.config import VERSION, PROJECT_URL, DOCS_URL
 from bastion.log_setup import get_logger
 
 _SAFE_ERROR_MSG = "Internal server error (see server logs for details)"
@@ -145,10 +146,10 @@ def create_a2a_server(
             "A2A-compliant memory agent with hash-chain integrity, "
             "C-SPANN vector indexing, knowledge graph, and time travel."
         ),
-        "version": "1.0.0",
+        "version": VERSION,
         "a2a_version": "1.0",
-        "url": "https://bastion-self.vercel.app",
-        "documentationUrl": "https://github.com/dgboy-ai/Bastion",
+        "url": PROJECT_URL,
+        "documentationUrl": DOCS_URL,
         "capabilities": {
             "streaming": False,
             "pushNotifications": True,
@@ -439,7 +440,7 @@ def create_a2a_server(
         from opentelemetry import propagate as _otel_propagate
         _has_otel_api = True
     except ImportError:
-        pass
+        logger.debug("OpenTelemetry not installed, tracing disabled")
 
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):

@@ -47,7 +47,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if client_id is None:
             client_id, client_secret, redirect_uri = _load_pre_registered_client()
         if client_id:
-            redirect_uris = [redirect_uri] if redirect_uri else ["http://localhost:3000/callback"]
+            redirect_uris = [redirect_uri] if redirect_uri else [os.environ.get("BASTION_OAUTH_REDIRECT_URI", "http://localhost:3000/callback")]
             self._clients[client_id] = OAuthClientInformationFull(
                 client_id=client_id,
                 client_secret=client_secret,

@@ -323,12 +323,15 @@ class MemoryGuard:
             if cryptographic_hash != expected:
                 score *= 0.0
 
-        # Age penalty
+        # Age penalty (matching trust.py thresholds)
+        AGE_OLD_HOURS = 2160   # 90 days
+        AGE_MATURE_HOURS = 720  # 30 days
+
         if created_at is not None:
             age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
-            if age_hours > 2160:
+            if age_hours > AGE_OLD_HOURS:
                 score *= 0.5
-            elif age_hours > 720:
+            elif age_hours > AGE_MATURE_HOURS:
                 score *= 0.7
 
         score = max(0.0, min(1.0, score))

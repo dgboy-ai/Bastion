@@ -14,7 +14,7 @@ from typing import Any
 
 from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
-from bastion.config import get_settings
+from bastion.config import get_settings, AUDIT_LIMIT, ANOMALY_LIMIT
 from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
 from bastion.guard import MemoryGuard, pii_scan
 from bastion.log_setup import get_logger
@@ -938,9 +938,10 @@ class BastionMemory:
                         (agent_id,),
                     )
                     return [MemoryRecord.from_row(r) for r in cur.fetchall()]
-            except Exception:
+            except Exception as primary_exc:
                 # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
                 # use timestamp filtering as a degraded mode
+                logger.debug("AS OF SYSTEM TIME failed, using fallback: %s", primary_exc)
                 try:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -964,8 +965,8 @@ class BastionMemory:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT audit_id, agent_id, workflow_id, action, details, recorded_at "
-                    "FROM agent_audit WHERE agent_id = %s ORDER BY recorded_at DESC LIMIT 100",
-                    (agent_id,),
+                    "FROM agent_audit WHERE agent_id = %s ORDER BY recorded_at DESC LIMIT %s",
+                    (agent_id, AUDIT_LIMIT),
                 )
                 results = []
                 for r in cur.fetchall():
@@ -1134,8 +1135,8 @@ class BastionMemory:
 
                 cur.execute(
                     "SELECT content, created_at FROM agent_memory "
-                    "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 50",
-                    (agent_id,),
+                    "WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s",
+                    (agent_id, ANOMALY_LIMIT),
                 )
                 rows = cur.fetchall()
 
@@ -1463,7 +1464,7 @@ class BastionMemory:
                 return triples
             triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
             resp = client.chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                model=os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
                 messages=[
                     {"role": "system", "content": (
                         "You verify entity extraction. Given text and extracted triples, "
@@ -1815,7 +1816,7 @@ class BastionMemory:
 
         settings = get_settings()
         body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
-        max_retries = 5
+        max_retries = settings.retry_max_retries
         for attempt in range(max_retries + 1):
             try:
                 response = client.invoke_model(

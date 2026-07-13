@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import os
 import threading
 from typing import ClassVar
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Project constants
+VERSION = "1.0.0"
+PROJECT_URL = os.environ.get("BASTION_PROJECT_URL", "https://bastion-self.vercel.app")
+DOCS_URL = os.environ.get("BASTION_DOCS_URL", "https://github.com/dgboy-ai/Bastion")
+
+# Query limits
+AUDIT_LIMIT = 100
+ANOMALY_LIMIT = 50
+SEARCH_RESULT_LIMIT = 500
+DBA_SLOW_QUERY_LIMIT = 10
+LOCALITY_LIMIT = 10
 
 
 class BastionSettings(BaseSettings):
@@ -19,7 +32,7 @@ class BastionSettings(BaseSettings):
     mock: bool = False
     bedrock_model_id: str = "amazon.titan-embed-text-v2:0"
     embed_dim: int = 1024
-    aws_region: str = "ap-south-1"
+    aws_region: str = os.environ.get("AWS_REGION", "us-east-1")
     bedrock_read_timeout: int = 10
     bedrock_connect_timeout: int = 10
     pool_min_size: int = 1
