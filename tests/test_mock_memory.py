@@ -79,9 +79,10 @@ def test_heal():
     memory = BastionMemory(agent_id="heal-test", mock=True)
     memory.store("fact", "Keep this")
     result = memory.heal("heal-test")
-    assert "records_before" in result
-    assert "records_after" in result
+    assert "pruned" in result
+    assert "status" in result
     assert result["agent_id"] == "heal-test"
+    assert result["status"] == "healed"
 
 
 def test_resolve_conflict():
@@ -267,7 +268,7 @@ def test_heal_prunes_expired_records():
     memory.store("fact", "Expiring soon", expires_in_seconds=0)
     result = memory.heal()
     assert result["pruned"] == 1
-    assert result["records_after"] == 1
+    assert result["status"] == "healed"
 
 
 def test_search_returns_empty_when_no_records():

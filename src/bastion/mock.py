@@ -522,8 +522,9 @@ def mock_heal(agent_id: str) -> dict[str, Any]:
     })
 
     return {
-        "agent_id": agent_id, "records_before": before,
-        "records_after": after, "pruned": before - after,
+        "agent_id": agent_id,
+        "pruned": before - after,
+        "status": "healed",
     }
 
 
