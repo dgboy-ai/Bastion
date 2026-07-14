@@ -448,6 +448,8 @@ function TypewriterWord() {
       animation: "gradShift 3.5s ease infinite",
       display: "inline-block",
       minWidth: "2ch",
+      // CSS Drop shadow filter to tracing gradient outline and glowing volcanic red/orange
+      filter: "drop-shadow(0 0 15px rgba(255, 66, 0, 0.8)) drop-shadow(0 0 5px rgba(255, 194, 0, 0.4))",
     }}>
       {text}<span style={{
         display: "inline-block", width: "4px", height: "0.85em",
@@ -458,21 +460,44 @@ function TypewriterWord() {
   );
 }
 
-/* ─── Ledger Seal Widget ─────────────────────────────────── */
+/* ─── Ledger Seal Widget (3D Concentric Gyroscope Core) ─── */
 function LedgerSeal() {
   const [busy,  setBusy]  = useState(false);
   const [stat,  setStat]  = useState("SECURED");
   const [log,   setLog]   = useState("SYSTEM_IDLE");
   const [pct,   setPct]   = useState(100);
 
+  // Live hex logging terminal updates
+  const [hexLogs, setHexLogs] = useState<string[]>([
+    "0xEd25519_AUTH_OK",
+    "0xSHA256_ROOT_SECURE",
+    "0xPGVECTOR_SYNC_ACTIVE"
+  ]);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const hexes = [
+        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_TX_SEAL",
+        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_BLOCK_MERGE",
+        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_HASH_LINK",
+        "0xEd25519_VERIFY_PASS",
+        "0xCOCKROACH_SYNC_OK"
+      ];
+      setHexLogs(prev => [hexes[Math.floor(Math.random() * hexes.length)], prev[0], prev[1]]);
+    }, 2000);
+    return () => clearInterval(iv);
+  }, []);
+
   const verify = useCallback((e: React.MouseEvent) => {
     if (busy) return;
     setBusy(true); setStat("VERIFYING…"); setPct(0);
+    
     const ripple = document.createElement("div");
     ripple.className = "ripple-ring";
     ripple.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
     document.body.appendChild(ripple);
     setTimeout(() => ripple.remove(), 1300);
+
     [[200,"SCANNING_SHA256",22],[550,"VERIFY_ED25519",55],[950,"MERKLE_ROOTS_OK",80],[1300,"CHAIN_COMPLETE",100]].forEach(
       ([ms,msg,p]) => setTimeout(()=>{setLog(msg as string);setPct(p as number);},ms as number)
     );
@@ -482,7 +507,7 @@ function LedgerSeal() {
   return (
     <div onClick={verify} style={{
       width:"292px", height:"385px",
-      background:"rgba(10,2,14,0.98)",
+      background:"rgba(12,2,15,0.98)",
       border:"10px solid #1a0a26",
       borderRadius:"2px",
       boxShadow: busy
@@ -501,28 +526,48 @@ function LedgerSeal() {
         <div style={{height:"1px",background:`linear-gradient(90deg,transparent,${P.purple}80,transparent)`,margin:"8px 0"}}/>
       </div>
 
-      <div style={{position:"relative",width:"120px",height:"120px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-        {[["SHA-256","oa"],["Ed25519","ob"],["pgvec","oc"]].map(([label,cls])=>(
-          <span key={label} className={`orbit-tag ${cls}`} style={{
-            position:"absolute",padding:"2px 7px",background:"rgba(12,4,18,.96)",
-            border:"1px solid rgba(255,255,255,.07)",borderRadius:"2px",
-            fontSize:"8px",fontFamily:"var(--font-mono)",color:P.body,
-            whiteSpace:"nowrap",pointerEvents:"none",
-          }}>{label}</span>
+      {/* 3D Holographic Gyroscope Viewport */}
+      <div style={{
+        position:"relative", width:"140px", height:"140px",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        perspective: "600px", transformStyle: "preserve-3d"
+      }}>
+        
+        {/* Outer Ring (Lava Red / Blackstone) */}
+        <div className={`gyro-ring ${busy ? "spin-fast-x" : "spin-slow-x"}`} style={{
+          position: "absolute", width: "120px", height: "120px",
+          borderRadius: "50%", border: `4px solid ${P.lava}`,
+          boxShadow: `0 0 20px ${P.lava}, inset 0 0 15px ${P.lava}`,
+          transformStyle: "preserve-3d"
+        }} />
+
+        {/* Inner Ring (Soul-Fire Cyan / Obsidian) */}
+        <div className={`gyro-ring ${busy ? "spin-fast-y" : "spin-slow-y"}`} style={{
+          position: "absolute", width: "90px", height: "90px",
+          borderRadius: "50%", border: `4px solid ${P.cyan}`,
+          boxShadow: `0 0 20px ${P.cyan}, inset 0 0 15px ${P.cyan}`,
+          transformStyle: "preserve-3d"
+        }} />
+
+        {/* Pulsing Quantum Core */}
+        <div className="quantum-core" style={{
+          position: "absolute", width: "32px", height: "32px", borderRadius: "50%",
+          background: `radial-gradient(circle, ${P.gold} 0%, ${P.purple} 60%, ${P.lava} 100%)`,
+          boxShadow: `0 0 30px ${P.gold}, 0 0 50px ${P.purple}`,
+          animation: "pulseCore 1.3s ease-in-out infinite"
+        }} />
+
+        {/* Holographic matrix scan overlay */}
+        {busy && <div className="scanline" style={{ height: "100%", width: "100%", top: 0, left: 0 }} />}
+      </div>
+
+      {/* Hex Ledger terminal reader */}
+      <div style={{ width: "100%", background: "rgba(0,0,0,0.6)", borderRadius: "2px", padding: "6px 8px", border: "1px solid rgba(255,255,255,0.06)", height: "48px", overflow: "hidden" }}>
+        {hexLogs.map((logStr, idx) => (
+          <div key={idx} style={{ fontSize: "8.5px", fontFamily: "var(--font-mono)", color: idx === 0 ? P.cyan : P.mute, opacity: 1 - idx * 0.3, lineHeight: 1.4 }}>
+            {logStr}
+          </div>
         ))}
-        <div className={busy?"seal-spin":"seal-float"} style={{
-          width:"86px",height:"86px",borderRadius:"50%",
-          background:`radial-gradient(circle,#060110 0%,#18083a 70%,${P.purple} 100%)`,
-          border:`3px solid ${busy?P.cyan:P.purple}`,
-          boxShadow: busy?`0 0 32px ${P.cyan}`:`0 0 18px ${P.purple}60`,
-          display:"flex",alignItems:"center",justifyContent:"center",
-          transition:"all 0.3s",
-        }}>
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={busy?P.cyan:"#fff"} strokeWidth="2.4">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-        </div>
-        {busy && <div className="scanline"/>}
       </div>
 
       <div style={{width:"100%",background:"rgba(0,0,0,.55)",borderRadius:"2px",padding:"10px 12px",border:"1px solid rgba(255,255,255,.04)"}}>
@@ -544,22 +589,69 @@ function LedgerSeal() {
       </div>
 
       <style>{`
-        .seal-float{animation:sealFloat 4s ease-in-out infinite}
-        .seal-spin{animation:sealSpin .65s linear infinite!important}
-        @keyframes sealFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-9px) rotate(6deg)}}
-        @keyframes sealSpin{to{transform:rotate(360deg)} }
-        @keyframes sealPulse{0%,100%{opacity:.55}50%{opacity:1;text-shadow:0 0 10px ${P.lava}}}
-        .orbit-tag{animation-timing-function:linear;animation-iteration-count:infinite}
-        .oa{animation-name:orbitA;animation-duration:8s}
-        .ob{animation-name:orbitB;animation-duration:10.5s}
-        .oc{animation-name:orbitC;animation-duration:9.5s}
-        @keyframes orbitA{from{transform:rotate(0deg) translateX(66px) rotate(0deg)}to{transform:rotate(360deg) translateX(66px) rotate(-360deg)}}
-        @keyframes orbitB{from{transform:rotate(120deg) translateX(66px) rotate(-120deg)}to{transform:rotate(480deg) translateX(66px) rotate(-480deg)}}
-        @keyframes orbitC{from{transform:rotate(240deg) translateX(66px) rotate(-240deg)}to{transform:rotate(600deg) translateX(66px) rotate(-600deg)}}
-        .scanline{position:absolute;top:0;left:0;right:0;height:3px;background:${P.cyan};box-shadow:0 0 10px ${P.cyan};animation:scanDown 1.5s linear infinite}
-        @keyframes scanDown{0%{top:0}100%{top:100%}}
-        .ripple-ring{position:fixed;pointer-events:none;z-index:9999;width:72px;height:72px;border-radius:50%;border:4px solid ${P.cyan};box-shadow:0 0 22px ${P.cyan};transform:translate(-50%,-50%) scale(.1);opacity:1;animation:rippleOut 1.2s cubic-bezier(.1,.85,.25,1) forwards}
-        @keyframes rippleOut{from{transform:translate(-50%,-50%) scale(.1);opacity:1}to{transform:translate(-50%,-50%) scale(25);opacity:0;filter:blur(14px)}}
+        .spin-slow-x { animation: rotateSlowX 10s linear infinite; }
+        .spin-slow-y { animation: rotateSlowY 8s linear infinite; }
+        .spin-fast-x { animation: rotateFastX 1s linear infinite; }
+        .spin-fast-y { animation: rotateFastY 0.8s linear infinite; }
+
+        @keyframes rotateSlowX {
+          0% { transform: rotateX(0deg) rotateY(15deg); }
+          100% { transform: rotateX(360deg) rotateY(15deg); }
+        }
+        @keyframes rotateSlowY {
+          0% { transform: rotateY(0deg) rotateZ(30deg); }
+          100% { transform: rotateY(-360deg) rotateZ(30deg); }
+        }
+        @keyframes rotateFastX {
+          0% { transform: rotateX(0deg) rotateY(15deg); }
+          100% { transform: rotateX(360deg) rotateY(15deg); }
+        }
+        @keyframes rotateFastY {
+          0% { transform: rotateY(0deg) rotateZ(30deg); }
+          100% { transform: rotateY(-360deg) rotateZ(30deg); }
+        }
+
+        @keyframes pulseCore {
+          0%, 100% { transform: scale(0.9); opacity: 0.85; filter: drop-shadow(0 0 8px ${P.gold}); }
+          50% { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 20px ${P.purple}); }
+        }
+
+        @keyframes sealPulse {
+          0%, 100% { opacity: .55; text-shadow: 0 0 2px transparent; }
+          50% { opacity: 1; text-shadow: 0 0 10px ${P.lava}; }
+        }
+
+        .scanline {
+          position: absolute;
+          height: 4px;
+          width: 100%;
+          background: ${P.cyan};
+          box-shadow: 0 0 12px ${P.cyan};
+          opacity: 0.8;
+          animation: scanDown 1.5s linear infinite;
+        }
+        @keyframes scanDown {
+          0% { top: 0%; }
+          100% { top: 100%; }
+        }
+
+        .ripple-ring {
+          position: fixed;
+          pointer-events: none;
+          z-index: 9999;
+          width: 72px;
+          height: 72px;
+          border-radius: 50%;
+          border: 4px solid ${P.cyan};
+          box-shadow: 0 0 22px ${P.cyan};
+          transform: translate(-50%, -50%) scale(.1);
+          opacity: 1;
+          animation: rippleOut 1.2s cubic-bezier(.1,.85,.25,1) forwards;
+        }
+        @keyframes rippleOut {
+          from { transform: translate(-50%, -50%) scale(.1); opacity: 1; }
+          to { transform: translate(-50%, -50%) scale(25); opacity: 0; filter: blur(14px); }
+        }
       `}</style>
     </div>
   );
@@ -578,7 +670,7 @@ function SH({ eyebrow, title, sub, ec = P.lava }: { eyebrow:string; title:string
     }}>
       {/* top glow line */}
       <div style={{position:"absolute",top:0,left:"5%",right:"5%",height:"2.5px",background:`linear-gradient(90deg,transparent 0%,${ec} 50%,transparent 100%)`}}/>
-      <div style={{fontFamily:"var(--font-mono)",fontSize:"11px",fontWeight:700,textTransform:"uppercase",letterSpacing:"3.5px",color:ec,marginBottom:"12px"}}>{eyebrow}</div>
+      <div style={{fontFamily:"var(--font-mono)",fontSize:"11px",fontWeight:700,textTransform:"uppercase",letterSpacing:"3.5px",color:ec,marginBottom:"12px"}}>{ec===P.cyan ? "✦ SYSTEM CORE ✦" : eyebrow}</div>
       <h2 style={{fontSize:"clamp(30px,4.5vw,48px)",fontWeight:900,color:"#fff",fontFamily:"var(--font-sg)",letterSpacing:"-1.5px",margin:"0 0 12px",textShadow:`0 0 40px ${ec}60`}}>{title}</h2>
       {sub&&<p style={{fontSize:"16px",color:P.body,maxWidth:"580px",margin:"0 auto",lineHeight:1.65,fontFamily:"var(--font-inter)"}}>{sub}</p>}
     </div>
@@ -593,7 +685,6 @@ function SW({ children, glow = P.lava }: { children:React.ReactNode; glow?:strin
       borderTop:`1px solid ${P.line}`,
       background:`linear-gradient(180deg, rgba(14,1,8,0) 0%, rgba(18,2,10,0.7) 100%)`,
     }}>
-      {/* Left/Right glow indicators */}
       <div style={{position:"absolute",left:0,top:"10%",bottom:"10%",width:"2.5px",background:`linear-gradient(180deg,transparent,${glow}60,transparent)`}}/>
       <div style={{position:"absolute",right:0,top:"10%",bottom:"10%",width:"2.5px",background:`linear-gradient(180deg,transparent,${glow}40,transparent)`}}/>
       {children}
@@ -776,14 +867,12 @@ export default function Page() {
   return (
     <div className={`${spaceGrotesk.variable} ${jetMono.variable} ${inter.variable}`}
       style={{position:"relative",minHeight:"100vh",overflowX:"hidden",fontFamily:"var(--font-inter), sans-serif",
-        // Root container is transparent so fixed backgrounds and canvas layers stack correctly
         background:"transparent",
       }}>
 
       {/* Dynamic multi-biome fallback background gradient layer */}
       <div style={{
         position:"fixed",inset:0,pointerEvents:"none",zIndex:-10,
-        // Multi-biome gradient starting at rich red netherrack
         background:`linear-gradient(160deg, #2b0409 0%, #120104 35%, #050001 100%)`,
       }}/>
 
