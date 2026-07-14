@@ -89,6 +89,8 @@ class _NullContext:
 
 
 class TracedBastionMemory:
+    """OpenTelemetry-instrumented wrapper around BastionMemory."""
+
     def __init__(self, memory: BastionMemory):
         self._memory = memory
         self._tracer = trace.get_tracer("bastion-memory", "0.1.0") if _has_otel_api else _NullTracer()

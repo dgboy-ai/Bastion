@@ -25,6 +25,8 @@ DRIFT_DIMENSIONS = [
 
 @dataclass
 class DriftReport:
+    """Report of behavioral drift analysis for an agent."""
+
     agent_id: str
     overall_drift_score: float
     dimensions: dict[str, float]
@@ -65,6 +67,8 @@ def _generate_recommendation(dimensions: dict[str, float], threshold: float) -> 
 
 
 class BehavioralDriftDetector:
+    """Monitors agent behavior for deviation from established baselines."""
+
     def __init__(self, memory: BastionMemory):
         self.memory = memory
         self._watch_thread: threading.Thread | None = None
@@ -345,28 +349,31 @@ def _parse_json_field(v: Any) -> Any:
 
 
 _MOCK_DRIFT_SCORES: dict[str, list[dict[str, Any]]] = {}
+_DRIFT_LOCK = threading.Lock()
 
 
 def _mock_store_drift_score(agent_id: str, report: DriftReport) -> None:
-    if agent_id not in _MOCK_DRIFT_SCORES:
-        _MOCK_DRIFT_SCORES[agent_id] = []
-    _MOCK_DRIFT_SCORES[agent_id].append({
-        "score_id": str(hash(report.overall_drift_score) & 0xFFFFFFFF ^ hash(agent_id) & 0xFFFFFFFF),
-        "agent_id": report.agent_id,
-        "overall_drift_score": report.overall_drift_score,
-        "dimensions": report.dimensions,
-        "baseline_sessions": report.baseline_sessions,
-        "alert_threshold": report.alert_threshold,
-        "status": report.status,
-        "top_drift_signals": report.top_drift_signals,
-        "recommendation": report.recommendation,
-        "scorable_at": datetime.now(UTC).isoformat(),
-    })
+    with _DRIFT_LOCK:
+        if agent_id not in _MOCK_DRIFT_SCORES:
+            _MOCK_DRIFT_SCORES[agent_id] = []
+        _MOCK_DRIFT_SCORES[agent_id].append({
+            "score_id": str(hash(report.overall_drift_score) & 0xFFFFFFFF ^ hash(agent_id) & 0xFFFFFFFF),
+            "agent_id": report.agent_id,
+            "overall_drift_score": report.overall_drift_score,
+            "dimensions": report.dimensions,
+            "baseline_sessions": report.baseline_sessions,
+            "alert_threshold": report.alert_threshold,
+            "status": report.status,
+            "top_drift_signals": report.top_drift_signals,
+            "recommendation": report.recommendation,
+            "scorable_at": datetime.now(UTC).isoformat(),
+        })
 
 
 def _mock_recent_drift_scores(agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
-    scores = _MOCK_DRIFT_SCORES.get(agent_id, [])
-    return scores[-limit:]
+    with _DRIFT_LOCK:
+        scores = _MOCK_DRIFT_SCORES.get(agent_id, [])
+        return scores[-limit:]
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

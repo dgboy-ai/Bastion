@@ -38,6 +38,8 @@ class GraphCycleError(ValueError):
 
 @dataclass
 class ThoughtNode:
+    """A single node in the hierarchical thought graph."""
+
     thought_id: str
     thought_type: ThoughtType
     content: str

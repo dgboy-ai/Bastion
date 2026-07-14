@@ -26,6 +26,8 @@ logger = get_logger(__name__)
 
 
 class ComplianceMode(StrEnum):
+    """Supported regulatory compliance frameworks."""
+
     EU_AI_ACT = "eu_ai_act"
     HIPAA = "hipaa"
     SOC2 = "soc2"

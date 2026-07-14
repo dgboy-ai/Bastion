@@ -12,6 +12,8 @@ logger = get_logger(__name__)
 
 
 class DataRegion(StrEnum):
+    """Supported geographic regions for data residency."""
+
     US_EAST_1 = "us-east-1"
     US_WEST_2 = "us-west-2"
     EU_WEST_1 = "eu-west-1"
@@ -41,6 +43,8 @@ _CRDB_REGION_ALIASES: dict[str, str] = {
 
 @dataclass
 class RegionConfig:
+    """Configuration for a specific data region including compliance frameworks."""
+
     region: DataRegion
     compliance_frameworks: list[str]
     max_latency_ms: int = 100
@@ -130,6 +134,7 @@ class MemoryLocality:
                 finally:
                     pool.release(conn)
             except Exception as exc:
+                logger.exception("Pool error in enable_regional_routing")
                 return {"status": "error", "error": f"Pool error: {exc}"}
 
     def disable_regional_routing(self) -> dict[str, Any]:
@@ -175,6 +180,7 @@ class MemoryLocality:
                     finally:
                         pool.release(conn)
                 except Exception as exc:
+                    logger.exception("Pool error in set_agent_region")
                     return {"status": "error", "error": f"Pool error: {exc}"}
             return {
                 "status": "set",

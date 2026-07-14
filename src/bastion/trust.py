@@ -12,7 +12,25 @@ from bastion.log_setup import get_logger
 logger = get_logger(__name__)
 
 
+# ── Trust Score Constants ──────────────────────────────────────────────────
+
+SOURCE_TRUST_WEIGHTS: dict[str, float] = {
+    "external_web": 0.3,
+    "tool_unverified": 0.5,
+    "tool_verified": 0.7,
+    "agent_direct": 0.9,
+    "system": 1.0,
+}
+
+LEVEL_TRUST_WEIGHTS: dict[int, float] = {0: 0.0, 1: 0.4, 2: 0.7, 3: 0.9, 4: 1.0}
+
+OVERWRITE_PENALTY_SEVERE = 0.5
+OVERWRITE_PENALTY_MODERATE = 0.8
+
+
 class TrustLevel(IntEnum):
+    """Named trust levels for memory provenance and reliability."""
+
     UNTRUSTED = 0
     LOW = 1
     MEDIUM = 2
@@ -22,6 +40,8 @@ class TrustLevel(IntEnum):
 
 @dataclass
 class TrustReport:
+    """Detailed trust assessment result for a single memory record."""
+
     memory_id: str
     trust_score: float
     trust_level: TrustLevel
@@ -60,11 +80,9 @@ def compute_trust_score(
             source_provenance=source_provenance, poisoning_risk="CRITICAL", flags=flags,
         )
 
-    source_map = {"external_web": 0.3, "tool_unverified": 0.5, "tool_verified": 0.7, "agent_direct": 0.9, "system": 1.0}
-    score *= source_map.get(source_provenance, 0.5)
+    score *= SOURCE_TRUST_WEIGHTS.get(source_provenance, 0.5)
 
-    level_map = {0: 0.0, 1: 0.4, 2: 0.7, 3: 0.9, 4: 1.0}
-    score *= level_map.get(trust_level, 0.5)
+    score *= LEVEL_TRUST_WEIGHTS.get(trust_level, 0.5)
 
     # Trust score thresholds for overwrite penalty
     OVERWRITE_WARN_THRESHOLD = 3
@@ -74,9 +92,9 @@ def compute_trust_score(
         flags.append("RAPID_OVERWRITE")
 
     if overwrite_count > OVERWRITE_PENALTY_THRESHOLD:
-        score *= 0.5
+        score *= OVERWRITE_PENALTY_SEVERE
     elif overwrite_count > OVERWRITE_WARN_THRESHOLD:
-        score *= 0.8
+        score *= OVERWRITE_PENALTY_MODERATE
 
     # Age-based decay thresholds (in hours)
     AGE_OLD_HOURS = 2160   # 90 days
