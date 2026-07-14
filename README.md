@@ -221,12 +221,32 @@ python -m pytest tests/ -v
 
 ## Documentation
 
-| Guide | Link |
-|-------|------|
-| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| AI Safety | [docs/AI_SAFETY.md](docs/AI_SAFETY.md) |
-| CockroachDB Tools | [docs/COCKROACHDB_TOOLS.md](docs/COCKROACHDB_TOOLS.md) |
-| Deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Guide | Description |
+|-------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | System architecture and design decisions |
+| [AI Safety](docs/AI_SAFETY.md) | OWASP ASI06 guard, PII detection, security |
+| [CockroachDB Tools](docs/COCKROACHDB_TOOLS.md) | How we use MCP, C-SPANN, ccloud CLI, Agent Skills |
+| [AWS Services](docs/AWS_SERVICES.md) | Bedrock, Lambda, S3, KMS integration |
+| [MCP Server](docs/MCP_SERVER.md) | 25 tools, 4 resources, 3 prompts |
+| [A2A Server](docs/A2A_SERVER.md) | Agent-to-agent protocol implementation |
+| [Integration](docs/INTEGRATION.md) | LangChain, CrewAI, LlamaIndex adapters |
+| [Deployment](docs/DEPLOYMENT.md) | Docker, AWS, CockroachDB Serverless |
+| [Development](docs/DEVELOPMENT.md) | Local setup, testing, contributing |
+| [Comparison](docs/COMPARISON.md) | vs Mem0, Zep, Cognee, Letta |
+| [Judge's Guide](docs/JUDGES_GUIDE.md) | Step-by-step evaluation walkthrough |
+| [Problems Solved](docs/PROBLEMS_SOLVED.md) | Amnesia, poisoning, crashes |
+| [Repo Map](docs/REPO_MAP.md) | Codebase structure overview |
+
+### Architecture Decision Records
+
+| ADR | Decision |
+|-----|----------|
+| [001](docs/adr/001-hash-chain-integrity.md) | SHA-256 hash chains for memory integrity |
+| [002](docs/adr/002-c-spann-vector-indexing.md) | C-SPANN vector index design |
+| [003](docs/adr/003-time-travel-memory.md) | AS OF SYSTEM TIME queries |
+| [004](docs/adr/004-serializable-coordination.md) | SERIALIZABLE isolation |
+| [005](docs/adr/005-cdc-self-healing.md) | CDC-based self-healing |
+| [006](docs/adr/006-dual-language-sdk.md) | Python + TypeScript SDKs |
 
 ---
 
