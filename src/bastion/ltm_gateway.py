@@ -272,7 +272,7 @@ class LTMMemoryGateway:
 
         record = self._memory.store(
             memory_type=analysis_type,
-            content=result,
+            content=f"[LTM] Query: {query}\nResult: {result}",
             metadata=meta,
         )
 
