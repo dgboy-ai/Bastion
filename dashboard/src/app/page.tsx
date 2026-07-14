@@ -1,3 +1,16 @@
+
+/* -- Demo Data Banner ---------------------------------------- */
+function DemoDataBanner() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div style={{ position: "fixed", top: "60px", left: 0, right: 0, zIndex: 99, padding: "8px 48px", background: "rgba(255,165,0,0.15)", borderBottom: "1px solid rgba(255,165,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", backdropFilter: "blur(12px)" }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "2px", color: "#ffa500" }}>Demo Data</span>
+      <span style={{ fontSize: "12px", color: "#b0a899" }}>This dashboard shows simulated data. Connect real CockroachDB for live metrics.</span>
+      <button onClick={() => setDismissed(true)} style={{ background: "none", border: "none", color: "#ffa500", cursor: "pointer", fontSize: "14px", fontWeight: 700, padding: "0 8px" }}>×</button>
+    </div>
+  );
+}
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -773,7 +786,7 @@ export default function LandingPage() {
     <div style={{ position: "relative", minHeight: "100vh", overflowY: "auto" }}>
       <CursorGlow />
       <ScrollProgressBar />
-      <FireEmbers />
+      <FireEmbers />`n      <DemoDataBanner />
       <Navbar />
       <Hero />
       <LogoStrip />

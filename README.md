@@ -7,7 +7,7 @@
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-blue.svg)](https://spec.modelcontextprotocol.io)
 [![Tests](https://img.shields.io/badge/Tests-1147%20passed-brightgreen)](#-test-verification-suite)
 
-> **The system of record for autonomous AI systems. A persistent, secure, and self-healing memory engine that survives serverless crashes—so your agent swarms never forget.**
+> **The forensic system of record for autonomous agents. When an agent is poisoned, Bastion detects it, travels back to inspect the prior belief, and restores a verified state with cryptographic proof.**
 
 [Live Demo](https://bastion-self.vercel.app/) · [Dashboard](https://bastion-self.vercel.app/dashboard) · [Documentation](https://bastion-self.vercel.app/docs)
 
