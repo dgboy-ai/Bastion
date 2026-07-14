@@ -68,8 +68,8 @@ const C = {
   soulFire: "#00e5ff",
   portalPurple: "#b026ff",
   ink: "#ffffff",
-  body: "#f3eaeb", // Max visibility light gray
-  mute: "#b89f9f", // Brighter mute gray
+  body: "#fcf8f9", // Max visibility high-contrast white
+  mute: "#cfb5b7", // Brightened mute text
   hairline: "rgba(255, 42, 0, 0.3)",
 };
 
@@ -155,7 +155,7 @@ function SpotlightCard({ children, color = C.lava, className = "", style = {} }:
   );
 }
 
-/* ── Full Screen Volcanic Canvas (Lava Falls, Magma Veins & Heat Shimmer) ── */
+/* ── Full Screen Volcanic Canvas (One Big Waterfall, Magma blocks & Shimmer) ── */
 function NetherFallsCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -171,126 +171,174 @@ function NetherFallsCanvas() {
     };
     window.addEventListener("resize", resize);
 
-    // Grid obsidian pillars
-    const pillars = [
-      { x: w * 0.02, width: 80, height: h * 0.75 },
-      { x: w * 0.12, width: 130, height: h * 0.9 },
-      { x: w * 0.78, width: 140, height: h * 0.92 },
-      { x: w * 0.9, width: 90, height: h * 0.72 },
-    ];
+    // Big Lava Waterfall configuration (on the right)
+    const waterfall = {
+      x: w * 0.82,
+      width: 125, // Wide realistic stream
+      flowSpeed: 4,
+    };
 
-    // Branching magma cracks across the screen background
+    // Branching magma cracks across center background
     const cracks = [
-      { startX: w * 0.2, startY: 0, endX: w * 0.4, endY: h },
-      { startX: w * 0.4, startY: h * 0.3, endX: w * 0.1, endY: h * 0.8 },
-      { startX: w * 0.7, startY: 0, endX: w * 0.6, endY: h },
-      { startX: w * 0.5, startY: h * 0.4, endX: w * 0.85, endY: h * 0.9 },
+      { startX: w * 0.15, startY: -100, endX: w * 0.35, endY: h + 100 },
+      { startX: w * 0.35, startY: h * 0.3, endX: w * 0.05, endY: h * 0.85 },
+      { startX: w * 0.65, startY: -100, endX: w * 0.5, endY: h + 100 },
+      { startX: w * 0.45, startY: h * 0.4, endX: w * 0.75, endY: h * 0.9 },
     ];
 
-    const lavaParticles: Array<{ x: number; y: number; vy: number; size: number }> = [];
-    const splashParticles: Array<{ x: number; y: number; vx: number; vy: number; size: number; life: number; color: string }> = [];
-    const magmaFlowOffset = { val: 0 };
+    // Magma blocks on the left (glowing Minecraft blocks details)
+    const magmaBlocks = [
+      { x: w * 0.04, y: h * 0.15, size: 50 },
+      { x: w * 0.06, y: h * 0.5, size: 60 },
+      { x: w * 0.02, y: h * 0.8, size: 55 },
+    ];
 
-    const embers = Array.from({ length: 120 }, () => ({
+    // Splashes & steam at the base of the waterfall
+    const splashParticles: Array<{ x: number; y: number; vx: number; vy: number; size: number; life: number; color: string }> = [];
+    const steamParticles: Array<{ x: number; y: number; vx: number; vy: number; size: number; life: number; opacity: number }> = [];
+    const currentsOffset = { val: 0 };
+
+    // Floating sparks/embers (Across screen)
+    const embers = Array.from({ length: 95 }, () => ({
       x: Math.random() * w,
       y: h + Math.random() * 200,
-      vx: (Math.random() - 0.5) * 1.0,
-      vy: -(Math.random() * 1.8 + 0.8),
-      size: Math.random() * 4.5 + 1.5,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: -(Math.random() * 1.5 + 0.6),
+      size: Math.random() * 4 + 1.2,
       life: Math.random(),
       decay: Math.random() * 0.003 + 0.0015,
-      color: Math.random() > 0.82 ? C.soulFire : Math.random() > 0.45 ? C.magma : C.lava,
+      color: Math.random() > 0.85 ? C.soulFire : Math.random() > 0.45 ? C.magma : C.lava,
     }));
 
     let raf: number;
+    let pulseTime = 0;
+
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
+      pulseTime += 0.03;
+
+      // Scroll Offset for Parallax Effect
+      const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
+      const py = scrollY * 0.45; // Background scrolls at 45% speed
 
       // Deep Nether base gradient
       const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
       bgGrad.addColorStop(0, "#040104");
-      bgGrad.addColorStop(0.5, "#0a0205");
+      bgGrad.addColorStop(0.5, "#0b0206");
       bgGrad.addColorStop(1, "#100205");
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, w, h);
 
-      // Draw flowing magma cracks across background center
-      magmaFlowOffset.val += 0.4;
+      // Draw Minecraft Bastion silhouettes on the left side (with scroll parallax)
+      ctx.fillStyle = "rgba(12, 4, 8, 0.96)";
+      ctx.fillRect(0, 0, w * 0.15, h);
+      
+      // Fortress battlement crenellations
+      ctx.fillStyle = "rgba(7, 2, 5, 0.98)";
+      for (let y = -py % 120; y < h; y += 120) {
+        ctx.fillRect(w * 0.15 - 15, y, 15, 60);
+      }
+
+      // Draw pulsating Minecraft-style Magma Blocks on the left (with scroll parallax)
+      magmaBlocks.forEach(mb => {
+        const glow = 0.5 + Math.sin(pulseTime * 2 + mb.x) * 0.3;
+        const targetY = mb.y - py;
+        // Only draw if on screen
+        if (targetY > -100 && targetY < h + 100) {
+          ctx.fillStyle = `rgba(32, 8, 12, 0.95)`;
+          ctx.fillRect(mb.x, targetY, mb.size, mb.size);
+          ctx.strokeStyle = `rgba(255, 98, 0, ${glow})`;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(mb.x + 3, targetY + 3, mb.size - 6, mb.size - 6);
+          ctx.beginPath();
+          ctx.moveTo(mb.x + mb.size / 2, targetY + 3);
+          ctx.lineTo(mb.x + mb.size / 2, targetY + mb.size - 3);
+          ctx.moveTo(mb.x + 3, targetY + mb.size / 2);
+          ctx.lineTo(mb.x + mb.size - 3, targetY + mb.size / 2);
+          ctx.stroke();
+        }
+      });
+
+      // Draw flowing magma cracks across background center (with scroll parallax)
+      currentsOffset.val += 0.3;
       ctx.lineWidth = 4;
       cracks.forEach(c => {
-        // Base glowing heat line
+        const sY = c.startY - py;
+        const eY = c.endY - py;
+        
         ctx.beginPath();
-        ctx.moveTo(c.startX, c.startY);
-        ctx.lineTo(c.endX, c.endY);
-        ctx.strokeStyle = "rgba(255, 42, 0, 0.15)";
-        ctx.lineWidth = 14;
+        ctx.moveTo(c.startX, sY);
+        ctx.lineTo(c.endX, eY);
+        ctx.strokeStyle = "rgba(255, 42, 0, 0.12)";
+        ctx.lineWidth = 12;
         ctx.stroke();
 
-        // Molten core line
         ctx.beginPath();
-        ctx.moveTo(c.startX, c.startY);
-        ctx.lineTo(c.endX, c.endY);
+        ctx.moveTo(c.startX, sY);
+        ctx.lineTo(c.endX, eY);
         ctx.strokeStyle = C.magma;
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([20, 40]);
-        ctx.lineDashOffset = -magmaFlowOffset.val;
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([15, 40]);
+        ctx.lineDashOffset = -currentsOffset.val * 3;
         ctx.stroke();
         ctx.setLineDash([]); // Reset
       });
 
-      // Draw dark pillars
-      ctx.fillStyle = "rgba(10, 3, 6, 0.95)";
-      pillars.forEach(p => {
-        ctx.fillRect(p.x, h - p.height, p.width, p.height);
-        ctx.fillStyle = "rgba(6, 1, 3, 0.98)";
-        for (let bx = p.x; bx < p.x + p.width; bx += 20) {
-          ctx.fillRect(bx, h - p.height - 12, 10, 12);
-        }
-        ctx.fillStyle = "rgba(10, 3, 6, 0.95)";
-      });
+      // ── Draw ONE Wide Lava Waterfall on the Right ──
+      const wf = waterfall;
+      // Main 3D cylinder gradient for the waterfall body (remains relative to view)
+      const wfGrad = ctx.createLinearGradient(wf.x, 0, wf.x + wf.width, 0);
+      wfGrad.addColorStop(0, "rgba(139, 0, 0, 0.95)"); // Deep red edge
+      wfGrad.addColorStop(0.25, "rgba(255, 55, 0, 0.98)"); // Bright red
+      wfGrad.addColorStop(0.5, "rgba(255, 200, 0, 0.98)"); // Yellow core
+      wfGrad.addColorStop(0.75, "rgba(255, 55, 0, 0.98)");
+      wfGrad.addColorStop(1, "rgba(139, 0, 0, 0.95)");
 
-      // Spawn lava stream particles
-      pillars.forEach(p => {
-        if (Math.random() > 0.2) {
-          lavaParticles.push({
-            x: p.x + p.width * 0.5 + (Math.random() - 0.5) * 10,
-            y: h - p.height,
-            vy: Math.random() * 4.5 + 3.0,
-            size: Math.random() * 4.5 + 2.5,
-          });
-        }
-      });
+      ctx.fillStyle = wfGrad;
+      ctx.fillRect(wf.x, 0, wf.width, h);
 
-      // Update and draw waterfalls
-      for (let i = lavaParticles.length - 1; i >= 0; i--) {
-        const lp = lavaParticles[i];
-        lp.y += lp.vy;
-
+      // Flowing streaks/currents inside the waterfall body
+      ctx.lineWidth = 4;
+      for (let offset = 0; offset < wf.width; offset += 20) {
         ctx.beginPath();
-        ctx.arc(lp.x, lp.y, lp.size, 0, Math.PI * 2);
-        ctx.fillStyle = C.lava;
-        ctx.shadowColor = C.lavaLight;
-        ctx.shadowBlur = 14;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.moveTo(wf.x + offset, 0);
+        ctx.lineTo(wf.x + offset, h);
+        ctx.strokeStyle = offset % 40 === 0 ? "rgba(255, 230, 0, 0.35)" : "rgba(255, 80, 0, 0.25)";
+        ctx.setLineDash([50, 150]);
+        ctx.lineDashOffset = -currentsOffset.val * (6 + (offset % 3));
+        ctx.stroke();
+      }
+      ctx.setLineDash([]); // Reset
 
-        if (lp.y >= h - 16) {
-          for (let s = 0; s < 4; s++) {
-            splashParticles.push({
-              x: lp.x,
-              y: h - 16,
-              vx: (Math.random() - 0.5) * 6,
-              vy: -(Math.random() * 5.0 + 2.5),
-              size: Math.random() * 3.0 + 1.5,
-              life: 1.0,
-              color: Math.random() > 0.45 ? C.magma : C.lava,
-            });
-          }
-          lavaParticles.splice(i, 1);
+      // Spawn splashes at the base (bottom)
+      if (Math.random() > 0.1) {
+        for (let s = 0; s < 3; s++) {
+          splashParticles.push({
+            x: wf.x + Math.random() * wf.width,
+            y: h - 25,
+            vx: (Math.random() - 0.5) * 8,
+            vy: -(Math.random() * 6.5 + 3.0),
+            size: Math.random() * 4.0 + 2.0,
+            life: 1.0,
+            color: Math.random() > 0.4 ? C.magma : C.lava,
+          });
         }
       }
 
-      // Update and draw splashes
+      // Spawn steam/smoke drifting up from base
+      if (Math.random() > 0.15) {
+        steamParticles.push({
+          x: wf.x + wf.width / 2 + (Math.random() - 0.5) * 80,
+          y: h - 30,
+          vx: (Math.random() - 0.5) * 2,
+          vy: -(Math.random() * 1.5 + 0.8),
+          size: Math.random() * 25 + 15,
+          life: 1.0,
+          opacity: 0.22,
+        });
+      }
+
+      // Draw and update splashes
       for (let i = splashParticles.length - 1; i >= 0; i--) {
         const sp = splashParticles[i];
         sp.x += sp.vx;
@@ -306,24 +354,49 @@ function NetherFallsCanvas() {
         ctx.beginPath();
         ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
         ctx.fillStyle = sp.color === C.magma ? `rgba(255, 156, 0, ${sp.life})` : `rgba(255, 42, 0, ${sp.life})`;
+        ctx.shadowColor = sp.color;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Draw and update steam/smoke
+      for (let i = steamParticles.length - 1; i >= 0; i--) {
+        const sm = steamParticles[i];
+        sm.x += sm.vx;
+        sm.y += sm.vy;
+        sm.life -= 0.012;
+
+        if (sm.life <= 0) {
+          steamParticles.splice(i, 1);
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.arc(sm.x, sm.y, sm.size, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(sm.x, sm.y, 0, sm.x, sm.y, sm.size);
+        grad.addColorStop(0, `rgba(255, 98, 0, ${sm.life * sm.opacity})`);
+        grad.addColorStop(0.5, `rgba(8, 2, 5, ${sm.life * sm.opacity * 0.6})`);
+        grad.addColorStop(1, "rgba(8, 2, 5, 0)");
+        ctx.fillStyle = grad;
         ctx.fill();
       }
 
       // Update and draw floating embers
       for (const e of embers) {
-        e.x += e.vx + Math.sin(e.life * 5) * 0.35;
+        e.x += e.vx + Math.sin(e.life * 5) * 0.3;
         e.y += e.vy;
         e.life -= e.decay;
 
         if (e.life <= 0 || e.y < -30) {
           e.x = Math.random() * w;
-          e.y = h + Math.random() * 120;
+          e.y = h + Math.random() * 100;
           e.life = 1;
         }
 
         const alpha = e.life * 0.95;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.size * 4.5, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, e.size * 4, 0, Math.PI * 2);
         ctx.fillStyle = e.color === C.soulFire 
           ? `rgba(0, 229, 255, ${alpha * 0.05})` 
           : `rgba(255, 42, 0, ${alpha * 0.05})`;
@@ -352,10 +425,10 @@ function NetherFallsCanvas() {
       {/* Dynamic Heat Wave Distortion Filter */}
       <svg style={{ position: "absolute", width: 0, height: 0 }}>
         <filter id="heat-shimmer">
-          <feTurbulence type="fractalNoise" baseFrequency="0.015 0.04" numOctaves="2" result="noise">
-            <animate attributeName="baseFrequency" dur="18s" values="0.015 0.04;0.015 0.07;0.015 0.04" repeatCount="indefinite" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.04" numOctaves="2" result="noise">
+            <animate attributeName="baseFrequency" dur="16s" values="0.012 0.04;0.012 0.06;0.012 0.04" repeatCount="indefinite" />
           </feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" xChannelSelector="R" yChannelSelector="G" />
         </filter>
       </svg>
       <canvas 
@@ -363,9 +436,9 @@ function NetherFallsCanvas() {
         style={{ 
           position: "fixed", 
           inset: 0, 
-          zIndex: 1, 
+          zIndex: -1, // Sits safely behind content overlays
           pointerEvents: "none",
-          filter: "url(#heat-shimmer)" // Apply real-time heat shimmer distortion
+          filter: "url(#heat-shimmer)" // Apply heat shimmer distortion
         }} 
       />
     </>
@@ -466,12 +539,12 @@ function ConsolidationVisualizer() {
   }, []);
 
   return (
-    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "rgba(6,3,7,0.55)", backdropFilter: "blur(16px)" }}>
+    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "transparent" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto", position: "relative", zIndex: 10 }}>
         <div style={{ textAlign: "center", marginBottom: "80px" }}>
-          <div className="nether-eyebrow">Structured Memory Consolidation</div>
-          <h2 className="nether-title">Consolidation Engine</h2>
-          <p className="nether-desc" style={{ margin: "16px auto 0" }}>
+          <div className="nether-eyebrow" style={{ textShadow: "0 2px 5px rgba(0,0,0,0.8)" }}>Structured Memory Consolidation</div>
+          <h2 className="nether-title" style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>Consolidation Engine</h2>
+          <p className="nether-desc" style={{ margin: "16px auto 0", textShadow: "0 2px 10px rgba(0,0,0,0.95)" }}>
             Watch how Bastion's sleep-time Consolidation daemon runs asynchronously to compress redundant logs and merge contradictions.
           </p>
         </div>
@@ -489,21 +562,22 @@ function ConsolidationVisualizer() {
                 <div key={idx} style={{
                   padding: "24px",
                   borderRadius: "8px",
-                  background: step.active ? "rgba(255, 55, 0, 0.04)" : "transparent",
+                  background: step.active ? "rgba(255, 55, 0, 0.08)" : "rgba(8, 2, 6, 0.65)",
                   borderLeft: `4px solid ${step.active ? step.color : "transparent"}`,
-                  border: step.active ? `1px solid ${C.hairline}` : "1px solid transparent",
+                  border: step.active ? `1px solid ${C.hairline}` : "1px solid rgba(255, 255, 255, 0.05)",
                   transition: "all 0.4s ease-in-out",
-                  opacity: step.active ? 1 : 0.45,
+                  opacity: step.active ? 1 : 0.6,
+                  boxShadow: "0 4px 15px rgba(0,0,0,0.45)",
                 }}>
-                  <h3 style={{ fontSize: "19px", fontWeight: 700, color: "#fff", margin: "0 0 6px 0", fontFamily: "var(--font-space-grotesk), sans-serif" }}>{step.title}</h3>
-                  <p style={{ fontSize: "15px", color: C.body, margin: 0, lineHeight: 1.6, fontFamily: "var(--font-inter), sans-serif" }}>{step.desc}</p>
+                  <h3 style={{ fontSize: "19px", fontWeight: 700, color: "#fff", margin: "0 0 6px 0", fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>{step.title}</h3>
+                  <p style={{ fontSize: "15px", color: C.body, margin: 0, lineHeight: 1.6, fontFamily: "var(--font-inter), sans-serif", textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>{step.desc}</p>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Animation Canvas Wrapper */}
-          <div className="panel" style={{ padding: "40px", minHeight: "380px", display: "flex", flexDirection: "column", justifyContent: "center", background: "rgba(8,3,8,0.9)", border: `1px solid ${C.hairline}` }}>
+          <div className="panel" style={{ padding: "40px", minHeight: "380px", display: "flex", flexDirection: "column", justifyContent: "center", background: "rgba(8,3,8,0.92)", border: `1px solid ${C.hairline}`, boxShadow: "0 15px 35px rgba(0,0,0,0.8)" }}>
             <div style={{ textAlign: "center", marginBottom: "30px", fontFamily: "var(--font-mono), monospace", fontSize: "12px", color: C.mute, letterSpacing: "1px" }}>
               CONSOLIDATION_STATE: {stage === 0 ? "SCANNING_NODES" : stage === 1 ? "CLUSTERING_VECTORS" : stage === 2 ? "RESOLVING_CONFLICTS" : "COMMITING_LEDGER"}
             </div>
@@ -589,20 +663,20 @@ function ConsolidationVisualizer() {
 /* ── Comparison Table ────────────────────────────────────────── */
 function NetherComparison() {
   return (
-    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "rgba(6,3,7,0.55)", backdropFilter: "blur(16px)" }}>
+    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "transparent" }}>
       <div style={{ maxWidth: "1000px", margin: "0 auto", position: "relative", zIndex: 10 }}>
         <div style={{ textAlign: "center", marginBottom: "70px" }}>
-          <div className="nether-eyebrow">Comparison Matrix</div>
-          <h2 className="nether-title">Rivaling the Alternatives</h2>
-          <p className="nether-desc" style={{ margin: "16px auto 0" }}>
+          <div className="nether-eyebrow" style={{ textShadow: "0 2px 5px rgba(0,0,0,0.8)" }}>Comparison Matrix</div>
+          <h2 className="nether-title" style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>Rivaling the Alternatives</h2>
+          <p className="nether-desc" style={{ margin: "16px auto 0", textShadow: "0 2px 10px rgba(0,0,0,0.95)" }}>
             Why leading autonomous agent frameworks rely on the Bastion memory model.
           </p>
         </div>
 
-        <div style={{ background: "rgba(10,5,16,0.65)", border: `1px solid ${C.hairline}`, borderRadius: "12px", overflow: "hidden", backdropFilter: "blur(12px)" }}>
+        <div style={{ background: "rgba(10,5,16,0.72)", border: `1px solid ${C.hairline}`, borderRadius: "12px", overflow: "hidden", backdropFilter: "blur(12px)", boxShadow: "0 15px 35px rgba(0,0,0,0.8)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "15px" }}>
             <thead>
-              <tr style={{ borderBottom: `1px solid ${C.hairline}`, background: "rgba(27,10,14,0.4)" }}>
+              <tr style={{ borderBottom: `1px solid ${C.hairline}`, background: "rgba(27,10,14,0.6)" }}>
                 {["Feature Check", "Bastion", "Mem0", "Zep"].map((h) => (
                   <th key={h} style={{ padding: "22px 24px", textAlign: "left", fontFamily: "var(--font-mono), monospace", fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: C.mute, fontWeight: 700 }}>{h}</th>
                 ))}
@@ -617,8 +691,8 @@ function NetherComparison() {
                 { name: "Multi-Region Distributed Sync", bastion: "6 Regions (Global Sync)", mem0: "Single instance", zep: "Custom replications", highlight: false },
                 { name: "Developer Cost", bastion: "MIT Free / Open Source", mem0: "$249/mo (Cloud)", zep: "$125/mo (Cloud)", highlight: true },
               ].map((r, idx) => (
-                <tr key={idx} className="comparison-table-row" style={{ borderBottom: idx < 5 ? `1px solid ${C.hairline}` : "none", background: r.highlight ? "rgba(255, 60, 0, 0.03)" : "transparent" }}>
-                  <td style={{ padding: "20px 24px", color: "#fff", fontWeight: 600, fontFamily: "var(--font-space-grotesk), sans-serif" }}>{r.name}</td>
+                <tr key={idx} className="comparison-table-row" style={{ borderBottom: idx < 5 ? `1px solid ${C.hairline}` : "none", background: r.highlight ? "rgba(255, 60, 0, 0.05)" : "transparent" }}>
+                  <td style={{ padding: "20px 24px", color: "#fff", fontWeight: 600, fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>{r.name}</td>
                   <td style={{ padding: "20px 24px", color: r.highlight ? C.gold : C.soulFire, fontWeight: 700 }}>{r.bastion}</td>
                   <td style={{ padding: "20px 24px", color: C.body }}>{r.mem0}</td>
                   <td style={{ padding: "20px 24px", color: C.body }}>{r.zep}</td>
@@ -644,27 +718,27 @@ function FAQSection() {
   ];
 
   return (
-    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "rgba(6,3,7,0.55)", backdropFilter: "blur(16px)" }}>
+    <ScrollFadeSection style={{ borderTop: `1px solid ${C.hairline}`, padding: "140px 48px", background: "transparent" }}>
       <div style={{ maxWidth: "800px", margin: "0 auto", position: "relative", zIndex: 10 }}>
         <div style={{ textAlign: "center", marginBottom: "70px" }}>
-          <div className="nether-eyebrow">Scroll Scrolls</div>
-          <h2 className="nether-title">Frequently Answered</h2>
+          <div className="nether-eyebrow" style={{ textShadow: "0 2px 5px rgba(0,0,0,0.8)" }}>Scroll Scrolls</div>
+          <h2 className="nether-title" style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>Frequently Answered</h2>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           {faqs.map((faq, i) => (
-            <div key={i} className="faq-item-card" style={{ background: "rgba(10,5,16,0.75)", border: `1px solid ${C.hairline}`, borderRadius: "8px", overflow: "hidden" }}>
+            <div key={i} className="faq-item-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", overflow: "hidden", boxShadow: "0 4px 15px rgba(0,0,0,0.45)" }}>
               <button 
                 onClick={() => setOpenIdx(openIdx === i ? null : i)}
                 style={{ width: "100%", padding: "24px 28px", background: "transparent", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
               >
-                <span style={{ fontSize: "17px", fontWeight: 700, color: "#fff", textAlign: "left", fontFamily: "var(--font-space-grotesk), sans-serif" }}>{faq.q}</span>
+                <span style={{ fontSize: "17px", fontWeight: 700, color: "#fff", textAlign: "left", fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>{faq.q}</span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.mute} strokeWidth="2" style={{ transform: openIdx === i ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease" }}>
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
               <div style={{ maxHeight: openIdx === i ? "200px" : "0", overflow: "hidden", transition: "max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-                <p style={{ padding: "0 28px 24px", fontSize: "15px", lineHeight: "1.7", color: C.body, margin: 0, fontFamily: "var(--font-inter), sans-serif" }}>{faq.a}</p>
+                <p style={{ padding: "0 28px 24px", fontSize: "15px", lineHeight: "1.7", color: C.body, margin: 0, fontFamily: "var(--font-inter), sans-serif", textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>{faq.a}</p>
               </div>
             </div>
           ))}
@@ -684,7 +758,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${inter.variable}`} style={{ position: "relative", minHeight: "100vh", background: C.obsidian, overflowX: "hidden", fontFamily: "var(--font-inter), sans-serif" }}>
+    <div className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${inter.variable}`} style={{ position: "relative", minHeight: "100vh", background: "transparent", overflowX: "hidden", fontFamily: "var(--font-inter), sans-serif" }}>
       {/* Scroll progress bar */}
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "4px", zIndex: 1000, background: "rgba(255, 55, 0, 0.05)" }}>
         <div style={{ height: "100%", width: `${scrollProgress * 100}%`, background: `linear-gradient(90deg, ${C.lava}, ${C.magma}, ${C.gold})`, boxShadow: `0 0 15px ${C.lava}` }} />
@@ -710,7 +784,16 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "160px 48px 100px", position: "relative", zIndex: 2, background: "rgba(6,3,7,0.3)" }}>
+      <section style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "160px 48px 100px", position: "relative", zIndex: 2 }}>
+        {/* Dark backing overlay with a smooth gradient to merge Hero background with lower backgrounds seamlessly */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          background: "linear-gradient(180deg, rgba(4, 1, 4, 0.92) 0%, rgba(4, 1, 4, 0.7) 60%, rgba(4, 1, 4, 0.45) 85%, rgba(4, 1, 4, 0.25) 100%)",
+          zIndex: -1,
+          pointerEvents: "none"
+        }} />
+
         <div style={{ width: "100%", maxWidth: "1240px", display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: "60px", alignItems: "center", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(50px)", transition: "opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), transform 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}>
           
           {/* Hero Content Left */}
@@ -720,13 +803,13 @@ export default function LandingPage() {
               <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.gold }}>Bastion Secure Ledger Active</span>
             </div>
 
-            <h1 className="hero-giant-title" style={{ fontSize: "clamp(70px, 9vw, 130px)", fontWeight: 900, lineHeight: "0.85", letterSpacing: "-4.5px", color: "#fff", marginBottom: "28px", fontFamily: "var(--font-space-grotesk), sans-serif" }}>
+            <h1 className="hero-giant-title" style={{ fontSize: "clamp(70px, 9vw, 130px)", fontWeight: 900, lineHeight: "0.85", letterSpacing: "-4.5px", color: "#fff", marginBottom: "28px", fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 4px 15px rgba(0,0,0,0.85)" }}>
               THE FORTRESS<br />
               OF AGENTIC<br />
               <span className="magma-glowing-text" style={{ background: `linear-gradient(135deg, ${C.lava}, ${C.magma}, ${C.gold}, ${C.lava})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", textShadow: `0 0 50px rgba(255, 55, 0, 0.35)` }}>MEMORY</span>
             </h1>
 
-            <p style={{ fontSize: "19.5px", lineHeight: "1.8", color: C.body, maxWidth: "580px", marginBottom: "44px" }}>
+            <p style={{ fontSize: "20.5px", lineHeight: "1.8", color: "#ffffff", fontWeight: 600, maxWidth: "580px", marginBottom: "44px", textShadow: "0 2px 12px rgba(0, 0, 0, 0.98)" }}>
               Persistent, self-healing memory designed for autonomous AI agents. Survives server crashes, blocks malicious prompt poisoning, and syncs across 6 regions. Forged in CockroachDB.
             </p>
 
@@ -752,8 +835,8 @@ export default function LandingPage() {
         <div style={{ width: "100%", maxWidth: "1240px", marginTop: "110px", opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(30px)", transition: "opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.3s" }}>
           <div style={{ borderBottom: `1px solid ${C.hairline}`, paddingBottom: "16px", marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
             <div>
-              <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "12px", color: C.lava, fontWeight: 700, letterSpacing: "2.5px", textTransform: "uppercase" }}>Quick Start Portal</span>
-              <h2 style={{ fontSize: "26px", fontWeight: 800, color: "#fff", margin: "4px 0 0 0", fontFamily: "var(--font-space-grotesk), sans-serif" }}>Guided Onboarding Views</h2>
+              <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: "12px", color: C.lava, fontWeight: 700, letterSpacing: "2.5px", textTransform: "uppercase", textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>Quick Start Portal</span>
+              <h2 style={{ fontSize: "26px", fontWeight: 800, color: "#fff", margin: "4px 0 0 0", fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>Guided Onboarding Views</h2>
             </div>
             <span style={{ fontSize: "13px", color: C.mute, fontFamily: "var(--font-mono), monospace" }}>JUDGES_RECOMMENDED</span>
           </div>
@@ -800,8 +883,8 @@ export default function LandingPage() {
                       <span className="badge-mono" style={{ background: `${tour.color}15`, color: tour.color, border: `1px solid ${tour.color}25` }}>{tour.badge}</span>
                       <span style={{ fontSize: "18px" }}>➡️</span>
                     </div>
-                    <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#fff", margin: "0 0 8px 0", fontFamily: "var(--font-space-grotesk), sans-serif" }}>{tour.title}</h3>
-                    <p style={{ fontSize: "14px", color: C.body, lineHeight: "1.6", margin: 0, fontFamily: "var(--font-inter), sans-serif" }}>{tour.desc}</p>
+                    <h3 style={{ fontSize: "18px", fontWeight: 700, color: "#fff", margin: "0 0 8px 0", fontFamily: "var(--font-space-grotesk), sans-serif", textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>{tour.title}</h3>
+                    <p style={{ fontSize: "14px", color: C.body, lineHeight: "1.6", margin: 0, fontFamily: "var(--font-inter), sans-serif", textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}>{tour.desc}</p>
                   </div>
                 </SpotlightCard>
               </Link>
@@ -836,7 +919,7 @@ export default function LandingPage() {
         
         .nether-section {
           position: relative;
-          zIndex: 2;
+          z-index: 2;
         }
         
         .nether-eyebrow {
