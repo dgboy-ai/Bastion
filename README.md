@@ -221,32 +221,40 @@ python -m pytest tests/ -v
 
 ## Documentation
 
+**Start here:**
+- [Judge's Guide](docs/JUDGES_GUIDE.md) — 2-minute evaluation walkthrough
+- [CockroachDB Tools](docs/COCKROACHDB_TOOLS.md) — How we use MCP, C-SPANN, ccloud CLI
+- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
+
+**Learn more:**
+- [AI Safety](docs/AI_SAFETY.md) — OWASP ASI06 guard, PII detection
+- [Problems Solved](docs/PROBLEMS_SOLVED.md) — Amnesia, poisoning, crashes
+- [AWS Services](docs/AWS_SERVICES.md) — Bedrock, Lambda, S3, KMS
+- [Comparison](docs/COMPARISON.md) — vs Mem0, Zep, Cognee, Letta
+- [Deployment](docs/DEPLOYMENT.md) — Docker, AWS, CockroachDB Serverless
+
+<details>
+<summary>All Documentation (13 guides + 6 ADRs)</summary>
+
 | Guide | Description |
 |-------|-------------|
-| [Architecture](docs/ARCHITECTURE.md) | System architecture and design decisions |
-| [AI Safety](docs/AI_SAFETY.md) | OWASP ASI06 guard, PII detection, security |
-| [CockroachDB Tools](docs/COCKROACHDB_TOOLS.md) | How we use MCP, C-SPANN, ccloud CLI, Agent Skills |
-| [AWS Services](docs/AWS_SERVICES.md) | Bedrock, Lambda, S3, KMS integration |
 | [MCP Server](docs/MCP_SERVER.md) | 25 tools, 4 resources, 3 prompts |
-| [A2A Server](docs/A2A_SERVER.md) | Agent-to-agent protocol implementation |
-| [Integration](docs/INTEGRATION.md) | LangChain, CrewAI, LlamaIndex adapters |
-| [Deployment](docs/DEPLOYMENT.md) | Docker, AWS, CockroachDB Serverless |
-| [Development](docs/DEVELOPMENT.md) | Local setup, testing, contributing |
-| [Comparison](docs/COMPARISON.md) | vs Mem0, Zep, Cognee, Letta |
-| [Judge's Guide](docs/JUDGES_GUIDE.md) | Step-by-step evaluation walkthrough |
-| [Problems Solved](docs/PROBLEMS_SOLVED.md) | Amnesia, poisoning, crashes |
-| [Repo Map](docs/REPO_MAP.md) | Codebase structure overview |
+| [A2A Server](docs/A2A_SERVER.md) | Agent-to-agent protocol |
+| [Integration](docs/INTEGRATION.md) | LangChain, CrewAI, LlamaIndex |
+| [Development](docs/DEVELOPMENT.md) | Local setup, testing |
+| [Repo Map](docs/REPO_MAP.md) | Codebase structure |
 
-### Architecture Decision Records
-
+**Architecture Decision Records:**
 | ADR | Decision |
 |-----|----------|
-| [001](docs/adr/001-hash-chain-integrity.md) | SHA-256 hash chains for memory integrity |
-| [002](docs/adr/002-c-spann-vector-indexing.md) | C-SPANN vector index design |
-| [003](docs/adr/003-time-travel-memory.md) | AS OF SYSTEM TIME queries |
+| [001](docs/adr/001-hash-chain-integrity.md) | SHA-256 hash chains |
+| [002](docs/adr/002-c-spann-vector-indexing.md) | C-SPANN vector index |
+| [003](docs/adr/003-time-travel-memory.md) | AS OF SYSTEM TIME |
 | [004](docs/adr/004-serializable-coordination.md) | SERIALIZABLE isolation |
-| [005](docs/adr/005-cdc-self-healing.md) | CDC-based self-healing |
+| [005](docs/adr/005-cdc-self-healing.md) | CDC self-healing |
 | [006](docs/adr/006-dual-language-sdk.md) | Python + TypeScript SDKs |
+
+</details>
 
 ---
 
