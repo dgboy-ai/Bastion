@@ -89,7 +89,7 @@ class MemoryConsolidator:
             try:
                 await self._consolidate()
             except Exception as e:
-                logger.error(f"Consolidation error: {e}")
+                logger.error("Consolidation error: %s", e)
             await asyncio.sleep(self.interval)
 
     def stop(self):
@@ -114,7 +114,7 @@ class MemoryConsolidator:
         # 4. Detect anomalies
         anomalies = self.memory.detect_anomalies(agent_id)
         if anomalies:
-            logger.warning(f"Anomalies detected: {len(anomalies)}")
+            logger.warning("Anomalies detected: %s", len(anomalies))
 
     def _find_duplicates(self, agent_id: str) -> list[list[MemoryRecord]]:
         """Find groups of duplicate or near-duplicate memories."""

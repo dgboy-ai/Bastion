@@ -196,7 +196,7 @@ function Hero() {
   const [loaded, setLoaded] = useState(false);
   const scrollY = useParallax();
   useEffect(() => { requestAnimationFrame(() => setLoaded(true)); }, []);
-  const testCount = useCountUp(1133, 2000, 800);
+  const testCount = useCountUp(1147, 2000, 800);
   const toolCount = useCountUp(25, 1500, 1000);
   const regionCount = useCountUp(6, 1000, 1200);
 
@@ -255,7 +255,7 @@ function LogoStrip() {
   return (
     <section ref={ref} style={{ padding: "80px 48px", position: "relative", zIndex: 2, borderTop: `1px solid ${C.hairline}`, borderBottom: `1px solid ${C.hairline}`, opacity: visible ? 1 : 0, transition: "opacity 0.8s ease" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto", display: "flex", alignItems: "center", gap: "64px" }}>
-        <div style={{ fontSize: "13px", color: C.mute, whiteSpace: "nowrap", fontWeight: 500 }}>Trusted by <span style={{ color: C.lavaGlow, fontWeight: 700 }}>80,000+</span> companies</div>
+        <div style={{ fontSize: "13px", color: C.mute, whiteSpace: "nowrap", fontWeight: 500 }}>Built for <span style={{ color: C.lavaGlow, fontWeight: 700 }}>CockroachDB</span> + <span style={{ color: C.lavaGlow, fontWeight: 700 }}>AWS</span></div>
         <div style={{ flex: 1, overflow: "hidden", maskImage: "linear-gradient(90deg, transparent, black 10%, black 90%, transparent)" }}>
           <div className="logo-scroll" style={{ display: "flex", gap: "64px", alignItems: "center", width: "max-content" }}>
             {[...logos, ...logos].map((name, i) => (
@@ -678,7 +678,7 @@ function FAQ() {
   const faqs = [
     { q: "What makes Bastion different from Mem0?", a: "Bastion is the only system with SHA-256 hash chains, time-travel queries (AS OF SYSTEM TIME), multi-region distributed storage, LTM Gateway, sleep-time dreaming, and OWASP ASI06 guard. Mem0 charges $249/mo for half these features." },
     { q: "How does the LTM Gateway save tokens?", a: "Before running an expensive workflow, Bastion checks if a similar analysis already exists (C-SPANN vector search, 80% threshold). If found, it returns the cached result instantly, saving 2,965 tokens per reuse on average. 74% bypass rate." },
-    { q: "Is Bastion production-ready?", a: "Yes. 1,133 passing tests (including 17 against real CockroachDB), 25 MCP tools, 6 global regions, 100% Recall@5. Deploy on CockroachDB Serverless for free today. MIT licensed." },
+    { q: "Is Bastion production-ready?", a: "Yes. 1,147 passing tests (including 17 against real CockroachDB), 25 MCP tools, 6 global regions, 100% Recall@5. Deploy on CockroachDB Serverless for free today. MIT licensed." },
     { q: "How does auto-contradiction work?", a: "Bastion detects negation (\"not\", \"never\"), temporal conflicts (newer overrides older), and semantic contradictions. When found, it automatically supersedes the old memory with the new one." },
     { q: "Can I self-host Bastion?", a: "Absolutely. MIT licensed. pip install bastion-memory, set BASTION_CONN, run. Docker Compose available for one-command local dev with CockroachDB." },
     { q: "What about security?", a: "OWASP ASI06 prompt injection guard (9 regex patterns + LLM classification), PII detection, secret leakage blocking, OAuth 2.1 + PKCE, Row-Level Security, AES-256-GCM KMS encryption, Ed25519 A2A signing." },
@@ -727,7 +727,7 @@ function CTA() {
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateX(0)" : "translateX(40px)", transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1) 0.2s" }}>
           <div className="glow-card" style={{ background: "rgba(10,5,16,0.8)", border: `1px solid ${C.hairline}`, borderRadius: "8px", padding: "48px", backdropFilter: "blur(8px)" }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "3px", color: C.mute, marginBottom: "32px" }}>Built for your stack.</div>
-            {["25 MCP tools, 3 SDKs (Python, TS, LangChain)", "1,133 tests, 0 failures (17 against real CRDB)", "6 global regions, 12ms latency"].map((f, i) => (
+            {["25 MCP tools, 3 SDKs (Python, TS, LangChain)", "1,147 tests, 0 failures (17 against real CRDB)", "6 global regions, 12ms latency"].map((f, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "20px 0", borderBottom: i < 2 ? `1px solid ${C.hairline}` : "none" }}>
                 <div style={{ width: "32px", height: "32px", borderRadius: "4px", background: `${C.lava}15`, border: `1px solid ${C.lava}25`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.lava} strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>

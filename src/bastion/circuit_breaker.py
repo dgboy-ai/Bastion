@@ -18,6 +18,8 @@ logger = get_logger(__name__)
 
 
 class CircuitState(StrEnum):
+    """Possible states of a circuit breaker."""
+
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"

@@ -28,6 +28,8 @@ logger = get_logger(__name__)
 
 
 class EventSeverity(StrEnum):
+    """Severity levels for webhook notification events."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -36,6 +38,8 @@ class EventSeverity(StrEnum):
 
 @dataclass
 class WebhookEvent:
+    """A webhook notification event to be sent to external services."""
+
     event_type: str
     severity: EventSeverity
     title: str

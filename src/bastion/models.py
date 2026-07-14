@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 
 class MemoryRecord(BaseModel):
+    """A single memory record stored in the agent's long-term memory."""
+
     memory_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     memory_type: str = "fact"
@@ -87,6 +89,8 @@ class MemoryRecord(BaseModel):
 
 
 class CheckpointState(BaseModel):
+    """State of a workflow checkpoint for crash recovery."""
+
     workflow_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     step_number: int = 0
@@ -106,6 +110,8 @@ class CheckpointState(BaseModel):
 
 
 class AuditEntry(BaseModel):
+    """An append-only audit log entry tracking agent actions."""
+
     audit_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     workflow_id: str = ""
@@ -118,6 +124,8 @@ class AuditEntry(BaseModel):
 
 
 class ClusterInfo(BaseModel):
+    """Connection details for a CockroachDB cluster."""
+
     cluster_id: str = ""
     connection_string: str = ""
     admin_url: str = ""
@@ -129,6 +137,8 @@ class ClusterInfo(BaseModel):
 
 
 class EntityRecord(BaseModel):
+    """A named entity extracted into the knowledge graph."""
+
     entity_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     entity_type: str = "concept"
@@ -162,6 +172,8 @@ class EntityRecord(BaseModel):
 
 
 class RelationRecord(BaseModel):
+    """A relationship between two entities in the knowledge graph."""
+
     relation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     source_entity_id: str = ""
@@ -178,6 +190,8 @@ class RelationRecord(BaseModel):
 
 
 class CoordinationLock(BaseModel):
+    """A distributed lock for multi-agent coordination."""
+
     lock_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
     resource: str = ""
@@ -191,6 +205,8 @@ class CoordinationLock(BaseModel):
 
 
 class MessageRecord(BaseModel):
+    """A message in the inter-agent pub/sub messaging system."""
+
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     namespace: str = ""
     sender_agent_id: str = ""

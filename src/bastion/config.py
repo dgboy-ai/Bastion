@@ -21,6 +21,8 @@ LOCALITY_LIMIT = 10
 
 
 class BastionSettings(BaseSettings):
+    """Centralized configuration for Bastion loaded from environment variables."""
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="BASTION_",
         env_file=".env",

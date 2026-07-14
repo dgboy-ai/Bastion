@@ -43,9 +43,10 @@ services:
       sh -c "
         echo 'Applying schemas...'
         for f in /schemas/0*.sql; do
-          cockroach sql --insecure --host=cockroachdb -f \"\$f\" 2>&1 || true
+          echo \"  -> \$(basename \$f)\"
+          cockroach sql --insecure --host=cockroachdb -f \"\$f\" || { echo 'SCHEMA FAILED'; exit 1; }
         done
-        echo 'Schemas applied!'
+        echo 'Schemas applied successfully!'
       "
     networks:
       - bastion-net

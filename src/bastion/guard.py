@@ -26,6 +26,23 @@ from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
 
+# ── Trust Score Constants ──────────────────────────────────────────────────
+
+GUARD_SOURCE_WEIGHTS: dict[str, float] = {
+    "system": 1.0,
+    "agent_direct": 0.9,
+    "tool_verified": 0.7,
+    "tool_unverified": 0.5,
+    "external_web": 0.3,
+    "unknown": 0.1,
+}
+
+GUARD_LEVEL_WEIGHTS: dict[int, float] = {0: 0.0, 1: 0.4, 2: 0.7, 3: 0.9, 4: 1.0}
+
+HASH_CHAIN_PENALTY = 0.0
+AGE_OLD_PENALTY = 0.5
+AGE_MATURE_PENALTY = 0.7
+
 _llm_client: object | None = None
 _llm_client_lock = threading.Lock()
 
@@ -40,6 +57,8 @@ class ThreatSeverity(StrEnum):
 
 @dataclass
 class Finding:
+    """A single security finding detected by the memory guard."""
+
     detector: str
     threat_type: str
     severity: ThreatSeverity
@@ -49,6 +68,8 @@ class Finding:
 
 @dataclass
 class SecurityReport:
+    """Aggregated result of all guard checks on a piece of content."""
+
     is_safe: bool
     findings: list[Finding] = field(default_factory=list)
     trust_score: float = 1.0
@@ -305,15 +326,10 @@ class MemoryGuard:
         score = 1.0
 
         # Source provenance weight
-        source_weights = {
-            "system": 1.0, "agent_direct": 0.9, "tool_verified": 0.7,
-            "tool_unverified": 0.5, "external_web": 0.3, "unknown": 0.1,
-        }
-        score *= source_weights.get(source_provenance, 0.5)
+        score *= GUARD_SOURCE_WEIGHTS.get(source_provenance, 0.5)
 
         # Trust level weight
-        level_weights = {0: 0.0, 1: 0.4, 2: 0.7, 3: 0.9, 4: 1.0}
-        score *= level_weights.get(trust_level, 0.5)
+        score *= GUARD_LEVEL_WEIGHTS.get(trust_level, 0.5)
 
         # Hash chain penalty
         if cryptographic_hash is not None:
@@ -321,7 +337,7 @@ class MemoryGuard:
                 (content + json.dumps(metadata or {}, sort_keys=True) + (previous_hash or "")).encode()
             ).hexdigest()
             if cryptographic_hash != expected:
-                score *= 0.0
+                score *= HASH_CHAIN_PENALTY
 
         # Age penalty (matching trust.py thresholds)
         AGE_OLD_HOURS = 2160   # 90 days
@@ -330,9 +346,9 @@ class MemoryGuard:
         if created_at is not None:
             age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
             if age_hours > AGE_OLD_HOURS:
-                score *= 0.5
+                score *= AGE_OLD_PENALTY
             elif age_hours > AGE_MATURE_HOURS:
-                score *= 0.7
+                score *= AGE_MATURE_PENALTY
 
         score = max(0.0, min(1.0, score))
 
@@ -442,6 +458,8 @@ MALICIOUS_TOOL_PATTERNS = [
 
 @dataclass
 class ToolScanResult:
+    """Result of scanning an MCP tool manifest for injection patterns."""
+
     verdict: str  # "SAFE" | "SUSPICIOUS" | "BLOCKED"
     matched_patterns: list[str] = field(default_factory=list)
 

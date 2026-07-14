@@ -21,6 +21,8 @@ logger = structlog.get_logger("bastion.retry")
 
 
 class SerializationRetryEngine:
+    """Retries database operations on CockroachDB serialization errors with exponential backoff."""
+
     def __init__(
         self,
         max_retries: int = 5,

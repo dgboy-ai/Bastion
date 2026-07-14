@@ -33,6 +33,8 @@ def is_oauth_enabled() -> bool:
 
 
 class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]):
+    """In-memory OAuth 2.0 authorization server provider for MCP authentication."""
+
     def __init__(
         self,
         client_id: str | None = None,
