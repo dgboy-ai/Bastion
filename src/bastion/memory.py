@@ -921,23 +921,27 @@ class BastionMemory:
             pool.release(conn)
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
+        # Use a fresh connection for time-travel to avoid transaction conflicts
+        import psycopg
+        conn = psycopg.connect(self._conn_str)
         try:
+            # Convert relative timestamps to absolute
+            abs_timestamp = self._parse_timestamp(timestamp)
+            
             # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
             try:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "BEGIN AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,),
-                    )
+                    # Use SET TRANSACTION instead of BEGIN to avoid transaction conflicts
+                    cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (abs_timestamp,))
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory "
                         "WHERE agent_id = %s "
                         "ORDER BY created_at",
                         (agent_id,),
                     )
-                    return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+                    results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
+                    conn.rollback()  # End the time-travel transaction
+                    return results
             except Exception as primary_exc:
                 # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
                 # use timestamp filtering as a degraded mode
@@ -948,14 +952,48 @@ class BastionMemory:
                             f"SELECT {_MEMORY_COLS} FROM agent_memory "
                             "WHERE agent_id = %s AND created_at <= %s::TIMESTAMPTZ "
                             "ORDER BY created_at",
-                            (agent_id, timestamp),
+                            (agent_id, abs_timestamp),
                         )
                         return [MemoryRecord.from_row(r) for r in cur.fetchall()]
                 except Exception as fallback_exc:
                     logger.warning("Time-travel fallback also failed: %s", fallback_exc)
                     return []
         finally:
-            pool.release(conn)
+            conn.close()
+
+    def _parse_timestamp(self, timestamp: str) -> str:
+        """Convert relative timestamps to absolute ISO format for CockroachDB."""
+        import re
+        ts = timestamp.strip().lower()
+        now = datetime.now(UTC)
+        
+        # Handle "now" or "just now"
+        if ts in ("now", "just now"):
+            return now.isoformat()
+        
+        # Handle relative timestamps like "5 minutes ago", "2 hours ago"
+        match = re.match(r"(\d+)\s+(second|minute|hour|day|week|month)s?\s+ago", ts)
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2)
+            if unit == "second":
+                dt = now - timedelta(seconds=amount)
+            elif unit == "minute":
+                dt = now - timedelta(minutes=amount)
+            elif unit == "hour":
+                dt = now - timedelta(hours=amount)
+            elif unit == "day":
+                dt = now - timedelta(days=amount)
+            elif unit == "week":
+                dt = now - timedelta(weeks=amount)
+            elif unit == "month":
+                dt = now - timedelta(days=amount * 30)
+            else:
+                dt = now
+            return dt.isoformat()
+        
+        # Already absolute timestamp
+        return timestamp
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
         pool = self.get_pool()

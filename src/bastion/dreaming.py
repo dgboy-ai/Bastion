@@ -49,6 +49,7 @@ class DreamJournal:
     started_at: str = ""
     completed_at: str = str(datetime.now(UTC))
     duration_ms: int = 0
+    status: str = "running"
     memories_reviewed: int = 0
     memories_consolidated: int = 0
     memories_promoted: int = 0
@@ -64,6 +65,7 @@ class DreamJournal:
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "duration_ms": self.duration_ms,
+            "status": self.status,
             "memories_reviewed": self.memories_reviewed,
             "memories_consolidated": self.memories_consolidated,
             "memories_promoted": self.memories_promoted,
@@ -207,9 +209,11 @@ class MemoryDreamer:
                 promoted=journal.memories_promoted,
                 pruned=journal.memories_pruned,
             )
+            journal.status = "complete"
 
         except Exception as exc:
             journal.errors.append(str(exc))
+            journal.status = "error"
             logger.error("Dreaming failed", agent_id=agent_id, error=str(exc))
 
         journal.completed_at = datetime.now(UTC).isoformat()
