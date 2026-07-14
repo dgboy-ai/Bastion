@@ -104,7 +104,7 @@ Bastion **cannot work without CockroachDB**. Here's why:
 
 ## Verified With Real CockroachDB
 
-Every feature has been tested against a real CockroachDB cluster:
+**17 integration tests** run against a real CockroachDB cluster. Every feature has been verified:
 
 | Feature | Status | Verified |
 |---------|--------|----------|
