@@ -10,7 +10,7 @@
 
 services:
   cockroachdb:
-    image: cockroachdb/cockroach:latest
+    image: cockroachdb/cockroach:v24.3
     command: start-single-node --insecure --accept-payloads-for-urls=/
     ports:
       - "26257:26257"
@@ -33,7 +33,7 @@ services:
       - bastion-net
 
   schema-init:
-    image: cockroachdb/cockroach:latest
+    image: cockroachdb/cockroach:v24.3
     depends_on:
       cockroachdb:
         condition: service_healthy
