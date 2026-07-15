@@ -8,20 +8,37 @@ venv/
 env/
 *.env
 .env.local
-.env.example
+.env.*
+!.env.example
 node_modules/
 .next/
 .cockroach-data/
-__pycache__/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 *.db
 *.sqlite
 bastion-memory-*.tgz
-.opencode/AGENTS.md
+.opencode/
 .mimocode/
 dashboard/playwright-report/
 dashboard/test-results/
+htmlcov/
+*.log
+.hypothesis/
+# Sensitive files
+*.pem
+*.key
+credentials.json
+service-account*.json
+# Generated files
+benchmark_results.json
+# Build artifacts
+scripts/check_schema.py
+scripts/fix_schema.py
+scripts/test_bedrock.py
+scripts/add_react_memo.py
+# Internal strategy docs (moved to docs/archive/)
 later-work.md
 laterwork.md
 future.md
@@ -31,24 +48,5 @@ knowledge.md
 knowledge_mimo_Ana.md
 production.md
 test_real_crdb.py
-htmlcov/
-*.log
-.hypothesis/
-# Sensitive files - never commit
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-credentials.json
-service-account*.json
-# Benchmark results (generated)
-benchmark_results.json
-# Schema migration scripts (generated)
-scripts/check_schema.py
-scripts/fix_schema.py
-scripts/test_bedrock.py
-scripts/add_react_memo.py
-# Win strategy (internal)
 win.md
 msme_ideas*.md

@@ -25,13 +25,16 @@ ALTER TABLE agent_checkpoints FORCE ROW LEVEL SECURITY;
 
 RLS_POLICY_SQL = """
 CREATE POLICY IF NOT EXISTS agent_isolation_policy ON agent_memory
-    USING (agent_id = current_setting('app.current_agent_id', true));
+    USING (agent_id = current_setting('app.current_agent_id', true))
+    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
 
 CREATE POLICY IF NOT EXISTS agent_audit_isolation ON agent_audit
-    USING (agent_id = current_setting('app.current_agent_id', true));
+    USING (agent_id = current_setting('app.current_agent_id', true))
+    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
 
 CREATE POLICY IF NOT EXISTS agent_checkpoint_isolation ON agent_checkpoints
-    USING (agent_id = current_setting('app.current_agent_id', true));
+    USING (agent_id = current_setting('app.current_agent_id', true))
+    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
 """
 
 

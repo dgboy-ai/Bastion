@@ -1,5 +1,5 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery } from "@/lib/db";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockMemories } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       [entityId, limit, offset]
     );
 
-    if (countRes.mock || memoriesRes.mock) {
+    if (isMockMode() || countRes.mock || memoriesRes.mock) {
       const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
       const total = allMemories.length;
       const totalPages = Math.ceil(total / limit);
@@ -59,8 +59,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
   } catch (error) {
-    console.error("[api/entity-memories] Query failed, falling back to mock:", error);
-    const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
-    return apiSuccess({ memories: allMemories, total: allMemories.length, page: 1, limit: allMemories.length, totalPages: 1 }, 'short', { mock: true });
+    console.error("[api/entity-memories] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

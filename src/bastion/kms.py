@@ -395,12 +395,11 @@ def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInte
     """Factory: returns an ``AwsKMS`` if ``BASTION_AWS_KMS_KEY_ARN`` is
     configured, otherwise falls back to a local AES-256-GCM key.
 
-    Catches boto3 operational exceptions (network, credentials, disabled
-    key) and falls back to ``LocalKMS`` with a warning.  Lets ``ImportError``
-    and ``ValueError`` propagate so missing dependencies or misconfiguration
-    are surfaced immediately.
+    In production (BASTION_MOCK not set), raises on AwsKMS failure to prevent
+    silent fallback to local encryption. In mock/dev mode, falls back with a warning.
     """
     resolved = key_arn or os.environ.get("BASTION_AWS_KMS_KEY_ARN", "")
+    is_production = os.environ.get("BASTION_MOCK", "").lower() not in ("true", "1", "yes")
     if resolved:
         try:
             return AwsKMS(key_arn=resolved, region=region)
@@ -409,10 +408,19 @@ def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInte
         except ValueError:
             raise
         except Exception as exc:
-            logger.error(
-                "AwsKMS key '%s' exists but initialization FAILED — falling back to LocalKMS! "
-                "Production data will be encrypted with a local key, "
-                "NOT the configured AWS KMS key.",
+            if is_production:
+                logger.error(
+                    "AwsKMS key '%s' initialization FAILED in production mode. "
+                    "Refusing to fall back to local key to prevent data encryption mismatch.",
+                    resolved,
+                    extra={"error": str(exc)},
+                )
+                raise RuntimeError(
+                    f"AWS KMS initialization failed for key '{resolved}': {exc}. "
+                    "Set BASTION_MOCK=true for local development."
+                ) from exc
+            logger.warning(
+                "AwsKMS key '%s' initialization failed — falling back to LocalKMS (dev mode)",
                 resolved,
                 extra={"error": str(exc)},
             )

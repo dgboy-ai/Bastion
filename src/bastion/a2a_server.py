@@ -432,6 +432,12 @@ def create_a2a_server(
             "Set BASTION_API_KEY in your environment or .env file."
         )
 
+    def _verify_api_key(provided: str) -> bool:
+        import secrets as _secrets
+        if not _api_key:
+            return True  # No key configured = open (with warning)
+        return _secrets.compare_digest(provided, _api_key)
+
     # -- Middleware --------------------------------------------------------
 
     _has_otel_api = False
@@ -447,7 +453,8 @@ def create_a2a_server(
         nonlocal _metrics_requests_total, _metrics_durations, _metrics_rate_limit_hits
         if _api_key and request.url.path not in ("/healthz", "/readyz"):
             auth = request.headers.get("Authorization", "")
-            if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != _api_key:
+            token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+            if not token or not _verify_api_key(token):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
         request.state.request_id = request_id
@@ -838,7 +845,10 @@ class _RequestTooLargeError(Exception):
 
 async def _read_body(request: Request, max_bytes: int = _MAX_REQUEST_BYTES) -> bytes:
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > max_bytes:
+    try:
+        if content_length and int(content_length) > max_bytes:
+            raise _RequestTooLargeError()
+    except (ValueError, TypeError):
         raise _RequestTooLargeError()
     chunks: list[bytes] = []
     total = 0
@@ -856,6 +866,30 @@ async def _read_body(request: Request, max_bytes: int = _MAX_REQUEST_BYTES) -> b
 
 
 def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
+    # OWASP ASI06 guard screening for content-bearing operations
+    if method in ("store", "resolve_conflict", "broadcast"):
+        _content_to_check = ""
+        if method == "store":
+            _content_to_check = params.get("content") or params.get("text") or ""
+        elif method == "resolve_conflict":
+            _content_to_check = (params.get("fact_a") or "") + " " + (params.get("fact_b") or "")
+        elif method == "broadcast":
+            _payload = params.get("payload", {})
+            if isinstance(_payload, dict):
+                _content_to_check = json.dumps(_payload, default=str)
+            else:
+                _content_to_check = str(_payload)
+        if _content_to_check:
+            try:
+                from bastion.guard import MemoryGuard as BastionGuard
+                _guard = BastionGuard()
+                _guard_result = _guard.check(_content_to_check)
+                if not _guard_result.is_safe:
+                    findings = [f.__dict__ for f in _guard_result.findings]
+                    return {"error": "Blocked by OWASP ASI06 guard", "findings": findings}
+            except Exception:
+                logger.warning("Guard screening failed — skill will proceed unchecked", exc_info=True)
+
     if method == "store":
         mtype = params.get("memory_type", "fact")
         content = params.get("content") or params.get("text")

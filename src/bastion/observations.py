@@ -200,8 +200,8 @@ class ObservationDetector:
 
     def _detect_co_occurrences(self, memories: list[Any]) -> list[Observation]:
         """Find entities that frequently appear together."""
-        entity_pairs: Counter[tuple[str, str]] = Counter()
-        pair_memories: dict[tuple[str, str], list[str]] = defaultdict(list)
+        entity_pairs: Counter[tuple[str, ...]] = Counter()
+        pair_memories: dict[tuple[str, ...], list[str]] = defaultdict(list)
 
         for mem in memories:
             entities = _extract_entities(mem.content or "")

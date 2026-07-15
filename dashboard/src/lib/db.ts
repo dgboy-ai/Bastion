@@ -1,5 +1,4 @@
 import { type QueryResult, Pool } from "pg";
-import { headers } from "next/headers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
@@ -16,11 +15,13 @@ const mockResult = (): SafeQueryResult => ({
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
 const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true";
 
-// Standard static pool from environment variable
+// Static pool from environment variable — rejects self-signed certs in production
 const staticPool = connectionString && !isMockForced
   ? new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: false },
+      ssl: process.env.NODE_ENV === "production"
+        ? { rejectUnauthorized: true }
+        : { rejectUnauthorized: false },
       connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 30000,
       max: 5,
@@ -33,56 +34,23 @@ if (staticPool) {
     .catch((err: Error) => console.error("[Bastion] Static CockroachDB connection FAILED:", err.message));
 }
 
-// Caching map for dynamic connection strings
-const dynamicPools = new Map<string, Pool>();
-
-async function getConnectionStringOverride(): Promise<string | null> {
-  try {
-    const list = await headers();
-    return list.get("x-bastion-conn") || null;
-  } catch (e) {
-    return null;
-  }
+/** Check if mock mode is explicitly enabled via environment variable. */
+export function isMockMode(): boolean {
+  return isMockForced;
 }
 
-export async function getActivePool(): Promise<Pool | null> {
-  if (isMockForced) return null;
-  const override = await getConnectionStringOverride();
-  if (override) {
-    let p = dynamicPools.get(override);
-    if (!p) {
-      try {
-        p = new Pool({
-          connectionString: override,
-          ssl: { rejectUnauthorized: false },
-          connectionTimeoutMillis: 10000,
-          idleTimeoutMillis: 20000,
-          max: 3,
-        });
-        dynamicPools.set(override, p);
-        console.log(`[Bastion] Dynamic Pool created for connection string: ${override.slice(0, 30)}...`);
-      } catch (err) {
-        console.error("[Bastion] Failed to create dynamic pool:", err);
-        return null;
-      }
-    }
-    return p;
-  }
-  return staticPool;
+/** Whether a real database pool is available. */
+export function hasDbPool(): boolean {
+  return staticPool !== null;
 }
-
-// Export pool as a truthy dummy object so `if (!pool)` is always false,
-// allowing dynamic connections even when the environment variable is unset.
-export const pool = {} as Pool;
 
 export async function query(text: string, params?: unknown[]) {
-  const activePool = await getActivePool();
-  if (!activePool) {
-    throw new Error("BASTION_CONN not configured — running in mock mode");
+  if (!staticPool) {
+    throw new Error("Database not available (BASTION_CONN not configured)");
   }
   const start = Date.now();
   try {
-    const res = await activePool.query(text, params);
+    const res = await staticPool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
@@ -92,20 +60,28 @@ export async function query(text: string, params?: unknown[]) {
   }
 }
 
+/**
+ * Execute a query. Returns mock data ONLY when BASTION_MOCK=true is set.
+ * When DB is unavailable and mock mode is off, throws instead of silently returning empty data.
+ * This prevents security dashboards from lying during database outages.
+ */
 export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQueryResult> {
-  try {
-    const activePool = await getActivePool();
-    if (!activePool) {
+  if (!staticPool) {
+    if (isMockForced) {
       return mockResult();
     }
-    const start = Date.now();
-    const res = await activePool.query(text, params);
+    throw new Error("Database not available (BASTION_CONN not configured and BASTION_MOCK not enabled)");
+  }
+  const start = Date.now();
+  try {
+    const res = await staticPool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
   } catch (err) {
-    console.warn("[DB Query] failed, falling back to mock:", err);
-    return mockResult();
+    const duration = Date.now() - start;
+    console.error(`[DB Query] failed after ${duration}ms:`, err);
+    throw err;
   }
 }
 

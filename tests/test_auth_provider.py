@@ -106,6 +106,10 @@ async def test_full_authorization_code_flow(provider):
     assert auth_code.code == auth_code_str
     assert "memory:read" in auth_code.scopes
 
+    # Simulate middleware capturing the code_verifier (in production, the middleware does this)
+    from bastion.auth_provider import store_pkce_verifier
+    store_pkce_verifier(auth_code_str, code_verifier)
+
     token = await provider.exchange_authorization_code(client, auth_code)
     assert token.access_token is not None
     assert token.refresh_token is not None

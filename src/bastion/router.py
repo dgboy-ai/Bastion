@@ -107,14 +107,14 @@ class RecallRouter:
         scores = {}
 
         # Check temporal signals
-        temporal_score = 0
+        temporal_score: float = 0.0
         for pattern in _TEMPORAL_PATTERNS:
             if re.search(pattern, query_lower):
                 temporal_score += 0.3
         scores["temporal"] = min(1.0, temporal_score)
 
         # Check relationship signals
-        relationship_score = 0
+        relationship_score: float = 0.0
         for pattern in _RELATIONSHIP_PATTERNS:
             if re.search(pattern, query_lower):
                 relationship_score += 0.3
@@ -128,7 +128,7 @@ class RecallRouter:
         scores["entity"] = entity_score
 
         # Check summary signals
-        summary_score = 0
+        summary_score: float = 0.0
         for pattern in _SUMMARY_PATTERNS:
             if re.search(pattern, query_lower):
                 summary_score += 0.35
@@ -141,7 +141,7 @@ class RecallRouter:
             best_type = "temporal"
             best_score = scores["temporal"]
         else:
-            best_type = max(scores, key=scores.get)
+            best_type = max(scores, key=scores.get)  # type: ignore[arg-type]
             best_score = scores[best_type]
 
         if best_score < 0.2:

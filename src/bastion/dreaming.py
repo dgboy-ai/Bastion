@@ -345,8 +345,9 @@ class MemoryDreamer:
             return None
 
         # If the memory already has a lesson hint, use it
-        if meta.get("lesson"):
-            return meta["lesson"]
+        lesson = meta.get("lesson")
+        if lesson:
+            return str(lesson)
 
         # Basic heuristic: if it's an episodic memory with high importance,
         # the content itself is likely a fact worth preserving

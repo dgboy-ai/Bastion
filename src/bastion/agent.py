@@ -307,9 +307,10 @@ class BastionAgent:
         )
 
         # 4. Generate response (offloaded to thread for sync LLM callback)
-        if self._llm_callback:
+        if self._llm_callback is not None:
+            cb = self._llm_callback
             response = await anyio.to_thread.run_sync(
-                lambda: self._llm_callback(user_message, context)
+                lambda: cb(user_message, context)
             )
         else:
             response = self._mock_response(user_message, context)
@@ -333,10 +334,12 @@ class BastionAgent:
             self._conversation_history.append({"role": "assistant", "content": response})
 
         # 7. Reinforce relevant memories
+        memory_ref = self.memory
         for mem in context:
-            await anyio.to_thread.run_sync(
-                lambda mem_id=mem.memory_id: self.memory.reinforce(mem_id, success=True)
-            )
+            mid = mem.memory_id
+            def _reinforce(mid: str = mid) -> dict:
+                return memory_ref.reinforce(mid, success=True)
+            await anyio.to_thread.run_sync(_reinforce)
 
         return response
 
@@ -516,7 +519,7 @@ class BastionAgent:
         empty — like a suspended virtual actor that can be reactivated on demand.
         """
         page_id = str(uuid.uuid4())
-        page_data = {
+        page_data: dict[str, Any] = {
             "page_id": page_id,
             "agent_id": self.agent_id,
             "conversation_history": self._conversation_history.copy(),
@@ -540,7 +543,7 @@ class BastionAgent:
         return {
             "status": "dehydrated",
             "page_id": page_id,
-            "conversation_turns_saved": len(page_data["conversation_history"]),
+            "conversation_turns_saved": len(page_data["conversation_history"] or []),
             "memory_count": page_data["memory_count"],
         }
 

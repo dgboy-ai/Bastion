@@ -1,7 +1,12 @@
 # 🏆 BASTION ABSOLUTE DOMINATION PLAN
 ## No Holds Barred. Top-3 Guaranteed. $5,000 Target.
 
-> **Current Status:** 278 tests passing. 0 ruff errors. 0 mypy errors. Code is elite.
+> **DISCLAIMER:** This is a STRATEGY DOCUMENT, not a factual record.
+> Benchmark numbers below are PROJECTED from feature capabilities, NOT measured against real datasets.
+> Real benchmarks are in `scripts/benchmark.py` (run against live CockroachDB).
+> Test counts and feature claims have been verified against actual code.
+
+> **Current Status:** 1205 tests passing. 0 ruff errors. Code is elite.
 > **Problem:** Zero submission artifacts (no video, no live URL, no cluster). Fix these first or nothing else matters.
 
 ---

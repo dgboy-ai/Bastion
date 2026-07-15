@@ -259,7 +259,8 @@ class AsyncConnectionPool:
     async def fetch(self, query: str, *args: Any, timeout: float | None = None) -> list[Any]:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)
         try:
-            return await conn.fetch(query, *args)
+            result: list[Any] = await conn.fetch(query, *args)
+            return result
         finally:
             await self.release(conn)
 

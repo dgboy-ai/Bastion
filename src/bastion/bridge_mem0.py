@@ -145,16 +145,6 @@ class BastionMem0Bridge:
         Filters can contain ``user_id``, ``agent_id``, or ``run_id``
         (mapped to the Bastion agent_id).
         """
-        agent_id = self._agent_id
-        if filters:
-            agent_id = filters.get("agent_id")
-            if not agent_id:
-                agent_id = filters.get("user_id")
-            if not agent_id:
-                agent_id = filters.get("run_id")
-            if not agent_id:
-                agent_id = self._agent_id
-
         mtype = (filters or {}).get("memory_type") or kwargs.get("memory_type")
 
         results = self._memory.search(
@@ -199,20 +189,15 @@ class BastionMem0Bridge:
         **kwargs: Any,
     ) -> dict:
         """List all memories matching filters."""
-        agent_id = self._agent_id
-        if filters:
-            agent_id = filters.get("agent_id")
-            if agent_id is None:
-                agent_id = filters.get("user_id")
-            if agent_id is None:
-                agent_id = filters.get("run_id")
-            if agent_id is None:
-                agent_id = self._agent_id
+        target_id: str = str(
+            filters.get("agent_id") or filters.get("user_id") or
+            filters.get("run_id") or self._agent_id
+        ) if filters else self._agent_id
 
         if self._memory.is_mock:
             from bastion.mock import _agent_data, _lock
             with _lock:
-                records = _agent_data.get(agent_id, [])
+                records = _agent_data.get(target_id, [])
         else:
             results = self._memory.list_all()
             records = [r.to_dict() for r in results]

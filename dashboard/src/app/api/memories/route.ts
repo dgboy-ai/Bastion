@@ -1,6 +1,6 @@
-import { pool, safeQuery } from "@/lib/db";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockMemories } from "@/lib/mock-data";
-import { apiSuccess } from "@/lib/api-response";
+import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     return { memories, total, page, limit, totalPages };
   };
 
-  if (!pool) {
+  if (isMockMode()) {
     return apiSuccess(getPaginatedMemories(), "short", { mock: true });
   }
 
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ memories, total, page, limit, totalPages }, "short");
   } catch (error) {
-    console.error("[api/memories] Query failed, falling back to mock:", error);
-    return apiSuccess(getPaginatedMemories(), "short", { mock: true });
+    console.error("[api/memories] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

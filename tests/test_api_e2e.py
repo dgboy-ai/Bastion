@@ -14,10 +14,8 @@ import requests
 BASE_URL = "http://localhost:9998"
 API_KEY = "test-key-123"
 
-pytestmark = pytest.mark.skipif(
-    "not config.getoption('--e2e')",
-    reason="Only run with --e2e flag against a live server",
-)
+# E2A tests start a real A2A server in mock mode via fixture.
+# No special flags needed — the fixture handles server lifecycle.
 
 _server_proc = None
 

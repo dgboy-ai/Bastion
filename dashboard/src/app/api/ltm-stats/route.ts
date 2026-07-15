@@ -1,5 +1,5 @@
-import { apiSuccess } from "@/lib/api-response";
-import { pool, safeQuery } from "@/lib/db";
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 function getMockLtmStats() {
@@ -38,7 +38,7 @@ function getMockLtmStats() {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (!pool) {
+  if (isMockMode()) {
     return apiSuccess(getMockLtmStats(), "short", { mock: true });
   }
 
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
       hourly: [],
     }, "short");
   } catch (error) {
-    console.error("[api/ltm-stats] Query failed, falling back to mock:", error);
-    return apiSuccess(getMockLtmStats(), "short", { mock: true });
+    console.error("[api/ltm-stats] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

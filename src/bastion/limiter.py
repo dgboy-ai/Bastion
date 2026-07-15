@@ -186,31 +186,35 @@ class RequestLimiter:
             conn = self._pool.acquire(timeout=remaining)
             try:
                 with conn.cursor() as cur:
+                    # Step 1: Find and lock an available slot
                     cur.execute(
                         """
-                        UPDATE agent_limiter
-                        SET instance_id = %s, acquired_at = NOW()
-                        WHERE slot_id = (
-                            SELECT slot_id FROM agent_limiter
-                            WHERE instance_id IS NULL
-                               OR acquired_at < NOW() - CAST(%s AS INTERVAL)
-                            LIMIT 1
-                            FOR UPDATE
-                        )
-                        RETURNING slot_id
+                        SELECT slot_id FROM agent_limiter
+                        WHERE instance_id IS NULL
+                           OR acquired_at < NOW() - CAST(%s AS INTERVAL)
+                        ORDER BY slot_id
+                        LIMIT 1
+                        FOR UPDATE
                         """,
-                        (self._instance_id, f"{self.timeout_seconds} seconds"),
+                        (f"{self.timeout_seconds} seconds",),
                     )
                     row = cur.fetchone()
-                    if row is not None:
-                        conn.commit()
+                    if row is None:
+                        conn.rollback()
+                    else:
                         slot_id = row[0]
+                        # Step 2: Update the locked slot
+                        cur.execute(
+                            "UPDATE agent_limiter SET instance_id = %s, acquired_at = NOW() "
+                            "WHERE slot_id = %s",
+                            (self._instance_id, slot_id),
+                        )
+                        conn.commit()
                         with self._lock:
                             self._held_slots.append(slot_id)
                             self._active_count += 1
                             self._queue_count -= 1
                         return True
-                conn.rollback()
             except Exception:
                 logger.warning("DB error during acquire, retrying", exc_info=True)
                 conn.rollback()
@@ -271,7 +275,8 @@ class RequestLimiter:
                     "SELECT COUNT(*) FROM agent_limiter "
                     "WHERE instance_id IS NOT NULL"
                 )
-                return cur.fetchone()[0]
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
         except Exception as exc:
             logger.warning("Failed to count occupied slots: %s", exc)
             return 0

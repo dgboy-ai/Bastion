@@ -53,7 +53,7 @@ def configure_logging() -> None:
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                _redact_secrets,
+                _redact_secrets,  # type: ignore[list-item]
                 structlog.processors.JSONRenderer(),
             ],
             context_class=dict,

@@ -233,7 +233,8 @@ def _parse_embedding(raw: Any) -> list[float]:
         return []
     if isinstance(raw, str):
         import json
-        return json.loads(raw)
+        result: list[float] = json.loads(raw)
+        return result
     return list(raw)
 
 
@@ -242,4 +243,5 @@ def _ensure_dt(val: Any) -> datetime:
         return datetime.now(UTC)
     if isinstance(val, str):
         return datetime.fromisoformat(val)
-    return val
+    result: datetime = val
+    return result

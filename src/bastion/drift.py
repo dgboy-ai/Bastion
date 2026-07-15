@@ -161,8 +161,9 @@ class BehavioralDriftDetector:
             top_signals.append("memory_access_pattern")
 
         all_embeddings = [m.embedding for m in agent_memories if m.embedding]
-        bl_sem = baseline.get("semantic_similarity", {})
-        bl_mean_vector = bl_sem.get("mean_vector", [])
+        bl_sem: dict = baseline.get("semantic_similarity", {})
+        bl_mean_vector_raw = bl_sem.get("mean_vector")
+        bl_mean_vector: list[float] = [float(x) for x in bl_mean_vector_raw] if bl_mean_vector_raw else []
         if all_embeddings and bl_mean_vector:
             current_mean = _mean_vector(all_embeddings)
             cos_sim = _cosine_similarity(current_mean, bl_mean_vector)

@@ -248,8 +248,8 @@ def mock_get_pinned(agent_id: str, min_priority: int = 1) -> list[MemoryRecord]:
                 agent_id=r["agent_id"],
                 memory_type=r["memory_type"],
                 content=r["content"],
-                embedding=r.get("embedding"),
-                metadata=r.get("metadata"),
+                embedding=r.get("embedding") or [],
+                metadata=r.get("metadata") or {},
                 previous_hash=r.get("previous_hash"),
                 cryptographic_hash=r["cryptographic_hash"],
                 created_at=r["created_at"],
@@ -277,7 +277,7 @@ def mock_list_memories(
         return [
             MemoryRecord(
                 memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
-                content=r["content"], embedding=r.get("embedding"), metadata=r.get("metadata"),
+                content=r["content"], embedding=r.get("embedding") or [], metadata=r.get("metadata") or {},
                 previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
                 created_at=r["created_at"], expires_at=r.get("expires_at"),
                 access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
@@ -299,7 +299,7 @@ def mock_correct_memory(
                     r["metadata"] = {**(r.get("metadata") or {}), **metadata}
                 return MemoryRecord(
                     memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
-                    content=r["content"], embedding=r.get("embedding"), metadata=r.get("metadata"),
+                    content=r["content"], embedding=r.get("embedding") or [], metadata=r.get("metadata") or {},
                     previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
                     created_at=r["created_at"], expires_at=r.get("expires_at"),
                     access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
@@ -657,48 +657,34 @@ _relations: list[dict[str, Any]] = []
 
 
 def _extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
-    triples: list[tuple[str, str, str, str, float]] = []
-    patterns = [
-        (r"(\w+)\s+is\s+a\s+(\w+)", "is_a", "entity_type"),
-        (r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", "is", "attribute"),
-        (r"(\w+)\s+loves\s+(\w+)", "loves", "relation"),
-        (r"(\w+)\s+likes\s+(\w+)", "likes", "relation"),
-        (r"(\w+)\s+uses\s+(\w+)", "uses", "relation"),
-        (r"(\w+)\s+builds\s+(\w+)", "builds", "relation"),
-        (r"(\w+)\s+works\s+on\s+(\w+)", "works_on", "relation"),
-        (r"(\w+)\s+created\s+(\w+)", "created", "relation"),
-        (r"(\w+)\s+owns\s+(\w+)", "owns", "relation"),
-        (r"(\w+)\s+manages\s+(\w+)", "manages", "relation"),
-        (r"(\w+)\s+reports\s+to\s+(\w+)", "reports_to", "relation"),
-        (r"(\w+)\s+belongs\s+to\s+(\w+)", "belongs_to", "relation"),
-    ]
-    import re
-    for pattern, rel_type, kind in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            src, tgt = match.group(1).lower(), match.group(2).lower()
-            triples.append((src, tgt, rel_type, kind, 1.0))
-    return triples
+    from bastion.knowledge_graph import extract_triples
+    return extract_triples(text)
+
+
+def _ensure_entity_unlocked(agent_id: str, name: str, entity_type: str = "concept") -> str:
+    """Ensure entity exists. Caller MUST hold _lock."""
+    if agent_id not in _entities:
+        _entities[agent_id] = []
+    for e in _entities[agent_id]:
+        if e["name"] == name:
+            return str(e["entity_id"])
+    eid = str(uuid.uuid4())
+    _entities[agent_id].append({
+        "entity_id": eid,
+        "agent_id": agent_id,
+        "entity_type": entity_type,
+        "name": name,
+        "attributes": {},
+        "valid_from": datetime.now(UTC).isoformat(),
+        "valid_until": None,
+        "created_at": datetime.now(UTC).isoformat(),
+    })
+    return eid
 
 
 def _ensure_entity(agent_id: str, name: str, entity_type: str = "concept") -> str:
     with _lock:
-        if agent_id not in _entities:
-            _entities[agent_id] = []
-        for e in _entities[agent_id]:
-            if e["name"] == name:
-                return str(e["entity_id"])
-        eid = str(uuid.uuid4())
-        _entities[agent_id].append({
-            "entity_id": eid,
-            "agent_id": agent_id,
-            "entity_type": entity_type,
-            "name": name,
-            "attributes": {},
-            "valid_from": datetime.now(UTC).isoformat(),
-            "valid_until": None,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
-        return eid
+        return _ensure_entity_unlocked(agent_id, name, entity_type)
 
 
 def mock_store_with_graph(
@@ -715,10 +701,10 @@ def mock_store_with_graph(
     with _lock:
         for src_name, tgt_name, rel_type, kind, confidence in triples:
             if kind == "entity_type":
-                _ensure_entity(agent_id, src_name, tgt_name)  # entity created, relation deferred
+                _ensure_entity_unlocked(agent_id, src_name, tgt_name)  # entity created, relation deferred
             else:
-                eid_src = _ensure_entity(agent_id, src_name, "person" if kind == "relation" else "concept")
-                eid_tgt = _ensure_entity(agent_id, tgt_name, "concept")
+                eid_src = _ensure_entity_unlocked(agent_id, src_name, "person" if kind == "relation" else "concept")
+                eid_tgt = _ensure_entity_unlocked(agent_id, tgt_name, "concept")
                 rel = RelationRecord(
                     agent_id=agent_id,
                     source_entity_id=eid_src,

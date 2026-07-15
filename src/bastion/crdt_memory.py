@@ -332,7 +332,7 @@ class CRDTMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             engine = SerializationRetryEngine()
-            result = engine.execute(conn, _execute)
+            result: MemoryRecord = engine.execute(conn, _execute)
             logger.info(
                 "CRDT conflict resolved",
                 extra={

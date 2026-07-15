@@ -83,7 +83,7 @@ class AgentCardSigner:
 
     def sign_data(self, data: bytes) -> bytes:
         """Sign arbitrary bytes with the Ed25519 private key."""
-        return self._private_key.sign(data)
+        return self._private_key.sign(data)  # type: ignore[union-attr,call-arg]
 
     def sign_card(self, card: dict[str, Any]) -> dict[str, Any]:
         signed = deepcopy(card)
@@ -138,7 +138,7 @@ def verify_card_signed(card: dict[str, Any]) -> bool:
 
     try:
         sig_value = base64.b64decode(sig_value_b64)
-        public_key.verify(sig_value, card_json)
+        public_key.verify(sig_value, card_json)  # type: ignore[union-attr,call-arg]
         return True
     except InvalidSignature:
         logger.warning("Agent card signature verification FAILED")

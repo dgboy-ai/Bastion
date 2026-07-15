@@ -10,7 +10,7 @@ try:
     _has_otel_api = True
 except ImportError:
     _has_otel_api = False
-    SpanKind = None
+    SpanKind = None  # type: ignore[assignment,misc]
 
 try:
     from opentelemetry.sdk.resources import Resource
