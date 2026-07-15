@@ -446,10 +446,10 @@ function TypewriterWord() {
       WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
       backgroundClip: "text", backgroundSize: "220% auto",
       animation: "gradShift 3.5s ease infinite",
-      display: "inline-block",
-      minWidth: "2ch",
-      // CSS Drop shadow filter to tracing gradient outline and glowing volcanic red/orange
-      filter: "drop-shadow(0 0 15px rgba(255, 66, 0, 0.8)) drop-shadow(0 0 5px rgba(255, 194, 0, 0.4))",
+      display: "inline",
+      fontWeight: 900,
+      textShadow: "0 0 20px rgba(255, 66, 0, 0.8), 0 0 40px rgba(255, 100, 0, 0.5), 0 0 60px rgba(255, 150, 0, 0.3)",
+      filter: "drop-shadow(0 0 15px rgba(255, 66, 0, 0.8)) drop-shadow(0 0 30px rgba(255, 100, 0, 0.5))",
     }}>
       {text}<span style={{
         display: "inline-block", width: "4px", height: "0.85em",
