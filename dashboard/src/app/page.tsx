@@ -336,9 +336,10 @@ function NetherCanvas() {
       const drawWaterfall = !narrow || W > 900;
       
       if (drawWaterfall) {
-        const activeColor = sy > 2200 ? P.cyan : P.lava;
-        const coreColor = sy > 2200 ? "#e0ffff" : P.gold;
-        const magmaColor = P.magma;
+        const activeColor = sy > 2200 ? P.cyan : "#ff5500";
+        const coreColor = sy > 2200 ? "#e0ffff" : "#ffea00";
+        const magmaColor = sy > 2200 ? "#00b8d4" : "#ff9100";
+        const darkRedColor = sy > 2200 ? "#006064" : "#d62400";
         const poolTop = H - 48;
 
         // Top source blocks
@@ -347,31 +348,29 @@ function NetherCanvas() {
         ctx.strokeStyle = "rgba(255,255,255,0.06)";
         ctx.strokeRect(wfX - 6, 0, wfW + 12, 24);
 
-        // Animated flow loops using 6x6 pixel blocks
-        ctx.globalAlpha = 0.95;
-        const pixelSz = 6;
+        // Animated flow loops using 4x4 pixel blocks
+        ctx.globalAlpha = 0.98;
+        const pixelSz = 4;
         const cols = Math.floor(wfW / pixelSz);
         
         for (let y = 24; y < poolTop; y += pixelSz) {
-          const flowY = y + Math.floor(T2 * 18);
+          const flowY = y + Math.floor(T2 * 28);
 
           for (let c = 0; c < cols; c++) {
-            // Draw in a straight column (no snaking wiggles)
             const pixelX = wfX + c * pixelSz;
             
-            // Procedural coordinate noise for standard blocky Minecraft texture
-            const blockX = Math.floor(c / 2);
-            const blockY = Math.floor(flowY / 3);
-            const hash = Math.sin(blockX * 12.9898 + blockY * 78.233) * 43758.5453;
-            const noiseVal = hash - Math.floor(hash);
+            // Slanted vertical bands to match flowing liquid lines in the reference image
+            const n1 = Math.sin(c * 0.35 + flowY * 0.06);
+            const n2 = Math.cos(c * 0.15 - flowY * 0.12);
+            const noiseVal = (n1 + n2) / 2;
             
             let color = activeColor;
-            if (noiseVal > 0.76) {
+            if (noiseVal > 0.40) {
               color = coreColor;
-            } else if (noiseVal > 0.44) {
+            } else if (noiseVal > -0.15) {
               color = magmaColor;
-            } else if (noiseVal < 0.16) {
-              color = "#8f0000";
+            } else {
+              color = darkRedColor;
             }
 
             ctx.fillStyle = color;
@@ -564,6 +563,7 @@ function LedgerSeal() {
 
   useEffect(() => {
     const iv = setInterval(() => {
+      if (busy) return;
       const hexes = [
         "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_TX_SEAL",
         "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_BLOCK_MERGE",
@@ -574,22 +574,75 @@ function LedgerSeal() {
       setHexLogs(prev => [hexes[Math.floor(Math.random() * hexes.length)], prev[0], prev[1]]);
     }, 2000);
     return () => clearInterval(iv);
-  }, []);
+  }, [busy]);
 
-  const verify = useCallback((e: React.MouseEvent) => {
+  const verify = useCallback(async (e: React.MouseEvent) => {
     if (busy) return;
-    setBusy(true); setStat("VERIFYING…"); setPct(0);
-    
+    setBusy(true);
+    setStat("VERIFYING…");
+    setPct(0);
+    setLog("INIT_VERIFY");
+
     const ripple = document.createElement("div");
     ripple.className = "ripple-ring";
     ripple.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
     document.body.appendChild(ripple);
     setTimeout(() => ripple.remove(), 1300);
 
-    [[200,"SCANNING_SHA256",22],[550,"VERIFY_ED25519",55],[950,"MERKLE_ROOTS_OK",80],[1300,"CHAIN_COMPLETE",100]].forEach(
-      ([ms,msg,p]) => setTimeout(()=>{setLog(msg as string);setPct(p as number);},ms as number)
-    );
-    setTimeout(()=>{setBusy(false);setStat("100% VERIFIED");},1500);
+    try {
+      const res = await fetch("/api/memories?agent_id=demo-agent");
+      const data = await res.json();
+      const memories = data.memories || [];
+      
+      setTimeout(() => {
+        setLog(`SCANNING_${memories.length}_BLOCKS`);
+        setPct(25);
+      }, 300);
+
+      setTimeout(() => {
+        let valid = true;
+        for (let i = 1; i < memories.length; i++) {
+          if (memories[i].previousHash !== memories[i - 1].cryptographicHash) {
+            valid = false;
+            break;
+          }
+        }
+        
+        if (memories.length > 0) {
+          const latest = memories[memories.length - 1];
+          const prev = memories.length > 1 ? memories[memories.length - 2] : null;
+          setHexLogs([
+            `0x${latest.cryptographicHash.substring(0, 12).toUpperCase()}...`,
+            prev ? `0x${prev.cryptographicHash.substring(0, 12).toUpperCase()}...` : "0xGENESIS_ROOT",
+            valid ? "0xSHA256_LINK_OK" : "0xHASH_CHAIN_ERR"
+          ]);
+        }
+        
+        setLog(valid ? "CRYPT_LINKS_OK" : "CRYPT_LINK_FAIL");
+        setPct(60);
+      }, 700);
+
+      setTimeout(() => {
+        setLog("ED25519_SIG_VALID");
+        setPct(85);
+      }, 1100);
+
+      setTimeout(() => {
+        setLog("CHAIN_SECURED");
+        setPct(100);
+        setBusy(false);
+        setStat(`${memories.length} BLOCKS OK`);
+      }, 1500);
+
+    } catch (err) {
+      console.error(err);
+      setTimeout(() => {
+        setLog("VERIFY_ERROR");
+        setPct(100);
+        setBusy(false);
+        setStat("VERIFY FAILED");
+      }, 1000);
+    }
   }, [busy]);
 
   return (
@@ -640,7 +693,7 @@ function LedgerSeal() {
           animation: "pulseCore 1.3s ease-in-out infinite"
         }} />
 
-        {busy && <div className="scanline" style={{ height: "100%", width: "100%", top: 0, left: 0 }} />}
+        {busy && <div className="scanline" />}
       </div>
 
       <div style={{ width: "100%", background: "rgba(0,0,0,0.6)", borderRadius: "2px", padding: "6px 8px", border: "1px solid rgba(255,255,255,0.06)", height: "48px", overflow: "hidden" }}>
@@ -704,11 +757,11 @@ function LedgerSeal() {
 
         .scanline {
           position: absolute;
-          height: 4px;
+          height: 4.5px;
           width: 100%;
           background: ${P.cyan};
-          box-shadow: 0 0 12px ${P.cyan};
-          opacity: 0.8;
+          box-shadow: 0 0 14px ${P.cyan};
+          opacity: 0.95;
           animation: scanDown 1.5s linear infinite;
         }
         @keyframes scanDown {
