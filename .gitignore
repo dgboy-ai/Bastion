@@ -6,10 +6,11 @@ build/
 .venv/
 venv/
 env/
-*.env
+.env
 .env.local
 .env.*
 !.env.example
+*.env
 node_modules/
 .next/
 .cockroach-data/

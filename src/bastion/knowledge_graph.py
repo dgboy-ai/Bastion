@@ -13,7 +13,7 @@ from bastion.models import EntityRecord, RelationRecord
 
 logger = get_logger(__name__)
 
-# NLP triple extraction patterns — 30 patterns covering common English structures
+# NLP triple extraction patterns — 50+ patterns covering common English structures
 _TRIPLE_PATTERNS = [
     # Entity types
     (re.compile(r"(\w+)\s+is\s+a\s+(\w+)", re.IGNORECASE), "is_a", "entity_type"),
@@ -49,6 +49,28 @@ _TRIPLE_PATTERNS = [
     (re.compile(r"(\w+)\s+implements\s+(\w+)", re.IGNORECASE), "implements", "relation"),
     (re.compile(r"(\w+)\s+supports\s+(\w+)", re.IGNORECASE), "supports", "relation"),
     (re.compile(r"(\w+)\s+replaces\s+(\w+)", re.IGNORECASE), "replaces", "relation"),
+    # Multi-word entity patterns (capitalized words)
+    (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+is\s+a\s+(\w+)", re.IGNORECASE), "is_a", "entity_type"),
+    (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+works\s+with\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE), "works_with", "relation"),
+    (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+uses\s+(\w+)", re.IGNORECASE), "uses", "relation"),
+    (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+manages\s+(\w+)", re.IGNORECASE), "manages", "relation"),
+    # Prepositional phrase patterns
+    (re.compile(r"(\w+)\s+works\s+for\s+(\w+)", re.IGNORECASE), "works_for", "relation"),
+    (re.compile(r"(\w+)\s+works\s+at\s+(\w+)", re.IGNORECASE), "works_at", "relation"),
+    (re.compile(r"(\w+)\s+lives\s+in\s+(\w+)", re.IGNORECASE), "lives_in", "relation"),
+    (re.compile(r"(\w+)\s+located\s+in\s+(\w+)", re.IGNORECASE), "located_in", "relation"),
+    (re.compile(r"(\w+)\s+part\s+of\s+(\w+)", re.IGNORECASE), "part_of", "relation"),
+    # Comparative patterns
+    (re.compile(r"(\w+)\s+better\s+than\s+(\w+)", re.IGNORECASE), "better_than", "relation"),
+    (re.compile(r"(\w+)\s+faster\s+than\s+(\w+)", re.IGNORECASE), "faster_than", "relation"),
+    # Causal patterns
+    (re.compile(r"(\w+)\s+causes\s+(\w+)", re.IGNORECASE), "causes", "relation"),
+    (re.compile(r"(\w+)\s+prevents\s+(\w+)", re.IGNORECASE), "prevents", "relation"),
+    (re.compile(r"(\w+)\s+enables\s+(\w+)", re.IGNORECASE), "enables", "relation"),
+    # Tool/technology patterns
+    (re.compile(r"(\w+)\s+built\s+with\s+(\w+)", re.IGNORECASE), "built_with", "relation"),
+    (re.compile(r"(\w+)\s+powered\s+by\s+(\w+)", re.IGNORECASE), "powered_by", "relation"),
+    (re.compile(r"(\w+)\s+runs\s+on\s+(\w+)", re.IGNORECASE), "runs_on", "relation"),
 ]
 
 
