@@ -217,22 +217,22 @@ function NetherCanvas() {
       T2 += .030;
       
       const sy = window.scrollY;
-      const narrow = W < 1250; 
+      const narrow = W < 960; 
 
-      let bg1 = "#200408", bg2 = "#0a0103";
+      let bg1 = "#250508", bg2 = "#080001";
       let particleColor = "#ff5500";
       let cracksColor = "#ffea00";
       
       if (sy < 750) {
-        bg1 = "#1a0204"; bg2 = "#070001";
+        bg1 = "#3b070b"; bg2 = "#0d0102";
         particleColor = "#ff5500";
       } else if (sy >= 750 && sy < 2100) {
         // High contrast Warped Forest gold-orange fog background with teal elements
-        bg1 = "#251702"; bg2 = "#072421";
+        bg1 = "#7c3e00"; bg2 = "#04332e";
         particleColor = "#00f0ff";
         cracksColor = "#00f0ff";
       } else {
-        bg1 = "#031d17"; bg2 = "#010a08";
+        bg1 = "#02423f"; bg2 = "#020d0c";
         particleColor = "#00ffcc";
         cracksColor = "#00e5ff";
       }
@@ -245,12 +245,13 @@ function NetherCanvas() {
 
       const radialGlow = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*0.7);
       if (sy < 750) {
-        radialGlow.addColorStop(0, "rgba(255, 42, 0, 0.12)");
+        radialGlow.addColorStop(0, "rgba(255, 68, 0, 0.22)");
       } else if (sy >= 750 && sy < 2100) {
-        radialGlow.addColorStop(0, "rgba(255, 170, 0, 0.18)");
-        radialGlow.addColorStop(0.5, "rgba(0, 229, 255, 0.08)");
+        // Stronger center amber glow
+        radialGlow.addColorStop(0, "rgba(255, 130, 0, 0.28)");
+        radialGlow.addColorStop(0.5, "rgba(0, 229, 255, 0.12)");
       } else {
-        radialGlow.addColorStop(0, "rgba(0, 229, 255, 0.10)");
+        radialGlow.addColorStop(0, "rgba(0, 229, 255, 0.18)");
       }
       radialGlow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = radialGlow;
@@ -260,7 +261,7 @@ function NetherCanvas() {
       const contentLeft = (W - cw) / 2;
       const contentRight = contentLeft + cw;
       
-      ctx.globalAlpha = narrow ? 0.06 : 0.95;
+      ctx.globalAlpha = narrow ? 0.08 : 0.95;
 
       world.forEach((o, idx) => {
         const dy = o.y - sy;

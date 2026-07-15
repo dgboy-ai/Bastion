@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body style={{
-        background: "#0a0a0a", color: "#ffffff",
+        background: "transparent", color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
         margin: 0, minHeight: "100vh", overflowY: "auto",
       }}>
