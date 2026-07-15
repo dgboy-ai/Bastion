@@ -146,16 +146,17 @@ function NetherCanvas() {
   useEffect(() => {
     const canvas = cvs.current!;
     const ctx = canvas.getContext("2d")!;
-    let W = canvas.width  = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
+    
+    let W = canvas.width  = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
+    let H = canvas.height = canvas.parentElement ? canvas.parentElement.clientHeight : window.innerHeight;
 
     const BS = 32;
     type WO = { type: "block"|"magma"|"lantern"; x: number; y: number; sz: number; bt?: BT };
     const world: WO[] = [];
 
     const rebuild = () => {
-      W = canvas.width = window.innerWidth;
-      H = canvas.height = window.innerHeight;
+      W = canvas.width = canvas.parentElement ? canvas.parentElement.clientWidth : window.innerWidth;
+      H = canvas.height = canvas.parentElement ? canvas.parentElement.clientHeight : window.innerHeight;
       world.length = 0;
 
       for (let y = 0; y < H + BS * 2; y += BS) {
@@ -206,11 +207,11 @@ function NetherCanvas() {
       decay: Math.random()*.0025+.001,
     }));
 
-    let raf: number, T2 = 0, wfOff = 0;
+    let raf: number, T2 = 0;
 
     const draw = () => {
       ctx.clearRect(0,0,W,H);
-      T2 += .030; wfOff += .20;
+      T2 += .030;
       
       const sy = window.scrollY;
       const narrow = W < 1250; 
@@ -330,6 +331,7 @@ function NetherCanvas() {
         }
       }
 
+      // ─── WATERFALL TEXTURED FLOW SYSTEM (STRAIGHT COLUMN BOUNDS) ───
       const wfW=72, wfX=W-wfW-54;
       const drawWaterfall = !narrow || W > 900;
       
@@ -339,31 +341,37 @@ function NetherCanvas() {
         const magmaColor = P.magma;
         const poolTop = H - 48;
 
+        // Top source blocks
         ctx.fillStyle = "#1e1624";
         ctx.fillRect(wfX - 6, 0, wfW + 12, 24);
         ctx.strokeStyle = "rgba(255,255,255,0.06)";
         ctx.strokeRect(wfX - 6, 0, wfW + 12, 24);
 
+        // Animated flow loops using 6x6 pixel blocks
         ctx.globalAlpha = 0.95;
         const pixelSz = 6;
         const cols = Math.floor(wfW / pixelSz);
         
         for (let y = 24; y < poolTop; y += pixelSz) {
-          const timeOffset = Math.floor(T2 * 14);
-          const flowY = y + timeOffset;
-          const shift = Math.sin(y * 0.03 + wfOff * 0.08) * 7;
+          const flowY = y + Math.floor(T2 * 18);
 
           for (let c = 0; c < cols; c++) {
-            const pixelX = wfX + shift + c * pixelSz;
-            const noiseVal = Math.sin(c * 0.6 + flowY * 0.16) * Math.cos(flowY * 0.07);
+            // Draw in a straight column (no snaking wiggles)
+            const pixelX = wfX + c * pixelSz;
+            
+            // Procedural coordinate noise for standard blocky Minecraft texture
+            const blockX = Math.floor(c / 2);
+            const blockY = Math.floor(flowY / 3);
+            const hash = Math.sin(blockX * 12.9898 + blockY * 78.233) * 43758.5453;
+            const noiseVal = hash - Math.floor(hash);
             
             let color = activeColor;
-            if (noiseVal > 0.45) {
+            if (noiseVal > 0.76) {
               color = coreColor;
-            } else if (noiseVal > 0.05) {
+            } else if (noiseVal > 0.44) {
               color = magmaColor;
-            } else if (noiseVal < -0.45) {
-              color = "#8a0000";
+            } else if (noiseVal < 0.16) {
+              color = "#8f0000";
             }
 
             ctx.fillStyle = color;
@@ -371,6 +379,7 @@ function NetherCanvas() {
           }
         }
 
+        // Draw pool basin background
         ctx.fillStyle = "rgba(20,4,12,0.98)";
         ctx.fillRect(wfX - 25, poolTop, wfW + 50, 48);
         
@@ -475,7 +484,7 @@ function NetherCanvas() {
   }, []);
 
   return (
-    <canvas ref={cvs} style={{position:"fixed",inset:0,zIndex:-1,pointerEvents:"none"}}/>
+    <canvas ref={cvs} style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none"}}/>
   );
 }
 
@@ -1083,9 +1092,6 @@ export default function Page() {
         <div style={{height:"100%",width:`${pct*100}%`,background:`linear-gradient(90deg,${P.lava},${P.magma},${P.gold})`,boxShadow:`0 0 14px ${P.lava}`,transition:"width .08s linear"}}/>
       </div>
 
-      {/* Canvas background for block structures */}
-      <NetherCanvas/>
-
       {/* Atmospheric vignette – lightened so canvas shows through */}
       <div style={{
         position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
@@ -1137,6 +1143,9 @@ export default function Page() {
         padding:"180px 48px 140px",
         position:"relative",zIndex:2,
       }}>
+        {/* Confined Canvas Background within Hero Section */}
+        <NetherCanvas/>
+
         <div style={{
           position:"absolute",top:"35%",left:"50%",transform:"translate(-50%,-50%)",
           width:"800px",height:"600px",
@@ -1146,7 +1155,6 @@ export default function Page() {
 
         <div style={{width:"100%",maxWidth:"980px",position:"relative"}}>
 
-          {/* Grid columns set to minmax(0, ...) to prevent expansion */}
           <div style={{display:"grid",gridTemplateColumns:"minmax(0, 1.25fr) minmax(0, 0.75fr)",gap:"45px",alignItems:"center"}} className="hgrid">
 
             {/* Left Column (Clamped maximum width) */}
