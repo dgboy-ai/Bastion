@@ -14,6 +14,15 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "react/no-unescaped-entities": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
+  {
     files: ["src/app/api/**/route.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",

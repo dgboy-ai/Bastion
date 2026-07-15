@@ -14,7 +14,7 @@ from typing import Any
 
 from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
-from bastion.config import get_settings, AUDIT_LIMIT, ANOMALY_LIMIT
+from bastion.config import ANOMALY_LIMIT, AUDIT_LIMIT, get_settings
 from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
 from bastion.guard import MemoryGuard, pii_scan
 from bastion.log_setup import get_logger
@@ -927,7 +927,7 @@ class BastionMemory:
         try:
             # Convert relative timestamps to absolute
             abs_timestamp = self._parse_timestamp(timestamp)
-            
+
             # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
             try:
                 with conn.cursor() as cur:
@@ -966,11 +966,11 @@ class BastionMemory:
         import re
         ts = timestamp.strip().lower()
         now = datetime.now(UTC)
-        
+
         # Handle "now" or "just now"
         if ts in ("now", "just now"):
             return now.isoformat()
-        
+
         # Handle relative timestamps like "5 minutes ago", "2 hours ago"
         match = re.match(r"(\d+)\s+(second|minute|hour|day|week|month)s?\s+ago", ts)
         if match:
@@ -991,7 +991,7 @@ class BastionMemory:
             else:
                 dt = now
             return dt.isoformat()
-        
+
         # Already absolute timestamp
         return timestamp
 

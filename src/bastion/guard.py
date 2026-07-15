@@ -340,14 +340,14 @@ class MemoryGuard:
                 score *= HASH_CHAIN_PENALTY
 
         # Age penalty (matching trust.py thresholds)
-        AGE_OLD_HOURS = 2160   # 90 days
-        AGE_MATURE_HOURS = 720  # 30 days
+        age_old_hours = 2160   # 90 days
+        age_mature_hours = 720  # 30 days
 
         if created_at is not None:
             age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
-            if age_hours > AGE_OLD_HOURS:
+            if age_hours > age_old_hours:
                 score *= AGE_OLD_PENALTY
-            elif age_hours > AGE_MATURE_HOURS:
+            elif age_hours > age_mature_hours:
                 score *= AGE_MATURE_PENALTY
 
         score = max(0.0, min(1.0, score))

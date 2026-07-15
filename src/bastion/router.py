@@ -122,7 +122,8 @@ class RecallRouter:
 
         # Check entity signals
         entity_matches = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", query)
-        tech_matches = re.findall(r"\b(?:CockroachDB|Bedrock|Lambda|KMS|S3|SQS|SNS|API|SQL|HTTP)\b", query, re.IGNORECASE)
+        tech_pattern = r"\b(?:CockroachDB|Bedrock|Lambda|KMS|S3|SQS|SNS|API|SQL|HTTP)\b"
+        tech_matches = re.findall(tech_pattern, query, re.IGNORECASE)
         entity_score = min(1.0, (len(entity_matches) + len(tech_matches)) * 0.3)
         scores["entity"] = entity_score
 

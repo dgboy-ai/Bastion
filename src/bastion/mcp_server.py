@@ -1179,7 +1179,11 @@ def create_server(
                 else:
                     schema = {"table": table, "columns": table_info["columns"]}
             else:
-                schema = {"tables": {name: {"columns": [c["name"] for c in t["columns"]]} for name, t in mock_tables.items()}}
+                tables_dict = {
+                    name: {"columns": [c["name"] for c in t["columns"]]}
+                    for name, t in mock_tables.items()
+                }
+                schema = {"tables": tables_dict}
         else:
             try:
                 pool = mem.get_pool()

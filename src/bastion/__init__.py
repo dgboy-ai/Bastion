@@ -46,10 +46,10 @@ from bastion.models import (
 from bastion.observations import Observation, ObservationDetector, ObservationReport
 from bastion.pool import AsyncConnectionPool, ConnectionPool
 from bastion.procedural import DecisionPattern, ProceduralMemory, WorkflowPattern
-from bastion.router import QueryClassification, RecallResult, RecallRouter
 from bastion.retrieval import MultiSignalRetriever, RetrievalResult
 from bastion.retry import SerializationRetryEngine
 from bastion.rls import RowLevelSecurity
+from bastion.router import QueryClassification, RecallResult, RecallRouter
 from bastion.rules import CognitiveRule, CognitiveRulesEngine, ExecutionLog, RuleCategory
 from bastion.saga import SagaBoundary, SagaMemoryManager
 from bastion.session_memory import SessionEntry, SessionMemory
