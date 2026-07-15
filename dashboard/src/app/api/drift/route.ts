@@ -1,5 +1,5 @@
-import { apiSuccess } from "@/lib/api-response";
-import { pool, safeQuery } from "@/lib/db";
+import { apiSuccess, apiError } from "@/lib/api-response";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockDrift } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -27,7 +27,7 @@ interface DriftRow {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (!pool) {
+  if (isMockMode()) {
     return apiSuccess(getMockDrift(), 'short', { mock: true });
   }
 
@@ -120,7 +120,7 @@ export async function GET(request: Request) {
       totalScores: scores.length,
     }, 'short');
   } catch (error) {
-    console.error("[api/drift] Query failed, falling back to mock:", error);
-    return apiSuccess(getMockDrift(), 'short', { mock: true });
+    console.error("[api/drift] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

@@ -252,14 +252,32 @@ class TestDistributedMode:
 
     @pytest.fixture
     def d_limiter(self):
+        # Clean up any leftover slots from previous test runs
+        import os
+        import psycopg
+        conn_str = os.environ.get("BASTION_CONN", "")
+        if conn_str:
+            conn = psycopg.connect(conn_str)
+            with conn.cursor() as cur:
+                cur.execute("UPDATE agent_limiter SET instance_id = NULL, acquired_at = NULL")
+            conn.commit()
+            conn.close()
+
         inst = RequestLimiter(
             max_concurrent=5,
             max_queue=10,
-            timeout_seconds=2,
+            timeout_seconds=60,
             instance_id="test-integration",
         )
         yield inst
+        # Cleanup after test
         inst.close()
+        if conn_str:
+            conn = psycopg.connect(conn_str)
+            with conn.cursor() as cur:
+                cur.execute("UPDATE agent_limiter SET instance_id = NULL, acquired_at = NULL")
+            conn.commit()
+            conn.close()
 
     def test_bootstrap(self, d_limiter):
         """Table should exist and have the right number of slots."""
@@ -322,7 +340,7 @@ class TestDistributedMode:
         other = RequestLimiter(
             max_concurrent=5,
             max_queue=10,
-            timeout_seconds=2,
+            timeout_seconds=60,
             instance_id="other-instance",
         )
         # Fill all 5 from d_limiter

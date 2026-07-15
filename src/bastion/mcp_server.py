@@ -88,13 +88,21 @@ def _load_api_keys() -> set[str]:
 
 
 def _check_auth(headers: dict[str, str]) -> bool:
+    import secrets as _secrets
+
     keys = _load_api_keys()
     if not keys:
         return False
     auth = headers.get("authorization") or headers.get("Authorization") or ""
+    provided = ""
     if auth.startswith("Bearer "):
-        return auth.removeprefix("Bearer ").strip() in keys
-    return auth in keys
+        provided = auth.removeprefix("Bearer ").strip()
+    else:
+        provided = auth
+    if not provided:
+        return False
+    # Constant-time comparison to prevent timing attacks
+    return any(_secrets.compare_digest(provided, k) for k in keys)
 
 
 def _get_limiter() -> RequestLimiter:
@@ -513,13 +521,19 @@ def create_server(
         timestamp: str,
         agent_id: str | None = None,
     ) -> str:
+        if not timestamp or not timestamp.strip():
+            return json.dumps({"error": "timestamp is required"})
         mem = _resolve_memory(ctx)
-        results = await anyio.to_thread.run_sync(
-            mem.get_at_time,
-            timestamp,
-            agent_id,
-        )
-        return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        try:
+            results = await anyio.to_thread.run_sync(
+                mem.get_at_time,
+                timestamp,
+                agent_id,
+            )
+            return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_timetravel failed")
+            return json.dumps({"error": f"Time travel query failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_audit",
@@ -535,8 +549,12 @@ def create_server(
     )
     async def memory_audit(ctx: Context, agent_id: str | None = None) -> str:
         mem = _resolve_memory(ctx)
-        entries = await anyio.to_thread.run_sync(mem.audit, agent_id)
-        return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
+        try:
+            entries = await anyio.to_thread.run_sync(mem.audit, agent_id)
+            return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_audit failed")
+            return json.dumps({"error": f"Audit query failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_heal",
@@ -554,11 +572,15 @@ def create_server(
     )
     async def memory_heal(ctx: Context, agent_id: str | None = None) -> str:
         mem = _resolve_memory(ctx)
-        await _report_progress(ctx, 0, 2, "Pruning expired memories...")
-        result = await anyio.to_thread.run_sync(mem.heal, agent_id)
-        await _report_progress(ctx, 2, 2, "Self-heal complete")
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps(result, indent=2, default=str)
+        try:
+            await _report_progress(ctx, 0, 2, "Pruning expired memories...")
+            result = await anyio.to_thread.run_sync(mem.heal, agent_id)
+            await _report_progress(ctx, 2, 2, "Self-heal complete")
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_heal failed")
+            return json.dumps({"error": f"Self-heal failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_delete",
@@ -608,12 +630,18 @@ def create_server(
         pin_priority: int = 2,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        if not content or not content.strip():
+            return json.dumps({"error": "content is required"})
         mem = _resolve_memory(ctx)
-        record = await anyio.to_thread.run_sync(
-            mem.pin, memory_type, content, pin_priority, metadata,
-        )
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps(record.to_dict(), indent=2, default=str)
+        try:
+            record = await anyio.to_thread.run_sync(
+                mem.pin, memory_type, content, pin_priority, metadata,
+            )
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(record.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_pin failed")
+            return json.dumps({"error": f"Pin failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_get_pinned",
@@ -635,8 +663,12 @@ def create_server(
         min_priority: int = 1,
     ) -> str:
         mem = _resolve_memory(ctx)
-        results = await anyio.to_thread.run_sync(mem.get_pinned, min_priority)
-        return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        try:
+            results = await anyio.to_thread.run_sync(mem.get_pinned, min_priority)
+            return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_get_pinned failed")
+            return json.dumps({"error": f"Get pinned failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_list",
@@ -660,8 +692,12 @@ def create_server(
         offset: int = 0,
     ) -> str:
         mem = _resolve_memory(ctx)
-        results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
-        return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        try:
+            results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
+            return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_list failed")
+            return json.dumps({"error": f"List failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_correct",
@@ -684,12 +720,20 @@ def create_server(
         new_content: str,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        if not memory_id:
+            return json.dumps({"error": "memory_id is required"})
+        if not new_content:
+            return json.dumps({"error": "new_content is required"})
         mem = _resolve_memory(ctx)
-        record = await anyio.to_thread.run_sync(mem.correct_memory, memory_id, new_content, metadata)
-        if record is None:
-            return json.dumps({"error": f"Memory {memory_id} not found"})
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps(record.to_dict(), indent=2, default=str)
+        try:
+            record = await anyio.to_thread.run_sync(mem.correct_memory, memory_id, new_content, metadata)
+            if record is None:
+                return json.dumps({"error": f"Memory {memory_id} not found"})
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(record.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_correct failed")
+            return json.dumps({"error": f"Correct failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="memory_health",
@@ -732,12 +776,20 @@ def create_server(
         memory_id: str,
         patch_ops: list[dict[str, Any]],
     ) -> str:
+        if not memory_id:
+            return json.dumps({"error": "memory_id is required"})
+        if not patch_ops:
+            return json.dumps({"error": "patch_ops is required"})
         mem = _resolve_memory(ctx)
-        result = await anyio.to_thread.run_sync(mem.apply_patch, memory_id, patch_ops)
-        if result is None:
-            return json.dumps({"error": f"Memory {memory_id} not found"})
-        await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
-        return json.dumps(result, indent=2, default=str)
+        try:
+            result = await anyio.to_thread.run_sync(mem.apply_patch, memory_id, patch_ops)
+            if result is None:
+                return json.dumps({"error": f"Memory {memory_id} not found"})
+            await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            logger.exception("memory_apply_patch failed")
+            return json.dumps({"error": f"Patch failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="resolve_conflict",
@@ -757,18 +809,24 @@ def create_server(
         fact_b: str,
         context: str | None = None,
     ) -> str:
+        if not fact_a or not fact_b:
+            return json.dumps({"error": "Both fact_a and fact_b are required"})
         mem = _resolve_memory(ctx)
-        await _report_progress(ctx, 0, 3, "Analyzing conflicting facts...")
-        await _report_progress(ctx, 1, 3, "Acquiring SERIALIZABLE lock...")
-        merged = await anyio.to_thread.run_sync(
-            mem.resolve_conflict,
-            fact_a,
-            fact_b,
-            context,
-        )
-        await _report_progress(ctx, 3, 3, "Conflict resolved")
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps({"merged": merged}, indent=2, default=str)
+        try:
+            await _report_progress(ctx, 0, 3, "Analyzing conflicting facts...")
+            await _report_progress(ctx, 1, 3, "Acquiring SERIALIZABLE lock...")
+            merged = await anyio.to_thread.run_sync(
+                mem.resolve_conflict,
+                fact_a,
+                fact_b,
+                context,
+            )
+            await _report_progress(ctx, 3, 3, "Conflict resolved")
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps({"merged": merged}, indent=2, default=str)
+        except Exception as e:
+            logger.exception("resolve_conflict failed")
+            return json.dumps({"error": f"Conflict resolution failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="ltm_check_reuse",
@@ -803,21 +861,25 @@ def create_server(
             return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
 
         mem = _resolve_memory(ctx)
-        gateway = LTMMemoryGateway(mem, reuse_threshold=threshold)
-        result = await anyio.to_thread.run_sync(
-            gateway.check_reuse, query, threshold, analysis_type,
-        )
-        if result is None:
+        try:
+            gateway = LTMMemoryGateway(mem, reuse_threshold=threshold)
+            result = await anyio.to_thread.run_sync(
+                gateway.check_reuse, query, threshold, analysis_type,
+            )
+            if result is None:
+                return json.dumps({
+                    "reuse_found": False,
+                    "query": query[:200],
+                    "threshold": threshold,
+                    "recommendation": "run_workflow",
+                }, indent=2)
             return json.dumps({
-                "reuse_found": False,
-                "query": query[:200],
-                "threshold": threshold,
-                "recommendation": "run_workflow",
-            }, indent=2)
-        return json.dumps({
-            "reuse_found": True,
-            **result.to_dict(),
-        }, indent=2, default=str)
+                "reuse_found": True,
+                **result.to_dict(),
+            }, indent=2, default=str)
+        except Exception as e:
+            logger.exception("ltm_check_reuse failed")
+            return json.dumps({"error": f"LTM check failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="ltm_store_analysis",
@@ -851,12 +913,16 @@ def create_server(
             return json.dumps({"error": "result must be a non-empty string"})
 
         mem = _resolve_memory(ctx)
-        gateway = LTMMemoryGateway(mem)
-        store_result = await anyio.to_thread.run_sync(
-            gateway.store_analysis, query, result, analysis_type, metadata, tokens_used,
-        )
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps(store_result.to_dict(), indent=2, default=str)
+        try:
+            gateway = LTMMemoryGateway(mem)
+            store_result = await anyio.to_thread.run_sync(
+                gateway.store_analysis, query, result, analysis_type, metadata, tokens_used,
+            )
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(store_result.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("ltm_store_analysis failed")
+            return json.dumps({"error": f"LTM store failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="ltm_invalidate",
@@ -885,9 +951,13 @@ def create_server(
             return json.dumps({"error": "query must be a non-empty string"})
 
         mem = _resolve_memory(ctx)
-        gateway = LTMMemoryGateway(mem)
-        result = await anyio.to_thread.run_sync(gateway.invalidate, query, reason)
-        return json.dumps(result, indent=2, default=str)
+        try:
+            gateway = LTMMemoryGateway(mem)
+            result = await anyio.to_thread.run_sync(gateway.invalidate, query, reason)
+            return json.dumps(result, indent=2, default=str)
+        except Exception as e:
+            logger.exception("ltm_invalidate failed")
+            return json.dumps({"error": f"LTM invalidate failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="detect_contradictions",
@@ -917,13 +987,17 @@ def create_server(
             return json.dumps({"error": "memory_id is required"})
 
         mem = _resolve_memory(ctx)
-        record = await anyio.to_thread.run_sync(mem.get_memory, memory_id)
-        if record is None:
-            return json.dumps({"error": f"Memory {memory_id} not found"})
+        try:
+            record = await anyio.to_thread.run_sync(mem.get_memory, memory_id)
+            if record is None:
+                return json.dumps({"error": f"Memory {memory_id} not found"})
 
-        detector = ContradictionDetector(mem)
-        result = await anyio.to_thread.run_sync(detector.scan_after_store, record)
-        return json.dumps(result.to_dict(), indent=2, default=str)
+            detector = ContradictionDetector(mem)
+            result = await anyio.to_thread.run_sync(detector.scan_after_store, record)
+            return json.dumps(result.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("detect_contradictions failed")
+            return json.dumps({"error": f"Contradiction detection failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="scan_all_contradictions",
@@ -945,13 +1019,17 @@ def create_server(
         from bastion.contradiction import ContradictionDetector
 
         mem = _resolve_memory(ctx)
-        detector = ContradictionDetector(mem)
-        results = await anyio.to_thread.run_sync(detector.scan_all)
-        return json.dumps(
-            [r.to_dict() for r in results],
-            indent=2,
-            default=str,
-        )
+        try:
+            detector = ContradictionDetector(mem)
+            results = await anyio.to_thread.run_sync(detector.scan_all)
+            return json.dumps(
+                [r.to_dict() for r in results],
+                indent=2,
+                default=str,
+            )
+        except Exception as e:
+            logger.exception("scan_all_contradictions failed")
+            return json.dumps({"error": f"Batch contradiction scan failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="dream",
@@ -1028,9 +1106,13 @@ def create_server(
         from bastion.observations import ObservationDetector
 
         mem = _resolve_memory(ctx)
-        detector = ObservationDetector(mem)
-        report = await anyio.to_thread.run_sync(detector.detect)
-        return json.dumps(report.to_dict(), indent=2, default=str)
+        try:
+            detector = ObservationDetector(mem)
+            report = await anyio.to_thread.run_sync(detector.detect)
+            return json.dumps(report.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("detect_observations failed")
+            return json.dumps({"error": f"Observation detection failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="multi_signal_search",
@@ -1100,14 +1182,20 @@ def create_server(
         budget_tokens: int = 4000,
         query: str | None = None,
     ) -> str:
+        if budget_tokens < 1:
+            return json.dumps({"error": "budget_tokens must be >= 1"})
         from bastion.context_budget import ContextBudgetManager
 
         mem = _resolve_memory(ctx)
-        packer = ContextBudgetManager(mem)
-        result = await anyio.to_thread.run_sync(
-            packer.pack, budget_tokens, query,
-        )
-        return json.dumps(result.to_dict(), indent=2, default=str)
+        try:
+            packer = ContextBudgetManager(mem)
+            result = await anyio.to_thread.run_sync(
+                packer.pack, budget_tokens, query,
+            )
+            return json.dumps(result.to_dict(), indent=2, default=str)
+        except Exception as e:
+            logger.exception("context_pack failed")
+            return json.dumps({"error": f"Context packing failed: {type(e).__name__}"})
 
     @mcp.tool(
         name="agent_schema",
@@ -1130,6 +1218,7 @@ def create_server(
         table: str | None = None,
     ) -> str:
         mem = _resolve_memory(ctx)
+        schema: dict[str, Any] = {}
         if mem._mock:
             mock_tables = {
                 "agent_memory": {
@@ -1472,12 +1561,12 @@ def create_server(
             }
         )
 
-    mcp._bastion_memory = _shared
+    mcp._bastion_memory = _shared  # type: ignore[attr-defined]
     return mcp
 
 
 def _make_http_app(mcp: FastMCP) -> Any:
-    """Wrap the FastMCP Streamable HTTP app with auth and rate limiting."""
+    """Wrap the FastMCP Streamable HTTP app with auth, rate limiting, and PKCE capture."""
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
     from starlette.responses import JSONResponse
@@ -1496,6 +1585,19 @@ def _make_http_app(mcp: FastMCP) -> Any:
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Any:
             path = request.url.path
+
+            # PKCE capture: intercept token endpoint to extract code_verifier
+            if path.rstrip("/") in ("/token", "/mcp/token") and request.method == "POST":
+                try:
+                    from bastion.auth_provider import store_pkce_verifier
+                    form_data = dict(await request.form())
+                    code_verifier = str(form_data.get("code_verifier", ""))
+                    auth_code = str(form_data.get("code", ""))
+                    if code_verifier and auth_code:
+                        store_pkce_verifier(auth_code, code_verifier)
+                except Exception:
+                    logger.debug("PKCE capture failed (non-blocking)")
+
             if path in skip_paths:
                 return await call_next(request)
             if not oauth_active and not _check_auth(dict(request.headers)):

@@ -182,7 +182,8 @@ async def test_handle_tool_memory_heal(mcp):
     await mcp.call_tool("memory_store", {"content": "Keep"})
     result = await mcp.call_tool("memory_heal", {})
     data = json.loads(result[0][0].text)
-    assert "records_before" in data
+    assert "status" in data
+    assert data["status"] == "healed"
 
 
 @pytest.mark.asyncio

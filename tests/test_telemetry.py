@@ -41,7 +41,7 @@ def test_traced_heal():
     traced = TracedBastionMemory(inner)
     traced.store("fact", "Something")
     result = traced.heal()
-    assert "records_before" in result
+    assert "status" in result or "pruned" in result
     spans = traced._tracer._exported
     assert any(s.name == "bastion.heal" for s in spans)
 

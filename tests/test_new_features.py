@@ -268,18 +268,18 @@ class TestMultilangScan:
 class TestSelfCheckGate:
     def test_fallback_when_groq_unavailable(self, memory):
         triples = [("Alice", "works_at", "Acme", "entity", 0.9)]
-        memory._get_groq_client = lambda: None  # type: ignore
-        result = memory._self_check_triples("Alice works at Acme", triples)
+        memory._kg._get_groq_client = lambda: None  # type: ignore
+        result = memory._kg._self_check_triples("Alice works at Acme", triples)
         assert result == triples, "Should return original triples when Groq unavailable"
 
     def test_fallback_empty_triples(self, memory):
-        result = memory._self_check_triples("some content", [])
+        result = memory._kg._self_check_triples("some content", [])
         assert result == []
 
     def test_fallback_on_exception(self, memory):
         triples = [("Bob", "likes", "Python", "entity", 0.8)]
         def broken_client():
             raise RuntimeError("Groq connection failed")
-        memory._get_groq_client = broken_client  # type: ignore
-        result = memory._self_check_triples("Bob likes Python", triples)
+        memory._kg._get_groq_client = broken_client  # type: ignore
+        result = memory._kg._self_check_triples("Bob likes Python", triples)
         assert result == triples, "Should return original triples on exception"

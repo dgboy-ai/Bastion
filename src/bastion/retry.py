@@ -44,7 +44,10 @@ class SerializationRetryEngine:
         isolation: str = "serializable",
     ) -> Any:
         tracer = trace.get_tracer("bastion.retry") if _has_otel else None
-        span = tracer.start_as_current_span("retry.execute", kind=SpanKind.CLIENT) if _has_otel else _null_context()
+        if tracer is not None:
+            span = tracer.start_as_current_span("retry.execute", kind=SpanKind.CLIENT)
+        else:
+            span = _null_context()
         with span:
             last_error: Exception | None = None
 

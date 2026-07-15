@@ -179,14 +179,14 @@ Agent (Claude/Cursor) → MCP Protocol → Bastion MCP Server
 
 | File | What It Shows |
 |------|---------------|
-| `src/bastion/memory.py` | Core engine (2132 lines) |
+| `src/bastion/memory.py` | Core engine (1466 lines) |
 | `src/bastion/mcp_server.py` | MCP server (25 tools) |
 | `src/bastion/guard.py` | OWASP ASI06 security |
-| `src/bastion/dreaming.py` | Sleep-time consolidation |
-| `src/bastion/ltm_gateway.py` | Token savings cache |
+| `src/bastion/health.py` | Health, trust, anomaly detection |
+| `src/bastion/cache_router.py` | L1/L2 retrieval router |
 | `schema/002_agent_memory.sql` | C-SPANN vector index |
-| `scripts/demo.py` | Instant demo |
-| `tests/` | 1147 passing tests |
+| `scripts/benchmark.py` | Real benchmarks against CockroachDB |
+| `tests/` | 1223 passing tests |
 
 ---
 

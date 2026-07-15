@@ -1,12 +1,12 @@
-import { pool, query } from "@/lib/db";
+import { query, isMockMode } from "@/lib/db";
 import { getMockStats } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
-import { apiSuccess } from "@/lib/api-response";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (!pool) {
+  if (isMockMode()) {
     return apiSuccess(getMockStats(), "short", { mock: true });
   }
 
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
       })),
     }, "short");
   } catch (error) {
-    console.error("[api/stats] Query failed, falling back to mock:", error);
-    return apiSuccess(getMockStats(), "short", { mock: true });
+    console.error("[api/stats] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

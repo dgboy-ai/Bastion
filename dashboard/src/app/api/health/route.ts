@@ -1,6 +1,6 @@
-import { pool, safeQuery } from "@/lib/db";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
-import { apiSuccess } from "@/lib/api-response";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 const defaultHealth = {
   total_memories: 0,
@@ -15,7 +15,7 @@ const defaultHealth = {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (!pool) {
+  if (isMockMode()) {
     return apiSuccess(defaultHealth, "short", { mock: true });
   }
 
@@ -30,11 +30,11 @@ export async function GET(request: Request) {
         AVG(importance_score) as avg_importance_score
       FROM agent_memory
     `);
-    
+
     if (res.mock) {
       return apiSuccess(defaultHealth, "short", { mock: true });
     }
-    
+
     const row = res.rows[0];
     const total = Number(row.total_memories) || 0;
     const week = Number(row.memories_last_7_days) || 0;
@@ -47,7 +47,8 @@ export async function GET(request: Request) {
       avg_access_count: Number(Number(row.avg_access_count || 0).toFixed(2)),
       avg_importance_score: Number(Number(row.avg_importance_score || 0).toFixed(2)),
     });
-  } catch {
-    return apiSuccess(defaultHealth);
+  } catch (error) {
+    console.error("[api/health] Query failed:", error);
+    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
   }
 }

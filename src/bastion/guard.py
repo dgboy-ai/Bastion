@@ -186,6 +186,9 @@ class MemoryGuard:
         # 1. Prompt injection scan
         findings.extend(self._scan_prompt_injection(content))
 
+        # 1.5 Encoded payload detection (base64, URL-encoded)
+        findings.extend(self._scan_encoded_payloads(content))
+
         # 2. Secret/PII scan
         findings.extend(self._scan_secrets(content))
 
@@ -230,7 +233,7 @@ class MemoryGuard:
             hash_chain_intact=hash_ok,
         )
 
-    def get_stats(self) -> dict[str, int]:
+    def get_stats(self) -> dict[str, Any]:
         """Return guard statistics."""
         return {
             "total_checks": self._total_checks,
@@ -279,6 +282,49 @@ class MemoryGuard:
                 detail=f"PII detected: {', '.join(detected)}",
                 confidence=0.85,
             ))
+        return findings
+
+    def _scan_encoded_payloads(self, content: str) -> list[Finding]:
+        """Detect base64-encoded or URL-encoded injection payloads."""
+        import base64
+        import urllib.parse
+        findings: list[Finding] = []
+
+        # Check for base64-encoded suspicious content
+        b64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+        for match in b64_pattern.finditer(content):
+            try:
+                decoded = base64.b64decode(match.group()).decode("utf-8", errors="ignore")
+                if decoded and len(decoded) > 10:
+                    # Scan decoded content for injection patterns
+                    for pattern, desc, severity in _INJECTION_PATTERNS:
+                        if pattern.search(decoded):
+                            findings.append(Finding(
+                                detector="encoded_injection",
+                                threat_type="ASI06: Encoded Injection",
+                                severity=severity,
+                                detail=f"Base64-encoded payload decoded: {desc}",
+                                confidence=0.75,
+                            ))
+                            break
+            except Exception:
+                pass
+
+        # Check for URL-encoded suspicious content
+        if "%" in content:
+            decoded_url = urllib.parse.unquote(content)
+            if decoded_url != content:
+                for pattern, desc, severity in _INJECTION_PATTERNS:
+                    if pattern.search(decoded_url):
+                        findings.append(Finding(
+                            detector="encoded_injection",
+                            threat_type="ASI06: URL-Encoded Injection",
+                            severity=severity,
+                            detail=f"URL-encoded payload decoded: {desc}",
+                            confidence=0.75,
+                        ))
+                        break
+
         return findings
 
     def _check_content_size(self, content: str) -> list[Finding]:

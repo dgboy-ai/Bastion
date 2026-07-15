@@ -99,4 +99,4 @@ sam deploy --guided
 - [ ] Hash chain verification passes
 - [ ] MCP server starts and connects
 - [ ] Dashboard deploys to Vercel
-- [ ] All 1,147 tests pass
+- [ ] All 1,223 tests pass

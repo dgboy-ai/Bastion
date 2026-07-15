@@ -14,7 +14,7 @@ from typing import Any
 
 from bastion import mock as _mock
 from bastion.circuit_breaker import CircuitBreaker
-from bastion.config import ANOMALY_LIMIT, AUDIT_LIMIT, get_settings
+from bastion.config import AUDIT_LIMIT, get_settings
 from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
 from bastion.guard import MemoryGuard, pii_scan
 from bastion.log_setup import get_logger
@@ -204,6 +204,14 @@ class BastionMemory:
 
         self._guard = MemoryGuard()
 
+        # Sub-modules for extracted concerns
+        from bastion.a2a_tasks import A2ATaskStore
+        from bastion.knowledge_graph import KnowledgeGraph
+        from bastion.messaging import MessageBroker
+        self._a2a_store = A2ATaskStore(agent_id, self.get_pool, lambda: self._mock)
+        self._broker = MessageBroker(agent_id, self.get_pool, lambda: self._mock)
+        self._kg = KnowledgeGraph(agent_id, self.get_pool, self._set_rls_context)
+
         if self._mock:
             _mock.mock_register_namespace(agent_id, self.namespace)
         elif not self._conn_str:
@@ -245,20 +253,21 @@ class BastionMemory:
         """Set agent context for RLS filtering within a transaction.
 
         ``SET LOCAL`` requires an active transaction to take effect.
-        If the connection is in autocommit mode, the setting would be
-        session-persistent or silently ignored — a warning is emitted.
+        If the connection is in autocommit mode, we start a transaction
+        to ensure RLS is enforced.
         """
         if not self._rls_enabled:
             return
         try:
+            autocommit = getattr(conn, 'autocommit', False)
+            if autocommit:
+                # Start a transaction so SET LOCAL takes effect
+                conn.autocommit = False
+                logger.debug(
+                    "Auto-started transaction for RLS context (was autocommit)",
+                    extra={"agent_id": self.agent_id},
+                )
             with conn.cursor() as cur:
-                autocommit = getattr(conn, 'autocommit', False)
-                if autocommit:
-                    logger.warning(
-                        "Connection is in autocommit mode — SET LOCAL requires a transaction "
-                        "and will have no effect on subsequent operations",
-                        extra={"agent_id": self.agent_id},
-                    )
                 cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
         except Exception as exc:
             logger.warning(
@@ -404,7 +413,8 @@ class BastionMemory:
         """Return memory health metrics: count, freshness distribution, pinned count."""
         if self._mock:
             return _mock.mock_memory_health(self.agent_id)
-        return self._memory_health_real()
+        from bastion.health import memory_health_real
+        return memory_health_real(self)
 
     def apply_patch(
         self, memory_id: str, patch_ops: list[dict[str, Any]],
@@ -508,7 +518,8 @@ class BastionMemory:
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_detect_anomalies(agent_id)
-        return self._detect_anomalies_real(agent_id)
+        from bastion.health import detect_anomalies_real
+        return detect_anomalies_real(self, agent_id)
 
     def diff(self, timestamp_a: str, timestamp_b: str, agent_id: str | None = None) -> dict:
         if not timestamp_a or not isinstance(timestamp_a, str):
@@ -518,7 +529,8 @@ class BastionMemory:
         agent_id = agent_id or self.agent_id
         if self._mock:
             return _mock.mock_diff(agent_id, timestamp_a, timestamp_b)
-        return self._diff_real(agent_id, timestamp_a, timestamp_b)
+        from bastion.health import diff_real
+        return diff_real(self, agent_id, timestamp_a, timestamp_b)
 
     def provision_cluster(
         self,
@@ -531,7 +543,6 @@ class BastionMemory:
             return _mock.mock_provision_cluster(name, region, provider)
 
         # Security: Validate inputs to prevent argument injection
-        import re
 
         if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$", name):
             raise ValueError(f"Invalid cluster name: {name!r}")
@@ -566,7 +577,14 @@ class BastionMemory:
         _validate_expires_in(expires_in_seconds)
         if self._mock:
             return _mock.mock_store_with_graph(self.agent_id, content, metadata, expires_in_seconds)
-        return self._store_with_graph_real(content, metadata, expires_in_seconds)
+        # Store the memory record first
+        record = self._store_real("fact", content, metadata, expires_in_seconds)
+        # Extract triples and create entities/relations via KG
+        triples = self._extract_triples(content)
+        created_entities, created_relations = self._kg.store_with_graph(
+            record.memory_id, content, triples,
+        )
+        return record, created_entities, created_relations
 
     def graph_query(
         self,
@@ -580,17 +598,17 @@ class BastionMemory:
             raise ValueError(f"hops must be at least 1, got {hops}")
         if self._mock:
             return _mock.mock_graph_query(self.agent_id, start_entity, relation_path, hops)
-        return self._graph_query_real(start_entity, relation_path, hops)
+        return self._kg.graph_query(start_entity, relation_path, hops)
 
     def graph_at_time(self, timestamp: str, entity: str | None = None) -> dict[str, Any]:
         if self._mock:
             return _mock.mock_graph_at_time(self.agent_id, timestamp, entity)
-        return self._graph_at_time_real(timestamp, entity)
+        return self._kg.graph_at_time(timestamp, entity)
 
     def graph_stats(self) -> dict[str, Any]:
         if self._mock:
             return _mock.mock_graph_stats(self.agent_id)
-        return self._graph_stats_real()
+        return self._kg.graph_stats()
 
     def broadcast(self, event_type: str, payload: dict | None = None, namespace: str | None = None) -> MessageRecord:
         ns = namespace if namespace is not None else self.namespace
@@ -598,44 +616,18 @@ class BastionMemory:
             raise ValueError(f"event_type must be a non-empty string, got {type(event_type).__name__}")
         if self._mock:
             return _mock.mock_broadcast(self.agent_id, event_type, payload, ns)
-        return self._broadcast_real(event_type, payload, ns)
+        return self._broker.broadcast(event_type, payload, ns)
 
     def poll_messages(self, namespace: str | None = None) -> list[MessageRecord]:
         """Read and acknowledge all unread messages in a namespace."""
         ns = namespace if namespace is not None else self.namespace
         if self._mock:
             return _mock.mock_poll_messages(ns)
-        return self._poll_messages_real(ns)
+        return self._broker.consume(ns)
 
     def trust_report(self, memory_id: str) -> dict[str, Any]:
-        from bastion.trust import compute_trust_score
-
-        record = self.get_memory(memory_id)
-        if record is None:
-            return {"memory_id": memory_id, "error": "not_found"}
-        report = compute_trust_score(
-            memory_id=record.memory_id,
-            content=record.content,
-            metadata=record.metadata,
-            previous_hash=record.previous_hash,
-            cryptographic_hash=record.cryptographic_hash,
-            trust_level=getattr(record, "trust_level", 2),
-            source_provenance=getattr(record, "source_provenance", "agent_direct"),
-            overwrite_count=getattr(record, "overwrite_count", 0),
-            created_at=record.created_at,
-            last_accessed_at=None,
-        )
-        return {
-            "memory_id": report.memory_id,
-            "trust_score": report.trust_score,
-            "trust_level": report.trust_level,
-            "hash_chain_intact": report.hash_chain_intact,
-            "conflict_rate": report.conflict_rate,
-            "age_penalty": report.age_penalty,
-            "source_provenance": report.source_provenance,
-            "poisoning_risk": report.poisoning_risk,
-            "flags": report.flags,
-        }
+        from bastion.health import trust_report_real
+        return trust_report_real(self, memory_id)
 
     def get_memory(self, memory_id: str) -> MemoryRecord | None:
         if not memory_id or not isinstance(memory_id, str):
@@ -689,87 +681,98 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
-        try:
-            prev_hash = self._get_last_hash(conn)
-            meta = dict(metadata) if metadata is not None else {}
-            precomputed_embedding = meta.pop("_precomputed_embedding", None)
+
+        # Prepare data outside the transaction (embedding generation is slow)
+        meta = dict(metadata) if metadata is not None else {}
+        precomputed_embedding = meta.pop("_precomputed_embedding", None)
+        if precomputed_embedding is not None:
+            embedding = precomputed_embedding
+        else:
+            embedding = self._embed(content)
+        embedding_str = json.dumps(embedding)
+        now = datetime.now(UTC)
+        expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
+        trust_level = 2
+        source_prov = "agent_direct"
+        meta.pop("_trust_level", None)
+        meta.pop("_source_provenance", None)
+
+        def _insert_operation(cur: Any) -> tuple:
+            """The DB operation to execute with retry on serialization errors."""
+            # Read prev_hash inside the transaction for consistency
+            cur.execute(
+                "SELECT cryptographic_hash FROM agent_memory "
+                "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                (self.agent_id,),
+            )
+            prev_row = cur.fetchone()
+            prev_hash = prev_row[0] if prev_row else None
+
             crypto_hash = hashlib.sha256(
                 (content + json.dumps(meta, sort_keys=True) + (prev_hash or "")).encode()
             ).hexdigest()
 
-            if precomputed_embedding is not None:
-                embedding = precomputed_embedding
-            else:
-                embedding = self._embed(content)
-            embedding_str = json.dumps(embedding)
-            now = datetime.now(UTC)
-            expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
+            cols = (
+                "agent_id, memory_type, content, embedding, metadata, "
+                "previous_hash, cryptographic_hash, expires_at, importance_score, "
+                "trust_level, source_provenance"
+            )
+            placeholders = "%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s"
+            params = [
+                self.agent_id, memory_type, content, embedding_str,
+                json.dumps(meta), prev_hash, crypto_hash,
+                expires_dt.isoformat() if expires_dt else None,
+                trust_level, source_prov,
+            ]
+            if region is not None:
+                cols += ", crdb_region"
+                placeholders += ", %s"
+                params.append(region)
+            cur.execute(
+                f"INSERT INTO agent_memory ({cols}) "
+                f"VALUES ({placeholders}) RETURNING memory_id, created_at",
+                params,
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("INSERT RETURNING did not return a row")
 
-            with conn.cursor() as cur:
-                trust_level = 2
-                source_prov = "agent_direct"
-                meta.pop("_trust_level", None)
-                meta.pop("_source_provenance", None)
-                cols = (
-                    "agent_id, memory_type, content, embedding, metadata, "
-                    "previous_hash, cryptographic_hash, expires_at, importance_score, "
-                    "trust_level, source_provenance"
-                )
-                placeholders = "%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s"
-                params = [
-                    self.agent_id, memory_type, content, embedding_str,
-                    json.dumps(meta), prev_hash, crypto_hash,
-                    expires_dt.isoformat() if expires_dt else None,
-                    trust_level, source_prov,
-                ]
-                if region is not None:
-                    cols += ", crdb_region"
-                    placeholders += ", %s"
-                    params.append(region)
-                cur.execute(
-                    f"INSERT INTO agent_memory ({cols}) "
-                    f"VALUES ({placeholders}) RETURNING memory_id, created_at",
-                    params,
-                )
-                row = cur.fetchone()
-                if row is None:
-                    raise RuntimeError("INSERT RETURNING did not return a row")
+            workflow_id = str(uuid.uuid4())
+            cur.execute(
+                "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                (
+                    self.agent_id,
+                    workflow_id,
+                    "memory_store",
+                    json.dumps({"memory_type": memory_type, "content_preview": pii_scan(content[:200])[0]}),
+                ),
+            )
+            return (row, prev_hash, crypto_hash)
 
-                workflow_id = str(uuid.uuid4())
-                cur.execute(
-                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                    (
-                        self.agent_id,
-                        workflow_id,
-                        "memory_store",
-                        json.dumps({"memory_type": memory_type, "content_preview": pii_scan(content[:200])[0]}),
-                    ),
-                )
-                conn.commit()
+        try:
+            # Use retry engine with SERIALIZABLE isolation for hash chain integrity
+            row, prev_hash, crypto_hash = self._retry_engine.execute(
+                conn, _insert_operation, isolation="serializable"
+            )
 
-                row_map = row._mapping if hasattr(row, "_mapping") else {"memory_id": row[0], "created_at": row[1]}
-                return MemoryRecord(
-                    memory_id=str(row_map["memory_id"]),
-                    agent_id=self.agent_id,
-                    memory_type=memory_type,
-                    content=content,
-                    embedding=embedding,
-                    metadata=meta,
-                    previous_hash=prev_hash,
-                    cryptographic_hash=crypto_hash,
-                    created_at=row_map["created_at"],
-                    expires_at=expires_dt,
-                    importance_score=5.0,
-                    trust_level=trust_level,
-                    source_provenance=source_prov,
-                )
+            row_map = row._mapping if hasattr(row, "_mapping") else {"memory_id": row[0], "created_at": row[1]}
+            return MemoryRecord(
+                memory_id=str(row_map["memory_id"]),
+                agent_id=self.agent_id,
+                memory_type=memory_type,
+                content=content,
+                embedding=embedding,
+                metadata=meta,
+                previous_hash=prev_hash,
+                cryptographic_hash=crypto_hash,
+                created_at=row_map["created_at"],
+                expires_at=expires_dt,
+                importance_score=5.0,
+                trust_level=trust_level,
+                source_provenance=source_prov,
+            )
         except Exception as exc:
             logger.exception("store_real failed", extra={"agent_id": self.agent_id, "error": str(exc)})
-            try:
-                conn.rollback()
-            except Exception as rb_exc:
-                logger.warning("rollback failed during store error handling", extra={"rollback_error": str(rb_exc)})
-            logger.exception("store failed, rolled back transaction")
             raise
         finally:
             pool.release(conn)
@@ -921,9 +924,15 @@ class BastionMemory:
             pool.release(conn)
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
-        # Use a fresh connection for time-travel to avoid transaction conflicts
+        # Use a fresh connection for time-travel to avoid transaction conflicts.
+        # We still bypass the pool because AS OF SYSTEM TIME requires a dedicated
+        # connection that isn't shared with other transactions.
         import psycopg
-        conn = psycopg.connect(self._conn_str)
+        try:
+            conn = psycopg.connect(self._conn_str, connect_timeout=10)
+        except Exception as exc:
+            logger.warning("Failed to connect for time-travel query: %s", exc)
+            return []
         try:
             # Convert relative timestamps to absolute
             abs_timestamp = self._parse_timestamp(timestamp)
@@ -959,11 +968,12 @@ class BastionMemory:
                     logger.warning("Time-travel fallback also failed: %s", fallback_exc)
                     return []
         finally:
-            conn.close()
+            import contextlib
+            with contextlib.suppress(Exception):
+                conn.close()
 
     def _parse_timestamp(self, timestamp: str) -> str:
         """Convert relative timestamps to absolute ISO format for CockroachDB."""
-        import re
         ts = timestamp.strip().lower()
         now = datetime.now(UTC)
 
@@ -1157,70 +1167,6 @@ class BastionMemory:
         self._store_real(memory_type, response, {"query": query, "from_cache": False}, None)
         return response, {"cache": "miss"}
 
-    def _detect_anomalies_real(self, agent_id: str) -> list[dict]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s",
-                    (agent_id,),
-                )
-                total_row = cur.fetchone()
-                if total_row is None:
-                    raise RuntimeError("COUNT query for memories did not return a row")
-                total = total_row[0]
-
-                cur.execute(
-                    "SELECT content, created_at FROM agent_memory "
-                    "WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s",
-                    (agent_id, ANOMALY_LIMIT),
-                )
-                rows = cur.fetchall()
-
-            contents = [r[0] for r in rows]
-            alerts = []
-            if len(contents) != len(set(contents)):
-                alerts.append(
-                    {
-                        "type": "fact_turnover",
-                        "severity": "medium",
-                        "detail": "Duplicate content detected in recent memory",
-                        "agent_id": agent_id,
-                    }
-                )
-
-            if total > 100:
-                alerts.append(
-                    {
-                        "type": "size_spike",
-                        "severity": "info",
-                        "detail": f"Memory count ({total}) exceeds 100 records",
-                        "agent_id": agent_id,
-                    }
-                )
-            return alerts
-        except Exception as e:
-            logger.exception("Anomaly detection query failed", extra={"agent_id": agent_id})
-            raise RuntimeError(f"Anomaly detection failed for agent {agent_id}: {e}") from e
-        finally:
-            pool.release(conn)
-
-    def _diff_real(self, agent_id: str, timestamp_a: str, timestamp_b: str) -> dict:
-        state_a = self._get_at_time_real(agent_id, timestamp_a)
-        state_b = self._get_at_time_real(agent_id, timestamp_b)
-        hashes_a = {r.cryptographic_hash for r in state_a}
-        hashes_b = {r.cryptographic_hash for r in state_b}
-        return {
-            "agent_id": agent_id,
-            "timestamp_a": timestamp_a,
-            "timestamp_b": timestamp_b,
-            "added": [r.to_dict() for r in state_b if r.cryptographic_hash not in hashes_a],
-            "removed": [r.to_dict() for r in state_a if r.cryptographic_hash not in hashes_b],
-            "count_a": len(state_a),
-            "count_b": len(state_b),
-        }
-
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
@@ -1264,7 +1210,7 @@ class BastionMemory:
         pin_priority: int,
         metadata: dict[str, Any] | None,
     ) -> MemoryRecord:
-        record = self._store_real(memory_type, content, metadata, None, _skip_guard=True)
+        record = self._store_real(memory_type, content, metadata, None)
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
@@ -1293,7 +1239,7 @@ class BastionMemory:
                     "WHERE memory_id = %s AND agent_id = %s AND is_pinned = true",
                     (memory_id, self.agent_id),
                 )
-                deleted = cur.rowcount > 0
+                deleted: bool = cur.rowcount > 0
             conn.commit()
             return deleted
         finally:
@@ -1361,42 +1307,6 @@ class BastionMemory:
         finally:
             pool.release(conn)
 
-    def _memory_health_real(self) -> dict[str, Any]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*), "
-                    "COUNT(*) FILTER (WHERE is_pinned), "
-                    "COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '7 days'), "
-                    "COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '30 days'), "
-                    "AVG(access_count), "
-                    "AVG(importance_score) "
-                    "FROM agent_memory WHERE agent_id = %s",
-                    (self.agent_id,),
-                )
-                row = cur.fetchone()
-                total = row[0] or 0
-                pinned = row[1] or 0
-                week = row[2] or 0
-                month = row[3] or 0
-                avg_access = float(row[4] or 0)
-                avg_importance = float(row[5] or 0)
-                freshness = week / max(total, 1)
-                return {
-                    "total_memories": total,
-                    "pinned_memories": pinned,
-                    "memories_last_7_days": week,
-                    "memories_last_30_days": month,
-                    "freshness_ratio": round(freshness, 4),
-                    "avg_access_count": round(avg_access, 2),
-                    "avg_importance_score": round(avg_importance, 2),
-                }
-        finally:
-            pool.release(conn)
-
     def _apply_patch_real(
         self, memory_id: str, patch_ops: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
@@ -1448,405 +1358,27 @@ class BastionMemory:
         finally:
             pool.release(conn)
 
-    _TRIPLE_PATTERNS = [
-        (re.compile(r"(\w+)\s+is\s+a\s+(\w+)", re.IGNORECASE), "is_a", "entity_type"),
-        (re.compile(r"(\w+)\s+is\s+(\w+(?:\s+\w+){0,3})", re.IGNORECASE), "is", "attribute"),
-        (re.compile(r"(\w+)\s+loves\s+(\w+)", re.IGNORECASE), "loves", "relation"),
-        (re.compile(r"(\w+)\s+likes\s+(\w+)", re.IGNORECASE), "likes", "relation"),
-        (re.compile(r"(\w+)\s+uses\s+(\w+)", re.IGNORECASE), "uses", "relation"),
-        (re.compile(r"(\w+)\s+builds\s+(\w+)", re.IGNORECASE), "builds", "relation"),
-        (re.compile(r"(\w+)\s+works\s+on\s+(\w+)", re.IGNORECASE), "works_on", "relation"),
-        (re.compile(r"(\w+)\s+created\s+(\w+)", re.IGNORECASE), "created", "relation"),
-        (re.compile(r"(\w+)\s+owns\s+(\w+)", re.IGNORECASE), "owns", "relation"),
-        (re.compile(r"(\w+)\s+manages\s+(\w+)", re.IGNORECASE), "manages", "relation"),
-        (re.compile(r"(\w+)\s+reports\s+to\s+(\w+)", re.IGNORECASE), "reports_to", "relation"),
-        (re.compile(r"(\w+)\s+belongs\s+to\s+(\w+)", re.IGNORECASE), "belongs_to", "relation"),
-    ]
-
     def _extract_triples(self, text: str) -> list[tuple[str, str, str, str, float]]:
-        if len(text) > 5000:
-            text = text[:5000]
-        triples: list[tuple[str, str, str, str, float]] = []
-        for compiled, rel_type, kind in self._TRIPLE_PATTERNS:
-            for match in compiled.finditer(text):
-                src, tgt = match.group(1).lower(), match.group(2).lower()
-                triples.append((src, tgt, rel_type, kind, 1.0))
-        return triples
-
-    _groq_client: Any = None
-
-    def _get_groq_client(self) -> Any:
-        if self._groq_client is not None:
-            return self._groq_client
-        import os
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            return None
-        from groq import Groq
-        self._groq_client = Groq(api_key=api_key)
-        return self._groq_client
-
-    def _self_check_triples(
-        self, content: str, triples: list[tuple[str, str, str, str, float]]
-    ) -> list[tuple[str, str, str, str, float]]:
-        """Optional LLM self-check on extracted triples.
-
-        Uses Groq to verify extraction quality when available.
-        Falls back to returning original triples if Groq is unavailable.
-        """
-        if not triples:
-            return triples
-        try:
-            client = self._get_groq_client()
-            if client is None:
-                return triples
-            triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
-            resp = client.chat.completions.create(
-                model=os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
-                messages=[
-                    {"role": "system", "content": (
-                        "You verify entity extraction. Given text and extracted triples, "
-                        "return ONLY valid triples as JSON: "
-                        '[["subject","relation","object","kind",confidence],...]. '
-                        "Remove duplicates and invalid triples. Keep confidence 0.0-1.0."
-                    )},
-                    {"role": "user", "content": f"Text: {content}\nTriples: {triples_text}"},
-                ],
-                temperature=0.1,
-                max_tokens=512,
-                timeout=10,
-            )
-            import json
-            verified = json.loads(resp.choices[0].message.content or "[]")
-            result = []
-            for t in verified:
-                if len(t) >= 5:
-                    result.append((str(t[0]), str(t[1]), str(t[2]), str(t[3]), float(t[4])))
-            return result if result else triples
-        except Exception:
-            logger.exception("LLM triple verification failed, falling back to unverified triples")
-            return triples
-
-    def _store_with_graph_real(
-        self,
-        content: str,
-        metadata: dict[str, Any] | None,
-        expires_in_seconds: int | None,
-    ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            record = self._store_real("fact", content, metadata, expires_in_seconds)
-            triples = self._extract_triples(content)
-            triples = self._self_check_triples(content, triples)
-            created_entities: list[EntityRecord] = []
-            created_relations: list[RelationRecord] = []
-
-            for src_name, tgt_name, rel_type, kind, confidence in triples:
-                if kind == "entity_type":
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                            "VALUES (%s, %s, %s, now())",
-                            (self.agent_id, tgt_name, src_name),
-                        )
-                        conn.commit()
-                else:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                            "VALUES (%s, 'person', %s, now()) "
-                            "ON CONFLICT DO NOTHING RETURNING entity_id",
-                            (self.agent_id, src_name),
-                        )
-                        src_row = cur.fetchone()
-                        eid_src = str(src_row[0]) if src_row else self._ensure_entity_id(cur, src_name)
-
-                        cur.execute(
-                            "INSERT INTO agent_entities (agent_id, entity_type, name, valid_from) "
-                            "VALUES (%s, 'concept', %s, now()) "
-                            "ON CONFLICT DO NOTHING RETURNING entity_id",
-                            (self.agent_id, tgt_name),
-                        )
-                        tgt_row = cur.fetchone()
-                        eid_tgt = str(tgt_row[0]) if tgt_row else self._ensure_entity_id(cur, tgt_name)
-
-                        cur.execute(
-                            "INSERT INTO agent_relations (agent_id, source_entity_id, target_entity_id, "
-                            "relation_type, confidence, source_memory_id) VALUES (%s, %s, %s, %s, %s, %s) "
-                            "RETURNING relation_id",
-                            (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record.memory_id),
-                        )
-                        conn.commit()
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT entity_id, agent_id, entity_type, name, attributes, valid_from, valid_until, created_at "
-                    "FROM agent_entities WHERE agent_id = %s ORDER BY created_at DESC",
-                    (self.agent_id,),
-                )
-                for r in cur.fetchall():
-                    created_entities.append(EntityRecord.from_row(r))
-
-            return record, created_entities, created_relations
-        finally:
-            pool.release(conn)
-
-    def _ensure_entity_id(self, cur, name: str) -> str:
-        cur.execute("SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s", (self.agent_id, name))
-        row = cur.fetchone()
-        if row is None:
-            raise ValueError(f"Entity '{name}' not found for agent {self.agent_id}")
-        return str(row[0])
-
-    def _graph_query_real(
-        self,
-        start_entity: str,
-        relation_path: list[str] | None,
-        hops: int,
-    ) -> list[dict[str, Any]]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT entity_id FROM agent_entities WHERE agent_id = %s AND name = %s LIMIT 1",
-                    (self.agent_id, start_entity),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return []
-                start_id = str(row[0])
-
-                found: list[dict[str, Any]] = []
-                visited: set[str] = set()
-                queue: list[tuple[str, int]] = [(start_id, 0)]
-
-                while queue:
-                    eid, depth = queue.pop(0)
-                    if depth >= hops or eid in visited:
-                        continue
-                    visited.add(eid)
-
-                    rel_type_filter = ""
-                    params: list[Any] = [eid]
-                    if relation_path:
-                        placeholders = ", ".join(f"${i + 2}" for i in range(len(relation_path)))
-                        rel_type_filter = f"AND r.relation_type IN ({placeholders})"
-                        params.extend(relation_path)
-
-                    cur.execute(
-                        f"SELECT r.relation_type, r.confidence, r.source_memory_id, "
-                        f"e.name AS target_name, e.entity_id AS target_id "
-                        f"FROM agent_relations r JOIN agent_entities e ON r.target_entity_id = e.entity_id "
-                        f"WHERE r.source_entity_id = $1 {rel_type_filter}",
-                        params,
-                    )
-                    for rel_row in cur.fetchall():
-                        found.append(
-                            {
-                                "source": start_entity,
-                                "target": str(rel_row[3]),
-                                "relation": str(rel_row[0]),
-                                "confidence": float(rel_row[1]),
-                                "depth": depth + 1,
-                            }
-                        )
-                        queue.append((str(rel_row[4]), depth + 1))
-                return found
-        finally:
-            pool.release(conn)
-
-    def _graph_at_time_real(self, timestamp: str, entity: str | None) -> dict[str, Any]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
-
-                if entity:
-                    cur.execute(
-                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                        "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s AND name = %s",
-                        (self.agent_id, entity),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT entity_id, agent_id, entity_type, name, attributes, "
-                        "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s",
-                        (self.agent_id,),
-                    )
-                entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
-
-                entity_ids = tuple(e["entity_id"] for e in entities)
-                if entity_ids:
-                    cur.execute(
-                        "SELECT r.relation_id, r.agent_id, r.source_entity_id, r.target_entity_id, "
-                        "r.relation_type, r.confidence, r.valid_from, r.valid_until, r.source_memory_id, r.created_at "
-                        "FROM agent_relations r WHERE r.source_entity_id IN %s OR r.target_entity_id IN %s",
-                        (entity_ids, entity_ids),
-                    )
-                    relations = [
-                        dict(
-                            zip(
-                                [
-                                    "relation_id",
-                                    "agent_id",
-                                    "source_entity_id",
-                                    "target_entity_id",
-                                    "relation_type",
-                                    "confidence",
-                                    "valid_from",
-                                    "valid_until",
-                                    "source_memory_id",
-                                    "created_at",
-                                ],
-                                r,
-                                strict=True,
-                            )
-                        )
-                        for r in cur.fetchall()
-                    ]
-                else:
-                    relations = []
-
-            conn.commit()
-            return {"agent_id": self.agent_id, "timestamp": timestamp, "entities": entities, "relations": relations}
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            pool.release(conn)
-
-    def _graph_stats_real(self) -> dict[str, Any]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,))
-                entity_row = cur.fetchone()
-                if entity_row is None:
-                    logger.error("COUNT query for entities returned no row")
-                    raise RuntimeError("COUNT query for entities did not return a row")
-                entity_count = entity_row[0]
-
-                cur.execute(
-                    "SELECT COUNT(*) FROM agent_relations r "
-                    "JOIN agent_entities e ON r.source_entity_id = e.entity_id WHERE e.agent_id = %s",
-                    (self.agent_id,),
-                )
-                relation_row = cur.fetchone()
-                if relation_row is None:
-                    logger.error("COUNT query for relations returned no row")
-                    raise RuntimeError("COUNT query for relations did not return a row")
-                relation_count = relation_row[0]
-
-                cur.execute(
-                    "SELECT DISTINCT entity_type FROM agent_entities WHERE agent_id = %s ORDER BY entity_type",
-                    (self.agent_id,),
-                )
-                entity_types = [r[0] for r in cur.fetchall()]
-
-                cur.execute(
-                    "SELECT COUNT(*) FROM agent_entities e WHERE e.agent_id = %s "
-                    "AND NOT EXISTS (SELECT 1 FROM agent_relations r "
-                    "WHERE r.source_entity_id = e.entity_id OR r.target_entity_id = e.entity_id)",
-                    (self.agent_id,),
-                )
-                orphans_row = cur.fetchone()
-                if orphans_row is None:
-                    logger.error("COUNT query for orphans returned no row")
-                    raise RuntimeError("COUNT query for orphans did not return a row")
-                orphans = orphans_row[0]
-
-                return {
-                    "entities": entity_count,
-                    "relations": relation_count,
-                    "orphans": orphans,
-                    "entity_types": entity_types,
-                }
-        finally:
-            pool.release(conn)
-
-    def _broadcast_real(self, event_type: str, payload: dict | None, namespace: str) -> MessageRecord:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO agent_messages (namespace, sender_agent_id, event_type, payload) "
-                    "VALUES (%s, %s, %s, %s) RETURNING message_id, created_at",
-                    (namespace, self.agent_id, event_type, json.dumps(payload or {})),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    raise RuntimeError("INSERT RETURNING did not return a row")
-                conn.commit()
-                row_map = row._mapping if hasattr(row, "_mapping") else {"message_id": row[0], "created_at": row[1]}
-                return MessageRecord(
-                    message_id=str(row_map["message_id"]),
-                    namespace=namespace,
-                    sender_agent_id=self.agent_id,
-                    event_type=event_type,
-                    payload=payload,
-                    created_at=row_map["created_at"],
-                )
-        finally:
-            pool.release(conn)
-
-    def _poll_messages_real(self, namespace: str) -> list[MessageRecord]:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT message_id, namespace, sender_agent_id, event_type, payload, "
-                    "created_at, expires_at, read FROM agent_messages "
-                    "WHERE namespace = %s AND read = FALSE AND (expires_at IS NULL OR expires_at > now()) "
-                    "ORDER BY created_at ASC "
-                    "FOR UPDATE SKIP LOCKED",
-                    (namespace,),
-                )
-                rows = cur.fetchall()
-                if rows:
-                    cur.execute(
-                        "UPDATE agent_messages SET read = TRUE WHERE message_id = ANY(%s)",
-                        (tuple(r[0] for r in rows),),
-                    )
-                conn.commit()
-                results = []
-                for r in rows:
-                    payload_raw = r[4]
-                    results.append(
-                        MessageRecord(
-                            message_id=str(r[0]),
-                            namespace=str(r[1]),
-                            sender_agent_id=str(r[2]),
-                            event_type=str(r[3]),
-                            payload=_parse_payload(payload_raw),
-                            created_at=r[5],
-                            expires_at=r[6],
-                            read=bool(r[7]),
-                        )
-                    )
-                return results
-        finally:
-            pool.release(conn)
+        from bastion.knowledge_graph import extract_triples
+        return extract_triples(text)
 
     def _embed(self, text: str) -> list[float]:
         """
         Generate a 1024-dim embedding using AWS Bedrock Titan Embed Text V2.
+        Uses circuit breaker to fast-fail when Bedrock is consistently unavailable.
         Retries up to 3 times with exponential backoff on ThrottlingException.
-        Falls back to a deterministic hash-based vector if Bedrock is unavailable
-        (no AWS credentials, network error, or BASTION_MOCK mode).
+        Falls back to a deterministic hash-based vector if Bedrock is unavailable.
         """
         if self._mock:
             return _hash_fallback_embed(text)
 
         import random
         import time
+
+        # Circuit breaker: if Bedrock has failed repeatedly, skip directly to fallback
+        if self._bedrock_cb.state.value == "open":
+            logger.debug("Bedrock circuit breaker open — using hash fallback")
+            return _hash_fallback_embed(text)
 
         client = _get_bedrock_client()
         if client is None:
@@ -1865,6 +1397,7 @@ class BastionMemory:
                 )
                 result: Any = json.loads(response["body"].read())
                 embedding: list[float] = result["embedding"]
+                self._bedrock_cb._on_success()
                 return embedding
             except Exception as exc:
                 exc_name = type(exc).__name__
@@ -1879,8 +1412,10 @@ class BastionMemory:
                     )
                     time.sleep(sleep_secs)
                     continue
+                self._bedrock_cb._on_failure()
                 logger.exception("Bedrock embedding failed after %d attempts, falling back to hash", attempt + 1)
                 return _hash_fallback_embed(text)
+        self._bedrock_cb._on_failure()
         return _hash_fallback_embed(text)
 
     # ------------------------------------------------------------------
@@ -1896,73 +1431,11 @@ class BastionMemory:
         callback_url: str | None = None,
     ) -> dict[str, Any]:
         """Insert a new A2A task into CockroachDB. Returns the task record."""
-        if self._mock:
-            return {
-                "task_id": task_id,
-                "agent_id": agent_id,
-                "skill_id": skill_id,
-                "status": status,
-                "callback_url": callback_url,
-                "artifacts": None,
-                "created_at": datetime.now(UTC).isoformat(),
-                "completed_at": None,
-            }
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO a2a_tasks (task_id, agent_id, skill_id, status, callback_url) "
-                    "VALUES (%s, %s, %s, %s, %s) "
-                    "RETURNING task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at",
-                    (task_id, agent_id, skill_id, status, callback_url),
-                )
-                row = cur.fetchone()
-                if row:
-                    return {
-                        "task_id": str(row[0]),
-                        "agent_id": row[1],
-                        "skill_id": row[2],
-                        "status": row[3],
-                        "callback_url": row[4],
-                        "artifacts": row[5],
-                        "created_at": row[6].isoformat() if row[6] else None,
-                        "completed_at": row[7].isoformat() if row[7] else None,
-                    }
-                return {"task_id": task_id, "status": status}
-        finally:
-            pool.release(conn)
+        return self._a2a_store.store_task(task_id, agent_id, skill_id, status, callback_url)
 
     def get_a2a_task(self, task_id: str) -> dict[str, Any] | None:
         """Retrieve an A2A task by ID from CockroachDB."""
-        if self._mock:
-            return None
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at "
-                    "FROM a2a_tasks WHERE task_id = %s",
-                    (task_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return None
-                return {
-                    "task_id": str(row[0]),
-                    "agent_id": row[1],
-                    "skill_id": row[2],
-                    "status": row[3],
-                    "callback_url": row[4],
-                    "artifacts": row[5],
-                    "created_at": row[6].isoformat() if row[6] else None,
-                    "completed_at": row[7].isoformat() if row[7] else None,
-                }
-        finally:
-            pool.release(conn)
+        return self._a2a_store.get_task(task_id)
 
     def update_a2a_task(
         self,
@@ -1972,37 +1445,7 @@ class BastionMemory:
         callback_url: str | None = None,
     ) -> dict[str, Any] | None:
         """Update an A2A task's status and artifacts in CockroachDB."""
-        if self._mock:
-            return None
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE a2a_tasks SET status = %s, artifacts = %s, "
-                    "callback_url = COALESCE(%s, callback_url), "
-                    "completed_at = CASE WHEN %s IN ('COMPLETED', 'FAILED', 'CANCELED') "
-                    "THEN now() ELSE completed_at END "
-                    "WHERE task_id = %s "
-                    "RETURNING task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at",
-                    (status, json.dumps(artifacts) if artifacts else None, callback_url, status, task_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return None
-                return {
-                    "task_id": str(row[0]),
-                    "agent_id": row[1],
-                    "skill_id": row[2],
-                    "status": row[3],
-                    "callback_url": row[4],
-                    "artifacts": row[5],
-                    "created_at": row[6].isoformat() if row[6] else None,
-                    "completed_at": row[7].isoformat() if row[7] else None,
-                }
-        finally:
-            pool.release(conn)
+        return self._a2a_store.update_task(task_id, status, artifacts, callback_url)
 
     def cancel_a2a_task(self, task_id: str) -> dict[str, Any] | None:
         """Cancel an A2A task."""
@@ -2016,156 +1459,6 @@ class BastionMemory:
         return False
 
 
-# ── Dynamic Context-Aware Vector Retrieval Routing ──────────────────────────
-
-
-class MemoryRouter:
-    """Routes vector retrieval between fast memory-resident cache and
-    disk-optimized CockroachDB C-SPANN indexes.
-
-    Implements a two-tier retrieval architecture:
-    - L1 Cache: In-memory LRU cache for recently/frequently accessed memories (<1ms)
-    - L2 Storage: CockroachDB C-SPANN vector index for long-term storage (15-30ms)
-
-    The router dynamically promotes frequently accessed memories to L1,
-    and demotes cold memories back to L2-only. This reduces latency for
-    hot-path queries while maintaining full recall for cold queries.
-
-    Usage:
-        router = MemoryRouter(memory, cache_size=1000)
-        results = router.search("user preferences", k=5)
-    """
-
-    def __init__(
-        self,
-        memory: BastionMemory,
-        cache_size: int = 1000,
-        promotion_threshold: int = 3,
-        demotion_interval_seconds: int = 300,
-    ):
-        self.memory = memory
-        self.cache_size = cache_size
-        self.promotion_threshold = promotion_threshold
-
-        # L1 Cache: memory_id -> MemoryRecord
-        self._cache: dict[str, MemoryRecord] = {}
-        # Access count: memory_id -> count (for promotion decisions)
-        self._access_counts: dict[str, int] = {}
-        # Cache hits/misses for metrics
-        self._cache_hits = 0
-        self._cache_misses = 0
-
-    def search(
-        self,
-        query: str,
-        k: int = 5,
-        threshold: float = 0.8,
-        memory_type: str | None = None,
-        namespace_scope: str = "own",
-    ) -> list[MemoryRecord]:
-        """Search with dynamic routing between L1 cache and L2 CRDB.
-
-        Strategy:
-        1. Check L1 cache for recently accessed memories matching the query
-        2. Query L2 CRDB for all matching memories
-        3. Merge results, prioritizing cached items for speed
-        4. Promote frequently accessed memories to L1 cache
-        """
-        # Step 1: Search L1 cache (fast path, <1ms)
-        cached_results = self._search_cache(query, k, memory_type)
-
-        # Step 2: Search L2 CRDB (slower path, 15-30ms)
-        db_results = self.memory.search(query, k, threshold, memory_type, namespace_scope)
-
-        # Step 3: Merge results — cached items first, then fill from DB
-        merged = self._merge_results(cached_results, db_results, k)
-
-        # Step 4: Promote frequently accessed memories to cache
-        for mem in merged:
-            mid = mem.memory_id
-            self._access_counts[mid] = self._access_counts.get(mid, 0) + 1
-            if self._access_counts[mid] >= self.promotion_threshold:
-                self._promote_to_cache(mem)
-
-        return merged
-
-    def _search_cache(
-        self,
-        query: str,
-        k: int,
-        memory_type: str | None,
-    ) -> list[MemoryRecord]:
-        """Search the in-memory L1 cache."""
-        if not self._cache:
-            return []
-
-        query_lower = query.lower()
-        results = []
-        for mem in self._cache.values():
-            if memory_type and mem.memory_type != memory_type:
-                continue
-            # Simple substring match for cache (fast, no embedding needed)
-            if query_lower in mem.content.lower():
-                results.append(mem)
-
-        # Sort by importance (cached items are inherently "hot")
-        results.sort(key=lambda m: m.importance_score, reverse=True)
-        return results[:k]
-
-    def _merge_results(
-        self,
-        cached: list[MemoryRecord],
-        db: list[MemoryRecord],
-        k: int,
-    ) -> list[MemoryRecord]:
-        """Merge cached and DB results, deduplicating by memory_id."""
-        seen = set()
-        merged = []
-
-        # Cached items first (faster access)
-        for mem in cached:
-            if mem.memory_id not in seen:
-                merged.append(mem)
-                seen.add(mem.memory_id)
-
-        # Fill remaining slots from DB
-        for mem in db:
-            if mem.memory_id not in seen:
-                merged.append(mem)
-                seen.add(mem.memory_id)
-                if len(merged) >= k:
-                    break
-
-        return merged[:k]
-
-    def _promote_to_cache(self, mem: MemoryRecord) -> None:
-        """Add a memory to the L1 cache, evicting LRU if full."""
-        if len(self._cache) >= self.cache_size and self._access_counts:
-            # Evict least recently accessed
-            oldest_id = min(self._access_counts, key=self._access_counts.get)
-            self._cache.pop(oldest_id, None)
-            self._access_counts.pop(oldest_id, None)
-        self._cache[mem.memory_id] = mem
-
-    def invalidate(self, memory_id: str) -> None:
-        """Remove a memory from the L1 cache (e.g., after delete or update)."""
-        self._cache.pop(memory_id, None)
-        self._access_counts.pop(memory_id, None)
-
-    def clear_cache(self) -> None:
-        """Clear the entire L1 cache."""
-        self._cache.clear()
-        self._access_counts.clear()
-
-    def get_stats(self) -> dict[str, Any]:
-        """Return cache performance statistics."""
-        total = self._cache_hits + self._cache_misses
-        hit_rate = (self._cache_hits / total * 100) if total > 0 else 0.0
-        return {
-            "cache_size": len(self._cache),
-            "cache_capacity": self.cache_size,
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
-            "hit_rate_percent": round(hit_rate, 1),
-            "promotion_threshold": self.promotion_threshold,
-        }
+# Re-export MemoryRouter for backwards compatibility
+# (extracted to cache_router.py but kept here for import stability)
+from bastion.cache_router import MemoryRouter  # noqa: E402, F401

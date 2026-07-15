@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import secrets
 import time
@@ -17,6 +19,25 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 _PRE_REGISTERED_CLIENT_ID: str | None = None
 _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
+
+# PKCE code_verifier storage: maps authorization_code -> code_verifier
+# Populated by middleware intercepting the token endpoint request body.
+_pkce_verifiers: dict[str, str] = {}
+
+
+def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
+    """Store a code_verifier for later verification during token exchange."""
+    _pkce_verifiers[authorization_code] = code_verifier
+
+
+def _verify_pkce_s256(code_verifier: str, code_challenge: str) -> bool:
+    """Verify code_verifier against code_challenge using S256 method."""
+    computed = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    return secrets.compare_digest(computed, code_challenge)
 
 
 def _load_pre_registered_client() -> tuple[str | None, str | None, str | None]:
@@ -49,7 +70,9 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if client_id is None:
             client_id, client_secret, redirect_uri = _load_pre_registered_client()
         if client_id:
-            redirect_uris = [redirect_uri] if redirect_uri else [os.environ.get("BASTION_OAUTH_REDIRECT_URI", "http://localhost:3000/callback")]
+            raw_uri = redirect_uri or os.environ.get("BASTION_OAUTH_REDIRECT_URI", "http://localhost:3000/callback")
+            from pydantic import AnyUrl
+            redirect_uris = [AnyUrl(raw_uri)]
             self._clients[client_id] = OAuthClientInformationFull(
                 client_id=client_id,
                 client_secret=client_secret,
@@ -102,6 +125,20 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
+        # PKCE verification: validate code_verifier against stored code_challenge
+        # The code_verifier is captured by middleware from the token endpoint request body.
+        code_verifier = _pkce_verifiers.pop(authorization_code.code, None)
+        if authorization_code.code_challenge:
+            if not code_verifier:
+                raise ValueError(
+                    "PKCE code_verifier missing from token request — "
+                    "middleware may have failed to capture it"
+                )
+            if not _verify_pkce_s256(code_verifier, authorization_code.code_challenge):
+                raise ValueError(
+                    "PKCE verification failed: code_verifier does not match code_challenge"
+                )
+
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)
         now = time.time()
