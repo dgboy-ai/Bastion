@@ -149,7 +149,7 @@ function NetherCanvas() {
     let W = canvas.width  = window.innerWidth;
     let H = canvas.height = window.innerHeight;
 
-    const BS = 46;
+    const BS = 32;
     type WO = { type: "block"|"magma"|"lantern"; x: number; y: number; sz: number; bt?: BT };
     const world: WO[] = [];
 
@@ -173,18 +173,13 @@ function NetherCanvas() {
           return "soul";
         };
         world.push({ type: "block", x: 0, y, sz: BS, bt: pickL() });
-        world.push({ type: "block", x: BS, y, sz: BS, bt: pickL() });
-        world.push({ type: "block", x: BS * 2, y, sz: BS, bt: pickL() });
-
         world.push({ type: "block", x: W - BS, y, sz: BS, bt: pickR() });
-        world.push({ type: "block", x: W - BS * 2, y, sz: BS, bt: pickR() });
-        world.push({ type: "block", x: W - BS * 3, y, sz: BS, bt: pickR() });
       }
 
       for (let y = 100; y < H; y += 280) {
         const seg = y < H * 0.35 ? 0 : y < H * 0.7 ? 1 : 2;
-        if (seg===0) world.push({ type:"magma",   x: 180 + Math.random() * 120, y, sz:50 });
-        if (seg===2) world.push({ type:"lantern", x: 160 + Math.random() * 50,  y, sz:28 });
+        if (seg===0) world.push({ type:"magma",   x: 60 + Math.random() * 80, y, sz:32 });
+        if (seg===2) world.push({ type:"lantern", x: 50 + Math.random() * 45, y, sz:22 });
       }
     };
 
@@ -249,7 +244,7 @@ function NetherCanvas() {
       ctx.fillStyle = radialGlow;
       ctx.fillRect(0, 0, W, H);
 
-      const cw = Math.min(W - 100, 960);
+      const cw = Math.min(W - 80, 960);
       const contentLeft = (W - cw) / 2;
       const contentRight = contentLeft + cw;
       
@@ -266,8 +261,8 @@ function NetherCanvas() {
         }
 
         if (!narrow) {
-          if (!isRightColumn && dx + o.sz > contentLeft - 25) return;
-          if (isRightColumn && dx < contentRight + 25) return;
+          if (!isRightColumn && dx + o.sz > contentLeft - 15) return;
+          if (isRightColumn && dx < contentRight + 15) return;
         }
 
         if (o.type==="block" && o.bt) {
@@ -277,7 +272,6 @@ function NetherCanvas() {
             drips.push({ x:dx+Math.random()*o.sz, y:dy+o.sz, vy:Math.random()*.8+.6, sz:Math.random()*2.2+1, life:1, maxL:Math.random()*70+50 });
           }
 
-          // ─── ADDED PULSING GLOWS FOR CRYING OBSIDIAN & OBSIDIAN ───
           if (o.bt==="crying" && !narrow) {
             ctx.shadowColor = P.purple;
             ctx.shadowBlur  = 8 + Math.sin(T2 * 2.5 + o.y) * 2.5;
@@ -336,47 +330,59 @@ function NetherCanvas() {
         }
       }
 
-      const wfW=90, wfX=W-wfW-108;
+      const wfW=72, wfX=W-wfW-54;
       const drawWaterfall = !narrow || W > 900;
       
       if (drawWaterfall) {
         const activeColor = sy > 2200 ? P.cyan : P.lava;
         const coreColor = sy > 2200 ? "#e0ffff" : P.gold;
+        const magmaColor = P.magma;
         const poolTop = H - 48;
 
-        for (let bx = wfX - 10; bx < wfX + wfW + 20; bx += 20) {
-          ctx.fillStyle = "#1e1624";
-          ctx.fillRect(bx, 0, 20, 30);
-          ctx.strokeStyle = "rgba(255,255,255,0.06)";
-          ctx.strokeRect(bx, 0, 20, 30);
-        }
+        ctx.fillStyle = "#1e1624";
+        ctx.fillRect(wfX - 6, 0, wfW + 12, 24);
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        ctx.strokeRect(wfX - 6, 0, wfW + 12, 24);
 
-        const wg = ctx.createLinearGradient(wfX, 0, wfX + wfW, 0);
-        wg.addColorStop(0, activeColor);
-        wg.addColorStop(0.3, coreColor);
-        wg.addColorStop(0.7, coreColor);
-        wg.addColorStop(1, activeColor);
+        ctx.globalAlpha = 0.95;
+        const pixelSz = 6;
+        const cols = Math.floor(wfW / pixelSz);
         
-        ctx.globalAlpha = narrow ? 0.08 : 0.94;
-        ctx.fillStyle = wg;
-        
-        for (let y = 20; y < poolTop; y += 30) {
-          const shift = Math.sin(y * 0.04 + wfOff * 0.12) * 6;
-          ctx.fillRect(wfX + shift, y, wfW, 32);
+        for (let y = 24; y < poolTop; y += pixelSz) {
+          const timeOffset = Math.floor(T2 * 14);
+          const flowY = y + timeOffset;
+          const shift = Math.sin(y * 0.03 + wfOff * 0.08) * 7;
+
+          for (let c = 0; c < cols; c++) {
+            const pixelX = wfX + shift + c * pixelSz;
+            const noiseVal = Math.sin(c * 0.6 + flowY * 0.16) * Math.cos(flowY * 0.07);
+            
+            let color = activeColor;
+            if (noiseVal > 0.45) {
+              color = coreColor;
+            } else if (noiseVal > 0.05) {
+              color = magmaColor;
+            } else if (noiseVal < -0.45) {
+              color = "#8a0000";
+            }
+
+            ctx.fillStyle = color;
+            ctx.fillRect(pixelX, y, pixelSz, pixelSz);
+          }
         }
 
         ctx.fillStyle = "rgba(20,4,12,0.98)";
-        ctx.fillRect(wfX - 35, poolTop, wfW + 70, 48);
+        ctx.fillRect(wfX - 25, poolTop, wfW + 50, 48);
         
         const poolGrad = ctx.createLinearGradient(0, poolTop, 0, H);
         poolGrad.addColorStop(0, activeColor);
         poolGrad.addColorStop(0.4, coreColor);
         poolGrad.addColorStop(1, "#3c0000");
         ctx.fillStyle = poolGrad;
-        ctx.fillRect(wfX - 30, poolTop + 6, wfW + 60, 42);
+        ctx.fillRect(wfX - 20, poolTop + 6, wfW + 40, 42);
 
-        drawBlock(ctx, wfX - 44, poolTop, 44, "black", 88); 
-        drawBlock(ctx, wfX + wfW, poolTop, 44, "black", 89); 
+        drawBlock(ctx, wfX - 44, poolTop, BS, "black", 88); 
+        drawBlock(ctx, wfX + wfW, poolTop, BS, "black", 89); 
 
         if (Math.random() > 0.35) {
           flowParticles.push({
@@ -475,7 +481,7 @@ function NetherCanvas() {
 
 /* ─── Typewriter Rotating Text ───────────────────────────── */
 const HERO_LINES = [
-  "FORENSIC DEBUGGING",
+  "FORENSIC DEBBUGING",
   "OWASP INJECTION SHIELD",
   "TIME-TRAVEL RECOVERY",
   "CRYPTOGRAPHIC AUDIT",
@@ -507,7 +513,7 @@ function TypewriterWord() {
   }, [text, del, idx]);
 
   return (
-    <span style={{ display: "inline-block", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
+    <span style={{ display: "block", overflow: "visible" }}>
       <span style={{
         background: `linear-gradient(135deg, ${P.lava}, ${P.magma}, ${P.gold}, ${P.lava})`,
         WebkitBackgroundClip: "text",
@@ -788,7 +794,6 @@ function ForensicSimulator() {
           <div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: P.mute, letterSpacing: "1.5px" }}>FORENSIC TELEMETRY NODE // BASTION_GUARD</div>
             <h3 style={{ display:"flex", alignItems:"center", gap:"8px", fontSize: "19px", fontWeight: 800, color: "#fff", margin: "2px 0 0", fontFamily: "var(--font-sg)" }}>
-              {/* Telemetry LED Indicator */}
               <span style={{
                 width: "8px", height: "8px", borderRadius: "50%",
                 background: step === 2 ? P.lava : step === 5 ? "#00ff66" : "#00ff66",
@@ -1092,15 +1097,14 @@ export default function Page() {
         backgroundImage:`linear-gradient(rgba(255,42,0,.35) 1px,transparent 1px),linear-gradient(90deg,rgba(255,42,0,.35) 1px,transparent 1px)`,
         backgroundSize:"48px 48px"}}/>
 
-      {/* ── NAV ───────────────────────────────────────────── */}
+      {/* ── NAV (TRANSPARENT ON LOAD) ── */}
       <nav style={{
         position:"fixed",top:0,left:0,right:0,zIndex:1000,
         padding:scrolled?"10px 48px":"18px 48px",
         display:"flex",justifyContent:"space-between",alignItems:"center",
-        background:scrolled?"rgba(12,1,6,.98)":"rgba(12,1,6,.45)",
-        backdropFilter:"blur(28px)",
-        borderBottom:`1px solid ${scrolled?P.line:P.lineB}`,
-        boxShadow:scrolled?`0 0 32px rgba(255,42,0,0.12)`:"none",
+        background:scrolled?"rgba(10,2,8,0.75)":"transparent",
+        backdropFilter:scrolled?"blur(20px)":"none",
+        borderBottom:scrolled?`1px solid ${P.line}`:"none",
         transition:"all .35s cubic-bezier(.16,1,.3,1)",
       }}>
         <Link href="/" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:"11px"}}>
@@ -1116,7 +1120,6 @@ export default function Page() {
           {([["Docs","/docs"],["Cockpit","/dashboard"],["Logs","/logs"],["Health","/health"]] as const).map(([l,h])=>(
             <Link key={l} href={h} className="nl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontWeight:600}}>{l}</Link>
           ))}
-          {/* Active Cluster telemetry badge */}
           <span style={{padding:"2px 8px",borderRadius:"2px",background:"rgba(255,194,0,.1)",border:`1px solid ${P.gold}40`,fontFamily:"var(--font-mono)",fontSize:"8.5px",color:P.gold,letterSpacing:"1px",display:"inline-flex",alignItems:"center",gap:"5px"}}>
             <span style={{width:"5px",height:"5px",borderRadius:"50%",background:"#00ff66",boxShadow:"0 0 6px #00ff66",display:"inline-block"}}/>
             CLUSTER: ONLINE
@@ -1127,14 +1130,13 @@ export default function Page() {
         </div>
       </nav>
 
-      {/* ── HERO ──────────────────────────────────────────── */}
+      {/* ── HERO ── */}
       <section style={{
         minHeight:"100vh",
         display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",
-        padding:"220px 48px 140px",
+        padding:"180px 48px 140px",
         position:"relative",zIndex:2,
       }}>
-        {/* Giant volcanic core glow behind hero */}
         <div style={{
           position:"absolute",top:"35%",left:"50%",transform:"translate(-50%,-50%)",
           width:"800px",height:"600px",
@@ -1144,37 +1146,33 @@ export default function Page() {
 
         <div style={{width:"100%",maxWidth:"980px",position:"relative"}}>
 
-          {/* Two-col hero */}
-          <div style={{display:"grid",gridTemplateColumns:"1.3fr .7fr",gap:"55px",alignItems:"center"}} className="hgrid">
+          {/* Grid columns set to minmax(0, ...) to prevent expansion */}
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0, 1.25fr) minmax(0, 0.75fr)",gap:"45px",alignItems:"center"}} className="hgrid">
 
-            {/* Left */}
-            <div>
-              {/* Badge */}
+            {/* Left Column (Clamped maximum width) */}
+            <div style={{ maxWidth: "580px" }}>
               <div className="hs1" style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"5px 14px",borderRadius:"3px",background:"rgba(255,42,0,.08)",border:`1px solid ${P.line}`,marginBottom:"24px"}}>
                 <span style={{width:"5px",height:"5px",borderRadius:"50%",background:P.gold,boxShadow:`0 0 8px ${P.gold}`,animation:"sparkBeat 1.4s infinite",display:"inline-block"}}/>
                 <span style={{fontFamily:"var(--font-mono)",fontSize:"10.5px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2.5px",color:P.gold}}>Bastion Ledger — Active</span>
               </div>
 
-              {/* Giant title */}
               <h1 className="hs2" style={{
-                fontSize:"clamp(58px,7.8vw,110px)",
-                fontWeight:900,lineHeight:.86,
-                letterSpacing:"-4px",
+                fontSize:"clamp(34px,4.5vw,56px)",
+                fontWeight:900,lineHeight:0.98,
+                letterSpacing:"-2px",
                 color:"#fff",
                 margin:"0 0 26px",
                 fontFamily:"var(--font-sg)",
                 textShadow:"0 4px 30px rgba(0,0,0,.9)",
               }}>
-                THE<br/>FORTRESS<br/>OF AGENTIC<br/>
+                THE FORTRESS OF AGENTIC
                 <TypewriterWord/>
               </h1>
 
-              {/* Sub */}
-              <p className="hs3" style={{fontSize:"18.5px",lineHeight:1.7,color:"#fff",fontWeight:600,marginBottom:"36px",textShadow:"0 2px 16px rgba(0,0,0,.98)",maxWidth:"500px"}}>
+              <p className="hs3" style={{fontSize:"17px",lineHeight:1.7,color:"#fff",fontWeight:600,marginBottom:"36px",textShadow:"0 2px 16px rgba(0,0,0,.98)",maxWidth:"500px"}}>
                 Persistent, self-healing memory for autonomous AI agents. Crash-proof. Injection-resistant. Cryptographically sealed. Forged in CockroachDB.
               </p>
 
-              {/* CTAs */}
               <div className="hs4" style={{display:"flex",gap:"12px",flexWrap:"wrap"}}>
                 <Link href="/dashboard" className="cta-btn" style={{padding:"14px 30px",borderRadius:"3px",background:`linear-gradient(135deg,${P.lava},${P.magma})`,color:"#fff",fontSize:"13.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px",display:"inline-flex",alignItems:"center",gap:"9px"}}>
                   Try Demo Dashboard
@@ -1185,7 +1183,6 @@ export default function Page() {
                 </Link>
               </div>
 
-              {/* Stats row */}
               <div className="hs5" style={{display:"flex",gap:"32px",marginTop:"46px",paddingTop:"28px",borderTop:`1px solid ${P.line}`,flexWrap:"wrap"}}>
                 {[{e:2800000,s:"",l:"Memories / Day"},{e:16,s:"ms",l:"Query Latency"},{e:6,s:"",l:"Global Regions"}].map(({e,s,l})=>(
                   <div key={l}>
@@ -1198,15 +1195,15 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Right – Ledger Seal */}
+            {/* Right Column */}
             <div className="hs6" style={{display:"flex",justifyContent:"center",alignItems:"center"}}>
               <LedgerSeal/>
             </div>
           </div>
 
-          {/* Forensic simulator section */}
+          {/* Simulator section */}
           <div className="hs7" style={{marginTop:"90px"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.2fr",gap:"40px",alignItems:"center"}} className="hgrid">
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0, 1.1fr) minmax(0, 1.2fr)",gap:"40px",alignItems:"center"}} className="hgrid">
               <div>
                 <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.lava,textTransform:"uppercase",letterSpacing:"2.2px",fontWeight:700}}>Ingestion telemetry</div>
                 <h2 style={{fontSize:"clamp(26px,3.8vw,42px)",fontWeight:900,color:"#fff",margin:"8px 0 16px",fontFamily:"var(--font-sg)",lineHeight:1.1}}>
@@ -1226,7 +1223,7 @@ export default function Page() {
                   <div style={{width:"1px",background:"rgba(255,255,255,0.1)"}}/>
                   <div>
                     <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>&lt; 1s</div>
-                    <div style={{fontSize:"9px",fontFamily(--font-mono) ? "var(--font-mono)" : "monospace",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>To Repair State</div>
+                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>To Repair State</div>
                   </div>
                 </div>
               </div>
@@ -1234,7 +1231,6 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Onboarding Tour Links */}
           <div className="hs7" style={{marginTop:"80px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderBottom:`1px solid ${P.line}`,paddingBottom:"13px",marginBottom:"24px"}}>
               <div>
