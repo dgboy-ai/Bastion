@@ -557,8 +557,6 @@ function LedgerSeal() {
           animation: "pulseCore 1.3s ease-in-out infinite"
         }} />
 
-        {/* Holographic matrix scan overlay */}
-        {busy && <div className="scanline" style={{ height: "100%", width: "100%", top: 0, left: 0 }} />}
       </div>
 
       {/* Hex Ledger terminal reader */}
@@ -619,20 +617,6 @@ function LedgerSeal() {
         @keyframes sealPulse {
           0%, 100% { opacity: .55; text-shadow: 0 0 2px transparent; }
           50% { opacity: 1; text-shadow: 0 0 10px ${P.lava}; }
-        }
-
-        .scanline {
-          position: absolute;
-          height: 4px;
-          width: 100%;
-          background: ${P.cyan};
-          box-shadow: 0 0 12px ${P.cyan};
-          opacity: 0.8;
-          animation: scanDown 1.5s linear infinite;
-        }
-        @keyframes scanDown {
-          0% { top: 0%; }
-          100% { top: 100%; }
         }
 
         .ripple-ring {
