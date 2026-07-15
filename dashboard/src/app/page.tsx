@@ -100,7 +100,7 @@ function Card({ children, accent = P.lava, style = {} }: { children: React.React
       onMouseLeave={() => setHot(false)}
       style={{
         background: hot
-          ? `radial-gradient(340px circle at ${pos.x}px ${pos.y}px, ${accent}25, transparent 65%), rgba(20,4,12,0.97)`
+          ? `radial-gradient(340px circle at ${pos.x}px ${pos.y}px, ${accent}25, transparent 65%), rgba(20,4,12,0.92)`
           : "rgba(14,2,8,0.92)",
         border: `2px solid ${hot ? accent : "rgba(125,60,70,0.6)"}`,
         boxShadow: hot
@@ -161,8 +161,8 @@ function NetherCanvas() {
       H = canvas.height = window.innerHeight;
       world.length = 0;
 
-      // We populate blocks up to 4500px to cover the scroll depth
-      for (let y = 0; y < 4500; y += BS) {
+      // Populate elements up to 8000px scrollable height for full page framing
+      for (let y = 0; y < 8000; y += BS) {
         const seg = y < 900 ? 0 : y < 2200 ? 1 : 2;
         const pickL = (): BT => {
           const v = Math.random();
@@ -180,7 +180,7 @@ function NetherCanvas() {
         world.push({ type: "block", x: W - BS, y, sz: BS, bt: pickR() });
       }
 
-      for (let y = 100; y < 3500; y += 280) {
+      for (let y = 100; y < 7000; y += 280) {
         const seg = y < 900 ? 0 : y < 2200 ? 1 : 2;
         if (seg===0) world.push({ type:"magma",   x: 60 + Math.random() * 80, y, sz:32 });
         if (seg===2) world.push({ type:"lantern", x: 50 + Math.random() * 45, y, sz:22 });
@@ -201,7 +201,6 @@ function NetherCanvas() {
     const splashes: { x:number; y:number; vx:number; vy:number; sz:number; life:number; color:string }[] = [];
     const bubbles: { x:number; y:number; vy:number; sz:number; life:number; color:string }[] = [];
 
-    // Warped spores / nether embers list
     const embers = Array.from({length:150}, () => ({
       x: Math.random()*W, y: Math.random()*H,
       vx: (Math.random()-.5)*.75,
@@ -220,9 +219,6 @@ function NetherCanvas() {
       const sy = window.scrollY;
       const narrow = W < 1250; 
 
-      // Biome 1: Nether Fortress (Red-Orange Fog)
-      // Biome 2: Warped Forest (Striking Golden Sky / Teal contrast)
-      // Biome 3: Soul Sand Valley (Dark Cyan / Teal Fire Fog)
       let bg1 = "#200408", bg2 = "#0a0103";
       let particleColor = "#ff5500";
       let cracksColor = "#ffea00";
@@ -231,8 +227,8 @@ function NetherCanvas() {
         bg1 = "#1a0204"; bg2 = "#070001";
         particleColor = "#ff5500";
       } else if (sy >= 750 && sy < 2100) {
-        // Warped Forest shader transition: golden-yellow fog background with teal elements
-        bg1 = "#291802"; bg2 = "#082b27";
+        // High contrast Warped Forest gold-orange fog background with teal elements
+        bg1 = "#251702"; bg2 = "#072421";
         particleColor = "#00f0ff";
         cracksColor = "#00f0ff";
       } else {
@@ -247,12 +243,10 @@ function NetherCanvas() {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
 
-      // Biome ambient shader lighting glow
       const radialGlow = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*0.7);
       if (sy < 750) {
         radialGlow.addColorStop(0, "rgba(255, 42, 0, 0.12)");
       } else if (sy >= 750 && sy < 2100) {
-        // High glow for Warped forest
         radialGlow.addColorStop(0, "rgba(255, 170, 0, 0.18)");
         radialGlow.addColorStop(0.5, "rgba(0, 229, 255, 0.08)");
       } else {
@@ -269,7 +263,6 @@ function NetherCanvas() {
       ctx.globalAlpha = narrow ? 0.06 : 0.95;
 
       world.forEach((o, idx) => {
-        // Elements scroll naturally with scrollY offset
         const dy = o.y - sy;
         if (dy < -120 || dy > H + 120) return;
 
@@ -291,27 +284,34 @@ function NetherCanvas() {
             drips.push({ x:dx+Math.random()*o.sz, y:dy+o.sz, vy:Math.random()*.8+.6, sz:Math.random()*2.2+1, life:1, maxL:Math.random()*70+50 });
           }
 
-          // Dynamic biome shaders / block border glows
-          if ((o.bt==="crying" || o.bt==="warped" || o.bt==="warped_stem") && !narrow) {
-            const glowColor = o.bt==="crying" ? P.purple : "#00ffe5";
-            ctx.shadowColor = glowColor;
-            ctx.shadowBlur  = 8 + Math.sin(T2 * 2.5 + o.y) * 2.5;
-            ctx.fillStyle   = "transparent";
-            ctx.strokeStyle = o.bt==="crying" 
-              ? `rgba(176, 38, 255, ${0.4 + Math.sin(T2 * 2.5 + o.y) * 0.25})`
-              : `rgba(0, 255, 229, ${0.5 + Math.sin(T2 * 2.0 + o.y) * 0.20})`;
-            ctx.lineWidth   = 1.5;
-            ctx.strokeRect(dx + 1, dy + 1, o.sz - 2, o.sz - 2);
+          // Shaders glowing obsidian and nylium borders
+          if (o.bt==="obs" && !narrow) {
+            ctx.shadowColor = P.purple;
+            ctx.shadowBlur  = 12 + Math.sin(T2 * 2.0 + o.y) * 5;
+            ctx.fillStyle   = `rgba(176, 38, 255, ${0.12 + Math.sin(T2 * 2.0 + o.y) * 0.05})`;
+            ctx.fillRect(dx + 1, dy + 1, o.sz - 2, o.sz - 2);
             ctx.shadowBlur  = 0;
           }
-          if (o.bt==="obs" && !narrow) {
-            ctx.shadowColor = "#401660";
-            ctx.shadowBlur  = 5 + Math.sin(T2 * 1.8 + o.y) * 1.5;
-            ctx.fillStyle   = "transparent";
-            ctx.strokeStyle = `rgba(80, 26, 110, ${0.3 + Math.sin(T2 * 1.8 + o.y) * 0.15})`;
-            ctx.lineWidth   = 1.2;
-            ctx.strokeRect(dx + 1, dy + 1, o.sz - 2, o.sz - 2);
+          if (o.bt==="crying" && !narrow) {
+            ctx.shadowColor = P.purple;
+            ctx.shadowBlur  = 14 + Math.sin(T2 * 2.5 + o.y) * 6;
+            ctx.fillStyle   = `rgba(176, 38, 255, ${0.18 + Math.sin(T2 * 2.5 + o.y) * 0.08})`;
+            ctx.fillRect(dx + 1, dy + 1, o.sz - 2, o.sz - 2);
             ctx.shadowBlur  = 0;
+          }
+          if ((o.bt==="warped" || o.bt==="warped_stem") && !narrow) {
+            ctx.shadowColor = "#00ffe5";
+            ctx.shadowBlur  = 12 + Math.sin(T2 * 1.8 + o.y) * 5;
+            ctx.fillStyle   = `rgba(0, 255, 229, ${0.14 + Math.sin(T2 * 1.8 + o.y) * 0.06})`;
+            ctx.fillRect(dx + 1, dy + 1, o.sz - 2, o.sz - 2);
+            ctx.shadowBlur  = 0;
+          }
+          if (o.bt==="gilded" && !narrow) {
+            ctx.shadowColor = P.gold;
+            ctx.shadowBlur  = 6 + Math.sin(T2*2.2+o.y)*1.5;
+            ctx.fillStyle   = `rgba(255, 194, 0, ${0.12 + Math.sin(T2 * 2.2 + o.y) * 0.04})`;
+            ctx.fillRect(dx+1, dy+1, o.sz-2, o.sz-2);
+            ctx.shadowBlur = 0;
           }
         } else if (o.type==="magma") {
           const g = .45+Math.sin(T2*2.3+o.y)*.35;
@@ -332,20 +332,17 @@ function NetherCanvas() {
       });
 
       // ─── WATERFALL TEXTURED FLOW SYSTEM (STRAIGHT COLUMN BOUNDS) ───
-      // Renders only in the Hero section viewport
       const wfW=72, wfX=W-wfW-54;
       const drawWaterfall = (!narrow || W > 900) && sy < 850;
       
       if (drawWaterfall) {
         const poolTop = (H - 48) - sy;
 
-        // Top source blocks
         ctx.fillStyle = "#1e1624";
         ctx.fillRect(wfX - 6, -sy, wfW + 12, 24);
         ctx.strokeStyle = "rgba(255,255,255,0.06)";
         ctx.strokeRect(wfX - 6, -sy, wfW + 12, 24);
 
-        // Animated flow loops using 4x4 pixel blocks
         ctx.globalAlpha = 0.98;
         const pixelSz = 4;
         const cols = Math.floor(wfW / pixelSz);
@@ -359,13 +356,12 @@ function NetherCanvas() {
           for (let c = 0; c < cols; c++) {
             const pixelX = wfX + c * pixelSz;
             
-            // Texture is mostly yellow hot fluid with sparse orange flowing dots
             const blockX = Math.floor(c / 2);
             const blockY = Math.floor(flowY / 6);
             const hash = Math.sin(blockX * 12.9898 + blockY * 78.233) * 43758.5453;
             const noiseVal = hash - Math.floor(hash);
             
-            // Lava is predominantly yellow with a few sparse orange pixels flow texture
+            // Predominantly yellow hot core with sparse orange pixels
             const color = noiseVal > 0.85 ? "#ff9100" : "#ffea00";
 
             ctx.fillStyle = color;
@@ -373,7 +369,6 @@ function NetherCanvas() {
           }
         }
 
-        // Draw pool basin background
         ctx.fillStyle = "rgba(20,4,12,0.98)";
         ctx.fillRect(wfX - 25, poolTop, wfW + 50, 48);
         
@@ -386,7 +381,6 @@ function NetherCanvas() {
         drawBlock(ctx, wfX - 44, poolTop, BS, "black", 88); 
         drawBlock(ctx, wfX + wfW, poolTop, BS, "black", 89); 
 
-        // Minimalist splash logic
         if (Math.random() > 0.75) {
           flowParticles.push({
             x: wfX + Math.random() * wfW,
@@ -438,7 +432,6 @@ function NetherCanvas() {
         ctx.globalAlpha = 1.0;
       }
 
-      // Embers & Spores floating upwards
       ctx.globalAlpha = narrow ? 0.05 : 0.85;
       for (const e of embers) {
         e.x+=e.vx+Math.sin(e.life*5.5)*.18; e.y+=e.vy; e.life-=e.decay;
@@ -449,7 +442,6 @@ function NetherCanvas() {
         ctx.fillStyle=particleColor; 
         
         if (sy >= 750 && sy < 2100) {
-          // Strong cyan warp spores glow in features section
           ctx.shadowColor=particleColor; 
           ctx.shadowBlur=10; 
         } else {
@@ -473,7 +465,7 @@ function NetherCanvas() {
 
 /* ─── Typewriter Rotating Text ───────────────────────────── */
 const HERO_LINES = [
-  "FORENSIC DEBBUGING",
+  "FORENSIC DEBUGGING",
   "OWASP INJECTION SHIELD",
   "TIME-TRAVEL RECOVERY",
   "CRYPTOGRAPHIC AUDIT",
@@ -902,12 +894,12 @@ function SH({ eyebrow, title, sub, ec = P.lava }: { eyebrow:string; title:string
   return (
     <div style={{
       textAlign:"center",marginBottom:"50px",padding:"36px 30px",
-      background:"rgba(14,2,8,0.92)",backdropFilter:"blur(20px)",
+      background:"rgba(14,2,8,0.25)",backdropFilter:"blur(8px)",
       borderRadius:"2px",
-      border:`2px solid ${ec===P.cyan ? "rgba(0,229,255,0.35)" : "rgba(255,170,0,0.35)"}`,
+      border:`2px solid ${ec===P.cyan ? "rgba(0,229,255,0.25)" : "rgba(255,170,0,0.25)"}`,
       boxShadow:ec===P.cyan 
-        ? `0 0 45px rgba(0,229,255,0.12), inset 2px 2px 0 rgba(255,255,255,.05), inset -2px -2px 0 rgba(0,0,0,.5)`
-        : `0 0 45px rgba(255,170,0,0.12), inset 2px 2px 0 rgba(255,255,255,.05), inset -2px -2px 0 rgba(0,0,0,.5)`,
+        ? `0 0 35px rgba(0,229,255,0.06), inset 2px 2px 0 rgba(255,255,255,.03), inset -2px -2px 0 rgba(0,0,0,.5)`
+        : `0 0 35px rgba(255,170,0,0.06), inset 2px 2px 0 rgba(255,255,255,.03), inset -2px -2px 0 rgba(0,0,0,.5)`,
       position:"relative",overflow:"hidden",
     }}>
       {/* top glow line */}
@@ -924,8 +916,8 @@ function SW({ children, glow = P.lava }: { children:React.ReactNode; glow?:strin
   return (
     <div style={{
       position:"relative",padding:"120px 24px",
-      borderTop:`1px solid ${glow===P.cyan ? "rgba(0,229,255,0.25)" : "rgba(255,170,0,0.25)"}`,
-      background:`linear-gradient(180deg, rgba(14,1,8,0) 0%, rgba(18,2,10,0.7) 100%)`,
+      borderTop:`1px solid ${glow===P.cyan ? "rgba(0,229,255,0.18)" : "rgba(255,170,0,0.18)"}`,
+      background:`transparent`,
     }}>
       <div style={{position:"absolute",left:0,top:"10%",bottom:"10%",width:"2.5px",background:`linear-gradient(180deg,transparent,${glow}60,transparent)`}}/>
       <div style={{position:"absolute",right:0,top:"10%",bottom:"10%",width:"2.5px",background:`linear-gradient(180deg,transparent,${glow}40,transparent)`}}/>
@@ -1034,11 +1026,11 @@ function Comparison() {
     <Reveal>
       <div style={{maxWidth:"960px",margin:"0 auto",position:"relative",zIndex:3}}>
         <SH eyebrow="Comparison Matrix" title="Rivaling the Alternatives" sub="Why enterprise teams reach for Bastion over proprietary memory services." ec={P.gold}/>
-        <div style={{background:"rgba(10,3,12,.92)",border:`2px solid rgba(255,170,0,0.35)`,borderRadius:"2px",overflow:"hidden",backdropFilter:"blur(18px)",boxShadow:`0 20px 60px rgba(0,0,0,.8),0 0 40px rgba(255,170,0,.06)`}}>
+        <div style={{background:"rgba(10,3,12,.65)",border:`2px solid rgba(255,170,0,0.25)`,borderRadius:"2px",overflow:"hidden",backdropFilter:"blur(8px)",boxShadow:`0 20px 60px rgba(0,0,0,.8),0 0 40px rgba(255,170,0,.06)`}}>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"14px",minWidth:"580px"}}>
               <thead>
-                <tr style={{background:"rgba(24,6,12,.8)",borderBottom:`2px solid rgba(255,170,0,0.35)`}}>
+                <tr style={{background:"rgba(24,6,12,.8)",borderBottom:`2px solid rgba(255,170,0,0.25)`}}>
                   {["Feature","Bastion ✦","Mem0","Zep"].map((h,i)=>(
                     <th key={h} style={{padding:"18px 20px",textAlign:"left",fontFamily:"var(--font-mono)",fontSize:"10.5px",textTransform:"uppercase",letterSpacing:"1.8px",color:i===1?P.gold:P.mute,fontWeight:700}}>{h}</th>
                   ))}
@@ -1080,7 +1072,7 @@ function FAQ() {
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           {qs.map((faq,i)=>(
             <div key={i} className="fq" style={{
-              background:"rgba(10,3,14,.94)",
+              background:"rgba(10,3,14,.65)",
               border:`2px solid ${open===i?P.cyan:"rgba(95,55,62,.5)"}`,
               borderRadius:"2px",overflow:"hidden",
               boxShadow:open===i?`0 0 24px ${P.cyan}20,inset 2px 2px 0 rgba(255,255,255,.05)`:"inset 2px 2px 0 rgba(255,255,255,.04)",
@@ -1150,10 +1142,7 @@ export default function Page() {
           <div style={{width:"34px",height:"34px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 18px #ffea0055`,flexShrink:0}}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/></svg>
           </div>
-          <div style={{lineHeight:1}}>
-            <div style={{fontWeight:900,fontSize:"17px",letterSpacing:"3px",color:"#fff",textTransform:"uppercase",fontFamily:"var(--font-sg)"}}>BASTION</div>
-            <div style={{fontSize:"8px",letterSpacing:"2px",color:P.mute,fontFamily:"var(--font-mono)"}}>MEMORY LEDGER</div>
-          </div>
+          <div style={{fontWeight:900,fontSize:"20px",letterSpacing:"3px",color:"#fff",textTransform:"uppercase",fontFamily:"var(--font-sg)"}}>BASTION</div>
         </Link>
         <div style={{display:"flex",gap:"26px",alignItems:"center"}} className="dnav">
           {([["Docs","/docs"],["Cockpit","/dashboard"],["Logs","/logs"],["Health","/health"]] as const).map(([l,h])=>(
@@ -1189,13 +1178,8 @@ export default function Page() {
 
             {/* Left Column */}
             <div style={{ maxWidth: "580px" }}>
-              <div className="hs1" style={{display:"inline-flex",alignItems:"center",gap:"8px",padding:"5px 14px",borderRadius:"3px",background:"rgba(255,170,0,.08)",border:`1px solid rgba(255,170,0,0.3)`,marginBottom:"24px"}}>
-                <span style={{width:"5px",height:"5px",borderRadius:"50%",background:P.gold,boxShadow:`0 0 8px ${P.gold}`,animation:"sparkBeat 1.4s infinite",display:"inline-block"}}/>
-                <span style={{fontFamily:"var(--font-mono)",fontSize:"10.5px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2.5px",color:P.gold}}>Bastion Ledger — Active</span>
-              </div>
-
               <h1 className="hs2" style={{
-                fontSize:"clamp(34px,4.5vw,56px)",
+                fontSize:"clamp(44px, 5.8vw, 74px)",
                 fontWeight:900,lineHeight:0.98,
                 letterSpacing:"-2px",
                 color:"#fff",
