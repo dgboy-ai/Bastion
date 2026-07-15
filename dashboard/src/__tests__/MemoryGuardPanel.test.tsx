@@ -45,7 +45,7 @@ describe('MemoryGuardPanel', () => {
   test('renders loading state initially', () => {
     mockFetch.mockImplementationOnce(() => new Promise(() => {}))
     const { container } = render(<MemoryGuardPanel />)
-    const skeleton = container.querySelector('.animate-pulse')
+    const skeleton = container.querySelector('.skeleton')
     expect(skeleton).toBeTruthy()
   })
 
@@ -71,7 +71,7 @@ describe('MemoryGuardPanel', () => {
     })
     
     const mockScanResult = {
-      safe: false,
+      isSafe: false,
       findings: [
         { detector: 'prompt_injection', severity: 'critical', detail: 'Test injection detected' },
       ],
@@ -85,17 +85,17 @@ describe('MemoryGuardPanel', () => {
     render(<MemoryGuardPanel />)
     
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/paste content/i)).toBeDefined()
+      expect(screen.getByPlaceholderText(/paste text/i)).toBeDefined()
     })
 
-    const input = screen.getByPlaceholderText(/paste content/i)
+    const input = screen.getByPlaceholderText(/paste text/i)
     await userEvent.type(input, 'test injection content')
     
-    const scanButton = screen.getByText('Scan')
+    const scanButton = screen.getByRole('button', { name: /evaluate/i })
     await userEvent.click(scanButton)
 
     await waitFor(() => {
-      expect(screen.getByText('THREAT DETECTED')).toBeDefined()
+      expect(screen.getByText(/THREAT BLOCKED/i)).toBeDefined()
     })
   })
 
@@ -107,7 +107,6 @@ describe('MemoryGuardPanel', () => {
     render(<MemoryGuardPanel />)
     
     await waitFor(() => {
-      expect(screen.getByText(/Recent Security Findings/)).toBeDefined()
       expect(screen.getByText(/ignore all previous instructions/)).toBeDefined()
       expect(screen.getByText(/GitHub token detected/)).toBeDefined()
     })
@@ -121,7 +120,7 @@ describe('MemoryGuardPanel', () => {
     render(<MemoryGuardPanel />)
     
     await waitFor(() => {
-      expect(screen.getByText(/reference data/)).toBeDefined()
+      expect(screen.getByText(/Total Checks/)).toBeDefined()
     })
   })
 
@@ -130,7 +129,7 @@ describe('MemoryGuardPanel', () => {
     render(<MemoryGuardPanel />)
     
     await waitFor(() => {
-      expect(screen.getByText('MemoryGuard API Offline')).toBeDefined()
+      expect(screen.getByText('Security Node Offline')).toBeDefined()
     })
   })
 })
