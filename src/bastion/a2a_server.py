@@ -34,7 +34,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from bastion.config import VERSION, PROJECT_URL, DOCS_URL
+from bastion.config import DOCS_URL, PROJECT_URL, VERSION
 from bastion.log_setup import get_logger
 
 _SAFE_ERROR_MSG = "Internal server error (see server logs for details)"
