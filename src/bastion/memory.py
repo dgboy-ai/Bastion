@@ -434,11 +434,14 @@ class BastionMemory:
         self,
         query: str,
         k: int = 5,
-        threshold: float = 0.8,
+        threshold: float | None = None,
         memory_type: str | None = None,
         namespace_scope: str = "own",
         region_filter: str | None = None,
     ) -> list[MemoryRecord]:
+        # Use lower default threshold for mock mode (mock embeddings are less discriminative)
+        if threshold is None:
+            threshold = 0.3 if self._mock else 0.8
         _validate_content(query)
         _validate_k(k)
         _validate_threshold(threshold)
@@ -789,6 +792,7 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
+        _released = False
         try:
             query_vector = self._embed(query)
             query_vector_str = json.dumps(query_vector)
@@ -838,6 +842,17 @@ class BastionMemory:
                         results.append(MemoryRecord.from_row(r[:-1]))
                 return results[:k]
         except Exception as e:
+            # Graceful degradation: fall back to keyword search on embedding/index errors
+            if any(s in str(e).lower() for s in ("embedding", "vector", "does not exist", "c-spann")):
+                logger.warning(
+                    "Vector search failed, degrading to keyword search: %s",
+                    str(e)[:200],
+                    extra={"agent_id": self.agent_id, "query": query[:100]},
+                )
+                pool.release(conn)
+                _released = True
+                ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
+                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id)
             if "does not exist" in str(e).lower():
                 logger.warning(
                     "Schema may be missing columns. Run: "
@@ -848,7 +863,8 @@ class BastionMemory:
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             raise RuntimeError(f"Search failed for agent {self.agent_id}: {e}") from e
         finally:
-            pool.release(conn)
+            if not _released:
+                pool.release(conn)
 
     def _list_all_real(
         self,
@@ -1417,6 +1433,50 @@ class BastionMemory:
                 return _hash_fallback_embed(text)
         self._bedrock_cb._on_failure()
         return _hash_fallback_embed(text)
+
+    def _search_keyword_fallback(
+        self,
+        query: str,
+        k: int,
+        threshold: float,
+        memory_type: str | None,
+        agent_id: str,
+    ) -> list[MemoryRecord]:
+        """Keyword-based fallback search when vector search degrades completely."""
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            # Use ILIKE for fuzzy keyword matching as degraded-mode fallback
+            keywords = [w.strip() for w in query.lower().split() if len(w.strip()) > 2]
+            if not keywords:
+                return []
+            like_conditions = " OR ".join(["content ILIKE %s"] * len(keywords))
+            like_params = [f"%{kw}%" for kw in keywords]
+            with conn.cursor() as cur:
+                if memory_type:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        f"WHERE agent_id = %s AND memory_type = %s "
+                        f"AND ({like_conditions}) "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY importance_score DESC LIMIT %s",
+                        (agent_id, memory_type, *like_params, k),
+                    )
+                else:
+                    cur.execute(
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        f"WHERE agent_id = %s AND ({like_conditions}) "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
+                        "ORDER BY importance_score DESC LIMIT %s",
+                        (agent_id, *like_params, k),
+                    )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception as exc:
+            logger.warning("Keyword fallback search failed: %s", exc)
+            return []
+        finally:
+            pool.release(conn)
 
     # ------------------------------------------------------------------
     # A2A Task Store (CockroachDB-backed)

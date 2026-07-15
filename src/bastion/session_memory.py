@@ -15,6 +15,7 @@ Usage:
 """
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -127,17 +128,42 @@ class SessionMemory:
         return entry
 
     def search(self, query: str, k: int = 5) -> list[SessionEntry]:
-        """Search session memories by content similarity."""
+        """Search session memories using TF-IDF-like scoring with recency boost."""
         query_lower = query.lower()
-        scored = []
+        query_words = query_lower.split()
+        if not query_words:
+            return self.get_recent(k)
+
+        # Build IDF weights from session corpus (log(N/df) approximation)
+        total_entries = max(1, len(self._entries))
+        word_doc_freq: dict[str, int] = {}
+        entry_words: list[tuple[set[str], SessionEntry]] = []
         for entry in self._entries:
-            content_lower = entry.content.lower()
-            # Simple word overlap scoring
-            query_words = set(query_lower.split())
-            content_words = set(content_lower.split())
-            overlap = len(query_words & content_words) / max(1, len(query_words))
-            if overlap > 0.2:
-                scored.append((overlap * entry.importance / 10.0, entry))
+            words = set(entry.content.lower().split())
+            entry_words.append((words, entry))
+            for w in words:
+                word_doc_freq[w] = word_doc_freq.get(w, 0) + 1
+
+        scored = []
+        now = time.time()
+        for words, entry in entry_words:
+            # TF-IDF: sum of IDF for matching query words
+            tfidf = 0.0
+            for qw in query_words:
+                if qw in words:
+                    df = word_doc_freq.get(qw, 1)
+                    idf = math.log(total_entries / df) + 1.0
+                    tfidf += idf
+            # Normalize by query length
+            tfidf /= max(1, len(query_words))
+            # Recency boost: newer entries score slightly higher
+            age_hours = (now - self._created_at) / 3600.0
+            recency_boost = 1.0 + 0.05 * max(0, 1.0 - age_hours / 24.0)
+            # Combine with importance
+            score = tfidf * (entry.importance / 10.0) * recency_boost
+            if score > 0:
+                scored.append((score, entry))
+
         scored.sort(key=lambda x: x[0], reverse=True)
         return [entry for _, entry in scored[:k]]
 

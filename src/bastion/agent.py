@@ -302,8 +302,10 @@ class BastionAgent:
         )
 
         # 3. Search for relevant context (offloaded to thread)
+        # Use lower threshold for mock mode (mock embeddings are less discriminative)
+        search_threshold = 0.1 if self.memory.is_mock else 0.5
         context = await anyio.to_thread.run_sync(
-            lambda: self.memory.search(user_message, k=5, threshold=0.5)
+            lambda: self.memory.search(user_message, k=5, threshold=search_threshold)
         )
 
         # 4. Generate response (offloaded to thread for sync LLM callback)
@@ -357,7 +359,7 @@ class BastionAgent:
         self,
         query: str,
         k: int = 5,
-        threshold: float = 0.8,
+        threshold: float | None = None,
         memory_type: str | None = None,
     ) -> list[MemoryRecord]:
         """Search agent memory using C-SPANN vector similarity."""

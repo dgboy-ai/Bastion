@@ -47,6 +47,15 @@ _RATE_LIMIT_MAX = 600
 _REQUEST_TIMEOUT_SECONDS = 60
 _A2A_VERSION = "1.0"
 
+# Task state machine: valid transitions only
+_TASK_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "SUBMITTED": {"WORKING", "CANCELED"},
+    "WORKING": {"COMPLETED", "FAILED", "CANCELED"},
+    "COMPLETED": set(),  # terminal
+    "FAILED": set(),  # terminal
+    "CANCELED": set(),  # terminal
+}
+
 _JSONRPC_PARSE_ERROR = -32700
 _JSONRPC_INVALID_REQUEST = -32600
 _JSONRPC_METHOD_NOT_FOUND = -32601
@@ -151,7 +160,7 @@ def create_a2a_server(
         "url": PROJECT_URL,
         "documentationUrl": DOCS_URL,
         "capabilities": {
-            "streaming": False,
+            "streaming": True,
             "pushNotifications": True,
             "stateTransitionHistory": True,
         },
@@ -270,11 +279,25 @@ def create_a2a_server(
     async def _update_task(
         tid: str, status: str, artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
+        # Validate state transition
+        existing_task = await _get_task(tid)
+        if existing_task:
+            current_state = existing_task.get("status", {}).get("state", "")
+            if current_state and not _validate_task_transition(tid, current_state, status):
+                logger.warning(
+                    "Task state transition rejected",
+                    extra={"task_id": tid, "from": current_state, "to": status},
+                )
+                return existing_task  # Return existing task unchanged
+
         if not memory._mock:
             record = await anyio.to_thread.run_sync(memory.update_a2a_task, tid, status, artifacts)
             if record:
                 now = time.time()
                 mono = time.monotonic()
+                # Deliver push notification on terminal state
+                if record["status"] in ("COMPLETED", "FAILED", "CANCELED"):
+                    _notify_push(tid, record["status"], artifacts)
                 return {
                     "id": record["task_id"],
                     "status": {"state": record["status"]},
@@ -295,6 +318,8 @@ def create_a2a_server(
             if status in ("COMPLETED", "FAILED", "CANCELED"):
                 task["_completed_at"] = time.time()
                 task["_dm"] = time.monotonic()
+                # Deliver push notification on terminal state
+                _notify_push(tid, status, artifacts)
         return task
 
     # -- FastAPI app -------------------------------------------------------
@@ -421,8 +446,6 @@ def create_a2a_server(
 
     # -- Webhook push notification registration ---------------------------
 
-    _push_notifications: dict[str, str] = {}  # task_id -> callback_url
-
     # -- Authentication ----------------------------------------------------
 
     _api_key = os.environ.get("BASTION_API_KEY", "")
@@ -432,11 +455,59 @@ def create_a2a_server(
             "Set BASTION_API_KEY in your environment or .env file."
         )
 
+    # Brute-force protection: track failed auth attempts per IP
+    _auth_failures: dict[str, list[float]] = defaultdict(list)
+    _auth_lockout_seconds = 300  # 5-minute lockout
+    _auth_max_failures = 10  # lockout after 10 failures in window
+    _auth_window_seconds = 600  # 10-minute sliding window
+
+    def _check_brute_force(client_ip: str) -> bool:
+        """Returns True if IP is locked out due to too many failed auth attempts."""
+        now = time.time()
+        window_start = now - _auth_window_seconds
+        failures = _auth_failures[client_ip]
+        # Prune old failures
+        _auth_failures[client_ip] = [t for t in failures if t > window_start]
+        if len(_auth_failures[client_ip]) >= _auth_max_failures:
+            return True  # Locked out
+        return False
+
+    def _record_auth_failure(client_ip: str) -> None:
+        _auth_failures[client_ip].append(time.time())
+
+    def _clear_auth_failures(client_ip: str) -> None:
+        _auth_failures.pop(client_ip, None)
+
     def _verify_api_key(provided: str) -> bool:
         import secrets as _secrets
         if not _api_key:
             return True  # No key configured = open (with warning)
         return _secrets.compare_digest(provided, _api_key)
+
+    # -- Task State Machine Validation ------------------------------------
+
+    def _validate_task_transition(tid: str, current_state: str, new_state: str) -> bool:
+        """Validate that a task state transition is legal. Returns True if valid."""
+        valid_next = _TASK_VALID_TRANSITIONS.get(current_state)
+        if valid_next is None:
+            logger.warning("Unknown task state", extra={"task_id": tid, "state": current_state})
+            return False
+        if new_state not in valid_next:
+            logger.warning(
+                "Invalid task state transition",
+                extra={"task_id": tid, "from": current_state, "to": new_state},
+            )
+            return False
+        return True
+
+    # -- Push Notification Delivery Worker --------------------------------
+
+    from bastion.push_dispatcher import get_dispatcher
+    _push_dispatch = get_dispatcher()
+
+    def _notify_push(task_id: str, status: str, artifacts: list | None = None) -> None:
+        """Trigger push notification delivery via the dispatcher."""
+        _push_dispatch.notify(task_id, status, artifacts)
 
     # -- Middleware --------------------------------------------------------
 
@@ -451,16 +522,21 @@ def create_a2a_server(
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
         nonlocal _metrics_requests_total, _metrics_durations, _metrics_rate_limit_hits
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        client_ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
         if _api_key and request.url.path not in ("/healthz", "/readyz"):
+            if _check_brute_force(client_ip):
+                logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
+                return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
             if not token or not _verify_api_key(token):
+                _record_auth_failure(client_ip)
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            _clear_auth_failures(client_ip)
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
         request.state.request_id = request_id
 
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        client_ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
         if not _check_rate_limit(client_ip):
             _metrics_rate_limit_hits += 1
             logger.warning("Rate limit exceeded", extra={"request_id": request_id, "client_ip": client_ip})
@@ -621,6 +697,86 @@ def create_a2a_server(
         await _update_task(task_id, "CANCELED")
         task = (await _get_task(task_id)) or task
         return JSONResponse(_strip_internal(task))
+
+    # ----------------------------------------------------------------------
+    # A2A Streaming endpoint (SSE)
+    # ----------------------------------------------------------------------
+
+    from starlette.responses import StreamingResponse
+
+    @app.post("/message:sendStream")
+    async def stream_message_send(request: Request):
+        """Stream task lifecycle events via Server-Sent Events (A2A v1.0 streaming)."""
+        rid = getattr(request.state, "request_id", uuid.uuid4().hex)
+        if not _check_version(request):
+            return JSONResponse({"error": "Unsupported A2A version"}, status_code=400)
+        try:
+            raw = await _read_body(request)
+            body = json.loads(raw)
+        except Exception:
+            logger.exception("Invalid request body in /message:sendStream")
+            return JSONResponse({"error": "Invalid request"}, status_code=400)
+
+        task_id = uuid.uuid4().hex
+        await _store_task(task_id, "SUBMITTED")
+
+        async def event_generator():
+            # Emit SUBMITTED event
+            yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'SUBMITTED'})}\n\n"
+
+            # Transition to WORKING
+            await _update_task(task_id, "WORKING")
+            yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'WORKING'})}\n\n"
+
+            try:
+                # Execute skill
+                message = body.get("message", body) if isinstance(body, dict) else {}
+                parts = message.get("parts", []) if isinstance(message, dict) else []
+                metadata = message.get("metadata", {}) if isinstance(message, dict) else {}
+                text = ""
+                for part in parts:
+                    t = part.get("text", "")
+                    if t:
+                        text = t
+                        break
+                skill_params = dict(metadata.get("params", {})) if metadata.get("params") else {}
+                if not skill_params and text:
+                    skill_params = _infer_params(text)
+
+                skill_id = metadata.get("skill", "")
+                method = skill_map.get(skill_id)
+
+                if not method:
+                    await _update_task(task_id, "FAILED")
+                    yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Unknown skill'})}\n\n"
+                    yield "event: TaskComplete\ndata: {}\n\n"
+                    return
+
+                # Stream progress updates
+                yield f"event: TaskArtifactUpdate\ndata: {json.dumps({'task_id': task_id, 'artifact': {'parts': [{'text': f'Executing {skill_id}...'}]}})}\n\n"
+
+                result = await anyio.to_thread.run_sync(_execute_skill, memory, method, skill_params)
+                parts_out = [{"text": json.dumps(result, default=str)}]
+                await _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
+                yield f"event: TaskArtifactUpdate\ndata: {json.dumps({'task_id': task_id, 'artifact': {'parts': parts_out}})}\n\n"
+                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'COMPLETED'})}\n\n"
+
+            except Exception as exc:
+                logger.exception("Streaming skill execution failed", extra={"request_id": rid, "skill": skill_id})
+                await _update_task(task_id, "FAILED")
+                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': str(exc)[:200]})}\n\n"
+
+            yield "event: TaskComplete\ndata: {}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # ----------------------------------------------------------------------
     # Bastion-specific endpoints
@@ -814,7 +970,7 @@ def create_a2a_server(
         callback_url = params.get("url", "")
         if not callback_url:
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing callback url", req_id)
-        _push_notifications[task_id] = callback_url
+        _push_dispatch.register(task_id, callback_url)
         if not memory._mock:
             await anyio.to_thread.run_sync(
                 partial(memory.update_a2a_task, task_id, "WORKING", callback_url=callback_url),
@@ -826,7 +982,7 @@ def create_a2a_server(
         task_id = params.get("id", "")
         if not task_id:
             return _rpc_error(_JSONRPC_INVALID_PARAMS, "Missing task id", req_id)
-        url = _push_notifications.get(task_id)
+        url = _push_dispatch.get_callback_url(task_id)
         if not url:
             return _rpc_error(_A2A_TASK_NOT_FOUND, f"No push notification for task: {task_id}", req_id)
         return _rpc_result({"task_id": task_id, "url": url}, req_id)
@@ -953,12 +1109,17 @@ def main():
 
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_config=None))
 
-    def _shutdown(signum, frame):
-        logger.info("Shutdown signal received", extra={"signal": signum})
+    def _shutdown(signum=None, frame=None):
+        logger.info("Shutdown signal received", extra={"signal": str(signum)})
         server.should_exit = True
 
+    # Cross-platform signal handling
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
+    else:
+        # Windows: SIGBREAK is the equivalent of SIGTERM for console apps
+        signal.signal(signal.SIGBREAK, _shutdown)
         signal.signal(signal.SIGINT, _shutdown)
 
     logger.info("Bastion A2A server starting", extra={"host": host, "port": port, "mock": mock})

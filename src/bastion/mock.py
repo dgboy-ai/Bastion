@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import threading
 import uuid
 from collections.abc import Callable
@@ -26,6 +27,35 @@ _coordination_locks: list[dict[str, Any]] = []
 _messages: list[dict[str, Any]] = []
 _namespace_map: dict[str, set[str]] = {}
 _lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Mock embedding: produces semantically meaningful vectors for local testing
+# Uses word-level hashing so similar texts get similar vectors via shared words.
+# ---------------------------------------------------------------------------
+
+
+def _mock_embed(text: str) -> list[float]:
+    """Produce a 1024-dim unit-normalized vector from text using word hashing.
+
+    Each word maps to specific dimensions via its SHA-256 hash. The vector is
+    the sum of all word vectors, so texts sharing words get high cosine
+    similarity, and unrelated texts get low similarity.
+    """
+    words = text.lower().split()
+    raw = [0.0] * 1024
+
+    for word in words:
+        digest = hashlib.sha256(word.encode()).digest()
+        # Use the hash to determine which dimensions to activate and by how much
+        for i in range(0, min(32, len(digest)), 4):
+            idx = int.from_bytes(digest[i:i+4], "big") % 1024
+            # Use hash bytes to determine the activation value (0.5 to 1.5)
+            val = 0.5 + (digest[i] / 255.0)
+            raw[idx] += val
+
+    # L2-normalize
+    norm = math.sqrt(sum(v * v for v in raw)) or 1.0
+    return [v / norm for v in raw]
 
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
@@ -66,7 +96,7 @@ def mock_store_memory(
             agent_id=agent_id,
             memory_type=memory_type,
             content=content,
-            embedding=precomputed_embedding if precomputed_embedding is not None else ([0.0] * 1024),
+            embedding=precomputed_embedding if precomputed_embedding is not None else _mock_embed(content),
             metadata=meta,
             previous_hash=prev_hash,
             cryptographic_hash=crypto_hash,
@@ -136,23 +166,31 @@ def mock_search_memory(
             r["_decay_score"] = importance / (1.0 + 0.01 * hours_elapsed)
             valid.append(r)
 
-        # Score by text relevance: simple word-overlap scoring to simulate semantic search
+        # Score by cosine similarity of mock embeddings + word overlap hybrid
+        query_vec = _mock_embed(query) if query else [0.0] * 1024
         query_words = set(query.lower().split()) if query else set()
+
+        def _cosine_sim(a: list[float], b: list[float]) -> float:
+            dot = sum(x * y for x, y in zip(a, b))
+            na = math.sqrt(sum(x * x for x in a)) or 1.0
+            nb = math.sqrt(sum(x * x for x in b)) or 1.0
+            return dot / (na * nb)
+
         for r in valid:
+            content_vec = r.get("embedding") or ([0.0] * 1024)
+            # Cosine similarity from mock embeddings
+            vec_sim = _cosine_sim(query_vec, content_vec)
+            # Word overlap bonus for exact term matches
             content_words = set(r.get("content", "").lower().split())
-            if query_words:
-                overlap = len(query_words & content_words)
-                r["_text_score"] = overlap / max(len(query_words), 1)
-            else:
-                r["_text_score"] = 0.0
-            # Combined score: text relevance * decay
+            word_overlap = len(query_words & content_words) / max(len(query_words), 1) if query_words else 0.0
+            # Combined: 70% vector similarity + 30% word overlap
+            r["_text_score"] = 0.7 * vec_sim + 0.3 * word_overlap
             r["_combined_score"] = r["_text_score"] * r["_decay_score"]
 
         valid.sort(key=lambda x: x["_combined_score"], reverse=True)
 
-        # Filter by threshold: remove results with zero text relevance
-        if query_words:
-            valid = [r for r in valid if r["_text_score"] >= threshold * 0.1]
+        # Filter by threshold
+        valid = [r for r in valid if r["_text_score"] >= threshold]
 
         results = []
         for r in valid[:k]:

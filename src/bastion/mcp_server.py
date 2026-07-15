@@ -405,17 +405,20 @@ def create_server(
         ctx: Context,
         query: str,
         k: int = 5,
-        threshold: float = 0.8,
+        threshold: float | None = None,
         memory_type: str | None = None,
         cursor: str | None = None,
     ) -> str:
         if k < 1:
             return json.dumps({"error": "k must be >= 1"})
-        if not 0.0 <= threshold <= 1.0:
+        if threshold is not None and not 0.0 <= threshold <= 1.0:
             return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
         if not query or not query.strip():
             return json.dumps({"error": "query must be a non-empty string"})
         mem = _resolve_memory(ctx)
+        # Use lower default threshold for mock mode (mock embeddings are less discriminative)
+        if threshold is None:
+            threshold = 0.3 if mem.is_mock else 0.8
         internal_k = max(k, 200)
         results = await anyio.to_thread.run_sync(
             mem.search,

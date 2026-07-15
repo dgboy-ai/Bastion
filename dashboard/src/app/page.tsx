@@ -199,7 +199,6 @@ function NetherCanvas() {
     const drips: { x:number; y:number; vy:number; sz:number; life:number; maxL:number }[] = [];
     const flowParticles: { x:number; y:number; vy:number; sz:number; color:string }[] = [];
     const splashes: { x:number; y:number; vx:number; vy:number; sz:number; life:number; color:string }[] = [];
-    const bubbles: { x:number; y:number; vy:number; sz:number; life:number; color:string }[] = [];
 
     const embers = Array.from({length:150}, () => ({
       x: Math.random()*W, y: Math.random()*H,
@@ -219,37 +218,63 @@ function NetherCanvas() {
       const sy = window.scrollY;
       const narrow = W < 960; 
 
-      let bg1 = "#250508", bg2 = "#080001";
-      let particleColor = "#ff5500";
+      // Smooth color morphing system across three distinct biomes
+      let r1 = 59, g1 = 7, b1 = 11;
+      let r2 = 13, g2 = 1, b2 = 2;
+      let pR = 255, pG = 85, pB = 0;
       let cracksColor = "#ffea00";
-      
-      if (sy < 750) {
-        bg1 = "#3b070b"; bg2 = "#0d0102";
-        particleColor = "#ff5500";
-      } else if (sy >= 750 && sy < 2100) {
-        // High contrast Warped Forest gold-orange fog background with teal elements
-        bg1 = "#7c3e00"; bg2 = "#04332e";
-        particleColor = "#00f0ff";
+
+      if (sy < 1000) {
+        const t = Math.min(sy / 1000, 1);
+        // Interpolate background top: Nether Crimson (59, 7, 11) -> Warped Amber/Gold (124, 62, 0)
+        r1 = Math.round(59 + (124 - 59) * t);
+        g1 = Math.round(7 + (62 - 7) * t);
+        b1 = Math.round(11 + (0 - 11) * t);
+
+        // Interpolate background bottom: (13, 1, 2) -> (4, 51, 46)
+        r2 = Math.round(13 + (4 - 13) * t);
+        g2 = Math.round(1 + (51 - 1) * t);
+        b2 = Math.round(2 + (46 - 2) * t);
+
+        // Interpolate particles: Red-Orange -> Cyan
+        pR = Math.round(255 + (0 - 255) * t);
+        pG = Math.round(85 + (229 - 85) * t);
+        pB = Math.round(0 + (255 - 0) * t);
+      } else if (sy < 2200) {
+        const t = Math.min((sy - 1000) / 1200, 1);
+        // Interpolate top: Warped Amber (124, 62, 0) -> Soul Sand Cyan (2, 66, 63)
+        r1 = Math.round(124 + (2 - 124) * t);
+        g1 = Math.round(62 + (66 - 62) * t);
+        b1 = Math.round(0 + (63 - 0) * t);
+
+        // Interpolate bottom: Warped Teal (4, 51, 46) -> Soul Dark (2, 13, 12)
+        r2 = Math.round(4 + (2 - 4) * t);
+        g2 = Math.round(51 + (13 - 51) * t);
+        b2 = Math.round(46 + (12 - 46) * t);
+
+        pR = 0; pG = 229; pB = 255;
         cracksColor = "#00f0ff";
       } else {
-        bg1 = "#02423f"; bg2 = "#020d0c";
-        particleColor = "#00ffcc";
+        r1 = 2; g1 = 66; b1 = 63;
+        r2 = 2; g2 = 13; b2 = 12;
+        pR = 0; pG = 255; pB = 204;
         cracksColor = "#00e5ff";
       }
 
       const bg = ctx.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, bg1);
-      bg.addColorStop(1, bg2);
+      bg.addColorStop(0, `rgb(${r1}, ${g1}, ${b1})`);
+      bg.addColorStop(1, `rgb(${r2}, ${g2}, ${b2})`);
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
 
+      // Smooth radial light center glow
       const radialGlow = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*0.7);
-      if (sy < 750) {
-        radialGlow.addColorStop(0, "rgba(255, 68, 0, 0.22)");
-      } else if (sy >= 750 && sy < 2100) {
-        // Stronger center amber glow
-        radialGlow.addColorStop(0, "rgba(255, 130, 0, 0.28)");
-        radialGlow.addColorStop(0.5, "rgba(0, 229, 255, 0.12)");
+      if (sy < 1000) {
+        const t = Math.min(sy / 1000, 1);
+        const glowR = Math.round(255 + (255 - 255) * t);
+        const glowG = Math.round(68 + (130 - 68) * t);
+        const glowB = Math.round(0 + (255 - 0) * t);
+        radialGlow.addColorStop(0, `rgba(${glowR}, ${glowG}, ${glowB}, ${0.22 + t * 0.06})`);
       } else {
         radialGlow.addColorStop(0, "rgba(0, 229, 255, 0.18)");
       }
@@ -257,11 +282,7 @@ function NetherCanvas() {
       ctx.fillStyle = radialGlow;
       ctx.fillRect(0, 0, W, H);
 
-      const cw = Math.min(W - 80, 960);
-      const contentLeft = (W - cw) / 2;
-      const contentRight = contentLeft + cw;
-      
-      ctx.globalAlpha = narrow ? 0.08 : 0.95;
+      ctx.globalAlpha = 0.95;
 
       world.forEach((o, idx) => {
         const dy = o.y - sy;
@@ -271,11 +292,6 @@ function NetherCanvas() {
         const isRightColumn = o.x > W / 2;
         if (isRightColumn) {
           dx = W - (W - o.x);
-        }
-
-        if (!narrow) {
-          if (!isRightColumn && dx + o.sz > contentLeft - 15) return;
-          if (isRightColumn && dx < contentRight + 15) return;
         }
 
         if (o.type==="block" && o.bt) {
@@ -326,7 +342,6 @@ function NetherCanvas() {
       cracks.forEach(c => {
         const dy = c.y - sy;
         if (dy < -100 || dy > H + 100) return;
-        if (!narrow && c.x > contentLeft - 40 && c.x < contentRight + 40) return;
         ctx.beginPath(); ctx.moveTo(c.x,dy); ctx.lineTo(c.x+Math.cos(c.a)*c.len, dy+Math.sin(c.a)*c.len);
         ctx.shadowColor=cracksColor; ctx.shadowBlur=12;
         ctx.strokeStyle=cracksColor; ctx.lineWidth=3; ctx.stroke(); ctx.shadowBlur=0;
@@ -437,18 +452,19 @@ function NetherCanvas() {
       for (const e of embers) {
         e.x+=e.vx+Math.sin(e.life*5.5)*.18; e.y+=e.vy; e.life-=e.decay;
         if (e.life<=0||e.y<-20) { e.x=Math.random()*W; e.y=H+60; e.life=1; }
-        
-        ctx.beginPath(); 
+
+        const particleColor = `rgb(${pR}, ${pG}, ${pB})`;
+        ctx.beginPath();
         ctx.arc(e.x,e.y,e.sz,0,Math.PI*2);
-        ctx.fillStyle=particleColor; 
-        
-        if (sy >= 750 && sy < 2100) {
-          ctx.shadowColor=particleColor; 
-          ctx.shadowBlur=10; 
+        ctx.fillStyle=particleColor;
+
+        if (sy >= 750) {
+          ctx.shadowColor=particleColor;
+          ctx.shadowBlur=10;
         } else {
           ctx.shadowBlur=0;
         }
-        ctx.fill(); 
+        ctx.fill();
         ctx.shadowBlur=0;
       }
       ctx.globalAlpha=1;
@@ -522,249 +538,6 @@ function TypewriterWord() {
         boxShadow: `0 0 12px #ffea00`,
       }}/>
     </span>
-  );
-}
-
-/* ─── Ledger Seal Widget (3D Concentric Gyroscope Core) ─── */
-function LedgerSeal() {
-  const [busy,  setBusy]  = useState(false);
-  const [stat,  setStat]  = useState("SECURED");
-  const [log,   setLog]   = useState("SYSTEM_IDLE");
-  const [pct,   setPct]   = useState(100);
-
-  const [hexLogs, setHexLogs] = useState<string[]>([
-    "0xEd25519_AUTH_OK",
-    "0xSHA256_ROOT_SECURE",
-    "0xPGVECTOR_SYNC_ACTIVE"
-  ]);
-
-  useEffect(() => {
-    const iv = setInterval(() => {
-      if (busy) return;
-      const hexes = [
-        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_TX_SEAL",
-        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_BLOCK_MERGE",
-        "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "_HASH_LINK",
-        "0xEd25519_VERIFY_PASS",
-        "0xCOCKROACH_SYNC_OK"
-      ];
-      setHexLogs(prev => [hexes[Math.floor(Math.random() * hexes.length)], prev[0], prev[1]]);
-    }, 2000);
-    return () => clearInterval(iv);
-  }, [busy]);
-
-  const verify = useCallback(async (e: React.MouseEvent) => {
-    if (busy) return;
-    setBusy(true);
-    setStat("VERIFYING…");
-    setPct(0);
-    setLog("INIT_VERIFY");
-
-    const ripple = document.createElement("div");
-    ripple.className = "ripple-ring";
-    ripple.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
-    document.body.appendChild(ripple);
-    setTimeout(() => ripple.remove(), 1300);
-
-    try {
-      const res = await fetch("/api/memories?agent_id=demo-agent");
-      const data = await res.json();
-      const memories = data.memories || [];
-      
-      setTimeout(() => {
-        setLog(`SCANNING_${memories.length}_BLOCKS`);
-        setPct(25);
-      }, 300);
-
-      setTimeout(() => {
-        let valid = true;
-        for (let i = 1; i < memories.length; i++) {
-          if (memories[i].previousHash !== memories[i - 1].cryptographicHash) {
-            valid = false;
-            break;
-          }
-        }
-        
-        if (memories.length > 0) {
-          const latest = memories[memories.length - 1];
-          const prev = memories.length > 1 ? memories[memories.length - 2] : null;
-          setHexLogs([
-            `0x${latest.cryptographicHash.substring(0, 12).toUpperCase()}...`,
-            prev ? `0x${prev.cryptographicHash.substring(0, 12).toUpperCase()}...` : "0xGENESIS_ROOT",
-            valid ? "0xSHA256_LINK_OK" : "0xHASH_CHAIN_ERR"
-          ]);
-        }
-        
-        setLog(valid ? "CRYPT_LINKS_OK" : "CRYPT_LINK_FAIL");
-        setPct(60);
-      }, 700);
-
-      setTimeout(() => {
-        setLog("ED25519_SIG_VALID");
-        setPct(85);
-      }, 1100);
-
-      setTimeout(() => {
-        setLog("CHAIN_SECURED");
-        setPct(100);
-        setBusy(false);
-        setStat(`${memories.length} BLOCKS OK`);
-      }, 1500);
-
-    } catch (err) {
-      console.error(err);
-      setTimeout(() => {
-        setLog("VERIFY_ERROR");
-        setPct(100);
-        setBusy(false);
-        setStat("VERIFY FAILED");
-      }, 1000);
-    }
-  }, [busy]);
-
-  return (
-    <div onClick={verify} style={{
-      width:"292px", height:"385px",
-      background:"rgba(12,2,15,0.98)",
-      border:"10px solid #1a0a26",
-      borderRadius:"2px",
-      boxShadow: busy
-        ? `0 0 65px ${P.cyan}, 0 0 130px ${P.cyan}40, inset 0 0 35px ${P.cyan}25`
-        : `0 0 45px ${P.purple}40, 0 0 90px ${P.purple}15, inset 0 0 30px ${P.purple}55`,
-      cursor:"pointer",
-      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"space-between",
-      padding:"22px 18px",
-      transition:"all 0.4s ease",
-      transform: busy?"scale(1.04)":"scale(1)",
-    }}>
-      <div style={{textAlign:"center",width:"100%"}}>
-        <div style={{fontSize:"8.5px",fontFamily:"var(--font-mono)",letterSpacing:"2.5px",color:P.mute,textTransform:"uppercase"}}>
-          BASTION // MEMORY INTEGRITY SEAL
-        </div>
-        <div style={{height:"1px",background:`linear-gradient(90deg,transparent,${P.purple}80,transparent)`,margin:"8px 0"}}/>
-      </div>
-
-      <div style={{
-        position:"relative", width:"140px", height:"140px",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        perspective: "600px", transformStyle: "preserve-3d"
-      }}>
-        <div className={`gyro-ring ${busy ? "spin-fast-x" : "spin-slow-x"}`} style={{
-          position: "absolute", width: "120px", height: "120px",
-          borderRadius: "50%", border: `4px solid #ffea00`,
-          boxShadow: `0 0 20px #ffea00, inset 0 0 15px #ffea00`,
-          transformStyle: "preserve-3d"
-        }} />
-
-        <div className={`gyro-ring ${busy ? "spin-fast-y" : "spin-slow-y"}`} style={{
-          position: "absolute", width: "90px", height: "90px",
-          borderRadius: "50%", border: `4px solid ${P.cyan}`,
-          boxShadow: `0 0 20px ${P.cyan}, inset 0 0 15px ${P.cyan}`,
-          transformStyle: "preserve-3d"
-        }} />
-
-        <div className="quantum-core" style={{
-          position: "absolute", width: "32px", height: "32px", borderRadius: "50%",
-          background: `radial-gradient(circle, #ffea00 0%, ${P.purple} 60%, #ff5500 100%)`,
-          boxShadow: `0 0 30px #ffea00, 0 0 50px ${P.purple}`,
-          animation: "pulseCore 1.3s ease-in-out infinite"
-        }} />
-
-        {busy && <div className="scanline" />}
-      </div>
-
-      <div style={{ width: "100%", background: "rgba(0,0,0,0.6)", borderRadius: "2px", padding: "6px 8px", border: "1px solid rgba(255,255,255,0.06)", height: "48px", overflow: "hidden" }}>
-        {hexLogs.map((logStr, idx) => (
-          <div key={idx} style={{ fontSize: "8.5px", fontFamily: "var(--font-mono)", color: idx === 0 ? P.cyan : P.mute, opacity: 1 - idx * 0.3, lineHeight: 1.4 }}>
-            {logStr}
-          </div>
-        ))}
-      </div>
-
-      <div style={{width:"100%",background:"rgba(0,0,0,.55)",borderRadius:"2px",padding:"10px 12px",border:"1px solid rgba(255,255,255,.04)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-          <span style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute}}>CHAIN_STATUS</span>
-          <span style={{fontSize:"9px",fontFamily:"var(--font-mono)",fontWeight:700,color:busy?P.cyan:P.gold}}>{stat}</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"10px"}}>
-          <span style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute}}>VERIFY_LOG</span>
-          <span style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.body,maxWidth:"120px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{log}</span>
-        </div>
-        <div style={{height:"3px",background:"rgba(255,255,255,.06)",borderRadius:"2px",overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,#ffea00,${P.cyan})`,transition:"width 0.3s ease",boxShadow:`0 0 6px ${P.cyan}`}}/>
-        </div>
-      </div>
-
-      <div style={{fontSize:"9.5px",fontFamily:"var(--font-mono)",color:busy?P.cyan:"#ff9100",letterSpacing:"1px",textTransform:"uppercase",animation:busy?"none":"sealPulse 1.6s infinite"}}>
-        {busy?"Verifying ledger chain…":"⚡ Click to Verify Chain"}
-      </div>
-
-      <style>{`
-        .spin-slow-x { animation: rotateSlowX 10s linear infinite; }
-        .spin-slow-y { animation: rotateSlowY 8s linear infinite; }
-        .spin-fast-x { animation: rotateFastX 1s linear infinite; }
-        .spin-fast-y { animation: rotateFastY 0.8s linear infinite; }
-
-        @keyframes rotateSlowX {
-          0% { transform: rotateX(0deg) rotateY(15deg); }
-          100% { transform: rotateX(360deg) rotateY(15deg); }
-        }
-        @keyframes rotateSlowY {
-          0% { transform: rotateY(0deg) rotateZ(30deg); }
-          100% { transform: rotateY(-360deg) rotateZ(30deg); }
-        }
-        @keyframes rotateFastX {
-          0% { transform: rotateX(0deg) rotateY(15deg); }
-          100% { transform: rotateX(360deg) rotateY(15deg); }
-        }
-        @keyframes rotateFastY {
-          0% { transform: rotateY(0deg) rotateZ(30deg); }
-          100% { transform: rotateY(-360deg) rotateZ(30deg); }
-        }
-
-        @keyframes pulseCore {
-          0%, 100% { transform: scale(0.9); opacity: 0.85; filter: drop-shadow(0 0 8px #ffea00); }
-          50% { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 20px ${P.purple}); }
-        }
-
-        @keyframes sealPulse {
-          0%, 100% { opacity: .55; text-shadow: 0 0 2px transparent; }
-          50% { opacity: 1; text-shadow: 0 0 10px #ffea00; }
-        }
-
-        .scanline {
-          position: absolute;
-          height: 4.5px;
-          width: 100%;
-          background: ${P.cyan};
-          box-shadow: 0 0 14px ${P.cyan};
-          opacity: 0.95;
-          animation: scanDown 1.5s linear infinite;
-        }
-        @keyframes scanDown {
-          0% { top: 0%; }
-          100% { top: 100%; }
-        }
-
-        .ripple-ring {
-          position: fixed;
-          pointer-events: none;
-          z-index: 9999;
-          width: 72px;
-          height: 72px;
-          border-radius: 50%;
-          border: 4px solid ${P.cyan};
-          box-shadow: 0 0 22px ${P.cyan};
-          transform: translate(-50%, -50%) scale(.1);
-          opacity: 1;
-          animation: rippleOut 1.2s cubic-bezier(.1,.85,.25,1) forwards;
-        }
-        @keyframes rippleOut {
-          from { transform: translate(-50%, -50%) scale(.1); opacity: 1; }
-          to { transform: translate(-50%, -50%) scale(25); opacity: 0; filter: blur(14px); }
-        }
-      `}</style>
-    </div>
   );
 }
 
@@ -1117,8 +890,8 @@ export default function Page() {
 
       {/* Atmospheric vignette */}
       <div style={{
-        position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
-        background:"radial-gradient(ellipse at 40% 35%, rgba(12,2,10,0.2) 0%, rgba(6,1,5,0.5) 100%)",
+        position:"fixed",inset:0,pointerEvents:"none",zIndex:-20,
+        background:"radial-gradient(ellipse at 40% 35%, rgba(12,2,10,0.1) 0%, rgba(6,1,5,0.2) 100%)",
       }}/>
 
       {/* Pixel grid */}
@@ -1175,10 +948,10 @@ export default function Page() {
 
         <div style={{width:"100%",maxWidth:"980px",position:"relative"}}>
 
-          <div style={{display:"grid",gridTemplateColumns:"minmax(0, 1.25fr) minmax(0, 0.75fr)",gap:"45px",alignItems:"center"}} className="hgrid">
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",maxWidth:"800px",margin:"0 auto"}} className="hgrid">
 
             {/* Left Column */}
-            <div style={{ maxWidth: "580px" }}>
+            <div>
               <h1 className="hs2" style={{
                 fontSize:"clamp(44px, 5.8vw, 74px)",
                 fontWeight:900,lineHeight:0.98,
@@ -1192,11 +965,11 @@ export default function Page() {
                 <TypewriterWord/>
               </h1>
 
-              <p className="hs3" style={{fontSize:"17px",lineHeight:1.7,color:"#fff",fontWeight:600,marginBottom:"36px",textShadow:"0 2px 16px rgba(0,0,0,.98)",maxWidth:"500px"}}>
+              <p className="hs3" style={{fontSize:"17px",lineHeight:1.7,color:"#fff",fontWeight:600,marginBottom:"36px",textShadow:"0 2px 16px rgba(0,0,0,.98)",maxWidth:"600px",margin:"0 auto 36px"}}>
                 Persistent, self-healing memory for autonomous AI agents. Crash-proof. Injection-resistant. Cryptographically sealed. Forged in CockroachDB.
               </p>
 
-              <div className="hs4" style={{display:"flex",gap:"12px",flexWrap:"wrap"}}>
+              <div className="hs4" style={{display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
                 <Link href="/dashboard" className="cta-btn" style={{padding:"14px 30px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,color:"#fff",fontSize:"13.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px",display:"inline-flex",alignItems:"center",gap:"9px"}}>
                   Try Demo Dashboard
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -1206,7 +979,7 @@ export default function Page() {
                 </Link>
               </div>
 
-              <div className="hs5" style={{display:"flex",gap:"32px",marginTop:"46px",paddingTop:"28px",borderTop:`1px solid rgba(255,170,0,0.3)`,flexWrap:"wrap"}}>
+              <div className="hs5" style={{display:"flex",gap:"40px",justifyContent:"center",marginTop:"46px",paddingTop:"28px",borderTop:`1px solid rgba(255,170,0,0.3)`,flexWrap:"wrap"}}>
                 {[{e:2800000,s:"",l:"Memories / Day"},{e:16,s:"ms",l:"Query Latency"},{e:6,s:"",l:"Global Regions"}].map(({e,s,l})=>(
                   <div key={l}>
                     <div style={{fontSize:"clamp(24px,3.2vw,38px)",fontWeight:900,color:"#fff",fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 20px rgba(255,170,0,0.4)`}}>
@@ -1216,11 +989,6 @@ export default function Page() {
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* Right Column */}
-            <div className="hs6" style={{display:"flex",justifyContent:"center",alignItems:"center"}}>
-              <LedgerSeal/>
             </div>
           </div>
 
@@ -1244,7 +1012,7 @@ export default function Page() {
                   Autonomous agents face silent corruption in production. Prompts containing malicious overrides or PII leaks are ingested, leading to behavioral drift.
                 </p>
                 <p style={{fontSize:"15px",color:P.mute,lineHeight:1.65,fontFamily:"var(--font-inter)",marginBottom:"24px"}}>
-                  Bastion acts as the **Forensic System of Record**. Run the simulator to see the OWASP ASI06 Guard shield the CockroachDB ledger, and trigger the time-travel recovery engine.
+                  Bastion acts as the <strong>Forensic System of Record</strong>. Run the simulator to see the OWASP ASI06 Guard shield the CockroachDB ledger, and trigger the time-travel recovery engine.
                 </p>
                 <div style={{display:"flex",gap:"22px"}}>
                   <div>

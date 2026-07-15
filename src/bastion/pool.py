@@ -79,9 +79,15 @@ class ConnectionPool:
                     break
 
     def _create_connection(self) -> Any:
-        """Create a new database connection."""
+        """Create a new database connection with statement timeout."""
         import psycopg
         conn = psycopg.connect(self.connection_string)
+        # Set statement timeout to prevent long-running queries from hanging
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET statement_timeout = '30s'")
+        except Exception:
+            pass  # Some drivers/servers may not support this
         return conn
 
     def _is_healthy(self, conn: Any) -> bool:
