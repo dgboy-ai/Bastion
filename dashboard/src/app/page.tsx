@@ -148,58 +148,66 @@ function NetherCanvas() {
     const ctx = canvas.getContext("2d")!;
     let W = canvas.width  = window.innerWidth;
     let H = canvas.height = window.innerHeight;
-    const onResize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener("resize", onResize);
 
     const BS = 46;
     type WO = { type: "block"|"magma"|"lantern"; x: number; y: number; sz: number; bt?: BT };
     const world: WO[] = [];
 
-    // Left columns – 3-wide
-    for (let y = 0; y < 5600; y += BS) {
-      const seg = y < 1300 ? 0 : y < 2600 ? 1 : 2;
-      const pickL = (): BT => {
-        const v = Math.random();
-        if (seg===0) return v>.87?"crying":v>.68?"gilded":v>.42?"obs":"black";
-        if (seg===1) return "nether";
-        return "soul";
-      };
-      const pickR = (): BT => {
-        const v = Math.random();
-        if (seg===0) return v>.82?"gilded":"black";
-        if (seg===1) return "nether";
-        return "soul";
-      };
-      world.push({ type: "block", x: 0, y, sz: BS, bt: pickL() });
-      world.push({ type: "block", x: BS, y, sz: BS, bt: pickL() });
-      world.push({ type: "block", x: BS * 2, y, sz: BS, bt: pickL() });
+    // Rebuild static structures to fit viewport height exactly
+    const rebuild = () => {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+      world.length = 0;
 
-      world.push({ type: "block", x: W - BS, y, sz: BS, bt: pickR() });
-      world.push({ type: "block", x: W - BS * 2, y, sz: BS, bt: pickR() });
-      world.push({ type: "block", x: W - BS * 3, y, sz: BS, bt: pickR() });
-    }
+      // Fill left and right columns viewport height (fixed position)
+      for (let y = 0; y < H + BS * 2; y += BS) {
+        const seg = y < H * 0.35 ? 0 : y < H * 0.7 ? 1 : 2;
+        const pickL = (): BT => {
+          const v = Math.random();
+          if (seg===0) return v>.87?"crying":v>.68?"gilded":v>.42?"obs":"black";
+          if (seg===1) return "nether";
+          return "soul";
+        };
+        const pickR = (): BT => {
+          const v = Math.random();
+          if (seg===0) return v>.82?"gilded":"black";
+          if (seg===1) return "nether";
+          return "soul";
+        };
+        world.push({ type: "block", x: 0, y, sz: BS, bt: pickL() });
+        world.push({ type: "block", x: BS, y, sz: BS, bt: pickL() });
+        world.push({ type: "block", x: BS * 2, y, sz: BS, bt: pickL() });
 
-    // Magma & lantern anchors
-    for (let y = 180; y < 5200; y += 380) {
-      const seg = y < 1300 ? 0 : y < 2600 ? 1 : 2;
-      if (seg===0) world.push({ type:"magma",   x: 200 + Math.random() * 150, y, sz:50 });
-      if (seg===2) world.push({ type:"lantern", x: 180 + Math.random() * 50,  y, sz:28 });
-    }
+        world.push({ type: "block", x: W - BS, y, sz: BS, bt: pickR() });
+        world.push({ type: "block", x: W - BS * 2, y, sz: BS, bt: pickR() });
+        world.push({ type: "block", x: W - BS * 3, y, sz: BS, bt: pickR() });
+      }
 
-    // Lava cracks
+      // Viewport-static decoration nodes
+      for (let y = 100; y < H; y += 280) {
+        const seg = y < H * 0.35 ? 0 : y < H * 0.7 ? 1 : 2;
+        if (seg===0) world.push({ type:"magma",   x: 180 + Math.random() * 120, y, sz:50 });
+        if (seg===2) world.push({ type:"lantern", x: 160 + Math.random() * 50,  y, sz:28 });
+      }
+    };
+
+    rebuild();
+    window.addEventListener("resize", rebuild);
+
+    // Viewport static cracks
     const cracks = [
-      { x: 300, y: 200, len:280, a: .7,  c:P.lava  },
-      { x: 500, y: 620, len:260, a:-.55, c:P.magma },
-      { x: 350, y:1550, len:380, a: .38, c:P.lava  },
-      { x: 600, y:2100, len:290, a:-.42, c:P.magma },
-      { x: 320, y:3000, len:420, a: .60, c:P.cyan  },
-      { x: 550, y:3900, len:300, a:-.65, c:P.cyan  },
+      { x: 300, y: 150, len:280, a: .7,  c:P.lava  },
+      { x: 500, y: 480, len:260, a:-.55, c:P.magma },
+      { x: 320, y: 720, len:400, a: .60, c:P.cyan  },
     ];
 
     // Particles lists
     const drips: { x:number; y:number; vy:number; sz:number; life:number; maxL:number }[] = [];
     const flowParticles: { x:number; y:number; vy:number; sz:number; color:string }[] = [];
+    
+    // Splashes now contain color and lifetime variables
     const splashes: { x:number; y:number; vx:number; vy:number; sz:number; life:number; color:string }[] = [];
+    const bubbles: { x:number; y:number; vy:number; sz:number; life:number; color:string }[] = [];
 
     // Ambient embers
     const embers = Array.from({length:120}, () => ({
@@ -216,6 +224,7 @@ function NetherCanvas() {
     const draw = () => {
       ctx.clearRect(0,0,W,H);
       T2 += .030; wfOff += .20;
+      
       const sy = window.scrollY;
       const soulZone = sy > 2200;
       const narrow = W < 1250; 
@@ -259,9 +268,9 @@ function NetherCanvas() {
       // Dynamic opacity watermark on collapse
       ctx.globalAlpha = narrow ? 0.06 : 0.95;
 
-      // Draw blocks
+      // Draw Viewport-Static blocks
       world.forEach((o, idx) => {
-        const dy = o.y - sy;
+        const dy = o.y;
         if (dy < -120 || dy > H + 120) return;
 
         let dx = o.x;
@@ -306,7 +315,7 @@ function NetherCanvas() {
 
       // Draw background cracks
       cracks.forEach(c => {
-        const dy = c.y-sy; if (dy<-300||dy>H+300) return;
+        const dy = c.y;
         if (!narrow && c.x > contentLeft - 40 && c.x < contentRight + 40) return;
         ctx.beginPath(); ctx.moveTo(c.x,dy); ctx.lineTo(c.x+Math.cos(c.a)*c.len, dy+Math.sin(c.a)*c.len);
         ctx.shadowColor=c.c; ctx.shadowBlur=10;
@@ -323,53 +332,84 @@ function NetherCanvas() {
         }
       }
 
-      // Waterfall Downward flow
+      // ─── UPGRADED WATERFALL & BASIN SYSTEM (RIGHT COLUMN) ───
       const wfW=90, wfX=W-wfW-108;
       const drawWaterfall = !narrow || W > 900;
       
       if (drawWaterfall) {
-        const wfCen = sy > 2200 ? P.cyan : "#ffcc00";
-        const wfEdge = sy > 2200 ? "rgba(0,110,230,.9)" : "rgba(255,42,0,.9)";
-        const wg = ctx.createLinearGradient(wfX,0,wfX+wfW,0);
-        wg.addColorStop(0,wfEdge); wg.addColorStop(.35,wfCen); wg.addColorStop(.65,wfCen); wg.addColorStop(1,wfEdge);
+        const activeColor = sy > 2200 ? P.cyan : P.lava;
+        const coreColor = sy > 2200 ? "#e0ffff" : P.gold;
+        const poolTop = H - 48; // Top edge of bottom pool
+
+        // Draw source block archway at the top (emerges from Blackstone ceiling)
+        for (let bx = wfX - 10; bx < wfX + wfW + 20; bx += 20) {
+          ctx.fillStyle = "#1e1624";
+          ctx.fillRect(bx, 0, 20, 30);
+          ctx.strokeStyle = "rgba(255,255,255,0.06)";
+          ctx.strokeRect(bx, 0, 20, 30);
+        }
+
+        // Draw flowing liquid column (viscous waves)
+        const wg = ctx.createLinearGradient(wfX, 0, wfX + wfW, 0);
+        wg.addColorStop(0, activeColor);
+        wg.addColorStop(0.3, coreColor);
+        wg.addColorStop(0.7, coreColor);
+        wg.addColorStop(1, activeColor);
         
-        ctx.globalAlpha = narrow ? 0.08 : 0.92;
-        ctx.fillStyle=wg;
-        for (let y=0;y<H;y+=38) {
-          ctx.fillRect(wfX+Math.sin(y*.05+wfOff*.09)*5,y,wfW,40);
+        ctx.globalAlpha = narrow ? 0.08 : 0.94;
+        ctx.fillStyle = wg;
+        
+        // Draw waves ending exactly at the pool surface (poolTop)
+        for (let y = 20; y < poolTop; y += 30) {
+          const shift = Math.sin(y * 0.04 + wfOff * 0.12) * 6;
+          ctx.fillRect(wfX + shift, y, wfW, 32);
         }
 
-        for (let off=13;off<wfW;off+=17) {
-          ctx.beginPath(); ctx.moveTo(wfX+off,0); ctx.lineTo(wfX+off,H);
-          ctx.strokeStyle=sy > 2200 ?"rgba(0,229,255,.22)":"rgba(255,210,0,.22)";
-          ctx.setLineDash([26,84]); ctx.lineDashOffset=-wfOff*(4+off%3); ctx.lineWidth=2; ctx.stroke();
-        }
-        ctx.setLineDash([]); ctx.globalAlpha=1;
+        // Draw bubbling basin/lake at bottom right viewport
+        ctx.fillStyle = "rgba(20,4,12,0.98)";
+        ctx.fillRect(wfX - 35, poolTop, wfW + 70, 48); // Background frame
+        
+        // Draw liquid surface in basin
+        const poolGrad = ctx.createLinearGradient(0, poolTop, 0, H);
+        poolGrad.addColorStop(0, activeColor);
+        poolGrad.addColorStop(0.4, coreColor);
+        poolGrad.addColorStop(1, "#3c0000");
+        ctx.fillStyle = poolGrad;
+        ctx.fillRect(wfX - 30, poolTop + 6, wfW + 60, 42);
 
-        // Spawn downward flow particles
-        if (Math.random() > 0.4) {
+        // Draw blocky Blackstone frame borders for the basin
+        drawBlock(ctx, wfX - 44, poolTop, 44, "black", 88); // Left basin wall
+        drawBlock(ctx, wfX + wfW, poolTop, 44, "black", 89); // Right basin wall
+
+        // Spawn falling lava drops
+        if (Math.random() > 0.35) {
           flowParticles.push({
             x: wfX + Math.random() * wfW,
-            y: 0,
-            vy: Math.random() * 4 + 3,
-            sz: Math.random() * 3 + 2,
-            color: sy > 2200 ? P.cyan : P.gold
+            y: 28,
+            vy: Math.random() * 4 + 4,
+            sz: Math.random() * 3 + 2.5,
+            color: activeColor
           });
         }
 
+        // Update flow drops
         for (let i = flowParticles.length - 1; i >= 0; i--) {
           const f = flowParticles[i];
           f.y += f.vy;
-          if (f.y > H) {
-            splashes.push({
-              x: f.x,
-              y: H - 15,
-              vx: (Math.random() - 0.5) * 5,
-              vy: -(Math.random() * 3 + 1.5),
-              sz: f.sz,
-              life: 1.0,
-              color: f.color
-            });
+          // Trigger splash when hitting the basin surface
+          if (f.y >= poolTop + 8) {
+            // Natural splash particle distribution
+            for (let j = 0; j < 3; j++) {
+              splashes.push({
+                x: f.x,
+                y: poolTop + 6,
+                vx: (Math.random() - 0.5) * 4.8,
+                vy: -(Math.random() * 3.5 + 2),
+                sz: f.sz * 0.7,
+                life: 1.0,
+                color: Math.random() > 0.4 ? coreColor : activeColor
+              });
+            }
             flowParticles.splice(i, 1);
             continue;
           }
@@ -377,11 +417,48 @@ function NetherCanvas() {
           ctx.fillRect(f.x, f.y, f.sz, f.sz * 2);
         }
 
-        for (let i=splashes.length-1;i>=0;i--) {
-          const s=splashes[i]; s.x+=s.vx; s.y+=s.vy; s.vy+=.18; s.life-=.035;
-          if (s.life<=0){splashes.splice(i,1);continue;}
-          ctx.beginPath(); ctx.arc(s.x,s.y,s.sz,0,Math.PI*2);
-          ctx.fillStyle=s.color; ctx.globalAlpha=s.life; ctx.fill();
+        // Spawn bubbles inside the basin pool
+        if (Math.random() > 0.65) {
+          bubbles.push({
+            x: wfX - 20 + Math.random() * (wfW + 40),
+            y: poolTop + 15 + Math.random() * 25,
+            vy: -(Math.random() * 0.6 + 0.3),
+            sz: Math.random() * 2.5 + 1.5,
+            life: 1.0,
+            color: coreColor
+          });
+        }
+
+        // Update bubbles
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+          const b = bubbles[i];
+          b.y += b.vy;
+          b.life -= 0.02;
+          if (b.life <= 0 || b.y <= poolTop + 6) {
+            bubbles.splice(i, 1);
+            continue;
+          }
+          ctx.fillStyle = b.color;
+          ctx.globalAlpha = b.life * 0.8;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.sz, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Update splashes (bouncing out from the basin surface)
+        for (let i = splashes.length - 1; i >= 0; i--) {
+          const s = splashes[i];
+          s.x += s.vx;
+          s.y += s.vy;
+          s.vy += 0.22; // Gravity pull
+          s.life -= 0.038;
+          if (s.life <= 0) {
+            splashes.splice(i, 1);
+            continue;
+          }
+          ctx.fillStyle = s.color;
+          ctx.globalAlpha = s.life;
+          ctx.fillRect(s.x, s.y, s.sz, s.sz);
         }
         ctx.globalAlpha = 1.0;
       }
@@ -399,7 +476,7 @@ function NetherCanvas() {
       raf = requestAnimationFrame(draw);
     };
     draw();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize",onResize); };
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", rebuild); };
   }, []);
 
   return (
@@ -441,20 +518,28 @@ function TypewriterWord() {
   }, [text, del, idx]);
 
   return (
-    <span style={{
-      background: `linear-gradient(135deg, ${P.lava}, ${P.magma}, ${P.gold}, ${P.lava})`,
-      WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-      backgroundClip: "text", backgroundSize: "220% auto",
-      animation: "gradShift 3.5s ease infinite",
-      display: "inline",
-      fontWeight: 900,
-      textShadow: "0 0 20px rgba(255, 66, 0, 0.8), 0 0 40px rgba(255, 100, 0, 0.5), 0 0 60px rgba(255, 150, 0, 0.3)",
-      filter: "drop-shadow(0 0 15px rgba(255, 66, 0, 0.8)) drop-shadow(0 0 30px rgba(255, 100, 0, 0.5))",
-    }}>
-      {text}<span style={{
-        display: "inline-block", width: "4px", height: "0.85em",
-        background: P.lava, marginLeft: "4px", verticalAlign: "text-bottom",
+    <span style={{ display: "inline-block", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
+      <span style={{
+        background: `linear-gradient(135deg, ${P.lava}, ${P.magma}, ${P.gold}, ${P.lava})`,
+        WebkitBackgroundClip: "text",
+        WebkitTextFillColor: "transparent",
+        backgroundClip: "text",
+        backgroundSize: "220% auto",
+        animation: "gradShift 3.5s ease infinite",
+        fontWeight: 900,
+        filter: "drop-shadow(0 0 10px rgba(255, 66, 0, 0.65))",
+      }}>
+        {text}
+      </span>
+      <span style={{
+        display: "inline-block",
+        width: "6px",
+        height: "0.85em",
+        background: P.lava,
+        marginLeft: "6px",
+        verticalAlign: "baseline",
         animation: "blink 0.7s step-end infinite",
+        boxShadow: `0 0 12px ${P.lava}`,
       }}/>
     </span>
   );
@@ -467,7 +552,6 @@ function LedgerSeal() {
   const [log,   setLog]   = useState("SYSTEM_IDLE");
   const [pct,   setPct]   = useState(100);
 
-  // Live hex logging terminal updates
   const [hexLogs, setHexLogs] = useState<string[]>([
     "0xEd25519_AUTH_OK",
     "0xSHA256_ROOT_SECURE",
@@ -557,6 +641,8 @@ function LedgerSeal() {
           animation: "pulseCore 1.3s ease-in-out infinite"
         }} />
 
+        {/* Holographic matrix scan overlay */}
+        {busy && <div className="scanline" style={{ height: "100%", width: "100%", top: 0, left: 0 }} />}
       </div>
 
       {/* Hex Ledger terminal reader */}
@@ -617,6 +703,20 @@ function LedgerSeal() {
         @keyframes sealPulse {
           0%, 100% { opacity: .55; text-shadow: 0 0 2px transparent; }
           50% { opacity: 1; text-shadow: 0 0 10px ${P.lava}; }
+        }
+
+        .scanline {
+          position: absolute;
+          height: 4px;
+          width: 100%;
+          background: ${P.cyan};
+          box-shadow: 0 0 12px ${P.cyan};
+          opacity: 0.8;
+          animation: scanDown 1.5s linear infinite;
+        }
+        @keyframes scanDown {
+          0% { top: 0%; }
+          100% { top: 100%; }
         }
 
         .ripple-ring {

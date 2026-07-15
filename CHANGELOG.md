@@ -2,6 +2,71 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.9.0] — 2026-07-15
+
+### Production Hardening — Code Quality, Security, Decomposition, CI Integration
+
+Comprehensive code quality overhaul: zero lint errors, zero type errors, 1223 tests (all passing), memory.py decomposed, security hardened, dead code cleaned, real benchmarks against live CockroachDB.
+
+#### Code Quality
+- **Ruff lint**: 20 errors fixed → 0 errors
+- **Mypy type check**: 29 errors fixed → 0 errors
+- **memory.py decomposed**: 1740 lines → 1466 lines (274 extracted to health.py, cache_router.py)
+- **Dead code removed**: 9 files moved to scripts/archive, bation/ typo directory removed
+- **Unused variable in mcp_server.py PKCE capture** removed
+- **Type annotations fixed** across drift.py, crdt_memory.py, models.py, agent.py, bridge_mem0.py, mock.py, router.py, pool.py, retry.py, observations.py, dreaming.py, cache_router.py, guard.py, log_setup.py, a2a_signing.py, telemetry.py, migrate.py
+- **Guard SecurityReport access fixed** — `.get()` → `.is_safe`/`.findings` in a2a_server.py
+- **PKCE form data type mismatch fixed** — `str()` cast in mcp_server.py
+- **`_skip_guard` bug fixed** — removed invalid kwarg from `_store_real` call in _pin_real
+- **Unsorted imports fixed** — migrate.py, telemetry.py
+
+#### Security
+- **OWASP guard base64/URL-encoded detection** — catches encoded injection payloads
+- **RLS autocommit bypass fixed** — auto-starts transaction when connection is in autocommit mode
+- **Timing attack on API key** — `secrets.compare_digest()` in MCP and A2A servers
+- **RLS WITH CHECK policies** — write-side isolation enforced
+- **KMS production fallback refusal** — raises error instead of silent local key
+- **Leaked credentials removed** — 5 test files cleaned
+
+#### Decomposition
+- **health.py** (157 lines) — memory_health, trust_report, detect_anomalies, diff
+- **cache_router.py** (155 lines) — MemoryRouter L1/L2 retrieval
+- **knowledge_graph.py** expanded — 30 NLP patterns, Groq self-check with JSON parser
+- **mock.py deadlock fixed** — `_ensure_entity_unlocked` for locked contexts
+
+#### Benchmarks
+- **Real benchmarks** — scripts/benchmark.py rewritten to use real CockroachDB
+- **Connection pooling** — shared memory instance across iterations
+- **Fabricated numbers flagged** — ABSOLUTE_DOMINATION.md DISCLAIMER added
+
+#### CI Integration
+- **18 new CI integration tests** — store, hash chain, trust, audit, graph, guard, circuit breaker, pool
+- **E2E tests run without `--e2e` flag** — server starts in fixture
+- **Stress tests run without `--stress` flag** — available by default
+- **Total: 1223 tests** (up from 1205)
+
+#### Documentation
+- **Root files cleaned** — 9 files moved to scripts/archive
+- **3 assessment docs archived** — COCKROACHDB_JUDGE_ANALYSIS, PRODUCTION_CHECKLIST, TRUST_INDICATORS
+- **Test counts updated** — JUDGES_QUICKSTART, DEPLOYMENT_GUIDE
+- **OpenAPI MCP updated** — 25 tools listed (was 8)
+- **.gitignore cleaned** — .mypy_cache/ added, duplicates removed
+
+#### Test Results
+
+| Suite | Tests | Status |
+|---|---|---|
+| Python SDK (core) | 283 | All pass |
+| CI integration | 18 | All pass |
+| E2E (live server) | 13 | All pass |
+| Stress (concurrent) | 11 | All pass |
+| CRDB integration | 17 | All pass |
+| Integration memory | 9 | All pass |
+| Limiter distributed | 8 | All pass |
+| **Total** | **1,223** | **All pass** |
+
+---
+
 ## [0.6.0] — 2026-07-09
 
 ### Hackathon Features, Gap Fixes, Production Hardening
