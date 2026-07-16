@@ -124,13 +124,11 @@ class TestTrustScoring:
     def test_hash_chain_intact(self):
         """Memory with intact hash chain should have LOW poisoning risk."""
         import datetime
-        import hashlib
+        from bastion.crypto import compute_hash
         content = "Some memory content that will be hashed"
         meta = {}
         prev = "abc" * 21
-        expected_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + prev).encode()
-        ).hexdigest()
+        expected_hash = compute_hash(content, meta, prev)
         report = compute_trust_score(
             memory_id="test-1",
             content=content,
@@ -149,13 +147,11 @@ class TestTrustScoring:
     def test_hash_chain_broken(self):
         """Memory with broken hash chain should have CRITICAL poisoning risk."""
         import datetime
-        import hashlib
+        from bastion.crypto import compute_hash
         content = "Some memory content"
         meta = {}
         prev = "abc" * 21
-        valid_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + prev).encode()
-        ).hexdigest()
+        valid_hash = compute_hash(content, meta, prev)
         # Deliberately corrupt the hash
         broken_hash = "00000000" + valid_hash[8:]
         report = compute_trust_score(
@@ -176,13 +172,11 @@ class TestTrustScoring:
     def test_high_overwrite_count_detection(self):
         """High overwrite count should elevate poisoning risk."""
         import datetime
-        import hashlib
+        from bastion.crypto import compute_hash
         content = "content"
         meta = {}
         prev = None
-        expected_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + (prev or "")).encode()
-        ).hexdigest()
+        expected_hash = compute_hash(content, meta, prev)
         report = compute_trust_score(
             memory_id="test-3",
             content=content,
@@ -200,14 +194,12 @@ class TestTrustScoring:
     def test_unverified_provenance_detection(self):
         """Unverified source provenance should lower trust score."""
         import datetime
-        import hashlib
+        from bastion.crypto import compute_hash
         now = datetime.datetime.now(datetime.UTC)
         content = "content"
         meta = {}
         prev = None
-        valid_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + (prev or "")).encode()
-        ).hexdigest()
+        valid_hash = compute_hash(content, meta, prev)
         verified = compute_trust_score(
             memory_id="test-4",
             content=content,
@@ -242,9 +234,8 @@ class TestTrustScoring:
         content = "content"
         meta = {}
         prev = None
-        valid_hash = hashlib.sha256(
-            (content + json.dumps(meta, sort_keys=True) + (prev or "")).encode()
-        ).hexdigest()
+        from bastion.crypto import compute_hash
+        valid_hash = compute_hash(content, meta, prev)
 
         def make_report(hours_ago: float):
             now = datetime.datetime.now(datetime.UTC)
