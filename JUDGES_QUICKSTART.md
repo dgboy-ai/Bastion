@@ -186,7 +186,7 @@ Agent (Claude/Cursor) → MCP Protocol → Bastion MCP Server
 | `src/bastion/cache_router.py` | L1/L2 retrieval router |
 | `schema/002_agent_memory.sql` | C-SPANN vector index |
 | `scripts/benchmark.py` | Real benchmarks against CockroachDB |
-| `tests/` | 1223 passing tests |
+| `tests/` | 1282 passing tests |
 
 ---
 

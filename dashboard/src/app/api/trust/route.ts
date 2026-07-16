@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const entityId = searchParams.get("entity_id");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 500);
+    const limit = Math.max(1, Math.min(500, parseInt(searchParams.get("limit") || "100", 10) || 100));
 
     let sql = `
       SELECT m.memory_id, m.agent_id, m.memory_type, m.content,

@@ -386,6 +386,7 @@ class BehavioralDriftDetector:
                 )
                 conn.commit()
         except Exception:
+            conn.rollback()
             logger.exception("Failed to store drift score for agent %s", agent_id)
         finally:
             pool.release(conn)
