@@ -725,7 +725,7 @@ def create_a2a_server(
                 await anyio.to_thread.run_sync(_delete_task_db)
             except Exception as exc:
                 logger.warning("Failed to delete task from DB: %s", exc)
-        _push_dispatch.get_callback_url(task_id)  # Clear registration
+        _push_dispatch.unregister(task_id)  # Clear push notification registration
         logger.info("Task deleted", extra={"task_id": task_id})
         return JSONResponse({"deleted": task_id, "status": "ok"})
 
