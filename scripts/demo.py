@@ -114,15 +114,18 @@ def demo_security_guard(mem):
 def demo_knowledge_graph(mem):
     banner("5. KNOWLEDGE GRAPH — Entity Extraction")
     
-    # Store content that will extract entities
-    record = mem.store(
-        "fact",
+    # Store content with automatic entity extraction
+    record, entities, relations = mem.store_with_graph(
         "Alice works with Bob on the CockroachDB integration project",
-        metadata={"extract_graph": True},
     )
     
     print(f"  Stored: {record.content}")
-    print(f"  Entities extracted from content automatically")
+    print(f"  Entities extracted: {len(entities)}")
+    for e in entities[:5]:
+        print(f"    - {e.name} ({e.entity_type})")
+    print(f"  Relations extracted: {len(relations)}")
+    for r in relations[:5]:
+        print(f"    - {r.relation_type}")
     print(f"  Graph query: mem.graph_query('Alice', hops=2)")
 
 

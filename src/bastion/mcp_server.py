@@ -1576,6 +1576,16 @@ def create_server(
             }
         )
 
+    @mcp.custom_route("/readyz", methods=["GET"])
+    async def readyz_route(request: Any) -> Any:
+        from starlette.responses import JSONResponse
+
+        mem = _get_shared_memory()
+        connected = await anyio.to_thread.run_sync(lambda: mem.is_connected)
+        if connected:
+            return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "not ready", "detail": "database not connected"}, status_code=503)
+
     @mcp.custom_route("/metrics", methods=["GET"])
     async def metrics_route(request: Any) -> Any:
         from starlette.responses import JSONResponse

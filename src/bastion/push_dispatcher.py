@@ -55,6 +55,15 @@ class PushNotificationDispatcher:
         with self._lock:
             return self._registrations.get(task_id)
 
+    def unregister(self, task_id: str) -> bool:
+        """Remove push notification registration for a task. Returns True if removed."""
+        with self._lock:
+            if task_id in self._registrations:
+                del self._registrations[task_id]
+                self._delivered.discard(task_id)
+                return True
+            return False
+
     def notify(
         self,
         task_id: str,
