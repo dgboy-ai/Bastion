@@ -56,7 +56,7 @@
 
 | Metric | Bastion | Continuum | Mem0 |
 |--------|---------|-----------|------|
-| Total tests | **1,147** | 42 | ~200 |
+| Total tests | **1,258** | 42 | ~200 |
 | Chaos tests | **15** | Integration | None |
 | Consolidator tests | **14** | None | None |
 | MCP tool tests | **25** | 0 | 0 |
@@ -93,7 +93,7 @@
 | 13 | **Knowledge graph** | Entity extraction + traversal |
 | 14 | **Multi-region** | 6 regions, 12-42ms latency |
 | 15 | **Mock mode** | Zero-config local development |
-| 16 | **1,147 tests** | Most tested memory system |
+| 16 | **1,258 tests** | Most tested memory system |
 | 17 | **$0 pricing** | Free forever, MIT licensed |
 
 ## Problems We Solved

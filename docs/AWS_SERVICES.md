@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Amazon Bedrock (Foundation Models & Embeddings) ✅
+## 1. Amazon Bedrock (Foundation Models & Embeddings)
 
 ### How We Use It
 
@@ -15,99 +15,125 @@ Bastion uses **Amazon Bedrock Titan V2** as the embedding engine for all memory 
 | Setting | Value | Purpose |
 |---------|-------|---------|
 | Model | `amazon.titan-embed-text-v2:0` | 1024-dim embeddings |
-| Region | Configurable (`BASTION_AWS_REGION`) | Multi-region support |
+| Region | Configurable (`AWS_REGION`) | Multi-region support |
 | Read timeout | 10s | Prevent hanging on slow responses |
 | Connect timeout | 10s | Fast failure on network issues |
+| Circuit breaker | 5 failures → open, 30s recovery | Graceful degradation |
 
-### Free Tier Usage
-- First 50M tokens/month are free
-- Covers ~7,200 queries/month for free
-- Mock mode uses zero Bedrock calls
+### Fallback
+When Bedrock is unavailable (throttled/down), Bastion automatically falls back to:
+1. **all-MiniLM-L6-v2** (local, 384-dim, no API key)
+2. **Hash-based embedding** (deterministic, 1024-dim)
 
 ---
 
-## 2. AWS Lambda ✅
+## 2. AWS Lambda (Serverless Agent Execution)
 
 ### Lambda Functions
 
 | Function | Purpose | Timeout | Memory |
 |----------|---------|---------|--------|
-| `CdcHandlerFunction` | CDC changefeed processor | 60s | 256MB |
-| `WebhookDispatcherFunction` | A2A webhook push | 30s | 128MB |
-| `WebhookDispatcherHealthFunction` | Health check | 10s | 128MB |
+| `bastion-cdc-handler` | CDC changefeed processor — hash chain verification, drift detection, self-healing | 60s | 256MB |
+| `bastion-webhook-dispatcher` | A2A webhook push notification delivery with retries | 60s | 256MB |
 
-### EventBridge Rules
+### CDC Handler Capabilities
+- **Hash chain verification** — detects tampered memories
+- **Drift detection** — monitors behavioral changes across 6 dimensions
+- **Self-healing** — prunes expired memories automatically
+- **Alerting** — sends notifications on anomalies
 
-| Rule | Purpose | Rate |
-|------|---------|------|
-| `KeepAliveRule` | Cold start mitigation | Every 5 minutes |
+### Webhook Dispatcher Capabilities
+- **Push notification delivery** — POST to registered callback URLs
+- **Retry logic** — 3 retries with exponential backoff
+- **Deduplication** — prevents duplicate notifications
+
+### Deployment
+```bash
+# Package and deploy
+python lambda/deploy_direct.py
+
+# Or deploy manually via AWS Console
+```
 
 ---
 
-## 3. Amazon S3 ✅
+## 3. Amazon S3 (Artifact & Document Storage)
 
 ### Usage
-- **Memory archives** with lifecycle to Glacier
-- **Snapshot storage** for self-healing
+- **Memory archives** with versioning and Glacier lifecycle
 - **Audit trail backups**
+- **Self-healing snapshots**
+
+### Bucket Configuration
+| Setting | Value |
+|---------|-------|
+| Bucket | `bastion-memory-archives` |
+| Region | `ap-south-1` |
+| Versioning | Enabled |
+| Lifecycle | 90-day Glacier transition, 365-day expiration |
 
 ### Bucket Structure
 ```
-s3://bastion-{env}/
-├── archives/          # Memory archives
-├── snapshots/         # Self-healing snapshots
-└── audit/             # Audit trail backups
+s3://bastion-memory-archives/
+├── memories/
+│   └── {agent_id}/
+│       └── archive-{timestamp}.json
+└── snapshots/
+    └── {agent_id}/
+        └── snapshot-{timestamp}.json
+```
+
+### Archive Format
+```json
+{
+  "agent_id": "demo-agent",
+  "memory_count": 25,
+  "hash_chain_intact": true,
+  "created_at": "2026-07-16T00:00:00Z",
+  "memories": [...]
+}
 ```
 
 ---
 
-## 4. AWS KMS ✅
+## 4. AWS KMS (Key Management Service)
 
 ### Usage
-- **AES-256-GCM** envelope encryption
-- **Per-tenant DEKs** for zero-knowledge search
+- **AES-256-GCM envelope encryption** for agent memory content
+- **Per-tenant Data Encryption Keys (DEKs)** for zero-knowledge search
 - **AAD bound to agent_id** for tenant isolation
 
+### Key Configuration
+| Setting | Value |
+|---------|-------|
+| Key ARN | `arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3` |
+| Key spec | SYMMETRIC_DEFAULT |
+| Key usage | Encrypt and decrypt |
+| Origin | AWS KMS |
+
 ### Encryption Flow
-1. Generate Data Encryption Key (DEK) via KMS
-2. Encrypt memory content with DEK
-3. Store encrypted content + encrypted DEK in CockroachDB
-4. Embed plaintext vector for search
-5. Decrypt on retrieval only
+1. Generate Data Encryption Key (DEK) via KMS `generate_data_key()`
+2. Cache DEK locally (one KMS API call per process)
+3. Encrypt memory content with DEK (AES-256-GCM)
+4. Store encrypted content + encrypted DEK in CockroachDB
+5. Embed plaintext vector for semantic search (zero-knowledge)
+6. Decrypt on retrieval only
 
----
+### Implementation
+```python
+from bastion.kms import AwsKMS, EncryptedMemoryWrapper
 
-## 5. Amazon SNS ✅
+kms = AwsKMS()  # Uses BASTION_AWS_KMS_KEY_ARN env var
+encrypted_mem = EncryptedMemoryWrapper(memory_engine, kms=kms)
 
-### Usage
-- **Alert topic** for chain break alerts
-- **Notification** for critical security events
+# Store encrypted
+encrypted_mem.store("fact", "sensitive data")
 
-### Alert Types
-- Hash chain break detected
-- Memory poisoning attempt
-- Confidentiality breach
+# Search works on plaintext vectors (zero-knowledge)
+results = encrypted_mem.search("sensitive data")
 
----
-
-## 6. Amazon SQS ✅
-
-### Usage
-- **Retry queue** for webhook backlog
-- **Dead letter queue** for failed dispatches
-
-### Queue Configuration
-- Visibility timeout: 30s
-- Max retries: 3
-- Dead letter queue after 3 failures
-
----
-
-## 7. Amazon EventBridge ✅
-
-### Usage
-- **Keep-alive rule** for Lambda cold start mitigation
-- **Scheduled rule** every 5 minutes
+# Content is decrypted on retrieval
+```
 
 ---
 
@@ -118,27 +144,53 @@ s3://bastion-{env}/
 │                    AGENT CLIENT                              │
 │           (Claude / Cursor / LangGraph)                     │
 └──────────────────────┬──────────────────────────────────────┘
-                       │ MCP Protocol
+                       │ MCP Protocol (25 tools)
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   BASTION MCP SERVER                         │
 │              (25 tools, 4 resources, 3 prompts)             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
+           ┌───────────┴───────────┐
+           ▼                       ▼
+┌──────────────────┐  ┌──────────────────┐
+│  AWS KMS         │  │  Amazon S3       │
+│  AES-256-GCM     │  │  Memory archives │
+│  Envelope encr.  │  │  Glacier lifecycle│
+└──────────────────┘  └──────────────────┘
+                       │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    COCKROACHDB CLUSTER                       │
-│         (6 regions, SERIALIZABLE isolation)                  │
+│         (C-SPANN vectors, SERIALIZABLE, CDC)                │
 └──────────────────────┬──────────────────────────────────────┘
                        │ CDC Changefeed
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                       AWS LAYER                              │
-│  Bedrock (embeddings) │ Lambda (CDC) │ S3 (archives)        │
-│  KMS (encryption)     │ SNS (alerts) │ SQS (retries)        │
-│  EventBridge (keep-alive)                                    │
+│                    AWS LAMBDA                                │
+│  CDC Handler (hash verify, drift detect, self-heal)         │
+│  Webhook Dispatcher (push notifications, retries)           │
 └─────────────────────────────────────────────────────────────┘
+                       │
+           ┌───────────┴───────────┐
+           ▼                       ▼
+┌──────────────────┐  ┌──────────────────┐
+│  Amazon Bedrock  │  │  Amazon S3       │
+│  Titan V2 embeds │  │  Archive storage │
+│  1024-dim        │  │  Versioning      │
+└──────────────────┘  └──────────────────┘
 ```
+
+---
+
+## Summary
+
+| Service | Usage | Status |
+|---------|-------|--------|
+| **Amazon Bedrock** | Titan V2 embeddings with circuit breaker | Verified |
+| **AWS Lambda** | CDC handler + webhook dispatcher | Code ready, deployable |
+| **Amazon S3** | Memory archives with Glacier lifecycle | Verified |
+| **AWS KMS** | AES-256-GCM envelope encryption | Verified |
 
 ---
 

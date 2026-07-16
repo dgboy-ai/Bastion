@@ -159,12 +159,36 @@ class ConnectionPool:
             time.sleep(0.01)
 
     def release(self, conn: Any) -> None:
-        """Release a connection back to the pool."""
+        """Release a connection back to the pool.
+        
+        If RESET ALL fails or the connection is in an error state,
+        the connection is closed instead of returned to the pool
+        to prevent leaking stale session state.
+        """
+        reset_ok = False
         try:
             with conn.cursor() as cur:
                 cur.execute("RESET ALL")
+            reset_ok = True
         except Exception:
-            logger.warning("Failed to reset connection session context during release")
+            logger.warning("RESET ALL failed during release — discarding connection")
+
+        # Check if connection is in error state
+        is_healthy = True
+        try:
+            if hasattr(conn, 'closed') and conn.closed:
+                is_healthy = False
+        except Exception:
+            pass
+
+        if not reset_ok or not is_healthy:
+            # Discard connection to prevent leaking stale state
+            with contextlib.suppress(Exception):
+                conn.close()
+            with self._lock:
+                self._total_expired += 1
+            return
+
         with self._lock:
             if len(self._pool) < self.max_size:
                 self._pool.append((conn, time.time()))

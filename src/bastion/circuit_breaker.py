@@ -34,11 +34,13 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: int = 30,
         success_threshold: int = 2,
+        on_state_change: Callable[[str, str, str], None] | None = None,
     ):
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
+        self._on_state_change = on_state_change
         self._lock = threading.RLock()  # Reentrant lock for nested calls
         self._state = CircuitState.CLOSED
         self._failure_count = 0
@@ -47,6 +49,7 @@ class CircuitBreaker:
         self._total_calls = 0
         self._total_failures = 0
         self._total_rejected = 0
+        self._half_open_semaphore = threading.Semaphore(1)  # Limit concurrent HALF_OPEN probes
 
     @property
     def state(self) -> CircuitState:
@@ -55,12 +58,15 @@ class CircuitBreaker:
             if self._state == CircuitState.OPEN and self._last_failure_time:
                 elapsed = time.time() - self._last_failure_time
                 if elapsed >= self.recovery_timeout:
+                    old_state = self._state.value
                     self._state = CircuitState.HALF_OPEN
                     self._success_count = 0
                     logger.info(
                         "Circuit breaker '%s' transitioning to HALF_OPEN",
                         self.name,
                     )
+                    if self._on_state_change:
+                        self._on_state_change(self.name, old_state, "half_open")
             return self._state
 
     def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
@@ -76,6 +82,13 @@ class CircuitBreaker:
                     f"Retry after {self.recovery_timeout}s."
                 )
 
+        # In HALF_OPEN, limit concurrent probe calls
+        if current_state == CircuitState.HALF_OPEN:
+            if not self._half_open_semaphore.acquire(blocking=False):
+                raise CircuitBreakerOpenError(
+                    f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress."
+                )
+
         try:
             result = func(*args, **kwargs)
             self._on_success()
@@ -88,31 +101,40 @@ class CircuitBreaker:
         """Handle successful call."""
         with self._lock:
             if self._state == CircuitState.HALF_OPEN:
+                self._half_open_semaphore.release()
                 self._success_count += 1
                 if self._success_count >= self.success_threshold:
+                    old_state = self._state.value
                     self._state = CircuitState.CLOSED
                     self._failure_count = 0
                     logger.info(
                         "Circuit breaker '%s' recovered to CLOSED",
                         self.name,
                     )
+                    if self._on_state_change:
+                        self._on_state_change(self.name, old_state, "closed")
             else:
                 self._failure_count = 0
 
     def _on_failure(self) -> None:
         """Handle failed call."""
         with self._lock:
+            if self._state == CircuitState.HALF_OPEN:
+                self._half_open_semaphore.release()
             self._failure_count += 1
             self._total_failures += 1
             self._last_failure_time = time.time()
 
             if self._failure_count >= self.failure_threshold:
+                old_state = self._state.value
                 self._state = CircuitState.OPEN
                 logger.warning(
                     "Circuit breaker '%s' opened after %d failures",
                     self.name,
                     self._failure_count,
                 )
+                if self._on_state_change:
+                    self._on_state_change(self.name, old_state, "open")
 
     def get_stats(self) -> dict[str, Any]:
         """Return circuit breaker statistics."""

@@ -17,8 +17,8 @@ FREE_TIER = {
         "cost_per_gb": "$0.023",
         "our_usage": "~100MB memory archives/month",
         "monthly_cost": "$0.00 (within free tier)",
-        "needed": False,
-        "reason": "Nice-to-have: memory archives, not required for demo"
+        "needed": True,
+        "reason": "Memory archives with Glacier lifecycle"
     },
     "kms": {
         "description": "AWS KMS Encryption",
@@ -26,26 +26,8 @@ FREE_TIER = {
         "cost_per_1k_requests": "$0.03",
         "our_usage": "~100 encrypt/decrypt/day = 3K/month",
         "monthly_cost": "$0.00 (within free tier)",
-        "needed": False,
-        "reason": "Nice-to-have: encryption, not required for demo"
-    },
-    "sns": {
-        "description": "Amazon SNS Alerts",
-        "free_tier": "1M publishes, 100K HTTP deliveries/month",
-        "cost_per_1k_requests": "$0.50",
-        "our_usage": "~10 alerts/month",
-        "monthly_cost": "$0.00 (within free tier)",
-        "needed": False,
-        "reason": "Nice-to-have: alerts, not required for demo"
-    },
-    "sqs": {
-        "description": "Amazon SQS Queue",
-        "free_tier": "1M free requests/month",
-        "cost_per_1k_requests": "$0.40",
-        "our_usage": "~100 messages/month",
-        "monthly_cost": "$0.00 (within free tier)",
-        "needed": False,
-        "reason": "Nice-to-have: retries, not required for demo"
+        "needed": True,
+        "reason": "AES-256-GCM envelope encryption for memory content"
     },
     "lambda": {
         "description": "AWS Lambda Functions",
@@ -54,16 +36,7 @@ FREE_TIER = {
         "our_usage": "~100 invocations/month",
         "monthly_cost": "$0.00 (within free tier)",
         "needed": True,
-        "reason": "Core: CDC handler for self-healing"
-    },
-    "eventbridge": {
-        "description": "Amazon EventBridge",
-        "free_tier": "14M events/month",
-        "cost_per_1M_events": "$1.00",
-        "our_usage": "~100 events/month",
-        "monthly_cost": "$0.00 (within free tier)",
-        "needed": False,
-        "reason": "Nice-to-have: keep-alive, not required for demo"
+        "reason": "CDC handler for self-healing + webhook dispatcher"
     }
 }
 
@@ -140,19 +113,13 @@ def print_cost_analysis():
     print("  RECOMMENDATION")
     print("=" * 70)
     print()
-    print("  Use ONLY these 2-3 services:")
+    print("  All 4 services are within free tier:")
     print("    1. Bedrock - Core (embeddings)")
-    print("    2. Lambda - Core (CDC handler)")
-    print("    3. S3 - Optional (archives)")
+    print("    2. Lambda - Core (CDC handler + webhook dispatcher)")
+    print("    3. S3 - Memory archives with Glacier lifecycle")
+    print("    4. KMS - AES-256-GCM envelope encryption")
     print()
-    print("  Why NOT use all 7:")
-    print("    - More IAM permissions needed")
-    print("    - More complexity for judges to understand")
-    print("    - No additional value for demo")
-    print("    - All within free tier anyway")
-    print()
-    print("  Cost with 2-3 services: $0.00/month")
-    print("  Cost with all 7 services: $0.00/month")
+    print("  Total monthly cost: $0.00 (all within free tier)")
     print()
 
 if __name__ == "__main__":

@@ -49,8 +49,9 @@ _A2A_VERSION = "1.0"
 
 # Task state machine: valid transitions only
 _TASK_VALID_TRANSITIONS: dict[str, set[str]] = {
-    "SUBMITTED": {"WORKING", "CANCELED"},
-    "WORKING": {"COMPLETED", "FAILED", "CANCELED"},
+    "SUBMITTED": {"WORKING", "INPUT_REQUIRED", "CANCELED"},
+    "WORKING": {"COMPLETED", "FAILED", "INPUT_REQUIRED", "CANCELED"},
+    "INPUT_REQUIRED": {"WORKING", "CANCELED"},  # multi-turn: agent asks for more input
     "COMPLETED": set(),  # terminal
     "FAILED": set(),  # terminal
     "CANCELED": set(),  # terminal
@@ -698,6 +699,21 @@ def create_a2a_server(
         task = (await _get_task(task_id)) or task
         return JSONResponse(_strip_internal(task))
 
+    @app.delete("/tasks/{task_id}")
+    async def rest_delete_task(task_id: str):
+        """Delete a task (only terminal states: COMPLETED, FAILED, CANCELED)."""
+        task = await _get_task(task_id)
+        if not task:
+            return JSONResponse({"error": "Task not found"}, status_code=404)
+        state = task.get("status", {}).get("state", "")
+        if state not in ("COMPLETED", "FAILED", "CANCELED"):
+            return JSONResponse({"error": f"Cannot delete task in state {state}. Only terminal tasks can be deleted."}, status_code=409)
+        # Remove from in-memory store
+        _tasks.pop(task_id, None)
+        _push_dispatch.get_callback_url(task_id)  # Clear registration
+        logger.info("Task deleted", extra={"task_id": task_id})
+        return JSONResponse({"deleted": task_id, "status": "ok"})
+
     # ----------------------------------------------------------------------
     # A2A Streaming endpoint (SSE)
     # ----------------------------------------------------------------------
@@ -872,6 +888,12 @@ def create_a2a_server(
         raw_body: bytes = b"",
         request: Request | None = None,
     ) -> JSONResponse:
+        # Input validation
+        message = params.get("message", params) if isinstance(params, dict) else {}
+        parts = message.get("parts", []) if isinstance(message, dict) else []
+        if not parts:
+            return _rpc_error(_JSONRPC_INVALID_PARAMS, "Message must have at least one part", req_id)
+
         # Verify sender signature
         if request and raw_body:
             sender_url = request.headers.get("X-Sender-URL", "")

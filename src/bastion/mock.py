@@ -59,8 +59,8 @@ def _mock_embed(text: str) -> list[float]:
 
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
-    raw = content + json.dumps(metadata, sort_keys=True) + (previous_hash or "")
-    return hashlib.sha256(raw.encode()).hexdigest()
+    from bastion.crypto import compute_hash
+    return compute_hash(content, metadata, previous_hash)
 
 
 def mock_register_namespace(agent_id: str, namespace: str):

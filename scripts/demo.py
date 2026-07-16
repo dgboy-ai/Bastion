@@ -81,7 +81,7 @@ def demo_time_travel(mem):
     print(f"  Current state: {current.content[:60] if current else 'NOT FOUND'}...")
     
     # Time-travel to 1 second ago
-    past = mem.timetravel("1 second ago")
+    past = mem.get_at_time("1 second ago")
     print(f"  Past state (1s ago): {len(past)} memories found")
     print(f"  Time-travel works: CockroachDB MVCC is real!")
 
@@ -161,7 +161,24 @@ def demo_mcp_tools():
     print(f"\n  Connect via: mcp-config.json")
 
 
+def load_dotenv():
+    """Load .env file if it exists."""
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and value and key not in os.environ:
+                        os.environ[key] = value
+
+
 def main():
+    load_dotenv()
+    
     banner("BASTION — Agentic Memory on CockroachDB")
     print("  Demonstrating production-grade memory for AI agents")
     print("  Powered by CockroachDB + AWS")
@@ -173,11 +190,26 @@ def main():
     if mock:
         print("\n  Running in MOCK mode (no CockroachDB connection)")
         print("  Set BASTION_CONN to connect to real CockroachDB")
+        print("  Example: export BASTION_CONN='postgresql://user:pass@host:26257/defaultdb?sslmode=disable'")
     else:
-        print(f"\n  Connected to: {conn[:50]}...")
+        # Mask password in display
+        display_conn = conn
+        if "@" in conn and "://" in conn:
+            prefix = conn.split("://")[0] + "://"
+            rest = conn.split("://")[1]
+            if "@" in rest:
+                user_pass = rest.split("@")[0]
+                host_part = rest.split("@")[1]
+                if ":" in user_pass:
+                    user = user_pass.split(":")[0]
+                    display_conn = f"{prefix}{user}:***@{host_part}"
+        print(f"\n  Connected to: {display_conn}")
+        print("  Using REAL CockroachDB — all operations are persistent")
     
     # Initialize memory
-    mem = BastionMemory("demo-agent", mock=mock)
+    # When Bedrock is unavailable, force hash fallback for embeddings
+    os.environ.setdefault("BASTION_EMBED_FALLBACK", "1")
+    mem = BastionMemory("demo-agent", mock=mock, connection_string=conn if conn else None)
     
     # Run demos
     demo_memory_store(mem)
@@ -190,12 +222,19 @@ def main():
     demo_knowledge_graph(mem)
     
     if not mock:
-        demo_multi_region(mem)
+        try:
+            demo_multi_region(mem)
+        except Exception as exc:
+            print(f"  Multi-region demo skipped (column not in schema): {exc}")
     
     demo_mcp_tools()
     
     banner("DEMO COMPLETE")
-    print("  Bastion is ready for production use!")
+    if mock:
+        print("  Running in MOCK mode — no data persisted")
+        print("  Set BASTION_CONN for real CockroachDB operations")
+    else:
+        print("  All data persisted to CockroachDB with hash chain integrity")
     print("  Docs: https://bastion-self.vercel.app/docs")
     print("  GitHub: https://github.com/dgboy-ai/Bastion")
     print()

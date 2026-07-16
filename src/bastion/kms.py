@@ -251,6 +251,8 @@ class AwsKMS(KMSInterface):
         kwargs = {}
         if region:
             kwargs["region_name"] = region
+        elif os.environ.get("AWS_REGION"):
+            kwargs["region_name"] = os.environ["AWS_REGION"]
         kwargs["config"] = Config(
             retries={"max_attempts": 3, "mode": "standard"},
             connect_timeout=5,
