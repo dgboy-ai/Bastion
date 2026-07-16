@@ -96,7 +96,7 @@ class TestPoolResetAll:
         with patch("bastion.pool.logger") as mock_logger:
             pool.release(conn)
             mock_logger.warning.assert_called_once_with(
-                "Failed to reset connection session context during release"
+                "RESET ALL failed during release — discarding connection"
             )
 
     def test_release_does_not_exceed_max_size(self):
@@ -156,7 +156,7 @@ async def test_async_release_reset_failure_logged():
     with patch("bastion.pool.logger") as mock_logger:
         await pool.release(conn)
         mock_logger.warning.assert_called_once_with(
-            "Failed to reset connection session context during async release"
+            "RESET ALL failed during async release — discarding connection"
         )
 
 

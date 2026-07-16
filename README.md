@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
-[![Tests](https://img.shields.io/badge/Tests-1258%20passed-brightgreen)](#test-suite)
+[![Tests](https://img.shields.io/badge/Tests-1159%20passed-brightgreen)](#test-suite)
 
 > **When an agent is poisoned, Bastion detects it, travels back to inspect the prior belief, and restores a verified state with cryptographic proof.**
 
@@ -171,7 +171,7 @@ In multi-agent systems, a single poisoned memory can corrupt an entire fleet. Ac
 | Time-travel query | < 50ms | AS OF SYSTEM TIME, 1-hour window |
 | Circuit breaker recovery | 30s | 5 failures → open → half-open |
 | Connection pool reuse | 85%+ | Health checks, idle reaping |
-| Test suite | 1,135 passed | Unit, integration, e2e, stress |
+| Test suite | 1,159 passed | Unit, integration, e2e, stress |
 
 ---
 
@@ -355,7 +355,7 @@ Connect from Claude, Cursor, LangGraph, or any MCP-compatible client.
 
 ```bash
 python -m pytest tests/ -v
-# 1258 passed | 0 failed
+# 1159 passed | 0 failed
 # Includes: mock tests, real CockroachDB integration, e2e server tests, stress/concurrency, CI integration
 # Set BASTION_CONN to run integration tests against real CockroachDB
 ```

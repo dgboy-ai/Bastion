@@ -176,7 +176,8 @@ class ConnectionPool:
         # Check if connection is in error state
         is_healthy = True
         try:
-            if hasattr(conn, 'closed') and conn.closed:
+            closed_val = getattr(conn, 'closed', None)
+            if closed_val is True:
                 is_healthy = False
         except Exception:
             pass
@@ -275,9 +276,9 @@ class AsyncConnectionPool:
         # Check if connection is closed
         is_healthy = True
         try:
-            if hasattr(conn, 'is_closed') and conn.is_closed:
-                is_healthy = False
-            elif hasattr(conn, 'closed') and conn.closed:
+            is_closed_val = getattr(conn, 'is_closed', None)
+            closed_val = getattr(conn, 'closed', None)
+            if is_closed_val is True or closed_val is True:
                 is_healthy = False
         except Exception:
             pass
