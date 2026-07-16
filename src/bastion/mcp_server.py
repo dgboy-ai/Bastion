@@ -478,6 +478,12 @@ def create_server(
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
     ) -> str:
+        # Input validation
+        valid_types = {"fact", "task", "preference", "learned", "procedure", "session", "instruction"}
+        if memory_type not in valid_types:
+            return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {valid_types}"})
+        if not content or not content.strip():
+            return json.dumps({"error": "content must be a non-empty string"})
         mem = _resolve_memory(ctx)
         try:
             record = await anyio.to_thread.run_sync(
@@ -503,6 +509,8 @@ def create_server(
                 result["trust_score"] = report.trust_score
                 result["poisoning_risk"] = report.poisoning_risk
             return json.dumps(result, indent=2)
+        except Exception as exc:
+            return json.dumps({"error": f"Store failed: {exc}"})
         await _notify_resource_updated(ctx, "bastion://stats")
         await _notify_resource_updated(ctx, f"bastion://memory/{record.memory_id}")
         return json.dumps(record.to_dict(), indent=2, default=str)
@@ -604,11 +612,14 @@ def create_server(
             return json.dumps({"error": "Deletion requires confirmed=true"})
         if not memory_id:
             return json.dumps({"error": "memory_id is required"})
-        mem = _resolve_memory(ctx)
-        await anyio.to_thread.run_sync(mem._delete_by_id, memory_id)
-        await _notify_resource_updated(ctx, "bastion://stats")
-        await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
-        return json.dumps({"deleted": memory_id, "status": "ok"}, indent=2)
+        try:
+            mem = _resolve_memory(ctx)
+            await anyio.to_thread.run_sync(mem._delete_by_id, memory_id)
+            await _notify_resource_updated(ctx, "bastion://stats")
+            await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
+            return json.dumps({"deleted": memory_id, "status": "ok"}, indent=2)
+        except Exception as exc:
+            return json.dumps({"error": f"Delete failed: {exc}"})
 
     @mcp.tool(
         name="memory_pin",
@@ -754,9 +765,12 @@ def create_server(
         ),
     )
     async def memory_health(ctx: Context) -> str:
-        mem = _resolve_memory(ctx)
-        health = await anyio.to_thread.run_sync(mem.memory_health)
-        return json.dumps(health, indent=2, default=str)
+        try:
+            mem = _resolve_memory(ctx)
+            health = await anyio.to_thread.run_sync(mem.memory_health)
+            return json.dumps(health, indent=2, default=str)
+        except Exception as exc:
+            return json.dumps({"error": f"Health check failed: {exc}"})
 
     @mcp.tool(
         name="memory_apply_patch",
@@ -1058,13 +1072,16 @@ def create_server(
         if lookback_hours < 1 or lookback_hours > 168:
             return json.dumps({"error": "lookback_hours must be between 1 and 168"})
 
-        mem = _resolve_memory(ctx)
-        dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
-        await _report_progress(ctx, 0, 4, "Starting dream cycle...")
-        journal = await anyio.to_thread.run_sync(dreamer.dream)
-        await _report_progress(ctx, 4, 4, "Dream cycle complete")
-        await _notify_resource_updated(ctx, "bastion://stats")
-        return json.dumps(journal.to_dict(), indent=2, default=str)
+        try:
+            mem = _resolve_memory(ctx)
+            dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
+            await _report_progress(ctx, 0, 4, "Starting dream cycle...")
+            journal = await anyio.to_thread.run_sync(dreamer.dream)
+            await _report_progress(ctx, 4, 4, "Dream cycle complete")
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(journal.to_dict(), indent=2, default=str)
+        except Exception as exc:
+            return json.dumps({"error": f"Dream failed: {exc}"})
 
     @mcp.tool(
         name="dream_history",
@@ -1084,10 +1101,13 @@ def create_server(
     async def dream_history(ctx: Context) -> str:
         from bastion.dreaming import MemoryDreamer
 
-        mem = _resolve_memory(ctx)
-        dreamer = MemoryDreamer(mem)
-        history = await anyio.to_thread.run_sync(dreamer.get_dream_history)
-        return json.dumps(history, indent=2, default=str)
+        try:
+            mem = _resolve_memory(ctx)
+            dreamer = MemoryDreamer(mem)
+            history = await anyio.to_thread.run_sync(dreamer.get_dream_history)
+            return json.dumps(history, indent=2, default=str)
+        except Exception as exc:
+            return json.dumps({"error": f"Dream history failed: {exc}"})
 
     @mcp.tool(
         name="detect_observations",
@@ -1148,20 +1168,23 @@ def create_server(
         if k < 1:
             return json.dumps({"error": "k must be >= 1"})
 
-        mem = _resolve_memory(ctx)
-        retriever = MultiSignalRetriever(mem)
-        results = await anyio.to_thread.run_sync(
-            retriever.search, query, k, threshold, memory_type,
-        )
-        return json.dumps(
-            {
-                "results": [r.to_dict() for r in results],
-                "total": len(results),
-                "signals": ["vector", "keyword", "entity", "temporal"],
-            },
-            indent=2,
-            default=str,
-        )
+        try:
+            mem = _resolve_memory(ctx)
+            retriever = MultiSignalRetriever(mem)
+            results = await anyio.to_thread.run_sync(
+                retriever.search, query, k, threshold, memory_type,
+            )
+            return json.dumps(
+                {
+                    "results": [r.to_dict() for r in results],
+                    "total": len(results),
+                    "signals": ["vector", "keyword", "entity", "temporal"],
+                },
+                indent=2,
+                default=str,
+            )
+        except Exception as exc:
+            return json.dumps({"error": f"Multi-signal search failed: {exc}"})
 
     @mcp.tool(
         name="context_pack",

@@ -166,11 +166,11 @@ def test_trust_score_high_for_system():
 
 def test_hash_chain_integrity_ok():
     guard = MemoryGuard()
-    import hashlib
-    import json
+    from bastion.crypto import compute_hash
     content = "test content"
-    h = hashlib.sha256((content + json.dumps({}, sort_keys=True) + "").encode()).hexdigest()
-    report = guard.check(content, cryptographic_hash=h)
+    meta = {}
+    h = compute_hash(content, meta, None)
+    report = guard.check(content, metadata=meta, cryptographic_hash=h)
     assert report.hash_chain_intact is True
 
 

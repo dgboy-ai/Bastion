@@ -1,192 +1,103 @@
-# AWS SAM Template for Bastion CDC Lambda Handler + Webhook Dispatcher
-# Deploy: sam build && sam deploy --guided
-
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Bastion CDC Handler + A2A Webhook Dispatcher for AI agent memory
-
-Globals:
-  Function:
-    Timeout: 60
-    MemorySize: 256
-    Runtime: python3.12
-    Environment:
-      Variables:
-        BASTION_CONN: !Ref BastionConnString
-        BASTION_S3_BUCKET: !Ref ArchiveBucket
-        BASTION_ALERT_TOPIC: !Ref AlertTopicArn
-        BASTION_CIRCUIT_BREAKER_THRESHOLD: "5"
-        BASTION_CIRCUIT_BREAKER_WINDOW: "300"
+Description: >
+  Bastion CDC Handler and Webhook Dispatcher Lambda functions.
+  Consumes CockroachDB changefeed events and delivers push notifications.
 
 Parameters:
-  BastionConnString:
+  BastionConn:
     Type: String
     Description: CockroachDB connection string
     NoEcho: true
-  ArchiveBucket:
+  SlackWebhookUrl:
     Type: String
-    Default: bastion-memory-archives
-    Description: S3 bucket for memory snapshots
-  AlertTopicArn:
-    Type: String
+    Description: Slack webhook URL for alerts (optional)
     Default: ""
-    Description: SNS topic ARN for alerts (optional)
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 60
+    MemorySize: 256
+    Environment:
+      Variables:
+        BASTION_CONN: !Ref BastionConn
+        SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
 
 Resources:
-  CdcHandlerFunction:
+  # CDC Handler - polls for anomalies and processes changefeed events
+  CDCHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: cdc_handler.handler
+      Handler: cdc_handler.handler.handler
       CodeUri: .
-      Description: Receives CockroachDB CDC changefeed events and performs hash chain verification, anomaly detection, and self-healing
+      Description: Bastion CDC anomaly detector and self-healer
       Events:
-        CdcEndpoint:
-          Type: HttpApi
+        ScheduledPoll:
+          Type: Schedule
           Properties:
-            Path: /cdc
-            Method: POST
+            Schedule: rate(5 minutes)
+            Input: '{"mode": "poll"}'
       Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref ArchiveBucket
-        - SNSPublishMessagePolicy:
-            TopicName: !GetAtt AlertTopic.TopicName
-      Architectures:
-        - x86_64
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
 
+  # Webhook Dispatcher - delivers push notifications to registered callbacks
   WebhookDispatcherFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: webhook_dispatcher.handler
+      Handler: webhook_dispatcher.handler.handler
       CodeUri: .
-      Description: Dispatches A2A task state changes to registered callback URLs via CDC
-      Timeout: 30
+      Description: Bastion A2A push notification dispatcher
       Events:
-        WebhookEndpoint:
-          Type: HttpApi
+        ScheduledDispatch:
+          Type: Schedule
           Properties:
-            Path: /webhook
-            Method: POST
-      Environment:
-        Variables:
-          DLQ_URL: !Ref WebhookRetryQueue
+            Schedule: rate(1 minute)
+            Input: '{"mode": "dispatch"}'
       Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt WebhookRetryQueue.QueueName
-      Architectures:
-        - x86_64
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
 
-  WebhookDispatcherHealthFunction:
-    Type: AWS::Serverless::Function
+  # CloudWatch Alarms
+  CDCHandlerErrors:
+    Type: AWS::CloudWatch::Alarm
     Properties:
-      Handler: webhook_dispatcher.health_check
-      CodeUri: .
-      Description: Health check for webhook dispatcher
-      Events:
-        WebhookHealthEndpoint:
-          Type: HttpApi
-          Properties:
-            Path: /webhook/health
-            Method: GET
+      AlarmDescription: CDC Handler errors exceed threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      AlarmActions:
+        - !Ref AlertSNSTopic
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CDCHandlerFunction
 
-  HealthCheckFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: cdc_handler.health_check
-      CodeUri: .
-      Description: Health check endpoint for CDC handler monitoring
-      Events:
-        HealthEndpoint:
-          Type: HttpApi
-          Properties:
-            Path: /cdc/health
-            Method: GET
-
-  # Cold start mitigation: keep A2A server warm by invoking health check every 5 minutes
-  KeepAliveRule:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: Invoke health check Lambda every 5 minutes to keep A2A server warm
-      ScheduleExpression: rate(5 minutes)
-      State: ENABLED
-      Targets:
-        - Arn: !GetAtt HealthCheckFunction.Arn
-          Id: KeepAliveTarget
-
-  KeepAliveRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: InvokeHealthCheck
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: lambda:InvokeFunction
-                Resource: !GetAtt HealthCheckFunction.Arn
-
-  ArchiveBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref ArchiveBucket
-      LifecycleConfiguration:
-        Rules:
-          - Id: ArchiveTransition
-            Status: Enabled
-            Transitions:
-              - StorageClass: GLACIER
-                TransitionInDays: 90
-
-  AlertTopic:
+  AlertSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: bastion-memory-alerts
-      DisplayName: Bastion Memory Alerts
-
-  WebhookRetryQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: bastion-a2a-webhooks
-      VisibilityTimeout: 30
-      MessageRetentionPeriod: 1209600  # 14 days
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt WebhookDeadLetterQueue.Arn
-        maxReceiveCount: 3
-
-  WebhookDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: bastion-a2a-webhooks-dlq
-      MessageRetentionPeriod: 1209600  # 14 days
+      TopicName: bastion-alerts
 
 Outputs:
-  CdcEndpoint:
-    Description: CDC event receiver endpoint
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc"
-  WebhookEndpoint:
-    Description: A2A webhook dispatcher endpoint
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"
-  WebhookHealthEndpoint:
-    Description: Webhook dispatcher health check
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook/health"
-  HealthEndpoint:
-    Description: Health check endpoint
-    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/cdc/health"
-  ArchiveBucketName:
-    Description: S3 bucket for memory snapshots
-    Value: !Ref ArchiveBucket
+  CDCHandlerArn:
+    Description: CDC Handler Lambda ARN
+    Value: !GetAtt CDCHandlerFunction.Arn
+  WebhookDispatcherArn:
+    Description: Webhook Dispatcher Lambda ARN
+    Value: !GetAtt WebhookDispatcherFunction.Arn
   AlertTopicArn:
-    Description: SNS topic for alerts
-    Value: !Ref AlertTopic
-  WebhookRetryQueueUrl:
-    Description: SQS queue for webhook retries
-    Value: !Ref WebhookRetryQueue
-  WebhookDeadLetterQueueUrl:
-    Description: SQS dead letter queue for failed webhooks
-    Value: !Ref WebhookDeadLetterQueue
+    Description: Alert SNS Topic ARN
+    Value: !Ref AlertSNSTopic

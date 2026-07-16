@@ -72,6 +72,7 @@ class MessageBroker:
                     cur.execute(
                         "SELECT message_id, namespace, sender_agent_id, event_type, payload, created_at "
                         "FROM agent_messages WHERE namespace = %s AND read = FALSE "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY created_at DESC LIMIT %s FOR UPDATE SKIP LOCKED",
                         (namespace, limit),
                     )
@@ -79,6 +80,7 @@ class MessageBroker:
                     cur.execute(
                         "SELECT message_id, namespace, sender_agent_id, event_type, payload, created_at "
                         "FROM agent_messages WHERE read = FALSE "
+                        "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY created_at DESC LIMIT %s FOR UPDATE SKIP LOCKED",
                         (limit,),
                     )

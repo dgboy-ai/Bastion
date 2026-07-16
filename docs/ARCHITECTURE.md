@@ -195,8 +195,7 @@ To prevent serverless concurrency spikes from starving the database, Bastion uti
 ┌─────────────────────────────────────────────────────────────┐
 │                       AWS LAYER                              │
 │  Bedrock (embeddings) │ Lambda (CDC) │ S3 (archives)        │
-│  KMS (encryption)     │ SNS (alerts) │ SQS (retries)        │
-│  EventBridge (keep-alive)                                    │
+│  KMS (encryption)     │                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 

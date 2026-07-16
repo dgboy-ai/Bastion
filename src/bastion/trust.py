@@ -68,10 +68,8 @@ def compute_trust_score(
     flags: list[str] = []
     score = 1.0
 
-    expected = hashlib.sha256(
-        (content + json.dumps(metadata or {}, sort_keys=True) + (previous_hash or "")).encode()
-    ).hexdigest()
-    hash_ok = cryptographic_hash is not None and cryptographic_hash == expected
+    from bastion.crypto import verify_hash
+    hash_ok = cryptographic_hash is not None and verify_hash(content, metadata, previous_hash, cryptographic_hash)
     if not hash_ok:
         flags.append("HASH_CHAIN_BREAK")
         return TrustReport(

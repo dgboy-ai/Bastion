@@ -14,7 +14,6 @@ html, body {
   font-family: var(--font-sans);
   height: 100%;
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
 }
 
 /* Scrollbar */

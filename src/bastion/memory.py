@@ -711,9 +711,8 @@ class BastionMemory:
             prev_row = cur.fetchone()
             prev_hash = prev_row[0] if prev_row else None
 
-            crypto_hash = hashlib.sha256(
-                (content + json.dumps(meta, sort_keys=True) + (prev_hash or "")).encode()
-            ).hexdigest()
+            from bastion.crypto import compute_hash
+            crypto_hash = compute_hash(content, meta, prev_hash)
 
             cols = (
                 "agent_id, memory_type, content, embedding, metadata, "
@@ -1380,29 +1379,47 @@ class BastionMemory:
 
     def _embed(self, text: str) -> list[float]:
         """
-        Generate a 1024-dim embedding using AWS Bedrock Titan Embed Text V2.
-        Uses circuit breaker to fast-fail when Bedrock is consistently unavailable.
-        Retries up to 3 times with exponential backoff on ThrottlingException.
-        Falls back to a deterministic hash-based vector if Bedrock is unavailable.
+        Generate an embedding using one of:
+        1. AWS Bedrock Titan V2 (1024-dim) — production
+        2. all-MiniLM-L6-v2 (384-dim) — local, no API key
+        3. Hash-based fallback (1024-dim) — deterministic fallback
         """
         if self._mock:
             return _hash_fallback_embed(text)
 
+        # Try Bedrock first (if not explicitly disabled)
+        if not os.environ.get("BASTION_EMBED_FALLBACK"):
+            try:
+                bedrock_result = self._embed_bedrock(text)
+                if bedrock_result is not None:
+                    return bedrock_result
+            except Exception:
+                pass
+
+        # Try all-MiniLM (local, no API key needed)
+        try:
+            return self._embed_local(text)
+        except Exception:
+            pass
+
+        # Final fallback: hash-based
+        return _hash_fallback_embed(text)
+
+    def _embed_bedrock(self, text: str) -> list[float] | None:
+        """Try Bedrock embedding. Returns None if unavailable."""
         import random
         import time
 
-        # Circuit breaker: if Bedrock has failed repeatedly, skip directly to fallback
         if self._bedrock_cb.state.value == "open":
-            logger.debug("Bedrock circuit breaker open — using hash fallback")
-            return _hash_fallback_embed(text)
+            return None
 
         client = _get_bedrock_client()
         if client is None:
-            return _hash_fallback_embed(text)
+            return None
 
         settings = get_settings()
         body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
-        max_retries = settings.retry_max_retries
+        max_retries = min(settings.retry_max_retries, 2)  # Limit retries for demo
         for attempt in range(max_retries + 1):
             try:
                 response = client.invoke_model(
@@ -1417,22 +1434,29 @@ class BastionMemory:
                 return embedding
             except Exception as exc:
                 exc_name = type(exc).__name__
-                # Retry on throttling / service unavailable with exponential backoff + jitter
                 if attempt < max_retries and exc_name in ("ThrottlingException", "ServiceUnavailableException"):
-                    sleep_secs = (2**attempt) + random.uniform(0, 1)
-                    logger.warning(
-                        "Bedrock throttled (attempt %d/%d), retrying in %.1fs",
-                        attempt + 1,
-                        max_retries,
-                        sleep_secs,
-                    )
-                    time.sleep(sleep_secs)
+                    time.sleep((2 ** attempt) + random.uniform(0, 1))
                     continue
                 self._bedrock_cb._on_failure()
-                logger.exception("Bedrock embedding failed after %d attempts, falling back to hash", attempt + 1)
-                return _hash_fallback_embed(text)
+                return None
         self._bedrock_cb._on_failure()
-        return _hash_fallback_embed(text)
+        return None
+
+    def _embed_local(self, text: str) -> list[float]:
+        """Use all-MiniLM-L6-v2 for local embeddings (384-dim)."""
+        if not hasattr(self, "_local_model"):
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._local_model = SentenceTransformer("all-MiniLM-L6-v2")
+            except ImportError:
+                raise RuntimeError("sentence-transformers not installed")
+        embedding = self._local_model.encode(text).tolist()
+        # all-MiniLM produces 384-dim, pad to 1024 if needed
+        settings = get_settings()
+        target_dim = settings.embed_dim
+        if len(embedding) < target_dim:
+            embedding.extend([0.0] * (target_dim - len(embedding)))
+        return embedding
 
     def _search_keyword_fallback(
         self,

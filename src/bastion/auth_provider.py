@@ -428,6 +428,14 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
+        # Scope escalation prevention: requested scopes must be subset of original
+        granted_scopes = set(refresh_token.scopes or [])
+        requested_scopes = set(scopes or refresh_token.scopes)
+        if not requested_scopes.issubset(granted_scopes):
+            # Only grant the intersection (original scopes)
+            requested_scopes = granted_scopes
+        final_scopes = list(requested_scopes)
+
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)
         now = time.time()
@@ -435,13 +443,13 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         new_access = AccessToken(
             token=access_token_str,
             client_id=client.client_id or "",
-            scopes=scopes or refresh_token.scopes,
+            scopes=final_scopes,
             expires_at=int(now) + 3600,
         )
         new_refresh = RefreshToken(
             token=refresh_token_str,
             client_id=client.client_id or "",
-            scopes=scopes or refresh_token.scopes,
+            scopes=final_scopes,
             expires_at=int(now) + 86400 * 7,
         )
 

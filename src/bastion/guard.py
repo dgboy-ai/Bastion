@@ -345,10 +345,8 @@ class MemoryGuard:
         previous_hash: str | None,
         cryptographic_hash: str,
     ) -> tuple[bool, Finding | None]:
-        expected = hashlib.sha256(
-            (content + json.dumps(metadata or {}, sort_keys=True) + (previous_hash or "")).encode()
-        ).hexdigest()
-        if cryptographic_hash != expected:
+        from bastion.crypto import verify_hash
+        if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
             return False, Finding(
                 detector="hash_chain",
                 threat_type="ASI06: Tampered Memory",
@@ -379,10 +377,8 @@ class MemoryGuard:
 
         # Hash chain penalty
         if cryptographic_hash is not None:
-            expected = hashlib.sha256(
-                (content + json.dumps(metadata or {}, sort_keys=True) + (previous_hash or "")).encode()
-            ).hexdigest()
-            if cryptographic_hash != expected:
+            from bastion.crypto import verify_hash
+            if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
                 score *= HASH_CHAIN_PENALTY
 
         # Age penalty (matching trust.py thresholds)

@@ -55,12 +55,18 @@ class IETFAATRecord:
         self.previous_hash: str | None = None
         self.record_hash: str = self._compute_hash()
 
+    def link_to(self, previous_record: "IETFAATRecord") -> None:
+        """Link this record to the previous one in the hash chain."""
+        self.previous_hash = previous_record.record_hash
+        self.record_hash = self._compute_hash()
+
     def _compute_hash(self) -> str:
+        from bastion.crypto import compute_hash
         data = (
             f"{self.agent_id}{self.action}{self.target}"
-            f"{self.outcome}{self.timestamp.isoformat()}{self.previous_hash}"
+            f"{self.outcome}{self.timestamp.isoformat()}"
         )
-        return hashlib.sha256(data.encode()).hexdigest()
+        return compute_hash(data, None, self.previous_hash)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -189,7 +195,8 @@ class VerifiableUnlearning:
             logger.warning("Some memory IDs not found for unlearning", extra={"not_found": not_found_ids})
 
         deleted_hash_map = {m.memory_id: m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids}
-        # Persist IETF AAT audit record for each deletion
+        # Persist IETF AAT audit record for each deletion (linked hash chain)
+        prev_record = None
         for mid in deleted_ids:
             record = IETFAATRecord(
                 agent_id=agent_id,
@@ -198,6 +205,9 @@ class VerifiableUnlearning:
                 outcome="deleted",
                 metadata={"compliance": "gdpr_art17", "deleted_hash": deleted_hash_map.get(mid, "")},
             )
+            if prev_record:
+                record.link_to(prev_record)
+            prev_record = record
             self.memory.store_audit(
                 agent_id=agent_id,
                 action=record.action,

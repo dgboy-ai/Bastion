@@ -2,6 +2,67 @@
 
 All notable changes to Bastion are documented here.
 
+## [0.10.0] — 2026-07-16
+
+### Codebase Audit Fixes — Security, Integrity, Performance, Production Hardening
+
+Comprehensive audit-driven fixes: HMAC-SHA256 hash chains, drift optimization, OAuth scope escalation prevention, MCP error handling, circuit breaker hardening, database integrity fixes.
+
+#### Security (CRITICAL)
+- **HMAC-SHA256 hash chains**: Replaced plain SHA-256 with HMAC-SHA256 using server secret key (`BASTION_HMAC_SECRET`). Attackers with DB write access can no longer forge hash chains without the secret. Updated 7 files: memory.py, guard.py, trust.py, mock.py, archive.py, analytics.py, crdt_memory.py
+- **OAuth scope escalation prevention**: `exchange_refresh_token` now validates requested scopes are subset of original. Prevents privilege escalation via refresh token misuse
+- **Input validation on MCP tools**: `memory_store` validates `memory_type` against allowed set and checks content is non-empty
+
+#### Data Integrity (CRITICAL)
+- **UNIQUE constraint on agent_entities**: Added `idx_entity_unique_name` on `(agent_id, name)`. Without this, `ON CONFLICT DO NOTHING` in knowledge_graph.py never fired, creating duplicate entities on every insert
+- **Indexes for agent_audit**: Added indexes on `(agent_id, recorded_at DESC)` and `(action)`. Previously had ZERO indexes — full table scans on every audit query
+- **RLS on 4 missing tables**: Added Row-Level Security policies for `agent_relations`, `agent_entities`, `a2a_tasks`, `thought_graph`. Previously these tables had no cross-agent isolation
+- **Compliance hash chain fixed**: `IETFAATRecord` now properly chains via `link_to()` method. Previously each record computed its hash without knowing the previous record's hash, breaking chain integrity
+
+#### Database Schema (017_critical_fixes.sql)
+- UNIQUE constraint on `agent_entities(agent_id, name)`
+- Indexes for `agent_audit`, `agent_messages`, `a2a_tasks`, `agent_coordination`, `thought_graph`
+- TTL indexes on `agent_memory.expires_at` and `agent_messages.expires_at`
+- RLS policies for 4 tables
+
+#### Performance
+- **drift.py SQL aggregates**: `establish_baseline()` and `score_drift()` now use SQL aggregate queries (`COUNT`, `GROUP BY`, streaming) instead of loading ALL memories into Python. Critical for agents with millions of memories
+- **MCP error handling**: Added `try/except` to `memory_store`, `dream`, `dream_history`, `multi_signal_search`, `memory_health`. Previously unhandled exceptions crashed MCP request handlers
+- **Session memory thread safety**: Added `threading.Lock()` to `SessionMemory.store()` and `search()` methods. Prevents race conditions on concurrent access
+
+#### A2A Protocol
+- **INPUT_REQUIRED state**: Added to task state machine for multi-turn agent interactions. SUBMITTED→INPUT_REQUIRED, WORKING→INPUT_REQUIRED
+- **DELETE endpoint**: `DELETE /tasks/{task_id}` for task cleanup. Only allows deletion of terminal tasks (COMPLETED/FAILED/CANCELED)
+- **Input validation**: `_handle_send_message` now requires at least one message part
+
+#### MCP Server
+- **Input validation**: `memory_store` validates `memory_type` against allowed set (fact, task, preference, learned, procedure, session, instruction) and checks content is non-empty
+- **Error handling**: 5 tools now have `try/except` blocks preventing unhandled exceptions from crashing MCP handlers
+
+#### Infrastructure
+- **Connection pool hardened**: `RESET ALL` failure during release now discards connection instead of returning to pool. Checks `conn.closed` to prevent leaking stale session state
+- **Circuit breaker hardened**: Added `on_state_change` callback for monitoring. Added `Semaphore` in HALF_OPEN state to limit concurrent probe calls (prevents overwhelming recovering service)
+- **Messaging expired filter**: `consume()` now filters expired messages (`expires_at IS NULL OR expires_at > now()`)
+- **AWS Lambda functions**: CDC handler (hash chain verification, drift detection, self-healing) + webhook dispatcher (push notification delivery with retries)
+- **AWS S3 integration**: Memory archives with versioning, Glacier lifecycle (90-day transition, 365-day expiration)
+- **AWS KMS integration**: AES-256-GCM envelope encryption verified against real KMS key
+- **all-MiniLM-L6-v2 embeddings**: Local 384-dim embeddings as Bedrock fallback (no API key needed)
+
+#### Test Coverage
+- **1,258 tests passing** (up from 1,223)
+- Added 35 new comprehensive tests covering: auth middleware, brute-force protection, CORS, SSE streaming, task state machine, log redaction, mock embeddings, session memory TF-IDF, push notifications, metrics, agent card, session promotion
+- HMAC hash chain verification test updated
+
+#### Documentation
+- **README test count corrected**: 1,223 → 1,258
+- **AWS Services doc updated**: Removed fake SNS/SQS/EventBridge claims. Only lists real services (Bedrock, Lambda, S3, KMS)
+- **Architecture diagram updated**: Removed fake services from diagram
+- **Judge's Guide updated**: Test counts corrected to 1,258
+- **Comparison doc updated**: Test counts corrected to 1,258
+- **Cost analysis updated**: Removed fake services, corrected service list
+
+---
+
 ## [0.9.0] — 2026-07-15
 
 ### Production Hardening — Code Quality, Security, Decomposition, CI Integration

@@ -269,9 +269,8 @@ class CRDTMemory:
             row = cur.fetchone()
             prev_hash = str(row[0]) if row else None
 
-            crypto_hash = hashlib.sha256(
-                (content + meta_json + (prev_hash or "")).encode()
-            ).hexdigest()
+            from bastion.crypto import compute_hash
+            crypto_hash = compute_hash(content, meta_json, prev_hash)
 
             cur.execute(
                 "INSERT INTO agent_memory "

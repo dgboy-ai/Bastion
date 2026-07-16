@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import math
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -70,6 +71,7 @@ class SessionMemory:
         self._session_ttl = session_ttl_seconds
         self._entries: list[SessionEntry] = []
         self._created_at = time.time()
+        self._lock = threading.Lock()
 
     @property
     def session_id(self) -> str:
@@ -115,7 +117,8 @@ class SessionMemory:
             importance=importance,
         )
 
-        self._entries.append(entry)
+        with self._lock:
+            self._entries.append(entry)
 
         # Enforce session size limit — drop oldest unpinned
         if len(self._entries) > self._max_session_size:
@@ -134,11 +137,14 @@ class SessionMemory:
         if not query_words:
             return self.get_recent(k)
 
+        with self._lock:
+            entries_snapshot = list(self._entries)
+
         # Build IDF weights from session corpus (log(N/df) approximation)
-        total_entries = max(1, len(self._entries))
+        total_entries = max(1, len(entries_snapshot))
         word_doc_freq: dict[str, int] = {}
         entry_words: list[tuple[set[str], SessionEntry]] = []
-        for entry in self._entries:
+        for entry in entries_snapshot:
             words = set(entry.content.lower().split())
             entry_words.append((words, entry))
             for w in words:
