@@ -1,4 +1,4 @@
-CREATE TABLE agent_audit (
+CREATE TABLE IF NOT EXISTS agent_audit (
     audit_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id     STRING NOT NULL,
     workflow_id  UUID NOT NULL,

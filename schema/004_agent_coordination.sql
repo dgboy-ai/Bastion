@@ -1,4 +1,4 @@
-CREATE TABLE agent_coordination (
+CREATE TABLE IF NOT EXISTS agent_coordination (
     lock_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id     STRING NOT NULL,
     resource     STRING NOT NULL,

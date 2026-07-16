@@ -1,4 +1,4 @@
-CREATE TABLE agent_memory (
+CREATE TABLE IF NOT EXISTS agent_memory (
     memory_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id           STRING NOT NULL,
     memory_type        STRING NOT NULL,

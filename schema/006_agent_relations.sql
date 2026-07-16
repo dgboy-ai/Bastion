@@ -1,4 +1,4 @@
-CREATE TABLE agent_relations (
+CREATE TABLE IF NOT EXISTS agent_relations (
     relation_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id          STRING NOT NULL,
     source_entity_id  UUID NOT NULL REFERENCES agent_entities(entity_id),
