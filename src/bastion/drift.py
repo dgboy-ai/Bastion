@@ -131,7 +131,13 @@ class BehavioralDriftDetector:
                         "ORDER BY created_at DESC LIMIT 100",
                         (agent_id,),
                     )
-                    recent_embeddings = [list(row[0]) for row in cur.fetchall() if row[0]]
+                    recent_embeddings = []
+                    for row in cur.fetchall():
+                        if row[0]:
+                            emb = row[0]
+                            if isinstance(emb, str):
+                                emb = json.loads(emb)
+                            recent_embeddings.append(list(emb))
                     baseline["semantic_similarity"] = {
                         "mean_vector": _mean_vector(recent_embeddings) if recent_embeddings else [],
                         "stddev": 0.1,
@@ -239,7 +245,13 @@ class BehavioralDriftDetector:
                         "ORDER BY created_at DESC LIMIT 100",
                         (agent_id,),
                     )
-                    all_embeddings = [list(row[0]) for row in cur.fetchall() if row[0]]
+                    all_embeddings = []
+                    for row in cur.fetchall():
+                        if row[0]:
+                            emb = row[0]
+                            if isinstance(emb, str):
+                                emb = json.loads(emb)
+                            all_embeddings.append(list(emb))
 
                     # Hash chain gaps
                     cur.execute(

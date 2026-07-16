@@ -146,8 +146,46 @@ def demo_multi_region(mem):
     print(f"\n  All 3 regions: CockroachDB handles replication automatically!")
 
 
+def demo_hash_verification(mem):
+    banner("7. HASH CHAIN VERIFICATION — Cryptographic Integrity")
+    
+    from bastion.crypto import verify_hash
+    
+    # Get all memories and verify the chain
+    memories = mem.list_memories()
+    print(f"  Total memories: {len(memories)}")
+    
+    verified = 0
+    for i, m in enumerate(memories):
+        if m.cryptographic_hash:
+            ok = verify_hash(m.content, m.metadata, m.previous_hash, m.cryptographic_hash)
+            if ok:
+                verified += 1
+    
+    print(f"  Hash chain verified: {verified}/{len(memories)} blocks intact")
+    print(f"  HMAC-SHA256 with server secret key")
+    print(f"  Tamper-proof: attacker cannot forge without BASTION_HMAC_SECRET")
+
+
+def demo_drift_detection(mem):
+    banner("8. DRIFT DETECTION — Behavioral Monitoring")
+    
+    from bastion.drift import BehavioralDriftDetector
+    
+    detector = BehavioralDriftDetector(mem)
+    baseline = detector.establish_baseline("demo-agent")
+    report = detector.score_drift("demo-agent", baseline)
+    
+    print(f"  Drift score: {report.overall_drift_score}")
+    print(f"  Status: {report.status}")
+    print(f"  Dimensions monitored: {len(report.dimensions)}")
+    for dim, score in report.dimensions.items():
+        print(f"    - {dim}: {score}")
+    print(f"  Recommendation: {report.recommendation[:80]}...")
+
+
 def demo_mcp_tools():
-    banner("7. MCP SERVER — 25 Tools for AI Agents")
+    banner("9. MCP SERVER — 25 Tools for AI Agents")
     
     tools = [
         "memory_store", "memory_search", "memory_timetravel",
@@ -230,6 +268,8 @@ def main():
         except Exception as exc:
             print(f"  Multi-region demo skipped (column not in schema): {exc}")
     
+    demo_hash_verification(mem)
+    demo_drift_detection(mem)
     demo_mcp_tools()
     
     banner("DEMO COMPLETE")
