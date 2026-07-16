@@ -486,7 +486,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             access_token=access_token_str,
             token_type="Bearer",
             expires_in=3600,
-            scope=" ".join(scopes or refresh_token.scopes),
+            scope=" ".join(final_scopes),
             refresh_token=refresh_token_str,
         )
 
