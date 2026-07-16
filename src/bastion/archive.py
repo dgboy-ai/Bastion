@@ -20,63 +20,78 @@ class MemoryArchiver:
 
     def _get_client(self):
         if self._client is None:
-            import boto3
+            try:
+                import boto3
+            except ImportError:
+                raise ImportError("boto3 is required for S3 archiving: pip install boto3")
             self._client = boto3.client("s3", region_name=self._region)
         return self._client
 
     def archive_memories(self, agent_id: str, memories: list[dict[str, Any]]) -> str:
         """Archive memories to S3. Returns the S3 key."""
-        client = self._get_client()
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        key = f"memories/{agent_id}/archive-{timestamp}.json"
+        try:
+            client = self._get_client()
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            key = f"memories/{agent_id}/archive-{timestamp}.json"
 
-        archive = {
-            "agent_id": agent_id,
-            "memory_count": len(memories),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "hash_chain_intact": self._verify_hash_chain(memories),
-            "memories": memories,
-        }
-
-        client.put_object(
-            Bucket=self._bucket,
-            Key=key,
-            Body=json.dumps(archive, indent=2, default=str),
-            ContentType="application/json",
-            Metadata={
+            archive = {
                 "agent_id": agent_id,
-                "memory_count": str(len(memories)),
-                "type": "memory_archive",
-            },
-        )
+                "memory_count": len(memories),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "hash_chain_intact": self._verify_hash_chain(memories),
+                "memories": memories,
+            }
 
-        logger.info(
-            "Memories archived to S3",
-            extra={"agent_id": agent_id, "bucket": self._bucket, "key": key, "count": len(memories)},
-        )
-        return key
+            client.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=json.dumps(archive, indent=2, default=str),
+                ContentType="application/json",
+                Metadata={
+                    "agent_id": agent_id,
+                    "memory_count": str(len(memories)),
+                    "type": "memory_archive",
+                },
+            )
+
+            logger.info(
+                "Memories archived to S3",
+                extra={"agent_id": agent_id, "bucket": self._bucket, "key": key, "count": len(memories)},
+            )
+            return key
+        except Exception as exc:
+            logger.exception("S3 archive failed", extra={"agent_id": agent_id})
+            raise RuntimeError(f"Archive failed: {exc}") from exc
 
     def restore_memories(self, agent_id: str, key: str) -> list[dict[str, Any]]:
         """Restore memories from S3 archive."""
-        client = self._get_client()
-        resp = client.get_object(Bucket=self._bucket, Key=key)
-        archive = json.loads(resp["Body"].read())
-        return archive.get("memories", [])
+        try:
+            client = self._get_client()
+            resp = client.get_object(Bucket=self._bucket, Key=key)
+            archive = json.loads(resp["Body"].read())
+            return archive.get("memories", [])
+        except Exception as exc:
+            logger.exception("S3 restore failed", extra={"agent_id": agent_id, "key": key})
+            raise RuntimeError(f"Restore failed: {exc}") from exc
 
     def list_archives(self, agent_id: str) -> list[dict[str, Any]]:
         """List all archives for an agent."""
-        client = self._get_client()
-        prefix = f"memories/{agent_id}/"
-        resp = client.list_objects_v2(Bucket=self._bucket, Prefix=prefix)
+        try:
+            client = self._get_client()
+            prefix = f"memories/{agent_id}/"
+            resp = client.list_objects_v2(Bucket=self._bucket, Prefix=prefix)
 
-        archives = []
-        for obj in resp.get("Contents", []):
-            archives.append({
-                "key": obj["Key"],
-                "size": obj["Size"],
-                "last_modified": obj["LastModified"].isoformat(),
-            })
-        return archives
+            archives = []
+            for obj in resp.get("Contents", []):
+                archives.append({
+                    "key": obj["Key"],
+                    "size": obj["Size"],
+                    "last_modified": obj["LastModified"].isoformat(),
+                })
+            return archives
+        except Exception as exc:
+            logger.exception("S3 list failed", extra={"agent_id": agent_id})
+            return []
 
     def _verify_hash_chain(self, memories: list[dict[str, Any]]) -> bool:
         """Verify hash chain integrity of archived memories."""

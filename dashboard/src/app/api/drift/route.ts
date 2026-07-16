@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get("agent_id");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 200);
+    const limit = Math.max(1, Math.min(200, parseInt(searchParams.get("limit") || "50", 10) || 50));
 
     let sql = `
       SELECT score_id, overall_drift_score, dimensions, baseline_sessions,
