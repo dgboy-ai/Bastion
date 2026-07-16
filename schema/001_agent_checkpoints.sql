@@ -1,4 +1,4 @@
-CREATE TABLE agent_checkpoints (
+CREATE TABLE IF NOT EXISTS agent_checkpoints (
     workflow_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id         STRING NOT NULL,
     step_number      INT NOT NULL,

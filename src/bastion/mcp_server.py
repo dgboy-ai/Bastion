@@ -534,6 +534,13 @@ def create_server(
     ) -> str:
         if not timestamp or not timestamp.strip():
             return json.dumps({"error": "timestamp is required"})
+        # Validate timestamp format (ISO 8601 or relative like "5 minutes ago")
+        import re
+        ts = timestamp.strip()
+        valid_iso = bool(re.match(r"\d{4}-\d{2}-\d{2}", ts))
+        valid_relative = bool(re.match(r"\d+\s+\w+\s+ago|now|just now", ts, re.I))
+        if not valid_iso and not valid_relative:
+            return json.dumps({"error": "Invalid timestamp format. Use ISO 8601 (2026-01-01T00:00:00Z) or relative (5 minutes ago, now)"})
         mem = _resolve_memory(ctx)
         try:
             results = await anyio.to_thread.run_sync(
@@ -646,6 +653,11 @@ def create_server(
     ) -> str:
         if not content or not content.strip():
             return json.dumps({"error": "content is required"})
+        if pin_priority not in (0, 1, 2):
+            return json.dumps({"error": "pin_priority must be 0 (normal), 1 (important), or 2 (CRITICAL)"})
+        valid_types = {"fact", "task", "preference", "learned", "procedure", "safety_rule", "instruction"}
+        if memory_type not in valid_types:
+            return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {valid_types}"})
         mem = _resolve_memory(ctx)
         try:
             record = await anyio.to_thread.run_sync(
@@ -705,6 +717,11 @@ def create_server(
         limit: int = 50,
         offset: int = 0,
     ) -> str:
+        # Bounds checking
+        if limit < 1 or limit > 500:
+            return json.dumps({"error": "limit must be between 1 and 500"})
+        if offset < 0:
+            return json.dumps({"error": "offset must be >= 0"})
         mem = _resolve_memory(ctx)
         try:
             results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
@@ -1165,8 +1182,10 @@ def create_server(
 
         if not query or not query.strip():
             return json.dumps({"error": "query must be a non-empty string"})
-        if k < 1:
-            return json.dumps({"error": "k must be >= 1"})
+        if k < 1 or k > 500:
+            return json.dumps({"error": "k must be between 1 and 500"})
+        if not 0.0 <= threshold <= 1.0:
+            return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
 
         try:
             mem = _resolve_memory(ctx)

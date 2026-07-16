@@ -710,6 +710,21 @@ def create_a2a_server(
             return JSONResponse({"error": f"Cannot delete task in state {state}. Only terminal tasks can be deleted."}, status_code=409)
         # Remove from in-memory store
         _tasks.pop(task_id, None)
+        # Also delete from database in non-mock mode
+        if not memory._mock:
+            try:
+                def _delete_task_db():
+                    pool = memory.get_pool()
+                    conn = pool.acquire(timeout=10.0)
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM a2a_tasks WHERE task_id = %s", (task_id,))
+                        conn.commit()
+                    finally:
+                        pool.release(conn)
+                await anyio.to_thread.run_sync(_delete_task_db)
+            except Exception as exc:
+                logger.warning("Failed to delete task from DB: %s", exc)
         _push_dispatch.get_callback_url(task_id)  # Clear registration
         logger.info("Task deleted", extra={"task_id": task_id})
         return JSONResponse({"deleted": task_id, "status": "ok"})
@@ -780,7 +795,7 @@ def create_a2a_server(
             except Exception as exc:
                 logger.exception("Streaming skill execution failed", extra={"request_id": rid, "skill": skill_id})
                 await _update_task(task_id, "FAILED")
-                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': str(exc)[:200]})}\n\n"
+                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Skill execution failed (see server logs)'})}\n\n"
 
             yield "event: TaskComplete\ndata: {}\n\n"
 
