@@ -69,14 +69,18 @@ def compute_trust_score(
     score = 1.0
 
     from bastion.crypto import verify_hash
-    hash_ok = cryptographic_hash is not None and verify_hash(content, metadata, previous_hash, cryptographic_hash)
-    if not hash_ok:
-        flags.append("HASH_CHAIN_BREAK")
-        return TrustReport(
-            memory_id=memory_id, trust_score=0.0, trust_level=TrustLevel(trust_level),
-            hash_chain_intact=False, conflict_rate=0.0, age_penalty=0.0,
-            source_provenance=source_provenance, poisoning_risk="CRITICAL", flags=flags,
-        )
+    if cryptographic_hash is not None:
+        hash_ok = verify_hash(content, metadata, previous_hash, cryptographic_hash)
+        if not hash_ok:
+            flags.append("HASH_CHAIN_BREAK")
+            return TrustReport(
+                memory_id=memory_id, trust_score=0.0, trust_level=TrustLevel(trust_level),
+                hash_chain_intact=False, conflict_rate=0.0, age_penalty=0.0,
+                source_provenance=source_provenance, poisoning_risk="CRITICAL", flags=flags,
+            )
+    else:
+        # No hash chain available — trust based on other factors
+        hash_ok = False
 
     score *= SOURCE_TRUST_WEIGHTS.get(source_provenance, 0.5)
 
@@ -117,7 +121,8 @@ def compute_trust_score(
     else:
         poisoning_risk = "HIGH"
 
-    if not hash_ok:
+    if not hash_ok and "HASH_CHAIN_BREAK" in flags:
+        # Only CRITICAL if hash chain was actually broken (not just missing)
         poisoning_risk = "CRITICAL"
     if "RAPID_OVERWRITE" in flags and score < 0.5:
         poisoning_risk = "HIGH"
