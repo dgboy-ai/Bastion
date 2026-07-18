@@ -124,8 +124,11 @@ export async function GET(request: Request) {
                 const rowTime = row.recorded_at instanceof Date
                   ? row.recorded_at.toISOString()
                   : String(row.recorded_at);
-                if (rowTime > lastChecked) {
-                  lastChecked = rowTime;
+                if (rowTime >= lastChecked) {
+                  // Advance watermark past this entry to avoid re-processing
+                  const dt = new Date(row.recorded_at);
+                  dt.setMilliseconds(dt.getMilliseconds() + 1);
+                  lastChecked = dt.toISOString();
                 }
               }
             }
