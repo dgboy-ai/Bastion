@@ -120,8 +120,10 @@ export async function GET(request: Request) {
                   });
                   return;
                 }
-                // Update watermark
-                const rowTime = String(row.recorded_at);
+                // Update watermark using ISO format that CockroachDB can parse
+                const rowTime = row.recorded_at instanceof Date
+                  ? row.recorded_at.toISOString()
+                  : String(row.recorded_at);
                 if (rowTime > lastChecked) {
                   lastChecked = rowTime;
                 }
