@@ -88,8 +88,9 @@ export async function GET(request: Request) {
         send(JSON.stringify({ type: "heartbeat", timestamp: new Date().toISOString() }));
       }, 15000);
 
-      // Track watermark for incremental polling
-      let lastChecked = new Date(Date.now() - 5000).toISOString(); // Start 5s ago
+      // Track watermark and seen IDs for deduplication
+      let lastChecked = new Date(Date.now() - 5000).toISOString();
+      const seenIds = new Set<string>();
 
       const eventInterval = setInterval(async () => {
         if (isMockMode()) {
@@ -107,12 +108,16 @@ export async function GET(request: Request) {
               "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit WHERE recorded_at > $1 ORDER BY recorded_at ASC LIMIT 10",
               [lastChecked]
             );
-            // Debug: log query result
-            console.log(`[Events SSE] Polled: lastChecked=${lastChecked}, rows=${result.rows?.length ?? 0}`);
             if (result.rows && result.rows.length > 0) {
+              let maxTimestamp = lastChecked;
               for (const row of result.rows) {
+                const auditId = String(row.audit_id);
+                // Skip already-processed entries
+                if (seenIds.has(auditId)) continue;
+                seenIds.add(auditId);
+
                 const event = mapAuditToEvent(row);
-                console.log(`[Events SSE] Sending event: ${event.event} from ${event.agentId}`);
+                console.log(`[Events SSE] Sending: ${event.event} from ${event.agentId}`);
                 if (!send(JSON.stringify({ type: "event", data: event }))) {
                   closedPromise.then(() => {
                     clearInterval(heartbeat);
@@ -120,22 +125,23 @@ export async function GET(request: Request) {
                   });
                   return;
                 }
-                // Update watermark using ISO format that CockroachDB can parse
+                // Track max timestamp
                 const rowTime = row.recorded_at instanceof Date
                   ? row.recorded_at.toISOString()
                   : String(row.recorded_at);
-                if (rowTime >= lastChecked) {
-                  // Advance watermark past this entry to avoid re-processing
-                  const dt = new Date(row.recorded_at);
-                  dt.setMilliseconds(dt.getMilliseconds() + 1);
-                  lastChecked = dt.toISOString();
+                if (rowTime > maxTimestamp) {
+                  maxTimestamp = rowTime;
                 }
+              }
+              // Advance watermark past all processed entries
+              if (maxTimestamp > lastChecked) {
+                const dt = new Date(maxTimestamp);
+                dt.setMilliseconds(dt.getMilliseconds() + 1);
+                lastChecked = dt.toISOString();
               }
             }
           } catch (err) {
-            // Log error and send debug info to client
             console.error("[Events SSE] Poll error:", err);
-            send(JSON.stringify({ type: "debug", error: String(err) }));
           }
         }
       }, 1000); // Poll every 1 second for near-real-time
