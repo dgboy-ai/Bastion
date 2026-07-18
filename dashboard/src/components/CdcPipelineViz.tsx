@@ -38,7 +38,9 @@ export default function CdcPipelineViz({ refreshInterval = 3000 }: CdcPipelineVi
       try {
         const res = await fetchWithTimeout("/api/stats");
         if (!res.ok) return;
-        const data = await res.json();
+        const rawData = await res.json();
+        // Unwrap apiSuccess envelope
+        const data = rawData?.data || rawData;
 
         const audits = data.recentAudits || [];
         const newEvents: PipelineEvent[] = audits.slice(0, 5).map(

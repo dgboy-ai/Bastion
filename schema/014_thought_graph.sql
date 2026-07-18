@@ -17,6 +17,5 @@ CREATE TABLE IF NOT EXISTS thought_graph (
 );
 
 -- Changefeed for real-time reasoning monitoring
-CREATE CHANGEFEED FOR TABLE thought_graph
-  INTO 'function://cdc_thought_handler'
-  WITH updated, resolved, on_error=resume, initial_scan='no';
+-- NOTE: CDC changefeeds are configured at runtime, not in schema files
+-- Example: CREATE CHANGEFEED FOR TABLE thought_graph INTO 'function://cdc_thought_handler' WITH updated, resolved, on_error=resume, initial_scan='no';

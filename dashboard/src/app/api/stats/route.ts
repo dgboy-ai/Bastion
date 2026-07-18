@@ -1,4 +1,4 @@
-import { query, isMockMode } from "@/lib/db";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockStats } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
@@ -11,15 +11,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const memoryCountRes = await query("SELECT COUNT(*) as count FROM agent_memory");
-    const entityCountRes = await query("SELECT COUNT(*) as count FROM agent_entities");
-    const relationCountRes = await query("SELECT COUNT(*) as count FROM agent_relations");
-    const auditCountRes = await query("SELECT COUNT(*) as count FROM agent_audit");
-    const conflictCountRes = await query("SELECT COUNT(*) as count FROM agent_coordination");
-    const avgImportanceRes = await query("SELECT AVG(importance_score) as avg FROM agent_memory");
+    const memoryCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_memory");
+    const entityCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_entities");
+    const relationCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_relations");
+    const auditCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_audit");
+    const conflictCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_coordination");
+    const avgImportanceRes = await safeQuery("SELECT AVG(importance_score) as avg FROM agent_memory");
 
     // Fetch dynamic averages grouped by 6-hour historical time intervals
-    const curveRes = await query(`
+    const curveRes = await safeQuery(`
       SELECT 
         AVG(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' AND created_at < NOW() - INTERVAL '18 hours' THEN importance_score END) as val_24,
         AVG(CASE WHEN created_at >= NOW() - INTERVAL '18 hours' AND created_at < NOW() - INTERVAL '12 hours' THEN importance_score END) as val_18,
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     `);
 
     // Fetch actual hourly writes for the last 8 hours
-    const hourlyGrowthRes = await query(`
+    const hourlyGrowthRes = await safeQuery(`
       SELECT 
         EXTRACT(HOUR FROM created_at) as hr_val,
         COUNT(*) as count
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     `);
 
     // Fetch most recalled memories based on highest importance score
-    const topRecallsRes = await query(`
+    const topRecallsRes = await safeQuery(`
       SELECT content, importance_score
       FROM agent_memory
       ORDER BY importance_score DESC, created_at DESC
@@ -48,17 +48,17 @@ export async function GET(request: Request) {
     `);
 
     // Calculate semantic cache hit ratio
-    const cacheRes = await query(`
+    const cacheRes = await safeQuery(`
       SELECT 
         COUNT(CASE WHEN memory_type = 'semantic_cache' THEN 1 END) as cache_hits,
         COUNT(*) as total
       FROM agent_memory
     `);
 
-    const recentAuditRes = await query(
+    const recentAuditRes = await safeQuery(
       "SELECT audit_id, action, recorded_at, details FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
     );
-    const anomalyCountRes = await query(`
+    const anomalyCountRes = await safeQuery(`
       SELECT COUNT(*) as count FROM (
         SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
       ) dupes

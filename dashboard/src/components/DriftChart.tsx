@@ -42,6 +42,13 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
   useEffect(() => {
     if (!svgRef.current || timeSeries.length < 2) return;
     const svg = svgRef.current;
+
+    // Cleanup function to remove all children and event listeners on unmount/re-render
+    const cleanup = () => {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+    };
+
+    cleanup();
     const ns = "http://www.w3.org/2000/svg";
 
     const xScale = (i: number) => PAD_LEFT + (i / (timeSeries.length - 1)) * PLOT_W;
@@ -201,6 +208,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       svg.appendChild(dot);
     }
 
+    return cleanup;
   }, [timeSeries]);
 
   if (loading) {

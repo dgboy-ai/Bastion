@@ -181,10 +181,21 @@ class MemoryGuard:
         Returns a SecurityReport with findings and overall safety verdict.
         """
         findings: list[Finding] = []
-        self._total_checks += 1
+        with self._lock:
+            self._total_checks += 1
 
         # 1. Prompt injection scan
         findings.extend(self._scan_prompt_injection(content))
+
+        # 1.1 Multi-language injection detection
+        multilang_matches = multilang_scan(content)
+        for match in multilang_matches:
+            findings.append(Finding(
+                threat_type="ASI06: Multi-language Injection",
+                severity="high",
+                detail=f"Non-English injection pattern detected: {match}",
+                confidence=0.80,
+            ))
 
         # 1.5 Encoded payload detection (base64, URL-encoded)
         findings.extend(self._scan_encoded_payloads(content))
@@ -268,7 +279,6 @@ class MemoryGuard:
                     detail=f"{desc}: {len(matches)} match(es)",
                     confidence=0.90,
                 ))
-                break
         return findings
 
     def _scan_pii(self, content: str) -> list[Finding]:

@@ -1,20 +1,39 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
 const _rateBuckets = new Map<string, number[]>();
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+function safeCompare(a: string, b: string): boolean {
+  // Pad to same length to prevent timing side-channel on length
+  const maxLen = Math.max(a.length, b.length);
+  const bufA = Buffer.alloc(maxLen, 0);
+  const bufB = Buffer.alloc(maxLen, 0);
+  bufA.write(a);
+  bufB.write(b);
+  return cryptoTimingSafeEqual(bufA, bufB);
 }
 
 export function checkRateLimit(request: Request): NextResponse | null {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Determine client IP: trust X-Forwarded-For behind known proxies,
+  // otherwise use a combination of headers for rate limiting
+  const forwarded = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
+
+  let ip = "unknown";
+  if (process.env.VERCEL && forwarded) {
+    ip = forwarded.split(",")[0]?.trim() || "unknown";
+  } else if (process.env.CLOUDFLARE && cfConnectingIp) {
+    ip = cfConnectingIp;
+  } else if (realIp) {
+    ip = realIp;
+  } else if (forwarded) {
+    // Behind a reverse proxy (non-Vercel)
+    ip = forwarded.split(",")[0]?.trim() || "unknown";
+  }
+  // If still unknown, we can't rate-limit per-IP, but we still track
   const now = Date.now();
   let timestamps = _rateBuckets.get(ip);
   if (!timestamps) {
@@ -41,14 +60,19 @@ export function checkApiKey(request: Request): { valid: boolean; key?: string; e
   const expectedKey = process.env.BASTION_API_KEY;
 
   if (!expectedKey) {
-    return { valid: true, key: undefined };
+    // In mock mode, allow unauthenticated access
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+      return { valid: true, key: undefined };
+    }
+    // In production, require API key
+    return { valid: false, error: "BASTION_API_KEY not configured — authentication required" };
   }
 
   if (!providedKey) {
     return { valid: false, error: "Missing Authorization header with Bearer token" };
   }
 
-  if (!timingSafeEqual(providedKey, expectedKey)) {
+  if (!safeCompare(providedKey, expectedKey)) {
     return { valid: false, error: "Invalid API key" };
   }
 

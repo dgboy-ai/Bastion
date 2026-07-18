@@ -177,8 +177,8 @@ class VerifiableUnlearning:
 
         all_memories = self.memory.list_all()
         agent_memories = [m for m in all_memories if m.agent_id == agent_id]
-        all_hashes = [m.cryptographic_hash for m in agent_memories]
-        deleted_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids]
+        all_hashes = [m.cryptographic_hash for m in agent_memories if m.cryptographic_hash]
+        deleted_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids and m.cryptographic_hash]
 
         old_root = self._compute_merkle_root(all_hashes)
 

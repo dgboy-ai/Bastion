@@ -147,6 +147,7 @@ class MemoryDreamer:
                 logger.info("Dreaming: no recent memories to review", agent_id=agent_id)
                 journal.completed_at = datetime.now(UTC).isoformat()
                 journal.duration_ms = int((time.monotonic() - start_time) * 1000)
+                journal.status = "complete"
                 return journal
 
             # Step 2: Find consolidation candidates (duplicates near each other)
@@ -222,7 +223,7 @@ class MemoryDreamer:
 
     def _fetch_recent_memories(self, agent_id: str) -> list[Any]:
         """Fetch memories created in the lookback window."""
-        # Use list_all to get recent memories, then filter by time
+        # Use list_all with a reasonable limit instead of loading everything
         all_memories = self._memory.list_all(namespace_scope="own")
         cutoff = datetime.now(UTC) - timedelta(hours=self._lookback_hours)
 

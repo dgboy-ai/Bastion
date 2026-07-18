@@ -48,7 +48,8 @@ export default function MemoryGuardPanel() {
         throw new Error(`Failed to load security report (HTTP ${res.status})`);
       }
       const data = await res.json();
-      setReport(data);
+      // Unwrap apiSuccess envelope
+      setReport(data?.data || data);
     } catch {
       setFetchError(true);
     } finally {
@@ -70,7 +71,8 @@ export default function MemoryGuardPanel() {
         body: JSON.stringify({ content: scanInput }),
       });
       const data = await res.json();
-      setScanResult(data);
+      // Unwrap apiSuccess envelope
+      setScanResult(data?.data || data);
     } catch (err) {
       console.error("[MemoryGuardPanel] scan failed:", err);
       setScanResult({

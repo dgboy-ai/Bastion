@@ -87,6 +87,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         connection_string: str | None = None,
     ) -> None:
         self._conn_str = connection_string or os.environ.get("BASTION_CONN", "")
+        self._pool = None  # Lazy-initialized connection pool
         self._use_db = bool(self._conn_str)
 
         # In-memory fallback (used when DB unavailable or in mock mode)
@@ -120,12 +121,48 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             )
 
     def _get_conn(self):
-        """Get a raw psycopg connection."""
+        """Get a connection from the pool (or create a new one if pool unavailable)."""
+        if self._pool is not None:
+            try:
+                return self._pool.acquire(timeout=5.0)
+            except Exception:
+                pass  # Fall through to raw connection
         import psycopg
         return psycopg.connect(self._conn_str)
 
+    def _release_conn(self, conn):
+        """Release a connection back to the pool."""
+        if self._pool is not None:
+            try:
+                self._pool.release(conn)
+                return
+            except Exception:
+                pass
+        # If not using pool, just close
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def _init_pool(self):
+        """Initialize connection pool for OAuth operations."""
+        if self._pool is not None or not self._conn_str:
+            return
+        try:
+            from bastion.pool import ConnectionPool
+            self._pool = ConnectionPool(
+                connection_string=self._conn_str,
+                min_size=2,
+                max_size=5,
+                max_idle_seconds=300,
+            )
+        except Exception as exc:
+            logger.warning("Failed to create OAuth connection pool: %s", exc)
+            self._pool = None
+
     def _init_db(self) -> None:
         """Create OAuth tables if they don't exist."""
+        self._init_pool()
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
@@ -176,7 +213,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             conn.commit()
             logger.info("OAuth DB tables initialized")
         finally:
-            conn.close()
+            self._release_conn(conn)
 
     # ── Client Management ─────────────────────────────────────────────
 
@@ -200,7 +237,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 scope=row[6] or "",
                             )
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB get_client failed, falling back to memory: %s", exc)
         return self._clients.get(client_id)
@@ -232,7 +269,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             )
                         conn.commit()
                     finally:
-                        conn.close()
+                        self._release_conn(conn)
                 except Exception as exc:
                     logger.warning("DB register_client failed: %s", exc)
 
@@ -240,6 +277,15 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         _cleanup_pkce_verifiers()
+
+        # Validate redirect_uri against client's registered URIs
+        if params.redirect_uri and client.redirect_uris:
+            redirect_str = str(params.redirect_uri)
+            if redirect_str not in [str(uri) for uri in client.redirect_uris]:
+                raise ValueError(
+                    f"redirect_uri {redirect_str} does not match any registered URI for client {client.client_id}"
+                )
+
         code = secrets.token_urlsafe(32)
         now = time.time()
         auth_code = AuthorizationCode(
@@ -276,7 +322,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         )
                     conn.commit()
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB authorize failed: %s", exc)
 
@@ -310,7 +356,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 resource=json.loads(row[7]) if row[7] else None,
                             )
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB load_authorization_code failed: %s", exc)
 
@@ -381,7 +427,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         cur.execute("DELETE FROM oauth_auth_codes WHERE code = %s", (authorization_code.code,))
                     conn.commit()
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB exchange_authorization_code failed: %s", exc)
 
@@ -413,7 +459,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 expires_at=row[3],
                             )
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB load_refresh_token failed: %s", exc)
 
@@ -465,20 +511,20 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         cur.execute(
                             """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at)
                                VALUES (%s, %s, %s, %s)""",
-                            (access_token_str, client.client_id, json.dumps(scopes or refresh_token.scopes),
+                            (access_token_str, client.client_id, json.dumps(list(final_scopes)),
                              int(now) + 3600),
                         )
                         cur.execute(
                             """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at)
                                VALUES (%s, %s, %s, %s)""",
-                            (refresh_token_str, client.client_id, json.dumps(scopes or refresh_token.scopes),
+                            (refresh_token_str, client.client_id, json.dumps(list(final_scopes)),
                              int(now) + 86400 * 7),
                         )
                         cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
                         cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (refresh_token.token,))
                     conn.commit()
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB exchange_refresh_token failed: %s", exc)
 
@@ -511,7 +557,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 resource=json.loads(row[4]) if row[4] else None,
                             )
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB load_access_token failed: %s", exc)
 
@@ -534,6 +580,6 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (token.token,))
                     conn.commit()
                 finally:
-                    conn.close()
+                    self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB revoke_token failed: %s", exc)

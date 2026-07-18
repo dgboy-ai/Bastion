@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface SqlExplainerProps {
   queryType: "search" | "timetravel" | "cdc" | "cspann" | "audit" | "heal";
@@ -114,6 +114,23 @@ export default function SqlExplainer({
   onClose,
 }: SqlExplainerProps) {
   const [copied, setCopied] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Escape key handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && onClose) onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  // Focus trap
+  useEffect(() => {
+    if (modalRef.current) {
+      modalRef.current.focus();
+    }
+  }, []);
   const query = SQL_QUERIES[queryType] || SQL_QUERIES.search;
 
   // Replace $1, $2, $3 with actual values
@@ -143,9 +160,14 @@ export default function SqlExplainer({
         padding: "24px",
       }}
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="SQL Query Explainer"
     >
       <div
         className="panel"
+        ref={modalRef}
+        tabIndex={-1}
         style={{
           maxWidth: "700px",
           width: "100%",

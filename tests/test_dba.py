@@ -158,13 +158,15 @@ class TestSchemaEvolution:
         se = SchemaEvolution()
         assert se._validate_default_value("'hello'") is None
         assert se._validate_default_value("42") is None
-        assert se._validate_default_value("NOW()") is None
+        assert se._validate_default_value("true") is None
+        assert se._validate_default_value("CURRENT_TIMESTAMP") is None
 
     def test_validate_default_value_invalid(self):
         se = SchemaEvolution()
         assert se._validate_default_value("'; DROP TABLE--") is not None
         assert se._validate_default_value("") is not None
         assert se._validate_default_value("a" * 257) is not None
+        assert se._validate_default_value("NOW()") is not None  # Parentheses blocked to prevent DDL injection
 
     def test_validate_table_name_valid(self):
         se = SchemaEvolution()
