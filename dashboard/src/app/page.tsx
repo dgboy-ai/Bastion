@@ -523,6 +523,8 @@ function TypewriterWord() {
         backgroundSize: "220% auto",
         animation: "gradShift 3.5s ease infinite",
         fontWeight: 900,
+        fontSize: "0.72em",
+        letterSpacing: "-1px",
         filter: "drop-shadow(0 0 10px rgba(255, 234, 0, 0.65))",
       }}>
         {text}
