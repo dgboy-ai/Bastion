@@ -88,7 +88,7 @@ export async function GET(request: Request) {
       }, 15000);
 
       // Track watermark for incremental polling
-      let lastChecked = new Date(Date.now() - 30000).toISOString(); // Start 30s ago
+      let lastChecked = new Date(Date.now() - 5000).toISOString(); // Start 5s ago
 
       const eventInterval = setInterval(async () => {
         if (isMockMode()) {
@@ -100,10 +100,10 @@ export async function GET(request: Request) {
             });
           }
         } else {
-          // Live mode: poll agent_audit for new entries
+          // Live mode: poll agent_audit for new entries every 1 second
           try {
             const result = await safeQuery(
-              "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit WHERE recorded_at > $1 ORDER BY recorded_at ASC LIMIT 5",
+              "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit WHERE recorded_at > $1 ORDER BY recorded_at ASC LIMIT 10",
               [lastChecked]
             );
             if (result.rows && result.rows.length > 0) {
@@ -127,7 +127,7 @@ export async function GET(request: Request) {
             // Silently continue on DB errors - SSE should not crash
           }
         }
-      }, 5000);
+      }, 1000); // Poll every 1 second for near-real-time
 
       await closedPromise;
       clearInterval(heartbeat);
