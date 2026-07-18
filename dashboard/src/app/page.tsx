@@ -190,12 +190,6 @@ function NetherCanvas() {
     rebuild();
     window.addEventListener("resize", rebuild);
 
-    const cracks = [
-      { x: 300, y: 150, len:280, a: .7,  c:"#ffea00"  },
-      { x: 500, y: 480, len:260, a:-.55, c:"#ff9100" },
-      { x: 320, y: 1200, len:400, a: .60, c:P.cyan  },
-    ];
-
     const drips: { x:number; y:number; vy:number; sz:number; life:number; maxL:number }[] = [];
     const flowParticles: { x:number; y:number; vy:number; sz:number; color:string }[] = [];
     const splashes: { x:number; y:number; vx:number; vy:number; sz:number; life:number; color:string }[] = [];
@@ -339,114 +333,7 @@ function NetherCanvas() {
         }
       });
 
-      cracks.forEach(c => {
-        const dy = c.y - sy;
-        if (dy < -100 || dy > H + 100) return;
-        ctx.beginPath(); ctx.moveTo(c.x,dy); ctx.lineTo(c.x+Math.cos(c.a)*c.len, dy+Math.sin(c.a)*c.len);
-        ctx.shadowColor=cracksColor; ctx.shadowBlur=12;
-        ctx.strokeStyle=cracksColor; ctx.lineWidth=3; ctx.stroke(); ctx.shadowBlur=0;
-      });
-
-      // ─── WATERFALL TEXTURED FLOW SYSTEM (STRAIGHT COLUMN BOUNDS) ───
-      const wfW=72, wfX=W-wfW-54;
-      const drawWaterfall = (!narrow || W > 900) && sy < 850;
-      
-      if (drawWaterfall) {
-        const poolTop = (H - 48) - sy;
-
-        ctx.fillStyle = "#1e1624";
-        ctx.fillRect(wfX - 6, -sy, wfW + 12, 24);
-        ctx.strokeStyle = "rgba(255,255,255,0.06)";
-        ctx.strokeRect(wfX - 6, -sy, wfW + 12, 24);
-
-        ctx.globalAlpha = 0.98;
-        const pixelSz = 4;
-        const cols = Math.floor(wfW / pixelSz);
-        
-        for (let y = 24; y < H - 48; y += pixelSz) {
-          const renderY = y - sy;
-          if (renderY < 0 || renderY > H) continue;
-          
-          const flowY = y + Math.floor(T2 * 14);
-
-          for (let c = 0; c < cols; c++) {
-            const pixelX = wfX + c * pixelSz;
-            
-            const blockX = Math.floor(c / 2);
-            const blockY = Math.floor(flowY / 6);
-            const hash = Math.sin(blockX * 12.9898 + blockY * 78.233) * 43758.5453;
-            const noiseVal = hash - Math.floor(hash);
-            
-            // Predominantly yellow hot core with sparse orange pixels
-            const color = noiseVal > 0.85 ? "#ff9100" : "#ffea00";
-
-            ctx.fillStyle = color;
-            ctx.fillRect(pixelX, renderY, pixelSz, pixelSz);
-          }
-        }
-
-        ctx.fillStyle = "rgba(20,4,12,0.98)";
-        ctx.fillRect(wfX - 25, poolTop, wfW + 50, 48);
-        
-        ctx.fillStyle = "#ffea00";
-        ctx.shadowColor = "#ffea00";
-        ctx.shadowBlur = 20;
-        ctx.fillRect(wfX - 20, poolTop + 6, wfW + 40, 42);
-        ctx.shadowBlur = 0;
-
-        drawBlock(ctx, wfX - 44, poolTop, BS, "black", 88); 
-        drawBlock(ctx, wfX + wfW, poolTop, BS, "black", 89); 
-
-        if (Math.random() > 0.75) {
-          flowParticles.push({
-            x: wfX + Math.random() * wfW,
-            y: 28,
-            vy: Math.random() * 4 + 4,
-            sz: Math.random() * 2 + 2,
-            color: "#ffea00"
-          });
-        }
-
-        for (let i = flowParticles.length - 1; i >= 0; i--) {
-          const f = flowParticles[i];
-          f.y += f.vy;
-          const fRenderY = f.y - sy;
-          if (f.y >= H - 40) {
-            if (Math.random() > 0.5) {
-              splashes.push({
-                x: f.x,
-                y: H - 42,
-                vx: (Math.random() - 0.5) * 3,
-                vy: -(Math.random() * 2 + 1),
-                sz: f.sz * 0.7,
-                life: 1.0,
-                color: "#ffea00"
-              });
-            }
-            flowParticles.splice(i, 1);
-            continue;
-          }
-          ctx.fillStyle = f.color;
-          ctx.fillRect(f.x, fRenderY, f.sz, f.sz * 2);
-        }
-
-        for (let i = splashes.length - 1; i >= 0; i--) {
-          const s = splashes[i];
-          s.x += s.vx;
-          s.y += s.vy;
-          s.vy += 0.22; 
-          s.life -= 0.05;
-          const sRenderY = s.y - sy;
-          if (s.life <= 0) {
-            splashes.splice(i, 1);
-            continue;
-          }
-          ctx.fillStyle = s.color;
-          ctx.globalAlpha = s.life;
-          ctx.fillRect(s.x, sRenderY, s.sz, s.sz);
-        }
-        ctx.globalAlpha = 1.0;
-      }
+      // Waterfall and cracks removed for cleaner design
 
       ctx.globalAlpha = narrow ? 0.05 : 0.85;
       for (const e of embers) {
@@ -476,7 +363,7 @@ function NetherCanvas() {
   }, []);
 
   return (
-    <canvas ref={cvs} style={{position:"fixed",inset:0,zIndex:-1,pointerEvents:"none"}}/>
+    <canvas ref={cvs} style={{position:"absolute",inset:0,width:"100%",height:"100%",zIndex:-1,pointerEvents:"none"}}/>
   );
 }
 
@@ -881,7 +768,7 @@ export default function Page() {
 
       {/* Dynamic multi-biome fallback background gradient layer */}
       <div style={{
-        position:"fixed",inset:0,pointerEvents:"none",zIndex:-10,
+        position:"absolute",inset:0,pointerEvents:"none",zIndex:-10,
         background:`linear-gradient(160deg, #2b0409 0%, #120104 35%, #050001 100%)`,
       }}/>
 
@@ -892,7 +779,7 @@ export default function Page() {
 
       {/* Atmospheric vignette */}
       <div style={{
-        position:"fixed",inset:0,pointerEvents:"none",zIndex:-20,
+        position:"absolute",inset:0,pointerEvents:"none",zIndex:-20,
         background:"radial-gradient(ellipse at 40% 35%, rgba(12,2,10,0.1) 0%, rgba(6,1,5,0.2) 100%)",
       }}/>
 
