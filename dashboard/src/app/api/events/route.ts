@@ -106,9 +106,12 @@ export async function GET(request: Request) {
               "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit WHERE recorded_at > $1 ORDER BY recorded_at ASC LIMIT 10",
               [lastChecked]
             );
+            // Debug: log query result
+            console.log(`[Events SSE] Polled: lastChecked=${lastChecked}, rows=${result.rows?.length ?? 0}`);
             if (result.rows && result.rows.length > 0) {
               for (const row of result.rows) {
                 const event = mapAuditToEvent(row);
+                console.log(`[Events SSE] Sending event: ${event.event} from ${event.agentId}`);
                 if (!send(JSON.stringify({ type: "event", data: event }))) {
                   closedPromise.then(() => {
                     clearInterval(heartbeat);
