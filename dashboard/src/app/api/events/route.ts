@@ -1,5 +1,5 @@
 import { getMockMemories } from "@/lib/mock-data";
-import { safeQuery, isMockMode } from "@/lib/db";
+import { safeQuery, isMockMode, hasDbPool } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 const EVENTS = [
@@ -82,6 +82,7 @@ export async function GET(request: Request) {
       };
 
       send(JSON.stringify({ type: "connected", message: "SSE stream established" }));
+      send(JSON.stringify({ type: "debug", mockMode: isMockMode(), hasPool: hasDbPool() }));
 
       const heartbeat = setInterval(() => {
         send(JSON.stringify({ type: "heartbeat", timestamp: new Date().toISOString() }));
