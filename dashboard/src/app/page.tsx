@@ -766,7 +766,11 @@ export default function Page() {
         background:"transparent",
       }}>
 
-      {/* Background gradient handled by NetherCanvas */}
+      {/* Fixed dark background that persists across all sections */}
+      <div style={{
+        position:"fixed",inset:0,pointerEvents:"none",zIndex:-10,
+        background:"#0a0208",
+      }}/>
 
       {/* Scroll rail */}
       <div style={{position:"fixed",top:0,left:0,right:0,height:"3px",zIndex:1100,background:"rgba(255,40,0,.04)"}}>
