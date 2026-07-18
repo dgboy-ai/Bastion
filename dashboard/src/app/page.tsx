@@ -363,7 +363,7 @@ function NetherCanvas() {
   }, []);
 
   return (
-    <canvas ref={cvs} style={{position:"absolute",inset:0,width:"100%",height:"100%",zIndex:-1,pointerEvents:"none"}}/>
+    <canvas ref={cvs} style={{position:"fixed",inset:0,zIndex:-1,pointerEvents:"none"}}/>
   );
 }
 
@@ -766,22 +766,14 @@ export default function Page() {
         background:"transparent",
       }}>
 
-      {/* Dynamic multi-biome fallback background gradient layer */}
-      <div style={{
-        position:"absolute",inset:0,pointerEvents:"none",zIndex:-10,
-        background:`linear-gradient(160deg, #2b0409 0%, #120104 35%, #050001 100%)`,
-      }}/>
+      {/* Background gradient handled by NetherCanvas */}
 
       {/* Scroll rail */}
       <div style={{position:"fixed",top:0,left:0,right:0,height:"3px",zIndex:1100,background:"rgba(255,40,0,.04)"}}>
         <div style={{height:"100%",width:`${pct*100}%`,background:`linear-gradient(90deg,#ffea00,${P.cyan},#00ff66)`,boxShadow:`0 0 14px #ffea00`,transition:"width .08s linear"}}/>
       </div>
 
-      {/* Atmospheric vignette */}
-      <div style={{
-        position:"absolute",inset:0,pointerEvents:"none",zIndex:-20,
-        background:"radial-gradient(ellipse at 40% 35%, rgba(12,2,10,0.1) 0%, rgba(6,1,5,0.2) 100%)",
-      }}/>
+      {/* Vignette handled by NetherCanvas */}
 
       {/* Pixel grid */}
       <div style={{position:"absolute",inset:0,zIndex:0,opacity:.038,pointerEvents:"none",
