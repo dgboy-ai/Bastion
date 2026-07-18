@@ -118,9 +118,9 @@ export default function GraphPage() {
       setDriftLoading(true);
       try {
         const [memRes, trustRes, driftRes] = await Promise.all([
-          fetch(`/api/entity-memories?entity_id=${entityId}`),
-          fetch(`/api/trust?entity_id=${encodeURIComponent(entityId)}&limit=50`),
-          fetch("/api/drift?limit=50"),
+          fetchWithTimeout(`/api/entity-memories?entity_id=${entityId}`),
+          fetchWithTimeout(`/api/trust?entity_id=${encodeURIComponent(entityId)}&limit=50`),
+          fetchWithTimeout("/api/drift?limit=50"),
         ]);
 
         if (!memRes.ok) throw new Error("Failed to fetch entity audit trail");
@@ -130,11 +130,16 @@ export default function GraphPage() {
         const driftRaw = driftRes.ok ? await driftRes.json() : null;
 
         if (!cancelled) {
-          setEntityMemories(memData.memories || []);
-          setTrustSummary(trustData?.summary ?? null);
-          setTrustAlerts(trustData?.alerts ?? []);
-          if (driftRaw) {
-            setDriftData({ latest: driftRaw.latest, timeSeries: driftRaw.timeSeries });
+          // Unwrap apiSuccess envelopes
+          const memDataUnwrapped = memData?.data || memData;
+          const trustDataUnwrapped = trustData?.data || trustData;
+          const driftDataUnwrapped = driftRaw?.data || driftRaw;
+
+          setEntityMemories(memDataUnwrapped?.memories || []);
+          setTrustSummary(trustDataUnwrapped?.summary ?? null);
+          setTrustAlerts(trustDataUnwrapped?.alerts ?? []);
+          if (driftDataUnwrapped) {
+            setDriftData({ latest: driftDataUnwrapped.latest, timeSeries: driftDataUnwrapped.timeSeries });
           }
         }
       } catch (err) {

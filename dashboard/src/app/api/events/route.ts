@@ -1,4 +1,5 @@
 import { getMockMemories } from "@/lib/mock-data";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 const EVENTS = [
@@ -26,6 +27,27 @@ function randomEvent() {
     content: mem.content.substring(0, 80),
     timestamp: new Date().toISOString(),
     importanceScore: Math.round((5 + Math.random() * 5) * 10) / 10,
+  };
+}
+
+function mapAuditToEvent(audit: Record<string, unknown>) {
+  const action = String(audit.action || "");
+  let event = "memory_stored";
+  if (action.includes("search")) event = "memory_searched";
+  else if (action.includes("conflict")) event = "conflict_detected";
+  else if (action.includes("hash") || action.includes("verify")) event = "hash_chain_verified";
+  else if (action.includes("guard") || action.includes("block")) event = "guard_scan_passed";
+  else if (action.includes("heal")) event = "memory_healed";
+  else if (action.includes("drift")) event = "drift_detected";
+
+  const details = audit.details as Record<string, unknown> | null;
+  return {
+    event,
+    agentId: audit.agent_id || "unknown",
+    memoryId: audit.audit_id || "",
+    content: String(details?.content_preview || details?.memory_type || "audit entry").substring(0, 80),
+    timestamp: String(audit.recorded_at || new Date().toISOString()),
+    importanceScore: 5.0,
   };
 }
 
@@ -65,12 +87,45 @@ export async function GET(request: Request) {
         send(JSON.stringify({ type: "heartbeat", timestamp: new Date().toISOString() }));
       }, 15000);
 
-      const eventInterval = setInterval(() => {
-        if (!send(JSON.stringify({ type: "event", data: randomEvent() }))) {
-          closedPromise.then(() => {
-            clearInterval(heartbeat);
-            clearInterval(eventInterval);
-          });
+      // Track watermark for incremental polling
+      let lastChecked = new Date(Date.now() - 30000).toISOString(); // Start 30s ago
+
+      const eventInterval = setInterval(async () => {
+        if (isMockMode()) {
+          // Mock mode: generate random events
+          if (!send(JSON.stringify({ type: "event", data: randomEvent() }))) {
+            closedPromise.then(() => {
+              clearInterval(heartbeat);
+              clearInterval(eventInterval);
+            });
+          }
+        } else {
+          // Live mode: poll agent_audit for new entries
+          try {
+            const result = await safeQuery(
+              "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit WHERE recorded_at > $1 ORDER BY recorded_at ASC LIMIT 5",
+              [lastChecked]
+            );
+            if (result.rows && result.rows.length > 0) {
+              for (const row of result.rows) {
+                const event = mapAuditToEvent(row);
+                if (!send(JSON.stringify({ type: "event", data: event }))) {
+                  closedPromise.then(() => {
+                    clearInterval(heartbeat);
+                    clearInterval(eventInterval);
+                  });
+                  return;
+                }
+                // Update watermark
+                const rowTime = String(row.recorded_at);
+                if (rowTime > lastChecked) {
+                  lastChecked = rowTime;
+                }
+              }
+            }
+          } catch {
+            // Silently continue on DB errors - SSE should not crash
+          }
         }
       }, 5000);
 

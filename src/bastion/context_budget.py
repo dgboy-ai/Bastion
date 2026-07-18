@@ -137,8 +137,11 @@ class ContextBudgetManager:
 
         remaining_budget = budget_tokens - pinned_tokens
 
-        # Get candidate memories
-        all_memories = self._memory.list_all(namespace_scope="own")
+        # Get candidate memories — use search if query provided to avoid loading all
+        if query and hasattr(self._memory, "search"):
+            all_memories = self._memory.search(query, k=min(200, budget_tokens // 10), namespace_scope="own")
+        else:
+            all_memories = self._memory.list_all(namespace_scope="own")
         if include_types:
             all_memories = [m for m in all_memories if m.memory_type in include_types]
 

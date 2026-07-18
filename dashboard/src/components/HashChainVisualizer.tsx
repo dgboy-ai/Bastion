@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch";
 
-interface MemoryBlock {
+interface HashChainEntry {
   memoryId: string;
   content: string;
   cryptographicHash: string;
@@ -12,257 +12,195 @@ interface MemoryBlock {
   importanceScore: number;
 }
 
-interface HashChainVisualizerProps {
-  agentId?: string;
-}
-
-export default function HashChainVisualizer({ agentId = "demo-agent" }: HashChainVisualizerProps) {
-  const [blocks, setBlocks] = useState<MemoryBlock[]>([]);
+export default function HashChainVisualizer() {
+  const [chain, setChain] = useState<HashChainEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedBlock, setSelectedBlock] = useState<MemoryBlock | null>(null);
-  const [chainValid, setChainValid] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<HashChainEntry | null>(null);
+  const [chainValid, setChainValid] = useState<boolean | null>(null);
 
   useEffect(() => {
-    async function fetchChain() {
-      try {
-        const res = await fetchWithTimeout(`/api/memories?agent_id=${agentId}`);
-        if (!res.ok) throw new Error("Failed to fetch memories");
-        const data = await res.json();
-        const memories: MemoryBlock[] = data.memories || [];
-        setBlocks(memories);
-
-        // Verify chain integrity
-        let valid = true;
-        for (let i = 1; i < memories.length; i++) {
-          if (memories[i].previousHash !== memories[i - 1].cryptographicHash) {
-            valid = false;
-            break;
-          }
-        }
-        setChainValid(valid);
-      } catch (err) {
-        console.error("Failed to load hash chain:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchChain();
-    const interval = setInterval(fetchChain, 5000);
-    return () => clearInterval(interval);
-  }, [agentId]);
+  }, []);
+
+  const fetchChain = async () => {
+    try {
+      const res = await fetchWithTimeout("/api/memories?limit=10");
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      // Handle the apiSuccess envelope: { success: true, data: { memories: [...] } }
+      const memories = data?.data?.memories || data?.memories || [];
+      setChain(memories);
+
+      // Verify chain integrity
+      let valid = true;
+      for (let i = 1; i < memories.length; i++) {
+        if (memories[i].previousHash !== memories[i - 1].cryptographicHash) {
+          valid = false;
+          break;
+        }
+      }
+      setChainValid(memories.length > 1 ? valid : true);
+    } catch (err) {
+      console.error("Failed to fetch chain:", err);
+      setError(err instanceof Error ? err.message : "Failed to load chain");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const truncateHash = (hash: string | null | undefined) => {
+    if (!hash) return "genesis";
+    if (hash.length < 16) return hash;
+    return `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}`;
+  };
 
   if (loading) {
     return (
-      <div className="panel" style={{ padding: "20px" }}>
-        <div className="panel-header">
-          <span className="title-sm">Hash Chain Integrity</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "center", padding: "40px" }}>
-          <div className="shimmer-pulse" style={{ width: "200px", height: "20px" }} />
-        </div>
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <div className="animate-pulse text-gray-500">Loading hash chain...</div>
       </div>
     );
   }
 
-  const truncatedHash = (hash: string) => {
-    if (!hash) return "genesis";
-    return `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}`;
-  };
+  if (error) {
+    return (
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <div className="text-red-400">Error: {error}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="panel" style={{ padding: "20px" }}>
-      <div className="panel-header" style={{ marginBottom: "16px" }}>
-        <span className="title-sm">Hash Chain Integrity</span>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: chainValid ? "var(--accent-emerald)" : "#ff4444",
-              boxShadow: chainValid ? "0 0 8px var(--accent-emerald)" : "0 0 8px #ff4444",
-            }}
-          />
-          <span
-            style={{
-              fontSize: "11px",
-              fontFamily: "var(--font-mono)",
-              color: chainValid ? "var(--accent-emerald)" : "#ff4444",
-            }}
-          >
-            {chainValid ? "CHAIN VALID" : "CHAIN BROKEN"}
-          </span>
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🔐</span>
+          <div>
+            <h2 className="text-xl font-bold text-white">Hash Chain Integrity</h2>
+            <p className="text-gray-400 text-sm">
+              SHA-256 cryptographic linking — tamper-proof memory chain
+            </p>
+          </div>
+        </div>
+        <div className={`px-4 py-2 rounded-lg text-sm font-medium ${
+          chainValid === true ? "bg-green-900 text-green-300" :
+          chainValid === false ? "bg-red-900 text-red-300" :
+          "bg-gray-800 text-gray-400"
+        }`}>
+          {chainValid === true ? "✓ Chain Verified" :
+           chainValid === false ? "✗ Chain Broken" :
+           "— Unknown"}
         </div>
       </div>
 
-      {/* Visual Chain */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-          overflowX: "auto",
-          padding: "12px 0",
-          minHeight: "80px",
-        }}
-      >
-        {blocks.slice(-10).map((block, idx) => (
-          <div key={block.memoryId} style={{ display: "flex", alignItems: "center" }}>
-            {/* Block */}
-            <div
-              onClick={() => setSelectedBlock(selectedBlock?.memoryId === block.memoryId ? null : block)}
-              style={{
-                minWidth: "100px",
-                padding: "8px 12px",
-                background: selectedBlock?.memoryId === block.memoryId
-                  ? "rgba(0, 229, 255, 0.1)"
-                  : "rgba(255, 255, 255, 0.02)",
-                border: `1px solid ${
-                  selectedBlock?.memoryId === block.memoryId
-                    ? "var(--accent-breeze)"
-                    : "var(--glass-border)"
-                }`,
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-            >
+      {/* Chain visualization */}
+      {chain.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">No memories in chain yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {chain.map((entry, idx) => (
+            <div key={entry.memoryId} className="relative">
+              {/* Connector line */}
+              {idx < chain.length - 1 && (
+                <div className="absolute left-6 top-12 bottom-0 w-0.5 bg-gradient-to-b from-cyan-500/50 to-cyan-500/20" />
+              )}
+
+              {/* Entry card */}
               <div
-                style={{
-                  fontSize: "8px",
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--mute)",
-                  marginBottom: "4px",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "90px",
-                }}
+                className={`relative pl-14 p-4 rounded-lg border transition cursor-pointer ${
+                  selectedEntry?.memoryId === entry.memoryId
+                    ? "bg-gray-800 border-cyan-500/50"
+                    : "bg-gray-800/50 border-gray-700 hover:border-gray-600"
+                }`}
+                onClick={() => setSelectedEntry(
+                  selectedEntry?.memoryId === entry.memoryId ? null : entry
+                )}
               >
-                {truncatedHash(block.cryptographicHash)}
-              </div>
-              <div
-                style={{
-                  fontSize: "9px",
-                  color: "var(--body)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "90px",
-                }}
-              >
-                {block.content.substring(0, 20)}...
-              </div>
-              <div
-                style={{
-                  fontSize: "7px",
-                  color: "var(--accent-breeze)",
-                  marginTop: "4px",
-                }}
-              >
-                Score: {block.importanceScore.toFixed(1)}
+                {/* Chain node */}
+                <div className={`absolute left-3 top-4 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                  entry.previousHash ? "bg-cyan-600 text-white" : "bg-green-600 text-white"
+                }`}>
+                  {idx === 0 ? "G" : idx}
+                </div>
+
+                {/* Content */}
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-white font-medium text-sm truncate">
+                        {entry.content?.substring(0, 80) || "No content"}
+                      </span>
+                    </div>
+
+                    {/* Hash display */}
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                      <span className="text-gray-500">Hash:</span>
+                      <span className="text-cyan-400">{truncateHash(entry.cryptographicHash)}</span>
+                      {entry.previousHash && (
+                        <>
+                          <span className="text-gray-600">←</span>
+                          <span className="text-gray-500">Prev:</span>
+                          <span className="text-gray-400">{truncateHash(entry.previousHash)}</span>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-gray-500 mt-1">
+                      {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "Unknown time"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded details */}
+                {selectedEntry?.memoryId === entry.memoryId && (
+                  <div className="mt-4 pt-4 border-t border-gray-700 space-y-2 text-sm">
+                    <div className="flex gap-2">
+                      <span className="text-gray-500 w-20">Full Hash:</span>
+                      <code className="text-cyan-400 font-mono text-xs break-all">{entry.cryptographicHash}</code>
+                    </div>
+                    {entry.previousHash && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-20">Prev Hash:</span>
+                        <code className="text-gray-400 font-mono text-xs break-all">{entry.previousHash}</code>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <span className="text-gray-500 w-20">Memory ID:</span>
+                      <code className="text-blue-400 font-mono text-xs">{entry.memoryId}</code>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-gray-500 w-20">Importance:</span>
+                      <span className="text-white">{entry.importanceScore?.toFixed(1) || "N/A"}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Arrow */}
-            {idx < blocks.slice(-10).length - 1 && (
-              <div
-                style={{
-                  color: "var(--accent-breeze)",
-                  fontSize: "14px",
-                  padding: "0 2px",
-                  opacity: 0.5,
-                }}
-              >
-                →
-              </div>
-            )}
-          </div>
-        ))}
-
-        {blocks.length === 0 && (
-          <div
-            style={{
-              color: "var(--mute)",
-              fontSize: "12px",
-              padding: "20px",
-              textAlign: "center",
-              width: "100%",
-            }}
-          >
-            No memory blocks in chain
-          </div>
-        )}
-      </div>
-
-      {/* Chain Stats */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          borderTop: "1px solid var(--glass-border)",
-          paddingTop: "12px",
-          marginTop: "8px",
-        }}
-      >
-        <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
-          Chain Length: <span style={{ color: "var(--ink)" }}>{blocks.length}</span>
+          ))}
         </div>
-        <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
-          SHA-256 Links: <span style={{ color: "var(--accent-emerald)" }}>{Math.max(0, blocks.length - 1)}</span>
-        </div>
-        <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
-          Status:{" "}
-          <span style={{ color: chainValid ? "var(--accent-emerald)" : "#ff4444" }}>
-            {chainValid ? "INTACT" : "TAMPERED"}
-          </span>
-        </div>
-      </div>
+      )}
 
-      {/* Selected Block Detail */}
-      {selectedBlock && (
-        <div
-          style={{
-            marginTop: "16px",
-            padding: "16px",
-            background: "rgba(0, 229, 255, 0.03)",
-            border: "1px solid var(--glass-border)",
-            borderRadius: "8px",
-          }}
-        >
-          <div style={{ fontSize: "11px", color: "var(--accent-breeze)", marginBottom: "8px", fontWeight: 600 }}>
-            Block Detail
+      {/* Chain stats */}
+      {chain.length > 0 && (
+        <div className="mt-6 grid grid-cols-3 gap-4">
+          <div className="bg-gray-800 rounded-lg p-3 text-center">
+            <div className="text-xl font-bold text-cyan-400">{chain.length}</div>
+            <div className="text-xs text-gray-500">Chain Links</div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "10px" }}>
-            <div>
-              <span style={{ color: "var(--mute)" }}>Memory ID: </span>
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink)" }}>
-                {selectedBlock.memoryId.substring(0, 12)}...
-              </span>
+          <div className="bg-gray-800 rounded-lg p-3 text-center">
+            <div className="text-xl font-bold text-green-400">
+              {chain.filter(e => e.previousHash !== null).length}
             </div>
-            <div>
-              <span style={{ color: "var(--mute)" }}>Created: </span>
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink)" }}>
-                {new Date(selectedBlock.createdAt).toLocaleString()}
-              </span>
+            <div className="text-xs text-gray-500">Linked</div>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-3 text-center">
+            <div className="text-xl font-bold text-purple-400">
+              {chain.filter(e => e.previousHash === null).length}
             </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <span style={{ color: "var(--mute)" }}>Content: </span>
-              <span style={{ color: "var(--ink)" }}>{selectedBlock.content}</span>
-            </div>
-            <div>
-              <span style={{ color: "var(--mute)" }}>Prev Hash: </span>
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink)", fontSize: "9px" }}>
-                {truncatedHash(selectedBlock.previousHash || "")}
-              </span>
-            </div>
-            <div>
-              <span style={{ color: "var(--mute)" }}>Hash: </span>
-              <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent-emerald)", fontSize: "9px" }}>
-                {truncatedHash(selectedBlock.cryptographicHash)}
-              </span>
-            </div>
+            <div className="text-xs text-gray-500">Genesis</div>
           </div>
         </div>
       )}

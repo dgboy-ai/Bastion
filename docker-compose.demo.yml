@@ -18,7 +18,7 @@ services:
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health?ready=1"]
+      test: ["CMD", "cockroach", "sql", "--insecure", "--host=localhost", "-e", "SELECT 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -66,9 +66,10 @@ services:
     entrypoint: >
       sh -c "
         echo 'Installing dependencies...'
-        pip install psycopg[binary] --quiet 2>/dev/null
+        pip install psycopg[binary] pydantic pydantic-settings structlog httpx anyio --quiet 2>/dev/null
+        pip install -e /app --quiet 2>/dev/null
         echo 'Seeding demo data...'
-        python /scripts/seed_graph.py
+        python /scripts/seed_demo.py
         echo 'Seeding complete!'
       "
     networks:
@@ -83,15 +84,75 @@ services:
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       - BASTION_MOCK=false
+      - BASTION_API_KEY=bastion-demo-key-2026
     depends_on:
       cockroachdb:
         condition: service_healthy
+      seed-data:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    networks:
+      - bastion-net
+
+  # ── MCP Server (Agent Tool Interface) ────────────────────────────────
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    ports:
+      - "9997:9997"
+    environment:
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - BASTION_MOCK=false
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9997/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    networks:
+      - bastion-net
+
+  # ── A2A Server (Agent-to-Agent Protocol) ────────────────────────────
+  a2a-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    ports:
+      - "9998:9998"
+    environment:
+      - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
+      - BASTION_MOCK=false
+      - BASTION_API_KEY=bastion-demo-key-2026
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9998/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     deploy:
       resources:

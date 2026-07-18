@@ -8,7 +8,8 @@ const NavBar = memo(function NavBar() {
   const pathname = usePathname();
 
   const links = [
-    { href: "/", label: "Dashboard", icon: "📊" },
+    { href: "/dashboard", label: "Dashboard", icon: "📊" },
+    { href: "/flight-recorder", label: "Flight Recorder", icon: "✈️" },
     { href: "/graph", label: "Knowledge Graph", icon: "🕸️" },
     { href: "/logs", label: "Memory Logs", icon: "📜" },
     { href: "/health", label: "Health", icon: "💓" },

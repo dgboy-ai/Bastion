@@ -38,7 +38,12 @@ export default function CacheCostWidget() {
     let cancelled = false;
     fetchWithTimeout("/api/cache-stats?hours=24")
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((data) => { if (!cancelled) setStats(data); })
+      .then((data) => {
+        if (!cancelled) {
+          // Unwrap apiSuccess envelope
+          setStats(data?.data || data);
+        }
+      })
       .catch((err) => { if (!cancelled) { console.error("[CacheCostWidget] fetch failed:", err); setFetchError(true); } });
     return () => { cancelled = true; };
   }, []);

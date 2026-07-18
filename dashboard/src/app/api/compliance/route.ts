@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockCompliance } from "@/lib/mock-data";

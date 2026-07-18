@@ -29,6 +29,32 @@ _RETRY_DELAY_BASE = 1.0  # seconds, doubles each retry
 _NOTIFICATION_TIMEOUT = 10.0  # seconds per HTTP request
 
 
+def _is_private_url(url: str) -> bool:
+    """SSRF protection: block private/local/internal IPs and domains."""
+    import ipaddress
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+    except Exception:
+        return True
+    if not hostname:
+        return True
+    # Try to parse as IP address
+    try:
+        ip = ipaddress.ip_address(hostname)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    except ValueError:
+        pass
+    # Domain-based blocks
+    blocked = ("localhost", "0.0.0.0", "::1")
+    if hostname.lower() in blocked:
+        return True
+    if hostname.endswith((".local", ".internal", ".localhost")):
+        return True
+    return False
+
+
 class PushNotificationDispatcher:
     """Delivers push notifications to registered callback URLs.
 
@@ -40,6 +66,7 @@ class PushNotificationDispatcher:
         self._registrations: dict[str, str] = {}  # task_id -> callback_url
         self._delivered: set[str] = set()  # task_ids already notified
         self._lock = threading.Lock()
+        self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT)
 
     def register(self, task_id: str, callback_url: str) -> None:
         """Register a callback URL for a task."""
@@ -105,6 +132,10 @@ class PushNotificationDispatcher:
         error: str | None,
     ) -> None:
         """Deliver notification synchronously with retries."""
+        if _is_private_url(callback_url):
+            logger.warning("SSRF blocked callback URL", extra={"task_id": task_id, "callback_url": callback_url})
+            return
+
         payload = {
             "task_id": task_id,
             "status": status,
@@ -116,25 +147,14 @@ class PushNotificationDispatcher:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                with httpx.Client(timeout=_NOTIFICATION_TIMEOUT) as client:
-                    resp = client.post(
-                        callback_url,
-                        json=payload,
-                        headers={"Content-Type": "application/json"},
-                    )
-                    if resp.status_code < 400:
-                        logger.info(
-                            "Push notification delivered",
-                            extra={
-                                "task_id": task_id,
-                                "callback_url": callback_url,
-                                "status_code": resp.status_code,
-                                "attempt": attempt + 1,
-                            },
-                        )
-                        return
-                    logger.warning(
-                        "Push notification HTTP error",
+                resp = self._client.post(
+                    callback_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                if resp.status_code < 400:
+                    logger.info(
+                        "Push notification delivered",
                         extra={
                             "task_id": task_id,
                             "callback_url": callback_url,
@@ -142,6 +162,16 @@ class PushNotificationDispatcher:
                             "attempt": attempt + 1,
                         },
                     )
+                    return
+                logger.warning(
+                    "Push notification HTTP error",
+                    extra={
+                        "task_id": task_id,
+                        "callback_url": callback_url,
+                        "status_code": resp.status_code,
+                        "attempt": attempt + 1,
+                    },
+                )
             except Exception as exc:
                 logger.warning(
                     "Push notification delivery error (attempt %d/%d): %s",
@@ -162,7 +192,6 @@ class PushNotificationDispatcher:
 
     def cleanup_delivered(self, max_age_seconds: float = 3600) -> int:
         """Clean up delivered notification records older than max_age."""
-        # For now, just clear the delivered set periodically
         with self._lock:
             count = len(self._delivered)
             self._delivered.clear()
@@ -175,6 +204,10 @@ class PushNotificationDispatcher:
                 "active_registrations": len(self._registrations),
                 "delivered_count": len(self._delivered),
             }
+
+    def close(self) -> None:
+        """Close the HTTP client."""
+        self._client.close()
 
 
 # Global singleton

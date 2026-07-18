@@ -135,15 +135,26 @@ class WebhookNotifier:
     @staticmethod
     def _validate_url(url: str) -> None:
         """Validate URL to prevent SSRF — block private/internal IPs."""
+        import ipaddress
         import urllib.parse
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
         host = parsed.hostname or ""
-        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-            raise ValueError(f"Blocked internal URL: {url}")
-        if any(host.startswith(p) for p in ("169.254.", "10.", "172.16.", "192.168.")):
-            raise ValueError(f"Blocked private IP URL: {url}")
+        if not host:
+            raise ValueError(f"Missing hostname in URL: {url}")
+        # Try to parse as IP address
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                raise ValueError(f"Blocked private/internal IP URL: {url}")
+        except ValueError:
+            # Not an IP — check domain-based blocks
+            blocked_domains = ("localhost", "0.0.0.0", "::1")
+            if host.lower() in blocked_domains:
+                raise ValueError(f"Blocked internal URL: {url}")
+            if host.endswith((".local", ".internal", ".localhost")):
+                raise ValueError(f"Blocked internal domain URL: {url}")
 
     def _http_post(self, url: str, payload: dict[str, Any]) -> None:
         self._validate_url(url)

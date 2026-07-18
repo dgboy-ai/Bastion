@@ -27,8 +27,8 @@ class TestBastionSettings:
         assert settings.aws_region in ("us-east-1", "ap-south-1")  # depends on env
         assert settings.bedrock_read_timeout == 10
         assert settings.bedrock_connect_timeout == 10
-        assert settings.pool_min_size == 1
-        assert settings.pool_max_size == 2
+        assert settings.pool_min_size == 5
+        assert settings.pool_max_size == 20
         assert settings.pool_max_idle_seconds == 300
         assert settings.circuit_breaker_failure_threshold == 5
         assert settings.circuit_breaker_recovery_timeout == 30

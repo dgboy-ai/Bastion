@@ -55,16 +55,28 @@ async def _notify_resource_updated(ctx: Context, uri: str) -> None:
 
 
 _SHARED_POOL: ConnectionPool | None = None
+_SHARED_MEMORY: BastionMemory | None = None
 _API_KEYS: set[str] | None = None
 _RATE_LIMITER: RequestLimiter | None = None
 _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 _INIT_LOCK = threading.Lock()
 
 
+def _get_shared_memory() -> BastionMemory:
+    """Return the shared memory instance used by HTTP health routes."""
+    if _SHARED_MEMORY is not None:
+        return _SHARED_MEMORY
+    # Fallback: create a lightweight memory instance for health checks
+    conn = os.environ.get("BASTION_CONN", "")
+    is_mock = not conn
+    return BastionMemory("_healthcheck", connection_string=conn, mock=is_mock)
+
+
 def close_shared_pool() -> None:
-    global _SHARED_POOL
+    global _SHARED_POOL, _SHARED_MEMORY
     pool = _SHARED_POOL
     _SHARED_POOL = None
+    _SHARED_MEMORY = None
     if pool is not None:
         try:
             pool.close_all()
@@ -92,6 +104,11 @@ def _check_auth(headers: dict[str, str]) -> bool:
 
     keys = _load_api_keys()
     if not keys:
+        # In mock mode, allow unauthenticated access
+        if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
+            return True
+        # In production, require API key
+        logger.warning("No API keys configured — MCP server is locked down")
         return False
     auth = headers.get("authorization") or headers.get("Authorization") or ""
     provided = ""
@@ -150,6 +167,10 @@ def create_server(
     conn = connection_string or os.environ.get("BASTION_CONN", "")
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
+
+    # Store shared memory globally for health check routes
+    global _SHARED_MEMORY
+    _SHARED_MEMORY = _shared
 
     if (stateless or multi_tenant) and not is_mock:
         global _SHARED_POOL
@@ -498,7 +519,7 @@ def create_server(
             report = getattr(exc, "report", None)
             result = {
                 "error": "security_block",
-                "detail": str(exc),
+                "detail": "Content blocked by security guard",
                 "is_safe": False,
             }
             if report:
@@ -510,7 +531,8 @@ def create_server(
                 result["poisoning_risk"] = report.poisoning_risk
             return json.dumps(result, indent=2)
         except Exception as exc:
-            return json.dumps({"error": f"Store failed: {exc}"})
+            logger.exception("memory_store failed")
+            return json.dumps({"error": "Store operation failed — check server logs for details"})
         await _notify_resource_updated(ctx, "bastion://stats")
         await _notify_resource_updated(ctx, f"bastion://memory/{record.memory_id}")
         return json.dumps(record.to_dict(), indent=2, default=str)
@@ -551,7 +573,8 @@ def create_server(
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
             logger.exception("memory_timetravel failed")
-            return json.dumps({"error": f"Time travel query failed: {type(e).__name__}"})
+            logger.exception("memory_timetravel failed")
+            return json.dumps({"error": "Time travel query failed — check server logs"})
 
     @mcp.tool(
         name="memory_audit",
@@ -572,7 +595,8 @@ def create_server(
             return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
         except Exception as e:
             logger.exception("memory_audit failed")
-            return json.dumps({"error": f"Audit query failed: {type(e).__name__}"})
+            logger.exception("memory_audit failed")
+            return json.dumps({"error": "Audit query failed — check server logs"})
 
     @mcp.tool(
         name="memory_heal",
@@ -598,7 +622,8 @@ def create_server(
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             logger.exception("memory_heal failed")
-            return json.dumps({"error": f"Self-heal failed: {type(e).__name__}"})
+            logger.exception("memory_heal failed")
+            return json.dumps({"error": "Self-heal failed — check server logs"})
 
     @mcp.tool(
         name="memory_delete",
@@ -626,7 +651,8 @@ def create_server(
             await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
             return json.dumps({"deleted": memory_id, "status": "ok"}, indent=2)
         except Exception as exc:
-            return json.dumps({"error": f"Delete failed: {exc}"})
+            logger.exception("memory_delete failed")
+            return json.dumps({"error": "Delete operation failed — check server logs"})
 
     @mcp.tool(
         name="memory_pin",
@@ -667,7 +693,8 @@ def create_server(
             return json.dumps(record.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("memory_pin failed")
-            return json.dumps({"error": f"Pin failed: {type(e).__name__}"})
+            logger.exception("memory_pin failed")
+            return json.dumps({"error": "Pin failed — check server logs"})
 
     @mcp.tool(
         name="memory_get_pinned",
@@ -694,7 +721,8 @@ def create_server(
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
             logger.exception("memory_get_pinned failed")
-            return json.dumps({"error": f"Get pinned failed: {type(e).__name__}"})
+            logger.exception("memory_get_pinned failed")
+            return json.dumps({"error": "Get pinned failed — check server logs"})
 
     @mcp.tool(
         name="memory_list",
@@ -728,7 +756,8 @@ def create_server(
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
             logger.exception("memory_list failed")
-            return json.dumps({"error": f"List failed: {type(e).__name__}"})
+            logger.exception("memory_list failed")
+            return json.dumps({"error": "List failed — check server logs"})
 
     @mcp.tool(
         name="memory_correct",
@@ -764,7 +793,8 @@ def create_server(
             return json.dumps(record.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("memory_correct failed")
-            return json.dumps({"error": f"Correct failed: {type(e).__name__}"})
+            logger.exception("memory_correct failed")
+            return json.dumps({"error": "Correct failed — check server logs"})
 
     @mcp.tool(
         name="memory_health",
@@ -787,7 +817,8 @@ def create_server(
             health = await anyio.to_thread.run_sync(mem.memory_health)
             return json.dumps(health, indent=2, default=str)
         except Exception as exc:
-            return json.dumps({"error": f"Health check failed: {exc}"})
+            logger.exception("memory_health failed")
+            return json.dumps({"error": "Health check failed — check server logs"})
 
     @mcp.tool(
         name="memory_apply_patch",
@@ -823,7 +854,8 @@ def create_server(
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             logger.exception("memory_apply_patch failed")
-            return json.dumps({"error": f"Patch failed: {type(e).__name__}"})
+            logger.exception("memory_apply_patch failed")
+            return json.dumps({"error": "Patch failed — check server logs"})
 
     @mcp.tool(
         name="resolve_conflict",
@@ -860,7 +892,8 @@ def create_server(
             return json.dumps({"merged": merged}, indent=2, default=str)
         except Exception as e:
             logger.exception("resolve_conflict failed")
-            return json.dumps({"error": f"Conflict resolution failed: {type(e).__name__}"})
+            logger.exception("resolve_conflict failed")
+            return json.dumps({"error": "Conflict resolution failed — check server logs"})
 
     @mcp.tool(
         name="ltm_check_reuse",
@@ -913,7 +946,8 @@ def create_server(
             }, indent=2, default=str)
         except Exception as e:
             logger.exception("ltm_check_reuse failed")
-            return json.dumps({"error": f"LTM check failed: {type(e).__name__}"})
+            logger.exception("ltm_check_reuse failed")
+            return json.dumps({"error": "LTM check failed — check server logs"})
 
     @mcp.tool(
         name="ltm_store_analysis",
@@ -956,7 +990,8 @@ def create_server(
             return json.dumps(store_result.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("ltm_store_analysis failed")
-            return json.dumps({"error": f"LTM store failed: {type(e).__name__}"})
+            logger.exception("ltm_store_analysis failed")
+            return json.dumps({"error": "LTM store failed — check server logs"})
 
     @mcp.tool(
         name="ltm_invalidate",
@@ -991,7 +1026,8 @@ def create_server(
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             logger.exception("ltm_invalidate failed")
-            return json.dumps({"error": f"LTM invalidate failed: {type(e).__name__}"})
+            logger.exception("ltm_invalidate failed")
+            return json.dumps({"error": "LTM invalidate failed — check server logs"})
 
     @mcp.tool(
         name="detect_contradictions",
@@ -1031,7 +1067,8 @@ def create_server(
             return json.dumps(result.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("detect_contradictions failed")
-            return json.dumps({"error": f"Contradiction detection failed: {type(e).__name__}"})
+            logger.exception("detect_contradictions failed")
+            return json.dumps({"error": "Contradiction detection failed — check server logs"})
 
     @mcp.tool(
         name="scan_all_contradictions",
@@ -1098,7 +1135,8 @@ def create_server(
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(journal.to_dict(), indent=2, default=str)
         except Exception as exc:
-            return json.dumps({"error": f"Dream failed: {exc}"})
+            logger.exception("dream failed")
+            return json.dumps({"error": "Dream consolidation failed — check server logs"})
 
     @mcp.tool(
         name="dream_history",
@@ -1124,7 +1162,8 @@ def create_server(
             history = await anyio.to_thread.run_sync(dreamer.get_dream_history)
             return json.dumps(history, indent=2, default=str)
         except Exception as exc:
-            return json.dumps({"error": f"Dream history failed: {exc}"})
+            logger.exception("dream_history failed")
+            return json.dumps({"error": "Dream history failed — check server logs"})
 
     @mcp.tool(
         name="detect_observations",
@@ -1203,7 +1242,8 @@ def create_server(
                 default=str,
             )
         except Exception as exc:
-            return json.dumps({"error": f"Multi-signal search failed: {exc}"})
+            logger.exception("multi_signal_search failed")
+            return json.dumps({"error": "Search failed — check server logs"})
 
     @mcp.tool(
         name="context_pack",
@@ -1346,7 +1386,8 @@ def create_server(
                 finally:
                     pool.release(conn)
             except Exception as e:
-                schema = {"error": str(e)}
+                logger.exception("agent_schema failed")
+                schema = {"error": "Schema query failed — check server logs"}
 
         return json.dumps(schema, indent=2, default=str)
 
@@ -1568,11 +1609,14 @@ def create_server(
     async def healthz_route(request: Any) -> Any:
         from starlette.responses import JSONResponse
 
+        # Count registered tools dynamically
+        tool_count = len(mcp._tool_manager._tools) if hasattr(mcp, "_tool_manager") else 0
         return JSONResponse(
             {
                 "status": "ok",
                 "service": "bastion-mcp",
-                "tools": 25,
+                "version": VERSION,
+                "tools": tool_count,
             }
         )
 
@@ -1637,9 +1681,19 @@ def _make_http_app(mcp: FastMCP) -> Any:
         }
     )
 
+    _MAX_REQUEST_BYTES = 1_048_576  # 1MB limit for MCP requests
+
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Any:
             path = request.url.path
+
+            # Request size limit — prevent OOM from oversized payloads
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > _MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    {"error": "Request too large — maximum 1MB allowed"},
+                    status_code=413,
+                )
 
             # PKCE capture: intercept token endpoint to extract code_verifier
             if path.rstrip("/") in ("/token", "/mcp/token") and request.method == "POST":

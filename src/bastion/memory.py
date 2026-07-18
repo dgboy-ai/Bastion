@@ -99,6 +99,24 @@ _MAX_MEMORY_TYPE_LENGTH = 100
 _ALLOWED_AGENT_FILTERS = frozenset({"agent_id = %s", "agent_id LIKE %s"})
 _ALLOWED_REGION_CLAUSES = frozenset({"", "AND crdb_region = %s"})
 
+# TTL configuration per memory type (seconds)
+# Short-term memories expire quickly, forensic records never expire
+_MEMORY_TTL_SECONDS: dict[str, int | None] = {
+    "episodic": 86400,        # 24 hours — conversation history
+    "conversation": 86400,    # 24 hours — chat messages
+    "session": 3600,          # 1 hour — working memory
+    "task": 604800,           # 7 days — task state
+    "fact": None,             # Never expires — long-term knowledge
+    "semantic": None,         # Never expires — semantic memory
+    "procedural": None,       # Never expires — workflow patterns
+    "preference": None,       # Never expires — user preferences
+    "learned": None,          # Never expires — learned behaviors
+    "system_event": None,     # Never expires — system events
+    "security": None,         # Never expires — security records
+    "thought_node": None,     # Never expires — reasoning traces
+    "saga": None,             # Never expires — transaction logs
+}
+
 
 def _validate_memory_type(memory_type: str) -> None:
     if not memory_type or not isinstance(memory_type, str):
@@ -308,6 +326,11 @@ class BastionMemory:
     ) -> MemoryRecord:
         _validate_memory_type(memory_type)
         _validate_content(content)
+
+        # Apply default TTL based on memory type if not explicitly set
+        if expires_in_seconds is None and memory_type in _MEMORY_TTL_SECONDS:
+            expires_in_seconds = _MEMORY_TTL_SECONDS[memory_type]
+
         _validate_expires_in(expires_in_seconds)
         if region is not None and (not isinstance(region, str) or not region.strip()):
             raise ValueError(f"region must be a non-empty string when provided, got {region!r}")
@@ -329,6 +352,14 @@ class BastionMemory:
                     pii_types=pii_types,
                 )
                 content = redacted_content
+        else:
+            # Audit trail for guard bypass — track which internal paths skip security
+            logger.info(
+                "Guard bypassed via _skip_guard=True",
+                agent_id=self.agent_id,
+                memory_type=memory_type,
+                content_preview=content[:80] if content else "",
+            )
 
         if self._mock:
             record = _mock.mock_store_memory(
@@ -793,6 +824,22 @@ class BastionMemory:
         self._set_rls_context(conn)
         _released = False
         try:
+            # Detect if we're using hash-based embeddings (not semantic)
+            # Hash embeddings produce random cosine similarity — always use keyword search
+            using_hash_embeddings = self._mock or os.environ.get("BASTION_EMBED_FALLBACK")
+            if not using_hash_embeddings and not self._bedrock_cb.state.value == "open":
+                # Bedrock might be available, try vector search
+                try:
+                    from sentence_transformers import SentenceTransformer
+                    # If local model is available, vector search is semantic
+                except ImportError:
+                    # No local model and Bedrock may be down — use keyword
+                    using_hash_embeddings = True
+
+            if using_hash_embeddings:
+                ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
+                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id)
+
             query_vector = self._embed(query)
             query_vector_str = json.dumps(query_vector)
             settings = get_settings()
@@ -839,6 +886,15 @@ class BastionMemory:
                     decay = float(r[-1])
                     if decay >= threshold:
                         results.append(MemoryRecord.from_row(r[:-1]))
+
+                # If vector search returned nothing, fall back to keyword search
+                # This handles hash-based embeddings where cosine similarity is meaningless
+                if not results:
+                    ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
+                    keyword_results = self._search_keyword_fallback(query, k, 0.0, memory_type, ns_agent_id)
+                    if keyword_results:
+                        return keyword_results
+
                 return results[:k]
         except Exception as e:
             # Graceful degradation: fall back to keyword search on embedding/index errors
@@ -971,6 +1027,10 @@ class BastionMemory:
                 # use timestamp filtering as a degraded mode
                 logger.debug("AS OF SYSTEM TIME failed, using fallback: %s", primary_exc)
                 try:
+                    conn.rollback()  # Reset connection state before fallback
+                except Exception:
+                    pass
+                try:
                     with conn.cursor() as cur:
                         cur.execute(
                             f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1091,6 +1151,7 @@ class BastionMemory:
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         try:
             # Try LLM-based merge first (uses Groq for speed, falls back to heuristic)
             merged = self._smart_merge(fact_a, fact_b, context)
@@ -1387,20 +1448,23 @@ class BastionMemory:
         if self._mock:
             return _hash_fallback_embed(text)
 
-        # Try Bedrock first (if not explicitly disabled)
-        if not os.environ.get("BASTION_EMBED_FALLBACK"):
-            try:
-                bedrock_result = self._embed_bedrock(text)
-                if bedrock_result is not None:
-                    return bedrock_result
-            except Exception:
-                pass
+        # If fallback is forced, skip all remote/local models — use hash directly
+        if os.environ.get("BASTION_EMBED_FALLBACK"):
+            return _hash_fallback_embed(text)
+
+        # Try Bedrock first
+        try:
+            bedrock_result = self._embed_bedrock(text)
+            if bedrock_result is not None:
+                return bedrock_result
+        except Exception:
+            logger.debug("Bedrock embedding unavailable, trying local fallback")
 
         # Try all-MiniLM (local, no API key needed)
         try:
             return self._embed_local(text)
         except Exception:
-            pass
+            logger.debug("Local embedding unavailable, using hash fallback")
 
         # Final fallback: hash-based
         return _hash_fallback_embed(text)
@@ -1443,7 +1507,11 @@ class BastionMemory:
         return None
 
     def _embed_local(self, text: str) -> list[float]:
-        """Use all-MiniLM-L6-v2 for local embeddings (384-dim)."""
+        """Use all-MiniLM-L6-v2 for local embeddings (384-dim).
+
+        If the local model dimension doesn't match the target, falls back to
+        hash-based embedding rather than zero-padding (which degrades search quality).
+        """
         if not hasattr(self, "_local_model"):
             try:
                 from sentence_transformers import SentenceTransformer
@@ -1451,11 +1519,11 @@ class BastionMemory:
             except ImportError:
                 raise RuntimeError("sentence-transformers not installed")
         embedding = self._local_model.encode(text).tolist()
-        # all-MiniLM produces 384-dim, pad to 1024 if needed
         settings = get_settings()
         target_dim = settings.embed_dim
-        if len(embedding) < target_dim:
-            embedding.extend([0.0] * (target_dim - len(embedding)))
+        # If dimensions don't match, use hash fallback instead of zero-padding
+        if len(embedding) != target_dim:
+            return _hash_fallback_embed(text)
         return embedding
 
     def _search_keyword_fallback(

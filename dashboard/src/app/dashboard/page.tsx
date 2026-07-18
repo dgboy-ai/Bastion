@@ -12,6 +12,9 @@ const LiveEventFeed = dynamic(() => import("@/components/LiveEventFeed"), { ssr:
 const LtmGatewayWidget = dynamic(() => import("@/components/LtmGatewayWidget"), { ssr: false });
 const RegionMapWidget = dynamic(() => import("@/components/RegionMapWidget"), { ssr: false });
 const ObservationsWidget = dynamic(() => import("@/components/ObservationsWidget"), { ssr: false });
+const HybridSearchPanel = dynamic(() => import("@/components/HybridSearchPanel"), { ssr: false });
+const HashChainVisualizer = dynamic(() => import("@/components/HashChainVisualizer"), { ssr: false });
+const FaultToleranceVisualizer = dynamic(() => import("@/components/FaultToleranceVisualizer"), { ssr: false });
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 const C = {
@@ -448,13 +451,22 @@ export default function DashboardPage() {
           </Panel>
         </div>
 
-        {/* Row 6: Live Stream */}
+        {/* Row 6: Hybrid Search */}
+        <HybridSearchPanel />
+
+        {/* Row 7: Hash Chain Visualization */}
+        <HashChainVisualizer />
+
+        {/* Row 8: Fault Tolerance Demo */}
+        <FaultToleranceVisualizer />
+
+        {/* Row 9: Live Stream */}
         <Panel>
           <SectionHeader title="Live Event Stream" subtitle="Real-time SSE events" action={<Badge color={C.emerald}>● Live</Badge>} />
           <LiveEventFeed />
         </Panel>
 
-        {/* Row 7: MemoryGuard */}
+        {/* Row 10: MemoryGuard */}
         <Panel glow>
           <SectionHeader title="MemoryGuard — OWASP ASI06" subtitle="Real-time prompt injection, secret leakage & hash chain integrity scanning" />
           <MemoryGuardPanel />

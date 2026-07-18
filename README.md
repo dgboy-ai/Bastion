@@ -5,10 +5,11 @@
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 [![Tests](https://img.shields.io/badge/Tests-1159%20passed-brightgreen)](#test-suite)
+[![Deploy](https://img.shields.io/badge/Deploy-AWS-orange)](terraform/)
 
 > **When an agent is poisoned, Bastion detects it, travels back to inspect the prior belief, and restores a verified state with cryptographic proof.**
 
-[Live Demo](https://bastion-self.vercel.app/) · [Dashboard](https://bastion-self.vercel.app/dashboard) · [Documentation](https://bastion-self.vercel.app/docs)
+[Live Demo](https://bastion-self.vercel.app/) · [Dashboard](https://bastion-self.vercel.app/dashboard) · [Flight Recorder](https://bastion-self.vercel.app/flight-recorder) · [Documentation](https://bastion-self.vercel.app/docs)
 
 ---
 
@@ -25,12 +26,12 @@ Traditional databases can't help. They weren't built for:
 
 Bastion is the forensic system of record for autonomous agents. Built on **CockroachDB** and **AWS**, it provides:
 
-| Capability | What It Does |
-|------------|--------------|
-| **Detect** | OWASP ASI06 guard blocks poisoned memories instantly |
-| **Investigate** | Time-travel to see exactly what the agent knew at any past moment |
-| **Recover** | Hash chains prove integrity, restore verified state |
-| **Audit** | Every operation logged with timestamps, hashes, and agent IDs |
+| Capability | What It Does | CockroachDB Feature |
+|------------|--------------|---------------------|
+| **Detect** | OWASP ASI06 guard blocks poisoned memories instantly | SERIALIZABLE isolation |
+| **Investigate** | Time-travel to see exactly what the agent knew at any past moment | AS OF SYSTEM TIME |
+| **Recover** | Hash chains prove integrity, restore verified state | SHA-256 + C-SPANN vector index |
+| **Audit** | Every operation logged with timestamps, hashes, and agent IDs | Append-only + CDC changefeeds |
 
 ---
 
@@ -44,6 +45,7 @@ docker compose -f docker-compose.demo.yml up
 
 # Dashboard: http://localhost:3000
 # CockroachDB: http://localhost:8080
+# MCP Server: http://localhost:9997
 ```
 
 Or with Python:
@@ -127,6 +129,22 @@ python scripts/demo.py
 8. Audit trail logs every operation (append-only)
 9. Time-travel queries use AS OF SYSTEM TIME (MVCC)
 ```
+
+---
+
+## Three-Layer Memory Architecture
+
+Bastion implements a complete memory operating system for AI agents:
+
+| Layer | What It Is | CockroachDB Feature | TTL |
+|-------|-----------|---------------------|-----|
+| **Short-Term** | Conversational history, session state | Row-level TTL, JSONB | 24 hours |
+| **Long-Term** | Persistent knowledge, semantic recall | C-SPANN vector index | Never |
+| **Forensic** | Cryptographic proof of integrity | Hash chains, AS OF SYSTEM TIME | Never |
+
+### Why This Matters
+
+> "Every AI agent has short-term and long-term memory. But only Bastion has **forensic memory** — the ability to prove what the agent knew, when it knew it, and whether anyone tampered with it."
 
 ---
 
@@ -315,6 +333,9 @@ if result:
 ### 5. MCP Server (25 Tools)
 Connect from Claude, Cursor, LangGraph, or any MCP-compatible client.
 
+**Claude Desktop Configuration:**
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
 ```json
 {
   "mcpServers": {
@@ -327,6 +348,29 @@ Connect from Claude, Cursor, LangGraph, or any MCP-compatible client.
     }
   }
 }
+```
+
+**Cursor / VS Code Configuration:**
+Add to `.vscode/settings.json` or Cursor MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=disable"
+      }
+    }
+  }
+}
+```
+
+**Docker (Remote MCP Server):**
+```bash
+docker run -p 9997:9997 -e BASTION_CONN="postgresql://..." bastion-mcp
+# Then configure MCP client to connect to http://localhost:9997
 ```
 
 ---

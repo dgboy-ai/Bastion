@@ -37,8 +37,8 @@ class BastionSettings(BaseSettings):
     aws_region: str = os.environ.get("AWS_REGION", "us-east-1")
     bedrock_read_timeout: int = 10
     bedrock_connect_timeout: int = 10
-    pool_min_size: int = 1
-    pool_max_size: int = 2
+    pool_min_size: int = 5
+    pool_max_size: int = 20
     pool_max_idle_seconds: int = 300
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: int = 30

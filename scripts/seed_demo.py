@@ -6,12 +6,14 @@ Creates:
 - 3 demo agents (customer-support, code-reviewer, research-assistant)
 - 50+ memories per agent with realistic content
 - Knowledge graph with entities and relations
-- Hash chain integrity across all memories
+- Hash chain integrity across all memories (uses HMAC-SHA256)
 """
 
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import sys
 import uuid
 
@@ -32,6 +34,21 @@ cur.execute("DELETE FROM agent_entities")
 cur.execute("DELETE FROM agent_memory WHERE agent_id LIKE 'demo-%'")
 conn.commit()
 
+# HMAC secret for hash chain (matches crypto.py)
+_HMAC_SECRET = os.environ.get("BASTION_HMAC_SECRET", "").encode()
+if not _HMAC_SECRET:
+    # Try to load from disk (matches crypto.py persistence)
+    secret_file = os.path.expanduser("~/.bastion/hmac.key")
+    try:
+        if os.path.exists(secret_file):
+            with open(secret_file, "rb") as f:
+                _HMAC_SECRET = f.read()
+    except Exception:
+        pass
+if not _HMAC_SECRET:
+    _HMAC_SECRET = secrets.token_bytes(32)
+    print("WARNING: Using random HMAC secret — hash chains will not match production")
+
 # Mock 1024-dim embedding
 def mock_embedding(text):
     digest = hashlib.sha256(text.encode()).digest()
@@ -43,7 +60,10 @@ def mock_embedding(text):
     return [v / norm for v in raw]
 
 def hash_chain(content, prev_hash):
-    return hashlib.sha256((content + (prev_hash or "")).encode()).hexdigest()
+    """Compute HMAC-SHA256 hash (matches bastion.crypto.compute_hash)."""
+    meta_str = ""
+    payload = content + meta_str + (prev_hash or "")
+    return hmac.new(_HMAC_SECRET, payload.encode(), hashlib.sha256).hexdigest()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Agent 1: Customer Support
@@ -221,6 +241,23 @@ print("Seeding research-assistant agent...")
 agent3 = "demo-research-assistant"
 prev_hash = None
 memories_3 = [
+    # === EPISODIC MEMORIES (what happened) ===
+    ("episodic", "July 10, 2026: Customer #1042 reported 504 errors on /api/dashboard. Investigated connection pool exhaustion. Resolved by increasing max_connections from 50 to 100."),
+    ("episodic", "July 12, 2026: Code review for PR #4525 — added circuit breaker for Bedrock API. Caught missing retry logic before merge. 3 iterations needed."),
+    ("episodic", "July 14, 2026: Deployed Bastion v0.6.0 to production. 22 memories stored, hash chain verified. All 10/10 features confirmed working."),
+    # === SEMANTIC MEMORIES (what is true) ===
+    ("semantic", "CockroachDB v25.2 introduces C-SPANN vector indexing with 94% compression vs pgvector."),
+    ("semantic", "SERIALIZABLE isolation is mandatory for agentic workloads. READ COMMITTED causes cascading errors when agents compound bad data."),
+    ("semantic", "Row-level TTL in CockroachDB automatically expires rows without application-level cleanup code."),
+    # === PROCEDURAL MEMORIES (how to do things) ===
+    ("procedural", "When debugging 504 errors: 1) Check connection pool metrics 2) Verify statement_timeout 3) Run EXPLAIN ANALYZE 4) Check for full table scans 5) Escalate if >4 hours."),
+    ("procedural", "PII scan workflow: Detect email/phone/SSN/CC → Redact in-place → Log detection type → Compute hash on redacted content → Store with PII flag in metadata."),
+    ("procedural", "Memory consolidation (dreaming) process: Fetch recent memories → Find duplicates via Jaccard similarity → Merge duplicates → Promote high-value episodic to semantic → Prune expired."),
+    # === SECURITY MEMORIES (threat intelligence) ===
+    ("security", "OWASP ASI06: Memory poisoning is the #3 risk for agentic systems. Mitigation: SHA-256 hash chains + content validation + trust scoring."),
+    ("security", "Prompt injection patterns blocked: 'ignore previous instructions', 'admin override', 'system prompt', 'you are now', 'disregard all'. 9 regex patterns + LLM classifier."),
+    ("security", "Secret detection patterns: AWS keys (AKIA...), GitHub tokens (ghp_...), private keys (-----BEGIN), generic API keys. All blocked before storage."),
+    # === FACT MEMORIES (standard knowledge) ===
     ("fact", "CockroachDB v25.2 introduces C-SPANN vector indexing with 94% compression vs pgvector."),
     ("learned", "C-SPANN uses prefix columns for multi-tenant isolation. Ideal for SaaS agent memory."),
     ("fact", "AS OF SYSTEM TIME enables point-in-time queries without manual snapshots."),
@@ -340,6 +377,34 @@ for rid, aid, src, tgt, rtype, conf in relations:
         """INSERT INTO agent_relations (relation_id, agent_id, source_entity_id, target_entity_id,
            relation_type, confidence) VALUES (%s, %s, %s, %s, %s, %s)""",
         (rid, aid, src, tgt, rtype, conf),
+    )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Audit Trail Entries
+# ══════════════════════════════════════════════════════════════════════════════
+print("Seeding audit trail...")
+audit_actions = [
+    ("memory_store", {"memory_type": "fact", "content_preview": "Customer #1042 prefers email"}),
+    ("memory_store", {"memory_type": "fact", "content_preview": "504 errors on /api/dashboard"}),
+    ("memory_store", {"memory_type": "preference", "content_preview": "Enterprise plan support"}),
+    ("memory_store", {"memory_type": "instruction", "content_preview": "Check connection pool metrics"}),
+    ("memory_store", {"memory_type": "learned", "content_preview": "504 errors correlate with peak hours"}),
+    ("memory_search", {"query": "connection pool", "results_count": 5}),
+    ("memory_store", {"memory_type": "fact", "content_preview": "CockroachDB v25.2 C-SPANN"}),
+    ("memory_store", {"memory_type": "semantic", "content_preview": "SERIALIZABLE isolation"}),
+    ("memory_store", {"memory_type": "security", "content_preview": "OWASP ASI06 memory poisoning"}),
+    ("hash_verify", {"chain_length": 10, "status": "valid"}),
+    ("memory_store", {"memory_type": "procedural", "content_preview": "Debugging 504 errors workflow"}),
+    ("memory_store", {"memory_type": "episodic", "content_preview": "July 10: 504 errors reported"}),
+    ("memory_store", {"memory_type": "fact", "content_preview": "REGIONAL BY ROW configuration"}),
+    ("memory_store", {"memory_type": "preference", "content_preview": "Weekly status reports"}),
+    ("guard_scan", {"findings": 0, "status": "passed"}),
+]
+
+for action, details in audit_actions:
+    cur.execute(
+        "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+        (agent1, str(uuid.uuid4()), action, json.dumps(details)),
     )
 
 conn.commit()

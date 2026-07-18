@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import threading
 import json
 import logging
 import os
@@ -345,7 +346,9 @@ def create_a2a_server(
     # -- Metrics state -----------------------------------------------------
 
     _rate_buckets: dict[str, list[float]] = defaultdict(list)
+    _rate_buckets_lock = threading.Lock()
     _rate_checks = 0
+    _rate_max_ips = 10000  # Maximum distinct IPs to track
     _metrics_requests_total: dict[tuple[str, str, int], int] = defaultdict(int)
     _metrics_durations: dict[tuple[str, str], deque[float]] = defaultdict(lambda: deque(maxlen=500))
     _metrics_rate_limit_hits = 0
@@ -355,23 +358,29 @@ def create_a2a_server(
         nonlocal _rate_checks
         now = time.time()
         window_start = now - _RATE_LIMIT_WINDOW
-        bucket = _rate_buckets[client_ip]
-        while bucket and bucket[0] < window_start:
-            bucket.pop(0)
-        if len(bucket) >= _RATE_LIMIT_MAX:
-            return False
-        bucket.append(now)
-        _rate_checks += 1
-        # Periodic cleanup: evict empty or stale buckets, cap at 10k distinct IPs
-        if _rate_checks % 1000 == 0:
-            stale = [ip for ip, ts in _rate_buckets.items() if not ts]
-            for ip in stale:
-                del _rate_buckets[ip]
-            if len(_rate_buckets) > 10000:
-                sorted_ips = sorted(_rate_buckets, key=lambda ip: _rate_buckets[ip][-1] if _rate_buckets[ip] else 0)
-                for ip in sorted_ips[:-5000]:
+        with _rate_buckets_lock:
+            bucket = _rate_buckets[client_ip]
+            while bucket and bucket[0] < window_start:
+                bucket.pop(0)
+            if len(bucket) >= _RATE_LIMIT_MAX:
+                return False
+            bucket.append(now)
+            _rate_checks += 1
+            # Periodic cleanup: evict empty buckets and cap at max IPs
+            if _rate_checks % 100 == 0:
+                # Remove empty buckets
+                stale = [ip for ip, ts in list(_rate_buckets.items()) if not ts]
+                for ip in stale:
                     del _rate_buckets[ip]
-        return True
+                # If still over limit, remove oldest IPs
+                if len(_rate_buckets) > _rate_max_ips:
+                    sorted_ips = sorted(
+                        _rate_buckets.keys(),
+                        key=lambda ip: max(_rate_buckets[ip]) if _rate_buckets[ip] else 0,
+                    )
+                    for ip in sorted_ips[:len(sorted_ips) - _rate_max_ips // 2]:
+                        _rate_buckets.pop(ip, None)
+            return True
 
     def _check_version(request: Request) -> bool:
         version = request.headers.get("a2a-version", "")
@@ -386,6 +395,34 @@ def create_a2a_server(
     _signature_cache_maxsize = 100  # prevent unbounded memory growth (DoS)
     _strict_auth = os.environ.get("BASTION_A2A_STRICT", "").lower() in ("true", "1", "yes")
 
+    def _is_safe_url(url: str) -> bool:
+        """Check if a URL is safe to fetch (no private/internal IPs)."""
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in ("https",):
+                return False
+            hostname = parsed.hostname or ""
+            if not hostname:
+                return False
+            # Block private/internal/link-local/loopback ranges
+            import ipaddress
+            try:
+                ip = ipaddress.ip_address(hostname)
+                return not (ip.is_private or ip.is_loopback or ip.is_link_local
+                            or ip.is_reserved or ip.is_multicast)
+            except ValueError:
+                # hostname is a domain — block localhost variants
+                blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
+                if hostname.lower() in blocked:
+                    return False
+                # Block .local, .internal TLDs
+                if hostname.endswith((".local", ".internal", ".localhost")):
+                    return False
+                return True
+        except Exception:
+            return False
+
     async def _verify_sender_signature(request: Request, body: bytes) -> bool:
         """Verify Ed25519 signature on incoming SendMessage requests."""
         sender_url = request.headers.get("X-Sender-URL", "")
@@ -394,6 +431,11 @@ def create_a2a_server(
         # If no signature headers, allow (backwards compatible)
         if not sender_url or not signature_b64:
             return True
+
+        # SSRF protection: validate URL before fetching
+        if not _is_safe_url(sender_url):
+            logger.warning("Blocked SSRF attempt via X-Sender-URL", extra={"sender_url": sender_url})
+            return False
 
         # Check cache
         now = time.time()
@@ -405,7 +447,7 @@ def create_a2a_server(
             try:
                 import httpx
 
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
                     resp = await client.get(f"{sender_url.rstrip('/')}/.well-known/agent-card.json")
                     if resp.status_code != 200:
                         logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
@@ -453,36 +495,51 @@ def create_a2a_server(
     if not _api_key:
         logger.warning(
             "BASTION_API_KEY is not set — authentication is DISABLED. "
-            "Set BASTION_API_KEY in your environment or .env file."
+            "Set BASTION_API_KEY in your environment or .env file. "
+            "NEVER deploy to production without authentication."
         )
 
     # Brute-force protection: track failed auth attempts per IP
     _auth_failures: dict[str, list[float]] = defaultdict(list)
+    _auth_failures_lock = threading.Lock()
     _auth_lockout_seconds = 300  # 5-minute lockout
     _auth_max_failures = 10  # lockout after 10 failures in window
     _auth_window_seconds = 600  # 10-minute sliding window
+    _auth_max_ips = 10000  # Cap IP tracking to prevent memory exhaustion
 
     def _check_brute_force(client_ip: str) -> bool:
         """Returns True if IP is locked out due to too many failed auth attempts."""
         now = time.time()
         window_start = now - _auth_window_seconds
-        failures = _auth_failures[client_ip]
-        # Prune old failures
-        _auth_failures[client_ip] = [t for t in failures if t > window_start]
-        if len(_auth_failures[client_ip]) >= _auth_max_failures:
-            return True  # Locked out
-        return False
+        with _auth_failures_lock:
+            # Evict oldest IPs if tracking dict grows too large
+            if len(_auth_failures) > _auth_max_ips:
+                oldest_ips = sorted(_auth_failures.keys(), key=lambda ip: max(_auth_failures[ip] or [0]))[:1000]
+                for ip in oldest_ips:
+                    _auth_failures.pop(ip, None)
+            failures = _auth_failures[client_ip]
+            # Prune old failures
+            _auth_failures[client_ip] = [t for t in failures if t > window_start]
+            if len(_auth_failures[client_ip]) >= _auth_max_failures:
+                return True  # Locked out
+            return False
 
     def _record_auth_failure(client_ip: str) -> None:
-        _auth_failures[client_ip].append(time.time())
+        with _auth_failures_lock:
+            _auth_failures[client_ip].append(time.time())
 
     def _clear_auth_failures(client_ip: str) -> None:
-        _auth_failures.pop(client_ip, None)
+        with _auth_failures_lock:
+            _auth_failures.pop(client_ip, None)
 
     def _verify_api_key(provided: str) -> bool:
         import secrets as _secrets
         if not _api_key:
-            return True  # No key configured = open (with warning)
+            # In mock mode, allow unauthenticated access
+            if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
+                return True
+            # In production, require API key
+            return False
         return _secrets.compare_digest(provided, _api_key)
 
     # -- Task State Machine Validation ------------------------------------
@@ -523,8 +580,14 @@ def create_a2a_server(
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
         nonlocal _metrics_requests_total, _metrics_durations, _metrics_rate_limit_hits
+        # Only trust X-Forwarded-For behind known reverse proxies
+        # Otherwise use direct client IP to prevent spoofing
         forwarded = request.headers.get("X-Forwarded-For", "")
-        client_ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+        client_ip = (
+            forwarded.split(",")[0].strip()
+            if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
+            else (request.client.host if request.client else "unknown")
+        )
         if _api_key and request.url.path not in ("/healthz", "/readyz"):
             if _check_brute_force(client_ip):
                 logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
@@ -1140,7 +1203,7 @@ def main():
 
     mock = "--mock" in sys.argv or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
     port = int(os.environ.get("A2A_PORT", "9998"))
-    host = os.environ.get("A2A_HOST", "0.0.0.0")
+    host = os.environ.get("A2A_HOST", "127.0.0.1")
 
     app, memory = create_a2a_server(mock=mock, host=host, port=port)
 

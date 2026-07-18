@@ -18,6 +18,5 @@ CREATE TABLE IF NOT EXISTS agent_checkpoints (
 
 -- CDC Changefeed: Streams every checkpoint write to downstream processors (Lambda, anomaly detection)
 -- Used for real-time memory health monitoring, self-healing triggers, and audit trail
-CREATE CHANGEFEED FOR TABLE agent_checkpoints
-  INTO 'function://cdc_handler'
-  WITH updated, resolved, on_error=resume, initial_scan='no';
+-- NOTE: CDC changefeeds are configured at runtime, not in schema files
+-- Example: CREATE CHANGEFEED FOR TABLE agent_checkpoints INTO 'function://cdc_handler' WITH updated, resolved, on_error=resume, initial_scan='no';

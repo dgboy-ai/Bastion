@@ -112,14 +112,14 @@ export function getMockAnomalies() {
 
 export function getMockGraph() {
   return {
-    entities: [
+    nodes: [
       { id: "ent-001", name: "production-db", type: "infrastructure" },
       { id: "ent-002", name: "bedrock-service", type: "service" },
       { id: "ent-003", name: "deploy-pipeline", type: "workflow" },
       { id: "ent-004", name: "memory-store", type: "component" },
       { id: "ent-005", name: "auth-service", type: "service" },
     ],
-    relations: [
+    links: [
       { source: "production-db", target: "memory-store", relation: "depends_on", confidence: 0.95 },
       { source: "deploy-pipeline", target: "production-db", relation: "deploys_to", confidence: 0.90 },
       { source: "bedrock-service", target: "memory-store", relation: "embeds_for", confidence: 0.85 },
