@@ -127,8 +127,10 @@ export async function GET(request: Request) {
                 }
               }
             }
-          } catch {
-            // Silently continue on DB errors - SSE should not crash
+          } catch (err) {
+            // Log error and send debug info to client
+            console.error("[Events SSE] Poll error:", err);
+            send(JSON.stringify({ type: "debug", error: String(err) }));
           }
         }
       }, 1000); // Poll every 1 second for near-real-time
