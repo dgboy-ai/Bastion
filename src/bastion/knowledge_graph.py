@@ -308,7 +308,6 @@ class KnowledgeGraph:
                             "VALUES (%s, %s, %s, now())",
                             (self.agent_id, tgt_name, src_name),
                         )
-                        conn.commit()
                 else:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -335,7 +334,8 @@ class KnowledgeGraph:
                             "RETURNING relation_id",
                             (self.agent_id, eid_src, eid_tgt, rel_type, confidence, record_memory_id),
                         )
-                        conn.commit()
+            # Single commit for all triples (atomic, faster)
+            conn.commit()
 
             with conn.cursor() as cur:
                 cur.execute(

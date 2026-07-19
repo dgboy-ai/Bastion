@@ -12,10 +12,10 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     access_count       INT DEFAULT 0,
     INDEX idx_memory_agent (agent_id)
 );
+
 -- C-SPANN distributed vector index for multi-tenant semantic memory search
--- Prefix column (agent_id) partitions the index per agent: zero-contention, per-tenant isolation
--- Enables sub-linear vector similarity search at scale with 94% compression vs pgvector
 -- Requires CockroachDB v25.2+ with vector indexing (Preview)
+-- On older versions, this will fail gracefully — vector search falls back to keyword search
 -- Reference: https://www.cockroachlabs.com/docs/stable/vector-indexes
 CREATE VECTOR INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory (agent_id, embedding);
 

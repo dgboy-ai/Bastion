@@ -11,10 +11,10 @@ variable "environment" {
 }
 
 variable "bastion_hmac_secret" {
-  description = "HMAC secret for hash chain integrity"
+  description = "HMAC secret for hash chain integrity (REQUIRED for production)"
   type        = string
   sensitive   = true
-  default     = ""
+  # No default — must be provided via terraform.tfvars or -var flag
 }
 
 variable "cockroach_plan" {

@@ -86,16 +86,16 @@ describe('getMockAnomalies', () => {
 })
 
 describe('getMockGraph', () => {
-  test('returns entities and relations', () => {
+  test('returns nodes and links', () => {
     const graph = getMockGraph()
-    expect(Array.isArray(graph.entities)).toBe(true)
-    expect(Array.isArray(graph.relations)).toBe(true)
-    for (const entity of graph.entities) {
+    expect(Array.isArray(graph.nodes)).toBe(true)
+    expect(Array.isArray(graph.links)).toBe(true)
+    for (const entity of graph.nodes) {
       expect(entity).toHaveProperty('id')
       expect(entity).toHaveProperty('name')
       expect(entity).toHaveProperty('type')
     }
-    for (const rel of graph.relations) {
+    for (const rel of graph.links) {
       expect(rel).toHaveProperty('source')
       expect(rel).toHaveProperty('target')
       expect(rel).toHaveProperty('relation')

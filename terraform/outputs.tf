@@ -12,7 +12,6 @@ output "lambda_function_names" {
   description = "Deployed Lambda function names"
   value = {
     cdc_handler = aws_lambda_function.cdc_handler.function_name
-    mcp_server  = aws_lambda_function.mcp_server.function_name
   }
 }
 

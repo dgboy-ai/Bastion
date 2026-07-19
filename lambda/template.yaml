@@ -13,23 +13,30 @@ Parameters:
     Type: String
     Description: Slack webhook URL for alerts (optional)
     Default: ""
+  BastionHmacSecret:
+    Type: String
+    Description: HMAC secret for hash chain verification (must match bastion.crypto)
+    NoEcho: true
+    Default: ""
 
 Globals:
   Function:
-    Runtime: python3.11
+    Runtime: python3.12
     Timeout: 60
     MemorySize: 256
     Environment:
       Variables:
         BASTION_CONN: !Ref BastionConn
+        BASTION_HMAC_SECRET: !Ref BastionHmacSecret
         SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
 
 Resources:
   # CDC Handler - polls for anomalies and processes changefeed events
+  # Uses lambda/cdc_handler.py (flat module) — NOT lambda/cdc_handler/handler.py
   CDCHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: cdc_handler.handler.handler
+      Handler: cdc_handler.handler
       CodeUri: .
       Description: Bastion CDC anomaly detector and self-healer
       Events:
@@ -48,10 +55,11 @@ Resources:
               Resource: "*"
 
   # Webhook Dispatcher - delivers push notifications to registered callbacks
+  # Uses lambda/webhook_dispatcher.py (flat module) — NOT lambda/webhook_dispatcher/handler.py
   WebhookDispatcherFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: webhook_dispatcher.handler.handler
+      Handler: webhook_dispatcher.handler
       CodeUri: .
       Description: Bastion A2A push notification dispatcher
       Events:

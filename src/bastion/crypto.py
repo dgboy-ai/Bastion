@@ -59,7 +59,7 @@ def _get_hmac_secret() -> bytes:
             try:
                 os.makedirs(_SECRET_DIR, exist_ok=True, mode=0o700)
                 tmp = _SECRET_FILE + ".tmp"
-                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
                 try:
                     os.write(fd, _hmac_secret)
                 finally:

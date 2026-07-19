@@ -17,12 +17,14 @@ provider "aws" {
 }
 
 # ──────────────────────────────────────────────────────────────
-# CockroachDB Cloud Cluster (Serverless/Basic tier)
+# CockroachDB Cloud Cluster
+# NOTE: BASIC plan does NOT support vector indexes (C-SPANN).
+#       Use STANDARD or ADVANCED for vector index support.
 # ──────────────────────────────────────────────────────────────
 resource "cockroachcloud_cluster" "bastion" {
   name           = "bastion-hackathon"
   cloud_provider = "AWS"
-  plan           = "BASIC"
+  plan           = var.cockroach_plan
 
   basic_config {
     region_nodes = {
@@ -99,6 +101,13 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "s3:PutObject"
         ]
         Resource = "${aws_s3_bucket.bastion_artifacts.arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -108,7 +117,21 @@ resource "aws_iam_role_policy" "lambda_policy" {
 # S3 Bucket for Memory Archives
 # ──────────────────────────────────────────────────────────────
 resource "aws_s3_bucket" "bastion_artifacts" {
-  bucket = "bastion-artifacts-${var.environment}"
+  bucket = "bastion-artifacts-${var.environment}-${random_id.suffix.hex}"
+}
+
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "bastion_artifacts" {
+  bucket = aws_s3_bucket.bastion_artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
 }
 
 resource "aws_s3_bucket_versioning" "bastion_artifacts" {
@@ -149,7 +172,7 @@ resource "aws_lambda_function" "cdc_handler" {
   function_name = "bastion-cdc-handler"
   role          = aws_iam_role.lambda_role.arn
   handler       = "cdc_handler.handler"
-  runtime       = "python3.11"
+  runtime       = "python3.12"
   timeout       = 300
   memory_size   = 256
 
@@ -158,34 +181,40 @@ resource "aws_lambda_function" "cdc_handler" {
 
   environment {
     variables = {
-      BASTION_CONN = cockroachcloud_cluster.bastion.connection_string
+      BASTION_CONN       = cockroachcloud_cluster.bastion.connection_string
       BASTION_HMAC_SECRET = var.bastion_hmac_secret
-      AWS_REGION   = var.aws_region
+      BASTION_S3_BUCKET  = aws_s3_bucket.bastion_artifacts.bucket
+      AWS_REGION         = var.aws_region
     }
   }
 }
 
 # ──────────────────────────────────────────────────────────────
-# Lambda: MCP Server
+# Lambda: MCP Server (Streamable HTTP via Mangum adapter)
+# NOTE: MCP server uses uvicorn/starlette. Deploy via ECS/EKS
+#       or use Mangum to adapt for Lambda. For hackathon demo,
+#       run as a standalone container instead.
 # ──────────────────────────────────────────────────────────────
-resource "aws_lambda_function" "mcp_server" {
-  function_name = "bastion-mcp-server"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "bastion.mcp_server.handler"
-  runtime       = "python3.11"
-  timeout       = 30
-  memory_size   = 512
-
-  filename         = data.archive_file.cdc_lambda.output_path
-  source_code_hash = data.archive_file.cdc_lambda.output_base64sha256
-
-  environment {
-    variables = {
-      BASTION_CONN = cockroachcloud_cluster.bastion.connection_string
-      BASTION_MOCK = "false"
-    }
-  }
-}
+# Uncomment below if using Mangum adapter for Lambda deployment:
+#
+# resource "aws_lambda_function" "mcp_server" {
+#   function_name = "bastion-mcp-server"
+#   role          = aws_iam_role.lambda_role.arn
+#   handler       = "mangum_mcp.handler"  # Requires Mangum adapter
+#   runtime       = "python3.12"
+#   timeout       = 30
+#   memory_size   = 512
+#
+#   filename         = data.archive_file.cdc_lambda.output_path
+#   source_code_hash = data.archive_file.cdc_lambda.output_base64sha256
+#
+#   environment {
+#     variables = {
+#       BASTION_CONN = cockroachcloud_cluster.bastion.connection_string
+#       BASTION_MOCK = "false"
+#     }
+#   }
+# }
 
 # ──────────────────────────────────────────────────────────────
 # CloudWatch Alarms
@@ -207,25 +236,10 @@ resource "aws_cloudwatch_metric_alarm" "cdc_handler_errors" {
 }
 
 # ──────────────────────────────────────────────────────────────
-# Outputs
+# Outputs (see outputs.tf for complete output definitions)
 # ──────────────────────────────────────────────────────────────
-output "cockroach_cluster_id" {
-  value = cockroachcloud_cluster.bastion.id
-}
-
 output "cockroach_connection_string" {
-  value     = cockroachcloud_cluster.bastion.connection_string
-  sensitive = true
-}
-
-output "cdc_handler_arn" {
-  value = aws_lambda_function.cdc_handler.arn
-}
-
-output "mcp_server_arn" {
-  value = aws_lambda_function.mcp_server.arn
-}
-
-output "s3_bucket" {
-  value = aws_s3_bucket.bastion_artifacts.bucket
+  description = "CockroachDB connection string (sensitive)"
+  value       = cockroachcloud_cluster.bastion.connection_string
+  sensitive   = true
 }

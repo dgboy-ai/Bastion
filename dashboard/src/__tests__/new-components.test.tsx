@@ -227,7 +227,7 @@ describe("FlightRecorderPage", () => {
     render(<FlightRecorderPage />);
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith("/api/audit?limit=50");
+      expect(mockFetch.mock.calls[0][0]).toBe("/api/audit?limit=50");
     });
   });
 

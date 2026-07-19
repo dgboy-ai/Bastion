@@ -72,6 +72,8 @@ class RowLevelSecurity:
         """Set the current agent context for RLS filtering.
 
         Must be called within an active transaction (autocommit must be False).
+        Sets app.current_agent_id which is used by all RLS policies to enforce
+        agent isolation at the database level.
         """
         if getattr(self.conn, "autocommit", False):
             raise RuntimeError("Cannot set local agent context: autocommit is True (no active transaction)")
@@ -80,6 +82,7 @@ class RowLevelSecurity:
                 "SET LOCAL app.current_agent_id = %s",
                 (agent_id,),
             )
+        logger.debug("RLS agent context set to %s", agent_id)
 
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""

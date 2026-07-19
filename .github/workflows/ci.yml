@@ -121,7 +121,7 @@ jobs:
           version: "3.8"
           services:
             cockroachdb:
-              image: cockroachdb/cockroach:v24.1.0
+              image: cockroachdb/cockroach:v24.3
               command: start-single-node --insecure --accept-licenses
               ports:
                 - "26257:26257"
@@ -139,9 +139,9 @@ jobs:
       - name: Create database and apply schema
         run: |
           docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
-          for f in schema/002_agent_memory.sql schema/003_agent_audit.sql schema/004_agent_coordination.sql; do
+          for f in $(ls schema/*.sql | sort); do
             echo "Applying $f..."
-            docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues"
+            docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues (may already exist)"
           done
           echo "Schema setup complete"
       - name: Run real CRDB integration tests

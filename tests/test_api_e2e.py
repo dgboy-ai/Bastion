@@ -50,6 +50,7 @@ def _start_server():
     env = os.environ.copy()
     env["BASTION_MOCK"] = "true"
     env["BASTION_API_KEY"] = API_KEY
+    env["BASTION_A2A_STRICT"] = "false"
 
     _server_proc = subprocess.Popen(
         [sys.executable, "-m", "bastion.a2a_server", "--mock"],

@@ -166,7 +166,8 @@ class TestSchemaEvolution:
         assert se._validate_default_value("'; DROP TABLE--") is not None
         assert se._validate_default_value("") is not None
         assert se._validate_default_value("a" * 257) is not None
-        assert se._validate_default_value("NOW()") is not None  # Parentheses blocked to prevent DDL injection
+        assert se._validate_default_value("EXEC('evil')") is not None  # Dangerous SQL function blocked
+        assert se._validate_default_value("NOW()") is None  # NOW() is a safe CockroachDB default
 
     def test_validate_table_name_valid(self):
         se = SchemaEvolution()

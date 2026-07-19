@@ -32,10 +32,10 @@ def package_lambda():
                 with open(src, "rb") as fin, open(dst, "wb") as fout:
                     fout.write(fin.read())
         
-        # Copy handler code
-        for func_dir in ["cdc_handler", "webhook_dispatcher"]:
-            src = os.path.join(os.path.dirname(__file__), func_dir, "handler.py")
-            dst = os.path.join(pkg_dir, f"{func_dir}_handler.py")
+        # Copy handler code (flat modules)
+        for func_name in ["cdc_handler", "webhook_dispatcher"]:
+            src = os.path.join(os.path.dirname(__file__), f"{func_name}.py")
+            dst = os.path.join(pkg_dir, f"{func_name}.py")
             with open(src, "rb") as fin, open(dst, "wb") as fout:
                 fout.write(fin.read())
         

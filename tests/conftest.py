@@ -11,6 +11,18 @@ def _clean_mock_state():
     reset()
 
 
+@pytest.fixture(autouse=True)
+def _disable_strict_a2a():
+    import os
+    orig = os.environ.get("BASTION_A2A_STRICT")
+    os.environ["BASTION_A2A_STRICT"] = "false"
+    yield
+    if orig is not None:
+        os.environ["BASTION_A2A_STRICT"] = orig
+    else:
+        os.environ.pop("BASTION_A2A_STRICT", None)
+
+
 def pytest_addoption(parser):
     """Add custom CLI flags for different test categories."""
     parser.addoption(

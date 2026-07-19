@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -41,6 +42,40 @@ S3_BUCKET = os.environ.get("BASTION_S3_BUCKET", "bastion-memory-archives")
 ALERT_SNS_TOPIC = os.environ.get("BASTION_ALERT_TOPIC", "")
 FAILURE_THRESHOLD = int(os.environ.get("BASTION_CIRCUIT_BREAKER_THRESHOLD", "5"))
 CIRCUIT_BREAKER_WINDOW = int(os.environ.get("BASTION_CIRCUIT_BREAKER_WINDOW", "300"))
+
+# HMAC secret for hash chain verification — must match the secret used by bastion.crypto
+_HMAC_SECRET: bytes | None = None
+
+
+def _get_hmac_secret() -> bytes:
+    """Get the HMAC secret key used for hash chain verification.
+
+    Loads from BASTION_HMAC_SECRET env var, or falls back to ~/.bastion/hmac.key.
+    Must match the secret used by bastion.crypto.compute_hash().
+    """
+    global _HMAC_SECRET
+    if _HMAC_SECRET is not None:
+        return _HMAC_SECRET
+    env_secret = os.environ.get("BASTION_HMAC_SECRET", "")
+    if env_secret:
+        _HMAC_SECRET = env_secret.encode()
+        return _HMAC_SECRET
+    # Try to load from disk (same path as bastion.crypto)
+    secret_file = os.path.expanduser("~/.bastion/hmac.key")
+    try:
+        if os.path.exists(secret_file):
+            with open(secret_file, "rb") as f:
+                _HMAC_SECRET = f.read()
+            return _HMAC_SECRET
+    except Exception:
+        pass
+    # Fallback: generate a warning and use empty secret (hashes will not match)
+    logger.warning(
+        "BASTION_HMAC_SECRET not set and ~/.bastion/hmac.key not found. "
+        "Hash chain verification will use fallback. Set BASTION_HMAC_SECRET for production."
+    )
+    _HMAC_SECRET = b""
+    return _HMAC_SECRET
 
 # ── Circuit Breaker State ────────────────────────────────────────────────────
 
@@ -79,9 +114,26 @@ def _record_success():
 
 # ── Hash Chain Verification ─────────────────────────────────────────────────
 
+def _compute_hmac_hash(content: str, metadata: dict | None, previous_hash: str | None) -> str:
+    """Compute HMAC-SHA256 hash matching bastion.crypto.compute_hash().
+
+    Uses the same HMAC secret and payload format as the main application
+    to ensure hash chain verification works correctly.
+    """
+    meta_str = "" if metadata is None else (
+        metadata if isinstance(metadata, str) else
+        json.dumps(dict(metadata) if not isinstance(metadata, dict) else metadata, sort_keys=True)
+    )
+    payload = content + meta_str + (previous_hash or "")
+    secret = _get_hmac_secret()
+    return hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+
+
 def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
     """
     Verify the cryptographic hash chain for an agent's memories.
+    Uses HMAC-SHA256 (matching bastion.crypto) instead of plain SHA-256.
+
     Returns integrity status and details of any breaks found.
     """
     with conn.cursor() as cur:
@@ -101,10 +153,12 @@ def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
     for row in rows:
         memory_id, content, metadata, stored_prev_hash, stored_hash, created_at = row
 
-        # Compute expected hash
-        meta_str = json.dumps(dict(metadata) if metadata else {}, sort_keys=True)
-        raw = content + meta_str + (prev_hash or "")
-        expected_hash = hashlib.sha256(raw.encode()).hexdigest()
+        # Compute expected HMAC hash (matching bastion.crypto.compute_hash)
+        expected_hash = _compute_hmac_hash(
+            content,
+            dict(metadata) if metadata else {},
+            prev_hash,
+        )
 
         # Check hash chain link
         if stored_prev_hash != prev_hash:
@@ -116,17 +170,18 @@ def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
                 "created_at": created_at.isoformat() if created_at else None,
             })
 
-        # Check hash integrity
-        if stored_hash != expected_hash:
+        # Check hash integrity (constant-time comparison)
+        stored_hash_str = str(stored_hash) if stored_hash else ""
+        if not hmac.compare_digest(stored_hash_str, expected_hash):
             breaks.append({
                 "memory_id": str(memory_id),
                 "type": "hash_mismatch",
-                "expected": expected_hash,
-                "actual": str(stored_hash),
+                "expected": expected_hash[:16] + "...",
+                "actual": stored_hash_str[:16] + "..." if stored_hash_str else "null",
                 "created_at": created_at.isoformat() if created_at else None,
             })
 
-        prev_hash = str(stored_hash)
+        prev_hash = stored_hash_str
 
     return {
         "status": "broken" if breaks else "valid",
@@ -348,6 +403,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "body": json.dumps({"error": "BASTION_CONN not configured"}),
         }
 
+    conn = None
     try:
         conn = psycopg.connect(CONN_STR)
     except Exception as e:
@@ -358,23 +414,35 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         }
 
     try:
+        # Validate input structure
+        if not isinstance(event, dict) and not isinstance(event, list):
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Event must be a dict or list"}),
+            }
+
         # Parse changefeed event
         records = event if isinstance(event, list) else [event]
         results = []
 
         for record in records:
-            value = record.get("value", {})
-            after = value.get("after", {})
-            topic = record.get("topic", "unknown")
-
-            if not after:
+            if not isinstance(record, dict):
                 continue
 
+            value = record.get("value")
+            if not isinstance(value, dict):
+                continue
+
+            after = value.get("after")
+            if not isinstance(after, dict):
+                continue
+
+            topic = record.get("topic", "unknown")
             agent_id = after.get("agent_id")
             if not agent_id:
                 continue
 
-            # 1. Hash chain verification
+            # 1. Hash chain verification (HMAC-SHA256, matching bastion.crypto)
             chain_result = verify_hash_chain(agent_id, conn)
 
             # 2. Anomaly detection
@@ -419,7 +487,6 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 })
 
         _record_success()
-        conn.close()
 
         return {
             "statusCode": 200,
@@ -432,12 +499,14 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     except Exception as e:
         _record_failure()
-        with contextlib.suppress(Exception):
-            conn.close()
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)}),
         }
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.close()
 
 
 # ── CDC Queries Demo ──────────────────────────────────────────────────────────
