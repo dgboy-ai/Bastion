@@ -48,11 +48,8 @@ class CognitiveFirewall:
                 }
             )
 
-        pii_patterns = [
-            (r"\b\d{3}-\d{2}-\d{4}\b", "SSN detected"),
-            (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "Email detected"),
-            (r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b", "Credit card detected"),
-        ]
+        from bastion.pii import PII_DETECTION_PATTERNS
+        pii_patterns = [(p, d) for _, p, d in PII_DETECTION_PATTERNS]
 
         for pattern, desc in pii_patterns:
             if re.search(pattern, content):

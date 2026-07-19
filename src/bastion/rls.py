@@ -66,7 +66,7 @@ class RowLevelSecurity:
             return {"status": "enabled", "tables": ["agent_memory", "agent_audit", "agent_checkpoints"]}
         except Exception as e:
             logger.error("Failed to enable RLS: %s", e)
-            return {"status": "error", "error": str(e)}
+            return {"status": "error", "error": "RLS enablement failed — check server logs"}
 
     def set_agent_context(self, agent_id: str) -> None:
         """Set the current agent context for RLS filtering.
@@ -98,10 +98,11 @@ class RowLevelSecurity:
             }
         except Exception as e:
             self.conn.rollback()
+            logger.error("RLS verification failed: %s", e)
             return {
                 "agent_id": agent_id,
                 "rls_active": False,
-                "error": str(e),
+                "error": "Verification failed — check server logs",
             }
         finally:
             self.conn.autocommit = prev_autocommit

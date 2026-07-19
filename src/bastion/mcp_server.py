@@ -573,7 +573,6 @@ def create_server(
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
             logger.exception("memory_timetravel failed")
-            logger.exception("memory_timetravel failed")
             return json.dumps({"error": "Time travel query failed — check server logs"})
 
     @mcp.tool(
@@ -594,7 +593,6 @@ def create_server(
             entries = await anyio.to_thread.run_sync(mem.audit, agent_id)
             return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
         except Exception as e:
-            logger.exception("memory_audit failed")
             logger.exception("memory_audit failed")
             return json.dumps({"error": "Audit query failed — check server logs"})
 
@@ -621,7 +619,6 @@ def create_server(
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
-            logger.exception("memory_heal failed")
             logger.exception("memory_heal failed")
             return json.dumps({"error": "Self-heal failed — check server logs"})
 
@@ -693,7 +690,6 @@ def create_server(
             return json.dumps(record.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("memory_pin failed")
-            logger.exception("memory_pin failed")
             return json.dumps({"error": "Pin failed — check server logs"})
 
     @mcp.tool(
@@ -720,7 +716,6 @@ def create_server(
             results = await anyio.to_thread.run_sync(mem.get_pinned, min_priority)
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
-            logger.exception("memory_get_pinned failed")
             logger.exception("memory_get_pinned failed")
             return json.dumps({"error": "Get pinned failed — check server logs"})
 
@@ -755,7 +750,6 @@ def create_server(
             results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
         except Exception as e:
-            logger.exception("memory_list failed")
             logger.exception("memory_list failed")
             return json.dumps({"error": "List failed — check server logs"})
 
@@ -792,7 +786,6 @@ def create_server(
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(record.to_dict(), indent=2, default=str)
         except Exception as e:
-            logger.exception("memory_correct failed")
             logger.exception("memory_correct failed")
             return json.dumps({"error": "Correct failed — check server logs"})
 
@@ -854,7 +847,6 @@ def create_server(
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
             logger.exception("memory_apply_patch failed")
-            logger.exception("memory_apply_patch failed")
             return json.dumps({"error": "Patch failed — check server logs"})
 
     @mcp.tool(
@@ -891,7 +883,6 @@ def create_server(
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps({"merged": merged}, indent=2, default=str)
         except Exception as e:
-            logger.exception("resolve_conflict failed")
             logger.exception("resolve_conflict failed")
             return json.dumps({"error": "Conflict resolution failed — check server logs"})
 
@@ -946,7 +937,6 @@ def create_server(
             }, indent=2, default=str)
         except Exception as e:
             logger.exception("ltm_check_reuse failed")
-            logger.exception("ltm_check_reuse failed")
             return json.dumps({"error": "LTM check failed — check server logs"})
 
     @mcp.tool(
@@ -990,7 +980,6 @@ def create_server(
             return json.dumps(store_result.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("ltm_store_analysis failed")
-            logger.exception("ltm_store_analysis failed")
             return json.dumps({"error": "LTM store failed — check server logs"})
 
     @mcp.tool(
@@ -1025,7 +1014,6 @@ def create_server(
             result = await anyio.to_thread.run_sync(gateway.invalidate, query, reason)
             return json.dumps(result, indent=2, default=str)
         except Exception as e:
-            logger.exception("ltm_invalidate failed")
             logger.exception("ltm_invalidate failed")
             return json.dumps({"error": "LTM invalidate failed — check server logs"})
 
@@ -1067,7 +1055,6 @@ def create_server(
             return json.dumps(result.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("detect_contradictions failed")
-            logger.exception("detect_contradictions failed")
             return json.dumps({"error": "Contradiction detection failed — check server logs"})
 
     @mcp.tool(
@@ -1100,7 +1087,7 @@ def create_server(
             )
         except Exception as e:
             logger.exception("scan_all_contradictions failed")
-            return json.dumps({"error": f"Batch contradiction scan failed: {type(e).__name__}"})
+            return json.dumps({"error": "Batch contradiction scan failed — check server logs"})
 
     @mcp.tool(
         name="dream",
@@ -1191,7 +1178,7 @@ def create_server(
             return json.dumps(report.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("detect_observations failed")
-            return json.dumps({"error": f"Observation detection failed: {type(e).__name__}"})
+            return json.dumps({"error": "Observation detection failed — check server logs"})
 
     @mcp.tool(
         name="multi_signal_search",
@@ -1280,7 +1267,7 @@ def create_server(
             return json.dumps(result.to_dict(), indent=2, default=str)
         except Exception as e:
             logger.exception("context_pack failed")
-            return json.dumps({"error": f"Context packing failed: {type(e).__name__}"})
+            return json.dumps({"error": "Context packing failed — check server logs"})
 
     @mcp.tool(
         name="agent_schema",

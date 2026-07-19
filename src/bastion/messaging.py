@@ -69,8 +69,9 @@ class MessageBroker:
             pool.release(conn)
 
     def consume(self, namespace: str | None = None, limit: int = 50) -> list[MessageRecord]:
+        # Default to agent's own namespace to prevent cross-agent data leak
+        ns = namespace or self.agent_id
         if self._is_mock():
-            ns = namespace or self.agent_id
             messages = MessageBroker._mock_messages.get(ns, [])
             unread = [m for m in messages if not getattr(m, "_read", False)][:limit]
             for m in unread:
@@ -80,22 +81,13 @@ class MessageBroker:
         conn = pool.acquire(timeout=30.0)
         try:
             with conn.cursor() as cur:
-                if namespace:
-                    cur.execute(
-                        "SELECT message_id, namespace, sender_agent_id, event_type, payload, created_at "
-                        "FROM agent_messages WHERE namespace = %s AND read = FALSE "
-                        "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY created_at DESC LIMIT %s FOR UPDATE SKIP LOCKED",
-                        (namespace, limit),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT message_id, namespace, sender_agent_id, event_type, payload, created_at "
-                        "FROM agent_messages WHERE read = FALSE "
-                        "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY created_at DESC LIMIT %s FOR UPDATE SKIP LOCKED",
-                        (limit,),
-                    )
+                cur.execute(
+                    "SELECT message_id, namespace, sender_agent_id, event_type, payload, created_at "
+                    "FROM agent_messages WHERE namespace = %s AND read = FALSE "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY created_at DESC LIMIT %s FOR UPDATE SKIP LOCKED",
+                    (ns, limit),
+                )
                 rows = cur.fetchall()
                 if rows:
                     message_ids = [str(r[0]) for r in rows]

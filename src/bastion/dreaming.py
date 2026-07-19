@@ -223,10 +223,14 @@ class MemoryDreamer:
 
     def _fetch_recent_memories(self, agent_id: str) -> list[Any]:
         """Fetch memories created in the lookback window."""
-        # Use list_all with a reasonable limit instead of loading everything
+        if hasattr(self._memory, 'list_recent'):
+            return self._memory.list_recent(
+                hours=self._lookback_hours,
+                limit=self._max_memories_per_dream,
+            )
+        # Fallback for mock mode
         all_memories = self._memory.list_all(namespace_scope="own")
         cutoff = datetime.now(UTC) - timedelta(hours=self._lookback_hours)
-
         recent = []
         for mem in all_memories:
             created = mem.created_at
@@ -236,7 +240,6 @@ class MemoryDreamer:
                 recent.append(mem)
             if len(recent) >= self._max_memories_per_dream:
                 break
-
         return recent
 
     def _find_consolidation_candidates(

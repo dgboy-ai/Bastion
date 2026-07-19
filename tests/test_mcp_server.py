@@ -311,7 +311,7 @@ async def test_agent_card_returns_valid_a2a_metadata(mcp):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Bastion/bastion-agent"
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "0.1.0"
     assert data["protocol"] == "a2a"
     assert data["capabilities"]["memory_store"] is True
     assert data["capabilities"]["memory_search"] is True

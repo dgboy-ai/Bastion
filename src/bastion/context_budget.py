@@ -137,12 +137,19 @@ class ContextBudgetManager:
 
         remaining_budget = budget_tokens - pinned_tokens
 
-        # Get candidate memories — use search if query provided to avoid loading all
+        # Get candidate memories — use SQL-filtered queries to avoid O(n) loading
         if query and hasattr(self._memory, "search"):
             all_memories = self._memory.search(query, k=min(200, budget_tokens // 10), namespace_scope="own")
+        elif hasattr(self._memory, "list_by_importance"):
+            all_memories = self._memory.list_by_importance(
+                min_importance=min_importance,
+                memory_type=include_types[0] if include_types and len(include_types) == 1 else None,
+                limit=200,
+                exclude_ids={p.memory_id for p in result.memories},
+            )
         else:
             all_memories = self._memory.list_all(namespace_scope="own")
-        if include_types:
+        if include_types and not (hasattr(self._memory, "list_by_importance") and len(include_types) != 1):
             all_memories = [m for m in all_memories if m.memory_type in include_types]
 
         # Score and sort candidates

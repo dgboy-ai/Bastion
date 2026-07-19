@@ -130,7 +130,7 @@ class MemoryLocality:
                 except Exception as exc:
                     conn.rollback()
                     logger.exception("Failed to enable regional routing")
-                    return {"status": "error", "error": str(exc)}
+                    return {"status": "error", "error": "Operation failed — check server logs"}
                 finally:
                     pool.release(conn)
             except Exception as exc:
@@ -176,7 +176,7 @@ class MemoryLocality:
                             "Failed to persist agent region",
                             extra={"agent_id": agent_id, "region": region},
                         )
-                        return {"status": "error", "error": str(exc)}
+                        return {"status": "error", "error": "Operation failed — check server logs"}
                     finally:
                         pool.release(conn)
                 except Exception as exc:
@@ -296,7 +296,7 @@ class MemoryLocality:
             }
         except Exception as exc:
             logger.exception("Region-aware store failed")
-            return {"status": "error", "error": str(exc)}
+            return {"status": "error", "error": "Region-aware store failed — check server logs"}
 
     def search_memory(
         self,
@@ -331,7 +331,7 @@ class MemoryLocality:
             }
         except Exception as exc:
             logger.exception("Region-aware search failed")
-            return {"status": "error", "error": str(exc)}
+            return {"status": "error", "error": "Region-aware search failed — check server logs"}
 
     def verify_row_region(self, memory_id: str) -> dict[str, Any]:
         """Verify which region a specific row resides in by querying CRDB."""
@@ -374,7 +374,7 @@ class MemoryLocality:
                 pool.release(conn)
         except Exception as exc:
             logger.exception("Row region verification failed")
-            return {"memory_id": memory_id, "error": str(exc), "verified": False}
+            return {"memory_id": memory_id, "error": "Verification failed — check server logs", "verified": False}
 
     def verify_compliance(
         self, agent_id: str
@@ -436,7 +436,7 @@ class MemoryLocality:
                 pool.release(conn)
         except Exception as exc:
             logger.exception("Compliance verification failed")
-            return {"compliant": False, "error": str(exc)}
+            return {"compliant": False, "error": "Compliance check failed — check server logs"}
 
     # ── Internal helpers ────────────────────────────────────────────────────
 

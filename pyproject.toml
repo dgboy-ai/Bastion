@@ -23,6 +23,7 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
     "ruff>=0.5",
     "fastapi>=0.115",
     "uvicorn>=0.32",
@@ -98,9 +99,18 @@ no_implicit_optional = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--tb=short -q"
 markers = [
     "e2e: marks tests that need a live server (select with --e2e)",
     "integration: marks tests that need a real CockroachDB (select with --integration)",
     "stress: marks potentially slow stress tests (select with --stress)",
     "property: marks property-based tests (select with --property)",
 ]
+
+[tool.coverage.run]
+source = ["bastion"]
+omit = ["tests/*", "scripts/*", "lambda/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 60

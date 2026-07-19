@@ -185,7 +185,7 @@ class BehavioralDriftDetector:
         }
 
         baseline["_meta"] = {
-            "total_memories": mem_count if 'mem_count' in dir() else 0,
+            "total_memories": mem_count if mem_count is not None else 0,
             "total_audit_entries": len(audit_entries),
             "agent_id": agent_id,
         }
@@ -324,7 +324,26 @@ class BehavioralDriftDetector:
         if dim_scores["hash_chain_gap_ratio"] >= alert_threshold:
             top_signals.append("hash_chain_gap_ratio")
 
-        dim_scores["namespace_isolation"] = 0.0
+        # Measure namespace isolation: ratio of audit entries targeting other agents
+        cross_agent_ops = 0
+        total_ops_with_target = 0
+        for entry in audit_entries:
+            details = getattr(entry, 'details', None) or {}
+            if isinstance(details, str):
+                try:
+                    import json
+                    details = json.loads(details)
+                except Exception:
+                    details = {}
+            target_agent = details.get('target_agent_id') or details.get('source_agent_id')
+            if target_agent:
+                total_ops_with_target += 1
+                if target_agent != agent_id:
+                    cross_agent_ops += 1
+        namespace_ratio = cross_agent_ops / max(total_ops_with_target, 1)
+        dim_scores["namespace_isolation"] = round(min(max(namespace_ratio, 0.0), 1.0), 4)
+        if dim_scores["namespace_isolation"] >= alert_threshold:
+            top_signals.append("namespace_isolation")
 
         overall = sum(dim_scores.values()) / max(len(dim_scores), 1)
         overall = round(min(max(overall, 0.0), 1.0), 4)

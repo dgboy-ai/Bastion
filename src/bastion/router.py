@@ -225,6 +225,11 @@ class RecallRouter:
         memory_type: str | None,
     ) -> list[Any]:
         """Simple keyword-based search for quick lookups."""
+        # Use SQL ILIKE when available for O(1) vs O(n) performance
+        if hasattr(self._memory, 'keyword_search'):
+            return self._memory.keyword_search(query, limit=k)
+
+        # Fallback: in-memory word overlap
         all_memories = self._memory.list_all(namespace_scope="own", memory_type=memory_type)
         query_words = set(query.lower().split())
 
