@@ -15,10 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body style={{
-        background: "transparent", color: "#ffffff",
+        color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
         margin: 0, minHeight: "100vh", overflowY: "auto",
       }}>
+
         <GlobalErrorHandler />
         <div style={{
           animation: "pageEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",

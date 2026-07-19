@@ -161,9 +161,9 @@ function NetherCanvas() {
       H = canvas.height = window.innerHeight;
       world.length = 0;
 
-      // Populate elements up to 8000px scrollable height for full page framing
-      for (let y = 0; y < 8000; y += BS) {
-        const seg = y < 900 ? 0 : y < 2200 ? 1 : 2;
+      // Populate elements up to 16000px scrollable height for full page framing
+      for (let y = 0; y < 16000; y += BS) {
+        const seg = y < 1500 ? 0 : y < 2800 ? 1 : 2;
         const pickL = (): BT => {
           const v = Math.random();
           if (seg===0) return v>.87?"crying":v>.68?"gilded":v>.42?"obs":"black";
@@ -180,8 +180,8 @@ function NetherCanvas() {
         world.push({ type: "block", x: W - BS, y, sz: BS, bt: pickR() });
       }
 
-      for (let y = 100; y < 7000; y += 280) {
-        const seg = y < 900 ? 0 : y < 2200 ? 1 : 2;
+      for (let y = 100; y < 14000; y += 280) {
+        const seg = y < 1500 ? 0 : y < 2800 ? 1 : 2;
         if (seg===0) world.push({ type:"magma",   x: 60 + Math.random() * 80, y, sz:32 });
         if (seg===2) world.push({ type:"lantern", x: 50 + Math.random() * 45, y, sz:22 });
       }
@@ -213,38 +213,41 @@ function NetherCanvas() {
       const narrow = W < 960; 
 
       // Smooth color morphing system across three distinct biomes
+      // Nether crimson persists through the full hero+simulator section (~0–1600px),
+      // then transitions to warped, then soul-sand.
       let r1 = 59, g1 = 7, b1 = 11;
       let r2 = 13, g2 = 1, b2 = 2;
       let pR = 255, pG = 85, pB = 0;
       let cracksColor = "#ffea00";
 
-      if (sy < 1000) {
-        const t = Math.min(sy / 1000, 1);
+      if (sy < 1600) {
+        const t = Math.min(sy / 1600, 1);
         // Interpolate background top: Nether Crimson (59, 7, 11) -> Warped Amber/Gold (124, 62, 0)
         r1 = Math.round(59 + (124 - 59) * t);
         g1 = Math.round(7 + (62 - 7) * t);
         b1 = Math.round(11 + (0 - 11) * t);
 
-        // Interpolate background bottom: (13, 1, 2) -> (4, 51, 46)
-        r2 = Math.round(13 + (4 - 13) * t);
-        g2 = Math.round(1 + (51 - 1) * t);
-        b2 = Math.round(2 + (46 - 2) * t);
+        // Interpolate background bottom: (13, 1, 2) -> (18, 6, 8)
+        // Keep bottom crimson-toned instead of going dark teal
+        r2 = Math.round(13 + (18 - 13) * t);
+        g2 = Math.round(1 + (6 - 1) * t);
+        b2 = Math.round(2 + (8 - 2) * t);
 
         // Interpolate particles: Red-Orange -> Cyan
         pR = Math.round(255 + (0 - 255) * t);
         pG = Math.round(85 + (229 - 85) * t);
         pB = Math.round(0 + (255 - 0) * t);
-      } else if (sy < 2200) {
-        const t = Math.min((sy - 1000) / 1200, 1);
+      } else if (sy < 2800) {
+        const t = Math.min((sy - 1600) / 1200, 1);
         // Interpolate top: Warped Amber (124, 62, 0) -> Soul Sand Cyan (2, 66, 63)
         r1 = Math.round(124 + (2 - 124) * t);
         g1 = Math.round(62 + (66 - 62) * t);
         b1 = Math.round(0 + (63 - 0) * t);
 
-        // Interpolate bottom: Warped Teal (4, 51, 46) -> Soul Dark (2, 13, 12)
-        r2 = Math.round(4 + (2 - 4) * t);
-        g2 = Math.round(51 + (13 - 51) * t);
-        b2 = Math.round(46 + (12 - 46) * t);
+        // Interpolate bottom: Crimson (18, 6, 8) -> Soul Dark (2, 13, 12)
+        r2 = Math.round(18 + (2 - 18) * t);
+        g2 = Math.round(6 + (13 - 6) * t);
+        b2 = Math.round(8 + (12 - 8) * t);
 
         pR = 0; pG = 229; pB = 255;
         cracksColor = "#00f0ff";
@@ -263,8 +266,8 @@ function NetherCanvas() {
 
       // Smooth radial light center glow
       const radialGlow = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*0.7);
-      if (sy < 1000) {
-        const t = Math.min(sy / 1000, 1);
+      if (sy < 1600) {
+        const t = Math.min(sy / 1600, 1);
         const glowR = Math.round(255 + (255 - 255) * t);
         const glowG = Math.round(68 + (130 - 68) * t);
         const glowB = Math.round(0 + (255 - 0) * t);
@@ -766,10 +769,10 @@ export default function Page() {
         background:"transparent",
       }}>
 
-      {/* Fixed dark background that persists across all sections */}
+      {/* Solid background BEHIND canvas */}
       <div style={{
         position:"fixed",inset:0,pointerEvents:"none",zIndex:-10,
-        background:"#0a0208",
+        background:"#0d0308",
       }}/>
 
       {/* Scroll rail */}
@@ -777,7 +780,11 @@ export default function Page() {
         <div style={{height:"100%",width:`${pct*100}%`,background:`linear-gradient(90deg,#ffea00,${P.cyan},#00ff66)`,boxShadow:`0 0 14px #ffea00`,transition:"width .08s linear"}}/>
       </div>
 
-      {/* Vignette handled by NetherCanvas */}
+      {/* Atmospheric vignette BEHIND canvas */}
+      <div style={{
+        position:"fixed",inset:0,pointerEvents:"none",zIndex:-15,
+        background:"radial-gradient(ellipse at 40% 35%, rgba(12,2,10,0.08) 0%, rgba(6,1,5,0.15) 100%)",
+      }}/>
 
       {/* Pixel grid */}
       <div style={{position:"absolute",inset:0,zIndex:0,opacity:.038,pointerEvents:"none",

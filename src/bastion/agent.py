@@ -39,13 +39,13 @@ from bastion.models import AuditEntry, MemoryRecord
 
 logger = get_logger("bastion.agent")
 
-# ── PII Patterns ─────────────────────────────────────────────────────────────
+# ── PII Patterns (shared module) ────────────────────────────────────────────
 
-PII_PATTERNS: list[tuple[str, str, str]] = [
-    ("ssn", r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]"),
-    ("email", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[REDACTED_EMAIL]"),
-    ("phone", r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", "[REDACTED_PHONE]"),
-    ("credit_card", r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", "[REDACTED_CARD]"),
+from bastion.pii import PII_PATTERNS as _SHARED_PII_PATTERNS, REDACTION_MAP as _REDACTION_MAP
+from bastion.pii import scan_pii as _scan_pii, redact_pii as _shared_redact_pii
+
+# API key patterns (not in shared module — agent-specific)
+API_KEY_PATTERNS: list[tuple[str, str, str]] = [
     ("api_key", r"\b(?:sk-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16})\b", "[REDACTED_KEY]"),
 ]
 
@@ -57,8 +57,22 @@ def redact_pii(text: str) -> tuple[str, list[dict]]:
     """
     redactions = []
     redacted = text
-    for pii_type, pattern, replacement in PII_PATTERNS:
-        matches = re.finditer(pattern, redacted)
+
+    # Use shared PII patterns
+    for pii_type, pattern in _SHARED_PII_PATTERNS.items():
+        matches = list(pattern.finditer(redacted))
+        replacement = _REDACTION_MAP.get(pii_type, f"[REDACTED_{pii_type.upper()}]")
+        for match in matches:
+            redactions.append({
+                "type": pii_type,
+                "original": match.group(),
+                "position": match.span(),
+            })
+        redacted = pattern.sub(replacement, redacted)
+
+    # Also check agent-specific API key patterns
+    for pii_type, pattern, replacement in API_KEY_PATTERNS:
+        matches = list(re.finditer(pattern, redacted))
         for match in matches:
             redactions.append({
                 "type": pii_type,
@@ -66,6 +80,7 @@ def redact_pii(text: str) -> tuple[str, list[dict]]:
                 "position": match.span(),
             })
         redacted = re.sub(pattern, replacement, redacted)
+
     return redacted, redactions
 
 

@@ -576,13 +576,7 @@ def multilang_scan(content: str) -> list[str]:
 
 # ── PII Firewall (GDPR/CCPA Compliance) ────────────────────────────────────
 
-PII_PATTERNS: dict[str, re.Pattern] = {
-    "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"),
-    "phone": re.compile(r"\b(\+\d{1,3}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b"),
-    "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
-    "credit_card": re.compile(r"\b(?:\d{4}[\s-]?){3}\d{4}\b"),
-    "ipv4": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
-}
+from bastion.pii import PII_PATTERNS, scan_pii as _shared_scan_pii
 
 
 def pii_scan(content: str) -> tuple[str, list[str]]:
@@ -591,11 +585,9 @@ def pii_scan(content: str) -> tuple[str, list[str]]:
     Returns (redacted_text, list_of_detected_types).
     Each detection type is like 'email', 'phone', 'ssn', etc.
     """
-    detected = []
+    detected = _shared_scan_pii(content)
     redacted = content
-    for pii_type, pattern in PII_PATTERNS.items():
-        matches = pattern.findall(redacted)
-        if matches:
-            detected.append(pii_type)
-            redacted = pattern.sub(f"[{pii_type.upper()}]", redacted)
+    for pii_type in detected:
+        pattern = PII_PATTERNS[pii_type]
+        redacted = pattern.sub(f"[{pii_type.upper()}]", redacted)
     return redacted, detected

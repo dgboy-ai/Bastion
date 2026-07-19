@@ -713,16 +713,17 @@ class BastionMemory:
         region: str | None = None,
     ) -> MemoryRecord:
         pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
 
-        # Prepare data outside the transaction (embedding generation is slow)
+        # Generate embedding BEFORE acquiring connection (slow network call)
         meta = dict(metadata) if metadata is not None else {}
         precomputed_embedding = meta.pop("_precomputed_embedding", None)
         if precomputed_embedding is not None:
             embedding = precomputed_embedding
         else:
             embedding = self._embed(content)
+
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
         embedding_str = json.dumps(embedding)
         now = datetime.now(UTC)
         expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
@@ -916,7 +917,7 @@ class BastionMemory:
                     extra={"agent_id": self.agent_id},
                 )
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
-            raise RuntimeError(f"Search failed for agent {self.agent_id}: {e}") from e
+            raise RuntimeError(f"Search failed for agent {self.agent_id}") from e
         finally:
             if not _released:
                 pool.release(conn)
@@ -972,7 +973,142 @@ class BastionMemory:
                     extra={"agent_id": self.agent_id},
                 )
             logger.exception("list_all query failed", extra={"agent_id": self.agent_id})
-            raise RuntimeError(f"List all failed for agent {self.agent_id}: {e}") from e
+            raise RuntimeError(f"List all failed for agent {self.agent_id}") from e
+        finally:
+            pool.release(conn)
+
+    def list_recent(self, hours: int = 24, limit: int = 200) -> list[MemoryRecord]:
+        """Fetch memories created within the last N hours — SQL-filtered, not O(n)."""
+        if self._mock:
+            return [m for m in _mock.mock_list_all(self.agent_id)
+                    if hasattr(m, 'created_at') and m.created_at][:limit]
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    "WHERE agent_id = %s "
+                    "AND created_at >= now() - make_interval(hours => %s) "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY created_at DESC LIMIT %s",
+                    (self.agent_id, hours, limit),
+                )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception as e:
+            logger.warning("list_recent failed: %s", e)
+            return []
+        finally:
+            pool.release(conn)
+
+    def list_pinned(self) -> list[MemoryRecord]:
+        """Fetch pinned memories — SQL-filtered."""
+        if self._mock:
+            return [m for m in _mock.mock_list_all(self.agent_id)
+                    if getattr(m, 'is_pinned', False)]
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    "WHERE agent_id = %s AND is_pinned = TRUE "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY pin_priority DESC",
+                    (self.agent_id,),
+                )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception as e:
+            logger.warning("list_pinned failed: %s", e)
+            return []
+        finally:
+            pool.release(conn)
+
+    def list_by_importance(
+        self, min_importance: float = 0.0, memory_type: str | None = None,
+        limit: int = 200, exclude_ids: set[str] | None = None,
+    ) -> list[MemoryRecord]:
+        """Fetch memories above an importance threshold — SQL-filtered."""
+        if self._mock:
+            results = [m for m in _mock.mock_list_all(self.agent_id, memory_type)
+                       if (getattr(m, 'importance_score', 0) or 0) >= min_importance]
+            if exclude_ids:
+                results = [m for m in results if m.memory_id not in exclude_ids]
+            return results[:limit]
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            type_clause = ""
+            params: list = [self.agent_id, min_importance]
+            if memory_type:
+                type_clause = "AND memory_type = %s"
+                params.append(memory_type)
+            params.append(limit)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    f"WHERE agent_id = %s AND importance_score >= %s {type_clause} "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY importance_score DESC LIMIT %s",
+                    params,
+                )
+                results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
+            if exclude_ids:
+                results = [m for m in results if m.memory_id not in exclude_ids]
+            return results
+        except Exception as e:
+            logger.warning("list_by_importance failed: %s", e)
+            return []
+        finally:
+            pool.release(conn)
+
+    def keyword_search(self, keyword: str, limit: int = 50) -> list[MemoryRecord]:
+        """SQL ILIKE keyword search — replaces in-memory word overlap in router.py."""
+        if self._mock:
+            kw = keyword.lower()
+            return [m for m in _mock.mock_list_all(self.agent_id)
+                    if kw in (m.content or "").lower()][:limit]
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                    "WHERE agent_id = %s "
+                    "AND content ILIKE %s "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY importance_score DESC, created_at DESC LIMIT %s",
+                    (self.agent_id, f"%{keyword}%", limit),
+                )
+                return [MemoryRecord.from_row(r) for r in cur.fetchall()]
+        except Exception as e:
+            logger.warning("keyword_search failed: %s", e)
+            return []
+        finally:
+            pool.release(conn)
+
+    def count_by_agent(self) -> int:
+        """Count memories for this agent — single aggregate query."""
+        if self._mock:
+            return len(_mock.mock_list_all(self.agent_id))
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=10.0)
+        self._set_rls_context(conn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*) FROM agent_memory "
+                    "WHERE agent_id = %s AND (expires_at IS NULL OR expires_at > now())",
+                    (self.agent_id,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else 0
+        except Exception:
+            return 0
         finally:
             pool.release(conn)
 
@@ -990,28 +1126,19 @@ class BastionMemory:
                 return MemoryRecord.from_row(row) if row else None
         except Exception as e:
             logger.exception("get_memory_by_id failed", extra={"memory_id": memory_id})
-            raise RuntimeError(f"Failed to get memory {memory_id}: {e}") from e
+            raise RuntimeError(f"Failed to get memory") from e
         finally:
             pool.release(conn)
 
     def _get_at_time_real(self, agent_id: str, timestamp: str) -> list[MemoryRecord]:
-        # Use a fresh connection for time-travel to avoid transaction conflicts.
-        # We still bypass the pool because AS OF SYSTEM TIME requires a dedicated
-        # connection that isn't shared with other transactions.
-        import psycopg
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=10)
         try:
-            conn = psycopg.connect(self._conn_str, connect_timeout=10)
-        except Exception as exc:
-            logger.warning("Failed to connect for time-travel query: %s", exc)
-            return []
-        try:
-            # Convert relative timestamps to absolute
             abs_timestamp = self._parse_timestamp(timestamp)
 
             # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
             try:
                 with conn.cursor() as cur:
-                    # Use SET TRANSACTION instead of BEGIN to avoid transaction conflicts
                     cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (abs_timestamp,))
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1020,14 +1147,14 @@ class BastionMemory:
                         (agent_id,),
                     )
                     results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
-                    conn.rollback()  # End the time-travel transaction
+                    conn.rollback()
                     return results
             except Exception as primary_exc:
                 # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
                 # use timestamp filtering as a degraded mode
                 logger.debug("AS OF SYSTEM TIME failed, using fallback: %s", primary_exc)
                 try:
-                    conn.rollback()  # Reset connection state before fallback
+                    conn.rollback()
                 except Exception:
                     pass
                 try:
@@ -1043,9 +1170,7 @@ class BastionMemory:
                     logger.warning("Time-travel fallback also failed: %s", fallback_exc)
                     return []
         finally:
-            import contextlib
-            with contextlib.suppress(Exception):
-                conn.close()
+            pool.release(conn)
 
     def _parse_timestamp(self, timestamp: str) -> str:
         """Convert relative timestamps to absolute ISO format for CockroachDB."""
@@ -1106,7 +1231,7 @@ class BastionMemory:
                 return results
         except Exception as e:
             logger.exception("audit query failed", extra={"agent_id": agent_id})
-            raise RuntimeError(f"Audit query failed for agent {agent_id}: {e}") from e
+            raise RuntimeError(f"Audit query failed") from e
         finally:
             pool.release(conn)
 
@@ -1126,7 +1251,7 @@ class BastionMemory:
                 conn.commit()
         except Exception as e:
             logger.exception("store_audit failed", extra={"agent_id": agent_id, "action": action})
-            raise RuntimeError(f"store_audit failed for agent {agent_id}: {e}") from e
+            raise RuntimeError(f"store_audit failed") from e
         finally:
             pool.release(conn)
 
@@ -1175,7 +1300,7 @@ class BastionMemory:
             return merged
         except Exception as e:
             logger.exception("resolve_conflict failed")
-            raise RuntimeError(f"Conflict resolution failed: {e}") from e
+            raise RuntimeError(f"Conflict resolution failed") from e
         finally:
             pool.release(conn)
 
@@ -1370,14 +1495,22 @@ class BastionMemory:
         self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
+                # Invalidate hash chain — correction changes content so the old hash
+                # no longer matches. Setting to NULL makes the break detectable.
                 cur.execute(
-                    "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata) "
+                    "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata), "
+                    "cryptographic_hash = NULL "
                     "WHERE memory_id = %s AND agent_id = %s RETURNING " + _MEMORY_COLS,
                     (new_content, json.dumps(metadata) if metadata else None, memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
                 if not row:
                     return None
+                logger.warning(
+                    "Memory corrected — hash chain invalidated at memory_id=%s. "
+                    "Run 'memory_heal' to reseal the chain.",
+                    memory_id,
+                )
                 conn.commit()
                 return MemoryRecord.from_row(row)
         finally:
@@ -1484,26 +1617,26 @@ class BastionMemory:
         settings = get_settings()
         body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
         max_retries = min(settings.retry_max_retries, 2)  # Limit retries for demo
+
+        def _invoke():
+            response = client.invoke_model(
+                modelId=settings.bedrock_model_id,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            result: Any = json.loads(response["body"].read())
+            return result["embedding"]
+
         for attempt in range(max_retries + 1):
             try:
-                response = client.invoke_model(
-                    modelId=settings.bedrock_model_id,
-                    body=body,
-                    contentType="application/json",
-                    accept="application/json",
-                )
-                result: Any = json.loads(response["body"].read())
-                embedding: list[float] = result["embedding"]
-                self._bedrock_cb._on_success()
-                return embedding
+                return self._bedrock_cb.call(_invoke)
             except Exception as exc:
                 exc_name = type(exc).__name__
                 if attempt < max_retries and exc_name in ("ThrottlingException", "ServiceUnavailableException"):
                     time.sleep((2 ** attempt) + random.uniform(0, 1))
                     continue
-                self._bedrock_cb._on_failure()
                 return None
-        self._bedrock_cb._on_failure()
         return None
 
     def _embed_local(self, text: str) -> list[float]:
