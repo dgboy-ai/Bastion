@@ -38,6 +38,23 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
     """Store a code_verifier for later verification during token exchange."""
     with _pkce_lock:
         _pkce_verifiers[authorization_code] = (code_verifier, time.time())
+    
+    conn_str = os.environ.get("BASTION_CONN")
+    if conn_str:
+        try:
+            import psycopg
+            with psycopg.connect(conn_str) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO oauth_pkce_verifiers (code, code_verifier, expires_at)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (code) DO UPDATE SET
+                        code_verifier = EXCLUDED.code_verifier,
+                        expires_at = EXCLUDED.expires_at
+                    """, (authorization_code, code_verifier, time.time() + _PKCE_TTL))
+                conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to store PKCE verifier in DB: %s", exc)
 
 
 def _cleanup_pkce_verifiers() -> None:
@@ -48,6 +65,17 @@ def _cleanup_pkce_verifiers() -> None:
         for k in expired:
             _pkce_verifiers.pop(k, None)
 
+    conn_str = os.environ.get("BASTION_CONN")
+    if conn_str:
+        try:
+            import psycopg
+            with psycopg.connect(conn_str) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM oauth_pkce_verifiers WHERE expires_at <= %s", (now,))
+                conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to clean up expired PKCE verifiers in DB: %s", exc)
+
 
 def _verify_pkce_s256(code_verifier: str, code_challenge: str) -> bool:
     """Verify code_verifier against code_challenge using S256 method."""
@@ -57,6 +85,30 @@ def _verify_pkce_s256(code_verifier: str, code_challenge: str) -> bool:
         .decode("ascii")
     )
     return secrets.compare_digest(computed, code_challenge)
+
+
+def _load_pkce_verifier_from_db(authorization_code: str) -> str | None:
+    """Load a PKCE verifier from the database for the given authorization code."""
+    conn_str = os.environ.get("BASTION_CONN")
+    if not conn_str:
+        return None
+    try:
+        import psycopg
+        with psycopg.connect(conn_str) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT code_verifier FROM oauth_pkce_verifiers WHERE code = %s AND expires_at > %s",
+                    (authorization_code, time.time()),
+                )
+                row = cur.fetchone()
+                if row:
+                    # Delete after retrieval (one-time use)
+                    cur.execute("DELETE FROM oauth_pkce_verifiers WHERE code = %s", (authorization_code,))
+                    conn.commit()
+                    return row[0]
+    except Exception as exc:
+        logger.warning("Failed to load PKCE verifier from DB: %s", exc)
+    return None
 
 
 def _load_pre_registered_client() -> tuple[str | None, str | None, str | None]:
@@ -95,6 +147,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         self._auth_codes: dict[str, AuthorizationCode] = {}
         self._access_tokens: dict[str, AccessToken] = {}
         self._refresh_tokens: dict[str, RefreshToken] = {}
+        self._last_cleanup: float = time.time()
+        self._cleanup_interval: float = 300  # Clean up every 5 minutes
 
         # Initialize DB tables if using persistent storage
         if self._use_db:
@@ -210,10 +264,46 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         created_at TIMESTAMPTZ DEFAULT now()
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oauth_pkce_verifiers (
+                        code STRING PRIMARY KEY,
+                        code_verifier STRING,
+                        expires_at FLOAT8,
+                        created_at TIMESTAMPTZ DEFAULT now()
+                    )
+                """)
             conn.commit()
             logger.info("OAuth DB tables initialized")
         finally:
             self._release_conn(conn)
+
+    # ── Token Cleanup ─────────────────────────────────────────────────
+
+    def _cleanup_expired_tokens(self) -> None:
+        """Remove expired tokens from in-memory stores to prevent unbounded growth."""
+        now = time.time()
+        if now - self._last_cleanup < self._cleanup_interval:
+            return
+        self._last_cleanup = now
+
+        # Clean expired auth codes
+        expired_codes = [k for k, v in self._auth_codes.items() if v.expires_at < now]
+        for k in expired_codes:
+            self._auth_codes.pop(k, None)
+
+        # Clean expired access tokens
+        expired_tokens = [k for k, v in self._access_tokens.items() if v.expires_at and v.expires_at < now]
+        for k in expired_tokens:
+            self._access_tokens.pop(k, None)
+
+        # Clean expired refresh tokens
+        expired_refresh = [k for k, v in self._refresh_tokens.items() if v.expires_at and v.expires_at < now]
+        for k in expired_refresh:
+            self._refresh_tokens.pop(k, None)
+
+        total_cleaned = len(expired_codes) + len(expired_tokens) + len(expired_refresh)
+        if total_cleaned > 0:
+            logger.info("OAuth token cleanup: removed %d expired entries", total_cleaned)
 
     # ── Client Management ─────────────────────────────────────────────
 
@@ -368,21 +458,44 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
-        # PKCE verification
+        # Periodic cleanup of expired in-memory tokens
+        self._cleanup_expired_tokens()
+
+        # PKCE verification — retrieve code_verifier from in-memory store or DB
+        code_verifier = None
         with _pkce_lock:
             pv_entry = _pkce_verifiers.pop(authorization_code.code, None)
-        code_verifier = pv_entry[0] if pv_entry else None
+            if pv_entry:
+                code_verifier = pv_entry[0]
+
+        # Fallback: load from DB if not in memory (e.g., server restarted or multi-instance)
+        if not code_verifier and self._use_db:
+            code_verifier = _load_pkce_verifier_from_db(authorization_code.code)
 
         if authorization_code.code_challenge:
+            # PKCE challenge was provided during authorization — verifier MUST be present
             if not code_verifier:
                 raise ValueError(
                     "PKCE code_verifier missing from token request — "
-                    "middleware may have failed to capture it"
+                    "middleware may have failed to capture it, or the verifier expired"
                 )
+            # Verify S256: SHA256(code_verifier) == code_challenge
             if not _verify_pkce_s256(code_verifier, authorization_code.code_challenge):
+                logger.warning(
+                    "PKCE verification FAILED for client %s — code_verifier does not match code_challenge",
+                    client.client_id,
+                )
                 raise ValueError(
                     "PKCE verification failed: code_verifier does not match code_challenge"
                 )
+            logger.info("PKCE S256 verification passed for client %s", client.client_id)
+        else:
+            # No code_challenge provided — PKCE is optional per RFC 7636
+            # Log at info level since this means the client didn't use PKCE
+            logger.info(
+                "No PKCE code_challenge in authorization — skipping PKCE verification for client %s",
+                client.client_id,
+            )
 
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)

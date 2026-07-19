@@ -294,7 +294,7 @@ def mock_get_pinned(agent_id: str, min_priority: int = 1) -> list[MemoryRecord]:
                 expires_at=r.get("expires_at"),
                 access_count=r.get("access_count", 0),
                 importance_score=r.get("importance_score", 5.0),
-                trust_level=r.get("trust_level", 0.5),
+                trust_level=int(r.get("trust_level", 2)),
                 is_pinned=r.get("is_pinned", False),
                 pin_priority=r.get("pin_priority", 0),
             ))

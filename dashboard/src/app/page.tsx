@@ -965,7 +965,8 @@ export default function Page() {
       {/* ── FOOTER ── */}
       <footer style={{
         position:"relative",zIndex:10,
-        background:"rgba(10,2,8,0.99)",
+        background:"rgba(10,2,8,0.72)",
+        backdropFilter: "blur(16px)",
         borderTop:`3px solid rgba(255,170,0,0.35)`,
         boxShadow:`0 0 50px rgba(255,170,0,0.15), inset 2px 2px 0 rgba(255,255,255,.04)`,
       }}>

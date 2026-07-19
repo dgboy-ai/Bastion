@@ -326,7 +326,7 @@ def create_a2a_server(
 
     # -- FastAPI app -------------------------------------------------------
 
-    app = FastAPI(title="Bastion A2A Server", version="0.3.0")
+    app = FastAPI(title="Bastion A2A Server", version=VERSION)
     cors_origins = [
         o.strip()
         for o in os.environ.get(
@@ -393,7 +393,7 @@ def create_a2a_server(
     _sender_key_cache: dict[str, tuple[str, float]] = {}  # url -> (pem, expiry)
     _signature_cache_ttl = 86400  # 24 hours
     _signature_cache_maxsize = 100  # prevent unbounded memory growth (DoS)
-    _strict_auth = os.environ.get("BASTION_A2A_STRICT", "").lower() in ("true", "1", "yes")
+    _strict_auth = os.environ.get("BASTION_A2A_STRICT", "true").lower() in ("true", "1", "yes")
 
     def _is_safe_url(url: str) -> bool:
         """Check if a URL is safe to fetch (no private/internal IPs)."""
@@ -743,6 +743,7 @@ def create_a2a_server(
         except Exception:
             logger.exception("Invalid request body in /message:send")
             return JSONResponse({"error": "Invalid request"}, status_code=400)
+        # OWASP guard is applied inside _handle_send_message
         result = await _handle_send_message(body, rid, "rest", raw, request)
         return result
 
@@ -1022,6 +1023,33 @@ def create_a2a_server(
                 text = t
                 break
 
+        # ── OWASP ASI06 Guard: screen incoming message before execution ──
+        try:
+            from bastion.guard import MemoryGuard
+            _guard = MemoryGuard()
+            for part in parts:
+                part_text = part.get("text", "")
+                if part_text:
+                    guard_result = _guard.check(part_text)
+                    if not guard_result.is_safe:
+                        threat_details = [f.finding.threat_type for f in guard_result.findings]
+                        logger.warning(
+                            "OWASP guard blocked A2A message content",
+                            extra={
+                                "request_id": rid,
+                                "threats": threat_details,
+                                "sender_url": request.headers.get("X-Sender-URL", "") if request else "",
+                            },
+                        )
+                        await _update_task(task_id, "FAILED")
+                        return _rpc_error(
+                            _JSONRPC_INVALID_PARAMS,
+                            f"Message blocked by security guard: {', '.join(threat_details) or 'injection detected'}",
+                            req_id,
+                        )
+        except Exception as exc:
+            logger.warning("OWASP guard check failed (non-blocking): %s", exc)
+
         if not skill_params:
             skill_params = _infer_params(text)
 
@@ -1031,6 +1059,7 @@ def create_a2a_server(
             task = await _store_task(uuid.uuid4().hex, "FAILED")
             return _rpc_result(_strip_internal(task), req_id)
 
+        # Create task ID early so guard can reference it on failure
         task_id = uuid.uuid4().hex
         await _store_task(task_id, "WORKING")
 

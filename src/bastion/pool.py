@@ -13,13 +13,17 @@ import time
 from collections import deque
 from typing import Any
 
-import structlog
+try:
+    import structlog
+    structlog_logger = structlog.get_logger("bastion.pool")
+except ImportError:
+    structlog = None  # type: ignore[assignment]
+    structlog_logger = None  # type: ignore[assignment]
 
 from bastion.errors import BastionPoolExhaustedError
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
-structlog_logger = structlog.get_logger("bastion.pool")
 
 
 class ConnectionPool:
@@ -254,7 +258,8 @@ class AsyncConnectionPool:
             max_inactive_connection_lifetime=self.max_idle_seconds,
             command_timeout=self.command_timeout,
         )
-        structlog_logger.info("async_pool_started", min_size=self.min_size, max_size=self.max_size)
+        if structlog_logger is not None:
+            structlog_logger.info("async_pool_started", min_size=self.min_size, max_size=self.max_size)
 
     async def acquire(self, timeout: float = 30.0) -> Any:  # noqa: ASYNC109
         if self._pool is None:
@@ -299,7 +304,8 @@ class AsyncConnectionPool:
             return
         await self._pool.close()
         self._pool = None
-        structlog_logger.info("async_pool_closed")
+        if structlog_logger is not None:
+            structlog_logger.info("async_pool_closed")
 
     async def execute(self, query: str, *args: Any, timeout: float | None = None) -> Any:  # noqa: ASYNC109
         conn = await self.acquire(timeout=timeout or 30)

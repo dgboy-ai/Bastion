@@ -18,6 +18,7 @@ export default function RootLayout({
         color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
         margin: 0, minHeight: "100vh", overflowY: "auto",
+        background: "transparent",
       }}>
 
         <GlobalErrorHandler />
@@ -28,8 +29,8 @@ export default function RootLayout({
         </div>
         <style>{`
           @keyframes pageEnter {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; }
+            to { opacity: 1; }
           }
           html {
             scroll-behavior: smooth;

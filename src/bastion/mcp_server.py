@@ -168,14 +168,16 @@ def create_server(
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
-    # Store shared memory globally for health check routes
-    global _SHARED_MEMORY
-    _SHARED_MEMORY = _shared
+    # Store shared memory globally for health check routes (thread-safe)
+    global _SHARED_MEMORY, _SHARED_POOL
+    with _INIT_LOCK:
+        _SHARED_MEMORY = _shared
 
     if (stateless or multi_tenant) and not is_mock:
-        global _SHARED_POOL
         if _SHARED_POOL is None:
-            _SHARED_POOL = _shared.get_pool()
+            with _INIT_LOCK:
+                if _SHARED_POOL is None:
+                    _SHARED_POOL = _shared.get_pool()
 
     def _resolve_memory(ctx: Context | None = None) -> BastionMemory:
         if not multi_tenant and not stateless:
@@ -499,10 +501,15 @@ def create_server(
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
     ) -> str:
-        # Input validation
-        valid_types = {"fact", "task", "preference", "learned", "procedure", "session", "instruction"}
+        # Input validation — accept all memory types used across the codebase
+        valid_types = {
+            "fact", "task", "preference", "learned", "procedure", "session", "instruction",
+            "episodic", "semantic", "procedural", "system_event", "security",
+            "thought_node", "saga", "conversation", "user_message", "agent_response",
+            "error_log", "checkpoint", "observation", "contradiction", "dream",
+        }
         if memory_type not in valid_types:
-            return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {valid_types}"})
+            return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {sorted(valid_types)}"})
         if not content or not content.strip():
             return json.dumps({"error": "content must be a non-empty string"})
         mem = _resolve_memory(ctx)
@@ -1532,7 +1539,7 @@ def create_server(
         card = {
             "schemaVersion": "v1",
             "name": "Bastion Memory",
-            "version": "1.0.0",
+            "version": VERSION,
             "description": (
                 "Agentic memory layer backed by CockroachDB with SHA-256 hash chain"
                 " integrity, C-SPANN vector indexing, AS OF SYSTEM TIME queries,"

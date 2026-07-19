@@ -330,7 +330,10 @@ class SchemaEvolution:
             return f"table_name too long ({len(table_name)} > 128)"
         return None
 
-    _SAFE_DEFAULT_RE = re.compile(r"^(NULL|TRUE|FALSE|NOW\(\)|\d+(\.\d+)?|'-?\d+(\.\d+)?'|'[^';]{0,255}')$")
+    _SAFE_DEFAULT_RE = re.compile(
+        r"^(NULL|TRUE|FALSE|CURRENT_TIMESTAMP|CURRENT_DATE|NOW\(\)|GEN_RANDOM_UUID\(\)|\d+(\.\d+)?|'-?\d+(\.\d+)?'|'[^';]{0,255}')$",
+        re.IGNORECASE,
+    )
 
     def _validate_default_value(self, default_value: str) -> str | None:
         """Validate DEFAULT value to prevent SQL injection. Returns None if valid, error message if invalid."""

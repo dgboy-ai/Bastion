@@ -191,6 +191,7 @@ class MemoryGuard:
         multilang_matches = multilang_scan(content)
         for match in multilang_matches:
             findings.append(Finding(
+                detector="multilang_injection",
                 threat_type="ASI06: Multi-language Injection",
                 severity="high",
                 detail=f"Non-English injection pattern detected: {match}",

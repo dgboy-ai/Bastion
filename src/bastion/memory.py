@@ -1260,16 +1260,44 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
         try:
+            pruned = 0
+            resealed = 0
             with conn.cursor() as cur:
+                # 1. Delete expired memories
                 cur.execute(
                     "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
                     (agent_id,),
                 )
+                pruned = cur.rowcount
+
+                # 2. Recompute broken hashes (cryptographic_hash IS NULL)
+                from bastion.crypto import compute_hash
+                cur.execute(
+                    "SELECT memory_id, content, metadata, previous_hash "
+                    "FROM agent_memory WHERE agent_id = %s AND cryptographic_hash IS NULL "
+                    "ORDER BY created_at ASC",
+                    (agent_id,),
+                )
+                broken = cur.fetchall()
+                for mid, content, metadata, prev_hash in broken:
+                    meta_dict = dict(metadata) if metadata else {}
+                    new_hash = compute_hash(content, meta_dict, prev_hash)
+                    cur.execute(
+                        "UPDATE agent_memory SET cryptographic_hash = %s WHERE memory_id = %s",
+                        (new_hash, mid),
+                    )
+                    resealed += 1
+
                 conn.commit()
-                return {"agent_id": agent_id, "pruned": cur.rowcount, "status": "healed"}
+                return {
+                    "agent_id": agent_id,
+                    "pruned": pruned,
+                    "resealed": resealed,
+                    "status": "healed",
+                }
         except Exception:
             logger.exception("heal query failed", extra={"agent_id": agent_id})
-            return {"agent_id": agent_id, "pruned": 0, "status": "error"}
+            return {"agent_id": agent_id, "pruned": 0, "resealed": 0, "status": "error"}
         finally:
             pool.release(conn)
 
@@ -1384,10 +1412,11 @@ class BastionMemory:
 
                 base_imp = float(row[0]) or 5.0
                 settings = get_settings()
-                boost = 0.1
                 if success:
-                    boost += settings.reinforce_boost
-                new_imp = min(base_imp + boost, 10.0)
+                    boost = 0.1 + settings.reinforce_boost  # Raise importance
+                else:
+                    boost = -0.5  # Lower importance (superseded memories sink in results)
+                new_imp = max(0.0, min(base_imp + boost, 10.0))
 
                 cur.execute(
                     "UPDATE agent_memory SET importance_score = %s, access_count = access_count + 1 "

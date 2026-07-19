@@ -196,6 +196,14 @@ class MultiSignalRetriever:
         query_tokens = _tokenize(query)
         query_entities = _extract_entities(query)
 
+        # Step 2.5: Compute query embedding for actual vector similarity
+        query_embedding: list[float] | None = None
+        try:
+            if hasattr(self._memory, '_embed'):
+                query_embedding = self._memory._embed(query)
+        except Exception:
+            pass  # Fall back to importance_score proxy
+
         # Step 3: Score each candidate across all signals
         results: list[RetrievalResult] = []
         for mem in candidates:
@@ -203,9 +211,16 @@ class MultiSignalRetriever:
             content_tokens = _tokenize(content)
             memory_entities = _extract_entities(content)
 
-            # Vector similarity (use importance_score as proxy for speed)
-            # In production, this would use actual cosine similarity from C-SPANN
-            vector_score = min(1.0, (getattr(mem, "importance_score", 5.0) or 5.0) / 10.0)
+            # Vector similarity: use actual embedding if available, else importance_score proxy
+            embedding = getattr(mem, "embedding", None)
+            if embedding and query_embedding:
+                import math
+                dot = sum(a * b for a, b in zip(embedding, query_embedding))
+                norm_a = math.sqrt(sum(a * a for a in embedding))
+                norm_b = math.sqrt(sum(b * b for b in query_embedding))
+                vector_score = dot / (norm_a * norm_b) if norm_a and norm_b else 0.5
+            else:
+                vector_score = min(1.0, (getattr(mem, "importance_score", 5.0) or 5.0) / 10.0)
 
             # BM25 keyword matching
             keyword_score = _bm25_score(query_tokens, content_tokens)

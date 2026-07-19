@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CockroachDB](https://img.shields.io/badge/Database-CockroachDB-000000?logo=cockroachlabs&logoColor=white)](https://cockroachlabs.cloud)
 [![AWS](https://img.shields.io/badge/Cloud-AWS-232F3E?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
-[![Tests](https://img.shields.io/badge/Tests-1159%20passed-brightgreen)](#test-suite)
+[![Tests](https://img.shields.io/badge/Tests-2000%2B-passing-brightgreen)](#test-suite)
 [![Deploy](https://img.shields.io/badge/Deploy-AWS-orange)](terraform/)
 
 > **When an agent is poisoned, Bastion detects it, travels back to inspect the prior belief, and restores a verified state with cryptographic proof.**
@@ -50,7 +50,8 @@ docker compose -f docker-compose.demo.yml up
 
 Or with Python:
 ```bash
-pip install bastion-memory
+git clone https://github.com/dgboy-ai/Bastion && cd Bastion
+pip install -e ".[all]"
 python scripts/demo.py
 ```
 

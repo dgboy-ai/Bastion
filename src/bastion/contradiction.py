@@ -339,17 +339,17 @@ class ContradictionDetector:
 
     def _auto_supersede(self, old_memory: Any, new_memory_id: str, reason: str) -> None:
         """Mark an old memory as superseded by a new one."""
-        old_meta = getattr(old_memory, "metadata", {}) or {}
-        old_meta["superseded"] = True
-        old_meta["superseded_by"] = new_memory_id
-        old_meta["superseded_at"] = datetime.now(UTC).isoformat()
-        old_meta["superseded_reason"] = reason
+        now_iso = datetime.now(UTC).isoformat()
 
         try:
+            # Use individual field patches (applied TO the metadata dict)
             self._memory.apply_patch(old_memory.memory_id, [
-                {"op": "replace", "path": "/metadata", "value": old_meta}
+                {"op": "add", "path": "/superseded", "value": True},
+                {"op": "add", "path": "/superseded_by", "value": new_memory_id},
+                {"op": "add", "path": "/superseded_at", "value": now_iso},
+                {"op": "add", "path": "/superseded_reason", "value": reason},
             ])
-            # Also lower importance so it sinks in search results
+            # Lower importance so it sinks in search results
             self._memory.reinforce(old_memory.memory_id, success=False)
         except Exception as exc:
             logger.warning(
@@ -381,20 +381,45 @@ class ContradictionDetector:
     def scan_all(self, agent_id: str | None = None) -> list[ContradictionScanResult]:
         """Scan ALL memories for existing contradictions (batch mode).
 
-        Useful for initial setup or periodic maintenance.
+        Uses pairwise comparison to avoid O(n²) search calls.
+        Only compares each pair once (i < j) and skips already-known contradictions.
         """
         agent_id = agent_id or self._memory.agent_id
         all_memories = self._memory.list_all(namespace_scope="own")
+
+        # Filter to scannable memories
+        scannable = [
+            m for m in all_memories
+            if not (getattr(m, "metadata", {}) or {}).get("superseded")
+            and not getattr(m, "is_pinned", False)
+        ]
+
         results = []
+        seen_pairs: set[tuple[str, str]] = set()
 
-        for _i, mem in enumerate(all_memories):
-            # Only scan non-pinned, non-superseded memories
-            meta = getattr(mem, "metadata", {}) or {}
-            if meta.get("superseded") or getattr(mem, "is_pinned", False):
-                continue
+        for i, mem_a in enumerate(scannable):
+            for mem_b in scannable[i + 1:]:
+                pair_key = tuple(sorted([mem_a.memory_id, mem_b.memory_id]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
 
-            result = self.scan_after_store(mem)
-            if result.contradictions_found > 0:
-                results.append(result)
+                contradiction = self._check_contradiction(mem_a, mem_b)
+                if contradiction is not None:
+                    results.append(ContradictionScanResult(
+                        new_memory_id=mem_a.memory_id,
+                        contradictions_found=1,
+                        contradictions=[contradiction],
+                        scanned_count=1,
+                    ))
+                    # Check reverse direction
+                    contradiction_rev = self._check_contradiction(mem_b, mem_a)
+                    if contradiction_rev is not None and contradiction_rev.old_memory_id != mem_a.memory_id:
+                        results.append(ContradictionScanResult(
+                            new_memory_id=mem_b.memory_id,
+                            contradictions_found=1,
+                            contradictions=[contradiction_rev],
+                            scanned_count=1,
+                        ))
 
         return results

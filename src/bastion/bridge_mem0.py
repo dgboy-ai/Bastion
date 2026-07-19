@@ -250,8 +250,9 @@ class BastionMem0Bridge:
             try:
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM agent_memory WHERE agent_id = %s", (eid,))
+                    deleted = cur.rowcount
                 conn.commit()
-                return {"message": f"{cur.rowcount} memories deleted successfully!"}
+                return {"message": f"{deleted} memories deleted successfully!"}
             finally:
                 pool.release(conn)
         from bastion.mock import _agent_data
