@@ -1,5 +1,5 @@
 import { safeQuery, isMockMode } from "@/lib/db";
-import { requireAuth } from "@/lib/api-auth";
+import { checkRateLimit } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 const defaultHealth = {
@@ -13,8 +13,10 @@ const defaultHealth = {
 };
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  // Health endpoint skips auth — it's just a connectivity check
+  const rateLimit = checkRateLimit(request);
+  if (rateLimit) return rateLimit;
+
   if (isMockMode()) {
     return apiSuccess(defaultHealth, "short", { mock: true });
   }

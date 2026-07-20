@@ -444,7 +444,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div style={{ padding: "40px", color: "#6b7280" }}>Initializing Cockpit View...</div>}>
+    <Suspense fallback={<div style={{ padding: "40px", color: "#6b7280" }}>Initializing Dashboard...</div>}>
       <DashboardLayoutContent>{children}</DashboardLayoutContent>
     </Suspense>
   );
