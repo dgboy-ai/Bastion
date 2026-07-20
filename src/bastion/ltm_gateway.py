@@ -320,7 +320,8 @@ class LTMMemoryGateway:
                 ])
                 invalidated += 1
 
-        logger.info(
+        log_fn = logger.info if invalidated > 0 else logger.debug
+        log_fn(
             "LTM Gateway: invalidated analyses",
             query=query[:80],
             reason=reason,

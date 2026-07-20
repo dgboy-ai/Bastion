@@ -97,6 +97,19 @@ class AgentCardSigner:
         }
         return signed
 
+    def rotate_key(self) -> None:
+        """Generate a new Ed25519 keypair, replacing the current one."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        self._private_key = Ed25519PrivateKey.generate()
+        self._public_key = self._private_key.public_key()
+        self._public_pem = self._public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode()
+        logger.info("A2A signing key rotated")
+
     def get_public_key_pem(self) -> str:
         return self._public_pem
 

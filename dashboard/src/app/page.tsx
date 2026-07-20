@@ -596,10 +596,10 @@ function SW({ children, glow = P.lava }: { children:React.ReactNode; glow?:strin
 function Features() {
   const items = [
     { icon:"🔐", t:"SHA-256 Ledger Chain",        d:"Every memory block cryptographically links to the previous — creating a tamper-evident chain. Corruption is caught instantly.",     c:P.cyan   },
-    { icon:"⏳", t:"AS OF SYSTEM TIME Queries",   d:"Full MVCC time-travel. Query exactly what your agent knew at any millisecond in history — native CockroachDB feature.",            c:P.gold   },
-    { icon:"🛡️", t:"OWASP ASI06 MemoryGuard",     d:"Semantic classifier blocks prompt injection, API key leakage, and PII from ever being written to the memory store.",             c:P.cyan   },
-    { icon:"🌍", t:"6-Region Global Sync",         d:"Serializable isolation across US, EU, and APAC. Sub-50ms reads. Automatic zero-downtime regional failover.",                     c:P.cyan   },
-    { icon:"🧠", t:"Sleep-Time Consolidation",     d:"Background daemon deduplicates, merges contradictions, and reseals the ledger — zero overhead during agent operation.",          c:P.purple },
+    { icon:"⏳", t:"AS OF SYSTEM TIME Queries",   d:"Full MVCC time-travel. Query exactly what your agent knew at any point in time — native CockroachDB feature.",                    c:P.gold   },
+    { icon:"🛡️", t:"OWASP ASI06 MemoryGuard",     d:"Multi-stage guard blocks prompt injection, API key leakage, and PII from ever being written to the memory store.",               c:P.cyan   },
+    { icon:"🌍", t:"CockroachDB Multi-Region",    d:"Serializable isolation with CockroachDB. Schema supports multi-region deployment with automatic failover.",                      c:P.cyan   },
+    { icon:"🧠", t:"Sleep-Time Consolidation",     d:"Background daemon deduplicates, merges contradictions, and prunes low-value memories — zero overhead during agent operation.",    c:P.purple },
     { icon:"📋", t:"A2A Ed25519 Memory Cards",     d:"Agents transfer signed memory bundles with provenance proofs. Receiving agents verify card integrity cryptographically.",        c:P.gold   },
   ];
   return (
@@ -629,9 +629,9 @@ function Consolidation() {
   useEffect(()=>{ const iv=setInterval(()=>setStage(s=>(s+1)%4),4500); return()=>clearInterval(iv); },[]);
   const steps = [
     {t:"Stage 1 — Scan & Fetch",       d:"Daemon wakes on inactivity. Scans recent agent_memory on CockroachDB.",                       c:"#ffaa00"},
-    {t:"Stage 2 — Semantic Cluster",   d:"Groups entries by AWS Titan v2 cosine distance to identify near-duplicates.",                   c:P.magma},
+    {t:"Stage 2 — Duplicate Detection",d:"Groups entries by word-overlap similarity to identify near-duplicates for merging.",             c:P.magma},
     {t:"Stage 3 — Conflict Resolution",d:"Detects logical negations and timestamp ordering to canonicalise memory state.",                c:P.gold},
-    {t:"Stage 4 — Ledger Commit",      d:"SHA-256 links the new block and signs with the agent's Ed25519 private key.",                   c:P.cyan},
+    {t:"Stage 4 — Consolidate & Seal", d:"Merges duplicates, promotes episodic to semantic, prunes low-value, and logs audit trail.",      c:P.cyan},
   ];
   return (
     <Reveal>
@@ -651,7 +651,7 @@ function Consolidation() {
           </div>
           <Card style={{minHeight:"320px",display:"flex",flexDirection:"column",justifyContent:"center",gap:"18px"}}>
             <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,letterSpacing:"1.5px",textAlign:"center"}}>
-              DAEMON_STATE // {["SCANNING","CLUSTERING","RESOLVING","COMMITTING"][stage]}
+              DAEMON_STATE // {["SCANNING","DEDUPLICATING","RESOLVING","CONSOLIDATING"][stage]}
             </div>
             <div style={{minHeight:"120px",display:"flex",justifyContent:"center",alignItems:"center",gap:"14px"}}>
               {stage===0&&<>{["Memory A","Memory B"].map(l=><div key={l} className="mn pa">{l}</div>)}</>}
@@ -681,12 +681,12 @@ function Consolidation() {
 /* ─── Comparison ─────────────────────────────────────────── */
 function Comparison() {
   const rows = [
-    {f:"Cryptographic Tamper-Evidence",b:"SHA-256 Chain (0.16ms)",m:"None (Raw DB)",  z:"None (Raw DB)",  h:true},
-    {f:"Time-Travel Query (MVCC)",      b:"AS OF SYSTEM TIME",     m:"Manual logs",    z:"Snapshots only", h:false},
-    {f:"EU AI Act Art.12 Compliance",   b:"Built-in Audit Trail",  m:"Custom build",   z:"Custom build",   h:false},
-    {f:"Prompt Poisoning Guard (ASI06)",b:"OWASP MemoryGuard",     m:"Unprotected",    z:"PII filter only",h:true},
-    {f:"Multi-Region Sync",             b:"6 Regions (CockroachDB)",m:"Single node",   z:"Manual repl.",   h:false},
-    {f:"Developer Cost",                b:"MIT — Free / OSS",      m:"$249/mo Cloud",  z:"$125/mo Cloud",  h:true},
+    {f:"Cryptographic Tamper-Evidence",b:"SHA-256 Hash Chain",    m:"None",            z:"None",            h:true},
+    {f:"Time-Travel Query (MVCC)",      b:"AS OF SYSTEM TIME",     m:"Not available",   z:"Snapshots only",  h:false},
+    {f:"EU AI Act Art.12 Compliance",   b:"Built-in Audit Trail",  m:"Custom build",    z:"Custom build",    h:false},
+    {f:"Prompt Poisoning Guard (ASI06)",b:"OWASP MemoryGuard",     m:"Not available",   z:"PII filter only", h:true},
+    {f:"Multi-Region Sync",             b:"CockroachDB (multi-region capable)",m:"Single node",z:"Manual repl.",h:false},
+    {f:"Developer Cost",                b:"MIT — Free / OSS",      m:"Open source",     z:"Open source",     h:true},
   ];
   return (
     <Reveal>
@@ -725,11 +725,11 @@ function Comparison() {
 function FAQ() {
   const [open,setOpen] = useState<number|null>(null);
   const qs = [
-    {q:"What does Bastion store?",                       a:"Structured agent observations, user facts, and world-state deltas — timestamped, vectorized, and cryptographically sealed into a PGVector-indexed ledger on CockroachDB."},
-    {q:"How does the SHA-256 ledger chain work?",         a:"Each block stores SHA-256(prev_hash ‖ content ‖ timestamp). Tampering breaks the chain — instantly detectable via the /logs inspector."},
-    {q:"Does Bastion protect against prompt injection?",  a:"Yes. Every memory write passes through the OWASP ASI06 semantic guard — blocking injection patterns, PII, and credential leakage before committing."},
-    {q:"How do dynamic database connections work?",       a:"Paste your CockroachDB string in the Cockpit modal. The frontend appends it as 'x-bastion-conn' on every API call — no restart needed."},
-    {q:"Is this fully open source?",                      a:"Yes, MIT licensed. Clone, self-host freely. The full stack — API, schema, consolidation daemon, MemoryGuard — is in the repo."},
+    {q:"What does Bastion store?",                       a:"Structured agent observations, user facts, and preferences — timestamped, vectorized, and cryptographically sealed into a CockroachDB ledger with C-SPANN vector indexing."},
+    {q:"How does the SHA-256 ledger chain work?",         a:"Each memory stores SHA-256 of its content and links to the previous block's hash. Tampering breaks the chain — instantly detectable via the audit log."},
+    {q:"Does Bastion protect against prompt injection?",  a:"Yes. Every memory write passes through a multi-stage OWASP ASI06 guard — scanning for injection patterns, PII, and credential leakage before committing."},
+    {q:"How do dynamic database connections work?",       a:"Set the BASTION_CONN environment variable to your CockroachDB connection string. The server connects on startup — no restart needed to change databases."},
+    {q:"Is this fully open source?",                      a:"Yes, MIT licensed. Clone, self-host freely. The full stack — MCP server, A2A server, schema, consolidation daemon, MemoryGuard — is in the repo."},
   ];
   return (
     <Reveal>
@@ -858,7 +858,7 @@ export default function Page() {
               </h1>
 
               <p className="hs3" style={{fontSize:"17px",lineHeight:1.7,color:"#fff",fontWeight:600,marginBottom:"36px",textShadow:"0 2px 16px rgba(0,0,0,.98)",maxWidth:"600px",margin:"0 auto 36px"}}>
-                Persistent, self-healing memory for autonomous AI agents. Crash-proof. Injection-resistant. Cryptographically sealed. Forged in CockroachDB.
+                Persistent, self-healing memory for autonomous AI agents. Crash-resilient. Injection-resistant. Cryptographically sealed. Forged in CockroachDB.
               </p>
 
               <div className="hs4" style={{display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
@@ -872,7 +872,7 @@ export default function Page() {
               </div>
 
               <div className="hs5" style={{display:"flex",gap:"40px",justifyContent:"center",marginTop:"46px",paddingTop:"28px",borderTop:`1px solid rgba(255,170,0,0.3)`,flexWrap:"wrap"}}>
-                {[{e:2800000,s:"",l:"Memories / Day"},{e:16,s:"ms",l:"Query Latency"},{e:6,s:"",l:"Global Regions"}].map(({e,s,l})=>(
+                {[{e:965,s:"+",l:"Memories Stored"},{e:25,s:"",l:"MCP Tools"},{e:4,s:"",l:"Resources"}].map(({e,s,l})=>(
                   <div key={l}>
                     <div style={{fontSize:"clamp(24px,3.2vw,38px)",fontWeight:900,color:"#fff",fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 20px rgba(255,170,0,0.4)`}}>
                       <CountUp end={e} suffix={s}/>
@@ -908,13 +908,13 @@ export default function Page() {
                 </p>
                 <div style={{display:"flex",gap:"22px"}}>
                   <div>
-                    <div style={{fontSize:"24px",fontWeight:800,color:"#00ff66",fontFamily:"var(--font-sg)"}}>&lt; 100ms</div>
-                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>To Detect Poisoning</div>
+                    <div style={{fontSize:"24px",fontWeight:800,color:"#00ff66",fontFamily:"var(--font-sg)"}}>&lt; 1ms</div>
+                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>Regex Guard Scan</div>
                   </div>
                   <div style={{width:"1px",background:"rgba(255,255,255,0.1)"}}/>
                   <div>
-                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>&lt; 1s</div>
-                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>To Repair State</div>
+                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>12-42ms</div>
+                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>CockroachDB Query</div>
                   </div>
                 </div>
               </div>

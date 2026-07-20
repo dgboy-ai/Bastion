@@ -18,6 +18,7 @@ ASGI thread-pool offloading for non-blocking database operations.
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import contextlib
 import json
@@ -25,6 +26,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import uuid
 from typing import Any
 
@@ -61,6 +63,12 @@ _RATE_LIMITER: RequestLimiter | None = None
 _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 _INIT_LOCK = threading.Lock()
 
+# -- Metrics state (Prometheus format) --
+_metrics_requests_total: dict[tuple[str, str, int], int] = {}
+_metrics_durations: dict[tuple[str, str], list[float]] = {}
+_metrics_rate_limit_hits: int = 0
+_metrics_start_time: float = time.monotonic()
+
 
 def _get_shared_memory() -> BastionMemory:
     """Return the shared memory instance used by HTTP health routes."""
@@ -89,12 +97,19 @@ def _load_api_keys() -> set[str]:
     if _API_KEYS is None:
         with _INIT_LOCK:
             if _API_KEYS is None:
-                raw = os.environ.get("BASTION_MCP_API_KEYS", "")
-                _API_KEYS = {k.strip() for k in raw.split(",") if k.strip()} if raw else set()
+                # Accept both BASTION_MCP_API_KEYS (comma-separated) and BASTION_API_KEY (single)
+                raw_multi = os.environ.get("BASTION_MCP_API_KEYS", "")
+                raw_single = os.environ.get("BASTION_API_KEY", "")
+                keys: set[str] = set()
+                if raw_multi:
+                    keys = {k.strip() for k in raw_multi.split(",") if k.strip()}
+                if raw_single and raw_single not in keys:
+                    keys.add(raw_single.strip())
+                _API_KEYS = keys
                 if not _API_KEYS:
                     logger.warning(
-                        "BASTION_MCP_API_KEYS not set — MCP server is running without authentication. "
-                        "Set BASTION_MCP_API_KEYS to a comma-separated list of API keys."
+                        "No API keys configured — MCP server is running without authentication. "
+                        "Set BASTION_MCP_API_KEYS or BASTION_API_KEY."
                     )
     return _API_KEYS
 
@@ -191,6 +206,10 @@ def create_server(
         return mem
 
     use_oauth = oauth_enabled if oauth_enabled is not None else is_oauth_enabled()
+
+    # Ed25519 signer for Agent Card signing
+    from bastion.a2a_signing import AgentCardSigner
+    _mcp_card_signer = AgentCardSigner.from_env("BASTION_A2A_PRIVATE_KEY")
 
     kwargs: dict[str, Any] = dict(
         name="Bastion Memory",
@@ -1388,17 +1407,82 @@ def create_server(
     @mcp.tool(
         name="a2a_bridge",
         title="A2A Agent Bridge",
-        description=("Retrieve the A2A Agent Card for inter-agent discovery. Returns A2A-compliant metadata."),
+        description=(
+            "A2A protocol bridge: discover agent cards or forward requests to A2A servers. "
+            "Without parameters: returns the signed Agent Card for this server. "
+            "With a2a_url + skill: forwards a skill execution request to the target A2A server "
+            "and returns the result. Enables cross-protocol MCP→A2A communication."
+        ),
         annotations=ToolAnnotations(
             title="A2A Agent Bridge",
             readOnlyHint=True,
             destructiveHint=False,
             idempotentHint=True,
-            openWorldHint=False,
+            openWorldHint=True,
         ),
     )
-    async def a2a_bridge(agent_id: str = "bastion-agent") -> str:
-        return json.dumps(_build_a2a_card(agent_id), indent=2, default=str)
+    async def a2a_bridge(
+        agent_id: str = "bastion-agent",
+        a2a_url: str | None = None,
+        skill: str | None = None,
+        skill_params: dict[str, Any] | None = None,
+        timeout_seconds: int = 60,
+    ) -> str:
+        # Discovery mode: return signed Agent Card
+        if not a2a_url or not skill:
+            card = _build_a2a_card(agent_id)
+            signed = _mcp_card_signer.sign_card(card)
+            return json.dumps(signed, indent=2, default=str)
+
+        # Forwarding mode: send request to A2A server
+        import httpx
+
+        target_url = f"{a2a_url.rstrip('/')}/"
+        payload = {
+            "jsonrpc": "2.0",
+            "id": uuid.uuid4().hex,
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "role": 1,
+                    "parts": [{"text": ""}],
+                    "metadata": {"skill": skill, "params": skill_params or {}},
+                },
+                "configuration": {"return_immediately": True},
+            },
+        }
+        headers = {"A2A-Version": "1.0", "Content-Type": "application/json"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                resp = await client.post(target_url, json=payload, headers=headers)
+                resp.raise_for_status()
+                body = resp.json()
+                if "error" in body:
+                    return json.dumps({"error": body["error"], "source": "a2a_bridge"}, indent=2)
+                result = body.get("result", {})
+                status = result.get("status", {}).get("state", "UNKNOWN")
+                artifacts = result.get("artifacts", [])
+                if artifacts:
+                    text = artifacts[0]["parts"][0]["text"]
+                    return json.dumps({
+                        "status": status,
+                        "task_id": result.get("id"),
+                        "result": json.loads(text) if text else None,
+                        "bridge": {"from": "mcp", "to": a2a_url, "skill": skill},
+                    }, indent=2, default=str)
+                return json.dumps({
+                    "status": status,
+                    "task_id": result.get("id"),
+                    "bridge": {"from": "mcp", "to": a2a_url, "skill": skill},
+                }, indent=2, default=str)
+        except httpx.TimeoutException:
+            return json.dumps({"error": f"A2A bridge timeout after {timeout_seconds}s", "source": "a2a_bridge"})
+        except Exception as exc:
+            return json.dumps({"error": f"A2A bridge failed: {exc}", "source": "a2a_bridge"})
 
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
@@ -1575,9 +1659,8 @@ def create_server(
             "auth": {
                 "type": "oauth" if use_oauth else ("api_key" if _load_api_keys() else "none"),
                 "header": "Authorization: Bearer <key>" if not use_oauth else "Authorization: Bearer <token>",
-                "env_var": "BASTION_MCP_API_KEYS" if not use_oauth else "BASTION_MCP_OAUTH_CLIENT_ID",
                 "oauth_issuer": (
-                    os.environ.get("BASTION_MCP_ISSUER_URL", "http://localhost:9997") if use_oauth else None
+                    os.environ.get("BASTION_MCP_ISSUER_URL", "https://localhost:9997") if use_oauth else None
                 ),
             },
             "transport": {
@@ -1595,7 +1678,19 @@ def create_server(
     async def agent_card_route(request: Any) -> Any:
         from starlette.responses import JSONResponse
 
-        return JSONResponse(_build_a2a_card("bastion-agent"))
+        card = _build_a2a_card("bastion-agent")
+        signed = _mcp_card_signer.sign_card(card)
+        return JSONResponse(signed)
+
+    @mcp.custom_route("/.well-known/public-key.pem", methods=["GET"])
+    async def public_key_route(request: Any) -> Any:
+        from starlette.responses import Response
+
+        return Response(
+            content=_mcp_card_signer.get_public_key_pem(),
+            media_type="application/x-pem-file",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     # ── Custom HTTP routes (healthz, metrics) ─────────────────────────────
 
@@ -1622,37 +1717,166 @@ def create_server(
         connected = await anyio.to_thread.run_sync(lambda: mem.is_connected)
         if connected:
             return JSONResponse({"status": "ok"})
-        return JSONResponse({"status": "not ready", "detail": "database not connected"}, status_code=503)
+        return JSONResponse({"status": "not ready"}, status_code=503)
 
     @mcp.custom_route("/metrics", methods=["GET"])
     async def metrics_route(request: Any) -> Any:
+        from starlette.responses import Response
+
+        try:
+            limiter = _get_limiter()
+            limiter_stats = limiter.get_stats()
+        except Exception:
+            limiter_stats = {"current": 0, "queued": 0, "max_concurrent": 20}
+
+        lines = [
+            "# HELP bastion_mcp_requests_total Total MCP HTTP requests by method, path, and status",
+            "# TYPE bastion_mcp_requests_total counter",
+        ]
+        for (method, path, status), count in sorted(_metrics_requests_total.items()):
+            lines.append(f'bastion_mcp_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}')
+        lines.append("")
+        lines.append("# HELP bastion_mcp_request_duration_seconds Request duration percentiles (sampled last 500 per path)")
+        lines.append("# TYPE bastion_mcp_request_duration_seconds summary")
+        for (method, path), durations in sorted(_metrics_durations.items()):
+            if not durations:
+                continue
+            dur_sorted = sorted(durations)
+            n = len(dur_sorted)
+            for p, label in [(50, "0.5"), (90, "0.9"), (95, "0.95"), (99, "0.99")]:
+                idx = min(int(n * p / 100), n - 1)
+                lines.append(f'bastion_mcp_request_duration_seconds{{method="{method}",path="{path}",quantile="{label}"}} {dur_sorted[idx]:.6f}')
+            lines.append(f'bastion_mcp_request_duration_seconds_sum{{method="{method}",path="{path}"}} {sum(durations):.6f}')
+            lines.append(f'bastion_mcp_request_duration_seconds_count{{method="{method}",path="{path}"}} {n}')
+        lines.append("")
+        lines.append("# HELP bastion_mcp_rate_limit_hits_total Total rate-limited requests")
+        lines.append("# TYPE bastion_mcp_rate_limit_hits_total counter")
+        lines.append(f"bastion_mcp_rate_limit_hits_total {_metrics_rate_limit_hits}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_tools_total Number of registered MCP tools")
+        lines.append("# TYPE bastion_mcp_tools_total gauge")
+        tool_count = len(mcp._tool_manager._tools) if hasattr(mcp, "_tool_manager") else 0
+        lines.append(f"bastion_mcp_tools_total {tool_count}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_resources_total Number of registered MCP resources and resource templates")
+        lines.append("# TYPE bastion_mcp_resources_total gauge")
+        resource_count = len(mcp._resource_manager.list_resources()) if hasattr(mcp, "_resource_manager") else 0
+        template_count = len(mcp._resource_manager.list_templates()) if hasattr(mcp, "_resource_manager") else 0
+        lines.append(f"bastion_mcp_resources_total {resource_count + template_count}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_prompts_total Number of registered MCP prompts")
+        lines.append("# TYPE bastion_mcp_prompts_total gauge")
+        prompt_count = len(mcp._prompt_manager.list_prompts()) if hasattr(mcp, "_prompt_manager") else 0
+        lines.append(f"bastion_mcp_prompts_total {prompt_count}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_limiter_current Current concurrent requests")
+        lines.append("# TYPE bastion_mcp_limiter_current gauge")
+        lines.append(f"bastion_mcp_limiter_current {limiter_stats.get('current', 0)}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_limiter_queued Current queued requests")
+        lines.append("# TYPE bastion_mcp_limiter_queued gauge")
+        lines.append(f"bastion_mcp_limiter_queued {limiter_stats.get('queued', 0)}")
+        lines.append("")
+        lines.append("# HELP bastion_mcp_up Server uptime in seconds")
+        lines.append("# TYPE bastion_mcp_up gauge")
+        lines.append(f"bastion_mcp_up {time.monotonic() - _metrics_start_time:.0f}")
+        lines.append("")
+        return Response(content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    # ── RFC 7009 Token Revocation Endpoint ─────────────────────────────────
+
+    @mcp.custom_route("/oauth/revoke", methods=["POST"])
+    async def oauth_revoke_route(request: Any) -> Any:
+        """RFC 7009 — Token Revocation endpoint.
+
+        Accepts: application/x-www-form-urlencoded or application/json
+        Body: token=<value>&token_type_hint=access|refresh
+        Returns: 200 OK (empty body per RFC 7009) on success.
+        """
+        from starlette.responses import JSONResponse, Response
+
+        try:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                body = await request.json()
+                token_value = body.get("token", "")
+                token_type_hint = body.get("token_type_hint", "access")
+            else:
+                form_data = await request.form()
+                token_value = form_data.get("token", "")
+                token_type_hint = form_data.get("token_type_hint", "access")
+
+            if not token_value:
+                return JSONResponse({"error": "missing 'token' parameter"}, status_code=400)
+
+            # Auth check: require valid API key or OAuth token
+            if not _check_auth(dict(request.headers)):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+            provider = None
+            if hasattr(mcp, "_auth_server_provider") and mcp._auth_server_provider:
+                provider = mcp._auth_server_provider
+
+            if provider and hasattr(provider, "revoke_token_by_value"):
+                await provider.revoke_token_by_value(token_value, token_type_hint)
+            else:
+                logger.warning("No OAuth provider configured — revocation not available")
+
+            # RFC 7009: always return 200, even if token was not found
+            return Response(status_code=200)
+        except Exception as exc:
+            logger.exception("Token revocation failed")
+            return JSONResponse({"error": "revocation failed"}, status_code=500)
+
+    @mcp.custom_route("/oauth/introspect", methods=["POST"])
+    async def oauth_introspect_route(request: Any) -> Any:
+        """RFC 7662 — Token Introspection endpoint.
+
+        Accepts: application/x-www-form-urlencoded or application/json
+        Body: token=<value>
+        Returns: JSON with active status, scopes, and role.
+        """
         from starlette.responses import JSONResponse
 
-        limiter = _get_limiter()
-        return JSONResponse(
-            {
-                "rate_limiter": limiter.get_stats(),
-                "tools_available": [
-                    "memory_search",
-                    "memory_store",
-                    "memory_timetravel",
-                    "memory_audit",
-                    "memory_heal",
-                    "memory_delete",
-                    "resolve_conflict",
-                    "a2a_bridge",
-                    "ltm_check_reuse",
-                    "ltm_store_analysis",
-                    "ltm_invalidate",
-                    "dream",
-                    "dream_history",
-                    "detect_contradictions",
-                    "scan_all_contradictions",
-                    "detect_observations",
-                    "multi_signal_search",
-                ],
-            }
-        )
+        try:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                body = await request.json()
+                token_value = body.get("token", "")
+            else:
+                form_data = await request.form()
+                token_value = form_data.get("token", "")
+
+            if not token_value:
+                return JSONResponse({"error": "missing 'token' parameter"}, status_code=400)
+
+            # Auth check
+            if not _check_auth(dict(request.headers)):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+            provider = None
+            if hasattr(mcp, "_auth_server_provider") and mcp._auth_server_provider:
+                provider = mcp._auth_server_provider
+
+            if provider and hasattr(provider, "is_token_revoked"):
+                if await provider.is_token_revoked(token_value):
+                    return JSONResponse({"active": False})
+            if provider and hasattr(provider, "load_access_token"):
+                token_obj = await provider.load_access_token(token_value)
+                if token_obj:
+                    from bastion.auth_provider import resolve_role_from_scopes
+                    return JSONResponse({
+                        "active": True,
+                        "scope": " ".join(token_obj.scopes or []),
+                        "client_id": token_obj.client_id,
+                        "role": resolve_role_from_scopes(token_obj.scopes),
+                        "expires_in": (token_obj.expires_at - int(time.time())) if token_obj.expires_at else None,
+                    })
+
+            return JSONResponse({"active": False})
+        except Exception as exc:
+            logger.exception("Token introspection failed")
+            return JSONResponse({"active": False})
 
     mcp._bastion_memory = _shared  # type: ignore[attr-defined]
     return mcp
@@ -1669,17 +1893,72 @@ def _make_http_app(mcp: FastMCP) -> Any:
     skip_paths = frozenset(
         {
             "/healthz",
-            "/metrics",
             "/.well-known/mcp-server.json",
             "/.well-known/agent-card.json",
+            "/oauth/revoke",
+            "/oauth/introspect",
         }
     )
 
     _MAX_REQUEST_BYTES = 1_048_576  # 1MB limit for MCP requests
+    _REQUEST_TIMEOUT_SECONDS = int(os.environ.get("BASTION_MCP_TIMEOUT", "60"))
+
+    # Brute-force protection state
+    _brute_cache: dict[str, tuple[int, float, float | None]] = {}
+    _brute_cache_lock = threading.Lock()
+    _brute_max_failures = 10
+    _brute_window_seconds = 600
+    _brute_lockout_seconds = 300
+
+    def _check_brute_force(client_ip: str) -> bool:
+        now = time.time()
+        with _brute_cache_lock:
+            entry = _brute_cache.get(client_ip)
+            if entry:
+                count, window_start, locked_until = entry
+                if locked_until and now < locked_until:
+                    return True
+                if now - window_start > _brute_window_seconds:
+                    _brute_cache[client_ip] = (0, now, None)
+                    entry = (0, now, None)
+                count = entry[0]
+                if count >= _brute_max_failures:
+                    return True
+        return False
+
+    def _record_brute_failure(client_ip: str) -> None:
+        now = time.time()
+        with _brute_cache_lock:
+            entry = _brute_cache.get(client_ip)
+            if entry:
+                count, window_start, _ = entry
+                if now - window_start > _brute_window_seconds:
+                    count = 0
+                    window_start = now
+                count += 1
+                locked_until = now + _brute_lockout_seconds if count >= _brute_max_failures else None
+                _brute_cache[client_ip] = (count, window_start, locked_until)
+            else:
+                _brute_cache[client_ip] = (1, now, None)
+
+    def _clear_brute_failures(client_ip: str) -> None:
+        with _brute_cache_lock:
+            _brute_cache.pop(client_ip, None)
 
     class RateLimitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Any:
             path = request.url.path
+
+            # Generate request ID
+            request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
+
+            # Client IP (with proxy awareness)
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            client_ip = (
+                forwarded.split(",")[0].strip()
+                if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
+                else (request.client.host if request.client else "unknown")
+            )
 
             # Request size limit — prevent OOM from oversized payloads
             content_length = request.headers.get("content-length")
@@ -1703,16 +1982,74 @@ def _make_http_app(mcp: FastMCP) -> Any:
 
             if path in skip_paths:
                 return await call_next(request)
+
+            # Brute-force protection
+            if _check_brute_force(client_ip):
+                return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
+
             if not oauth_active and not _check_auth(dict(request.headers)):
+                _record_brute_failure(client_ip)
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+            _clear_brute_failures(client_ip)
+
+            # RBAC: when OAuth is active, enforce role-based scope checks
+            if oauth_active and path not in ("/oauth/revoke", "/oauth/introspect"):
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token_val = auth_header.removeprefix("Bearer ").strip()
+                    provider = getattr(mcp, "_auth_server_provider", None)
+                    if provider and hasattr(provider, "load_access_token"):
+                        try:
+                            token_obj = await provider.load_access_token(token_val)
+                            if token_obj:
+                                from bastion.auth_provider import resolve_role_from_scopes, role_has_scope
+                                role = resolve_role_from_scopes(token_obj.scopes)
+                                # Write operations require memory:write scope
+                                if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+                                    if not role_has_scope(role, "memory:write"):
+                                        return JSONResponse(
+                                            {"error": "Insufficient permissions for write operations"},
+                                            status_code=403,
+                                        )
+                                # Read operations require memory:read scope
+                                elif request.method == "GET":
+                                    if not role_has_scope(role, "memory:read"):
+                                        return JSONResponse(
+                                            {"error": "Insufficient permissions for read operations"},
+                                            status_code=403,
+                                        )
+                        except Exception as exc:
+                            logger.warning("RBAC token validation failed: %s", exc)
+                            return JSONResponse(
+                                {"error": "Token validation failed"},
+                                status_code=401,
+                            )
+
             limiter = _get_limiter()
             if not limiter.acquire():
+                _metrics_rate_limit_hits += 1
                 return JSONResponse(
                     {"error": "Rate limit exceeded. Please retry later."},
                     status_code=429,
                 )
+            _start_time = time.monotonic()
             try:
-                return await call_next(request)
+                response = await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT_SECONDS)
+                response.headers["X-Request-ID"] = request_id
+                _elapsed = time.monotonic() - _start_time
+                key = (request.method, path, response.status_code)
+                _metrics_requests_total[key] = _metrics_requests_total.get(key, 0) + 1
+                dur_key = (request.method, path)
+                if dur_key not in _metrics_durations:
+                    _metrics_durations[dur_key] = []
+                dur_list = _metrics_durations[dur_key]
+                dur_list.append(_elapsed)
+                if len(dur_list) > 500:
+                    dur_list.pop(0)
+                return response
+            except (asyncio.TimeoutError, TimeoutError):
+                return JSONResponse({"error": "Request timeout"}, status_code=504)
             finally:
                 limiter.release()
 

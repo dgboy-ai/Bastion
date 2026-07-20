@@ -227,6 +227,25 @@ export default function DashboardPage() {
     return { facts: f, semCache: s, episodic: e };
   }, [memCount]);
 
+  // Donut chart arcs — computed from actual data proportions
+  const donutArcs = useMemo(() => {
+    const total = facts + semCache + episodic;
+    if (total === 0) return { f: "0 100", s: "0 100", e: "0 100", fOff: "0", sOff: "0", eOff: "0" };
+    const circumference = 100; // percentage-based
+    const fPct = (facts / total) * circumference;
+    const sPct = (semCache / total) * circumference;
+    const ePct = (episodic / total) * circumference;
+    // strokeDashoffset moves the start point; cumulative offsets stack the arcs
+    return {
+      f: `${fPct} ${circumference - fPct}`,
+      s: `${sPct} ${circumference - sPct}`,
+      e: `${ePct} ${circumference - ePct}`,
+      fOff: "25",
+      sOff: `${25 - fPct}`,
+      eOff: `${25 - fPct - sPct}`,
+    };
+  }, [facts, semCache, episodic]);
+
   const filteredAudits = useMemo(() => recentAudits ? recentAudits.filter((log) => !selectedFilter || JSON.stringify(log.details).toLowerCase().includes(selectedFilter.toLowerCase())) : [], [recentAudits, selectedFilter]);
 
   const { ref: r1, visible: v1 } = useInView(0.1);
@@ -301,9 +320,9 @@ export default function DashboardPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "32px", padding: "16px 0" }}>
               <svg width="100" height="100" viewBox="0 0 36 36" style={{ filter: "drop-shadow(0 0 8px rgba(0,229,255,0.2))" }}>
                 <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="3" />
-                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.breeze} strokeWidth="3.5" strokeDasharray="60 40" strokeDashoffset="25" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.dusk} strokeWidth="3.5" strokeDasharray="25 75" strokeDashoffset="-35" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.sunset} strokeWidth="3.5" strokeDasharray="15 85" strokeDashoffset="-60" strokeLinecap="round" />
+                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.breeze} strokeWidth="3.5" strokeDasharray={donutArcs.f} strokeDashoffset={donutArcs.fOff} strokeLinecap="round" />
+                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.dusk} strokeWidth="3.5" strokeDasharray={donutArcs.s} strokeDashoffset={donutArcs.sOff} strokeLinecap="round" />
+                <circle cx="18" cy="18" r="15.915" fill="none" stroke={C.sunset} strokeWidth="3.5" strokeDasharray={donutArcs.e} strokeDashoffset={donutArcs.eOff} strokeLinecap="round" />
               </svg>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {[{ label: "Episodic Fact", count: facts, color: C.breeze }, { label: "Semantic Cache", count: semCache, color: C.dusk }, { label: "Context", count: episodic, color: C.sunset }].map(item => (
@@ -399,7 +418,18 @@ export default function DashboardPage() {
                   <div style={{ fontSize: "28px", fontWeight: 700, color: C.emerald, marginTop: "4px" }}>{stats?.cacheHitPct ?? "—"}%</div>
                 </div>
                 <svg width="60" height="30" viewBox="0 0 60 30">
-                  <path d="M0,25 C10,22 20,8 30,12 C40,16 50,4 60,2" fill="none" stroke={C.emerald} strokeWidth="2" style={{ filter: "drop-shadow(0 0 4px rgba(0,255,136,0.3))" }} />
+                  {(() => {
+                    const hitRate = parseFloat(stats?.cacheHitPct ?? "0") / 100;
+                    // Generate a simple upward-trending sparkline proportional to hit rate
+                    const pts = Array.from({ length: 7 }, (_, i) => {
+                      const x = (i / 6) * 60;
+                      const base = 28 - (hitRate * 24);
+                      const noise = Math.sin(i * 1.8 + hitRate * 5) * 3;
+                      const y = Math.max(2, Math.min(28, base + noise + (i * 1.5)));
+                      return `${x},${y}`;
+                    });
+                    return <path d={`M${pts.join(" L")}`} fill="none" stroke={C.emerald} strokeWidth="2" style={{ filter: "drop-shadow(0 0 4px rgba(0,255,136,0.3))" }} />;
+                  })()}
                 </svg>
               </div>
             </Panel>

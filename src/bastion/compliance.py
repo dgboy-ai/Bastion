@@ -202,14 +202,44 @@ class VerifiableUnlearning:
 
         old_root = self._compute_merkle_root(all_hashes)
 
-        # Physical hard delete — not tombstone
+        # Physical hard delete in a SINGLE transaction for atomicity
         deleted_ids: list[str] = []
         not_found_ids: list[str] = []
-        for mid in memory_ids:
-            if self.memory.delete_memory(mid):
-                deleted_ids.append(mid)
-            else:
-                not_found_ids.append(mid)
+
+        if memory_ids and hasattr(self.memory, 'get_pool'):
+            pool = self.memory.get_pool()
+            conn = pool.acquire(timeout=30.0)
+            try:
+                with conn.cursor() as cur:
+                    # Delete all requested memories in one transaction
+                    cur.execute(
+                        "DELETE FROM agent_memory WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
+                        (memory_ids, agent_id),
+                    )
+                    deleted_ids = [row[0] for row in cur.fetchall()]
+                    not_found_ids = [mid for mid in memory_ids if mid not in deleted_ids]
+
+                    # Audit trail in same transaction
+                    for mid in deleted_ids:
+                        cur.execute(
+                            "INSERT INTO agent_audit (agent_id, action, details, recorded_at) "
+                            "VALUES (%s, %s, %s, now())",
+                            (agent_id, "gdpr_art17_unlearn", json.dumps({"memory_id": mid, "compliance": "gdpr_art17"})),
+                        )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error("GDPR unlearning failed — all deletions rolled back: %s", e)
+                raise
+            finally:
+                pool.release(conn)
+        else:
+            # Fallback: individual deletes (mock mode or no pool)
+            for mid in memory_ids:
+                if self.memory.delete_memory(mid):
+                    deleted_ids.append(mid)
+                else:
+                    not_found_ids.append(mid)
 
         if not_found_ids:
             logger.warning("Some memory IDs not found for unlearning", extra={"not_found": not_found_ids})
@@ -262,6 +292,7 @@ class VerifiableUnlearning:
             "memories_after": memories_after,
             "compliance_framework": "GDPR Article 17",
             "verification_method": "SHA-256 Merkle Tree",
+            "valid": new_root != "unknown" and memories_after >= 0,
         }
 
         if self._signer is not None:

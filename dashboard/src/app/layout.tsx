@@ -5,6 +5,32 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Bastion — The System of Record for Autonomous AI",
   description: "Persistent, self-healing memory for AI agents. Built on CockroachDB. Zero downtime, zero data loss, zero re-explaining.",
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/apple-touch-icon.png",
+  },
+  openGraph: {
+    title: "Bastion — The System of Record for Autonomous AI",
+    description: "Persistent, self-healing memory for AI agents. Built on CockroachDB. Zero downtime, zero data loss, zero re-explaining.",
+    url: "https://bastion-self.vercel.app",
+    siteName: "Bastion",
+    type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Bastion — Agentic Memory Platform",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Bastion — The System of Record for Autonomous AI",
+    description: "Persistent, self-healing memory for AI agents. Built on CockroachDB.",
+    images: ["/og-image.png"],
+  },
+  metadataBase: new URL("https://bastion-self.vercel.app"),
 };
 
 export default function RootLayout({

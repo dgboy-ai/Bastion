@@ -4,10 +4,14 @@ Tracks applied migrations in a `_schema_migrations` table.
 Reads numbered .sql files from the schema/ directory and applies
 them in order, recording which ones have been applied.
 
+Supports rollback via companion `down_*.sql` files.
+
 Usage:
     python -m bastion.migrate                    # apply all pending
     python -m bastion.migrate --status           # show migration status
     python -m bastion.migrate --dry-run          # show what would be applied
+    python -m bastion.migrate --rollback 003     # rollback migration 003
+    python -m bastion.migrate --rollback-all     # rollback all applied migrations
 """
 
 from __future__ import annotations
@@ -117,6 +121,172 @@ def _apply_migration(conn, version: str, filepath: str, checksum: str) -> int:
     return elapsed_ms
 
 
+def _rollback_migration(conn, version: str, schema_dir: str) -> bool:
+    """Rollback a single migration using its companion down_*.sql file.
+
+    Looks for ``down_{version}_*.sql`` in the schema directory.
+    Returns True if rollback succeeded, False if no down file found or error.
+    """
+    import hashlib
+
+    # Find the down migration file
+    down_pattern = os.path.join(schema_dir, f"down_{version}_*.sql")
+    down_files = glob.glob(down_pattern)
+
+    # Also check for a single down file named down_{version}.sql
+    if not down_files:
+        down_file = os.path.join(schema_dir, f"down_{version}.sql")
+        if os.path.isfile(down_file):
+            down_files = [down_file]
+
+    if not down_files:
+        logger.warning("No rollback file found for migration %s (looked for down_%s_*.sql)", version, version)
+        return False
+
+    down_file = down_files[0]
+    logger.info("Rolling back migration %s using %s", version, os.path.basename(down_file))
+
+    with open(down_file, encoding="utf-8") as f:
+        sql = f.read()
+
+    start = time.monotonic()
+    with conn.cursor() as cur:
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        for stmt in statements:
+            lines = [line for line in stmt.split("\n") if line.strip() and not line.strip().startswith("--")]
+            if not lines:
+                continue
+            cur.execute(stmt)
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    # Remove from migrations table
+    with conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {MIGRATIONS_TABLE} WHERE version = %s", (version,))
+    conn.commit()
+
+    logger.info("Rolled back migration %s in %dms", version, elapsed_ms)
+    return True
+
+
+def rollback_migration(
+    version: str,
+    conn_str: str | None = None,
+    schema_dir: str | None = None,
+) -> dict:
+    """Rollback a specific migration by version number.
+
+    Args:
+        version: Migration version to rollback (e.g., "003").
+        conn_str: CockroachDB connection string. Falls back to BASTION_CONN env var.
+        schema_dir: Directory containing .sql migration files.
+
+    Returns:
+        Dict with rollback results.
+    """
+    from bastion.config import get_settings
+
+    settings = get_settings()
+    conn_str = conn_str or settings.connection_string
+    if not conn_str:
+        return {"error": "No connection string. Set BASTION_CONN or pass conn_str."}
+
+    if schema_dir is None:
+        project_root = Path(__file__).parent.parent.parent
+        schema_dir = str(project_root / "schema")
+    if not os.path.isdir(schema_dir):
+        return {"error": f"Schema directory not found: {schema_dir}"}
+
+    import psycopg
+
+    conn = psycopg.connect(conn_str)
+    try:
+        _ensure_migrations_table(conn)
+        applied = _get_applied(conn)
+
+        if version not in applied:
+            return {"error": f"Migration {version} is not applied (cannot rollback)"}
+
+        # Check that there are no later applied migrations that might depend on this one
+        later_versions = [v for v in applied if v > version]
+        if later_versions:
+            logger.warning(
+                "Rolling back %s but later migrations are applied: %s — this may cause errors",
+                version, later_versions,
+            )
+
+        success = _rollback_migration(conn, version, schema_dir)
+        if success:
+            return {"status": "rolled_back", "version": version}
+        return {"error": f"Rollback file not found for migration {version}"}
+    finally:
+        conn.close()
+
+
+def rollback_all(
+    conn_str: str | None = None,
+    schema_dir: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Rollback all applied migrations in reverse order.
+
+    Args:
+        conn_str: CockroachDB connection string.
+        schema_dir: Directory containing .sql migration files.
+        dry_run: If True, show what would be rolled back without applying.
+
+    Returns:
+        Dict with rollback results.
+    """
+    from bastion.config import get_settings
+
+    settings = get_settings()
+    conn_str = conn_str or settings.connection_string
+    if not conn_str:
+        return {"error": "No connection string. Set BASTION_CONN or pass conn_str."}
+
+    if schema_dir is None:
+        project_root = Path(__file__).parent.parent.parent
+        schema_dir = str(project_root / "schema")
+    if not os.path.isdir(schema_dir):
+        return {"error": f"Schema directory not found: {schema_dir}"}
+
+    import psycopg
+
+    conn = psycopg.connect(conn_str)
+    try:
+        _ensure_migrations_table(conn)
+        applied = _get_applied(conn)
+
+        # Rollback in reverse order (newest first)
+        versions = sorted(applied.keys(), reverse=True)
+        rollback_list: list[dict[str, str | int]] = []
+        result: dict[str, Any] = {
+            "total_applied": len(applied),
+            "dry_run": dry_run,
+            "rolled_back": rollback_list,
+        }
+
+        if dry_run:
+            result["would_rollback"] = [
+                {"version": v, "filename": applied[v]["filename"]}
+                for v in versions
+            ]
+            return result
+
+        for version in versions:
+            success = _rollback_migration(conn, version, schema_dir)
+            rollback_list.append({
+                "version": version,
+                "filename": applied[version]["filename"],
+                "status": "rolled_back" if success else "no_down_file",
+            })
+
+        return result
+    finally:
+        conn.close()
+
+
 def run_migrations(
     conn_str: str | None = None,
     schema_dir: str | None = None,
@@ -199,7 +369,41 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show pending migrations without applying")
     parser.add_argument("--conn", help="CockroachDB connection string (overrides BASTION_CONN)")
     parser.add_argument("--schema-dir", help="Directory containing .sql migration files")
+    parser.add_argument("--rollback", metavar="VERSION", help="Rollback a specific migration (e.g., 003)")
+    parser.add_argument("--rollback-all", action="store_true", help="Rollback all applied migrations in reverse order")
     args = parser.parse_args()
+
+    if args.rollback:
+        result = rollback_migration(
+            version=args.rollback,
+            conn_str=args.conn,
+            schema_dir=args.schema_dir,
+        )
+        if "error" in result:
+            print(f"Error: {result['error']}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Rolled back migration {result['version']}")
+        return
+
+    if args.rollback_all:
+        result = rollback_all(
+            conn_str=args.conn,
+            schema_dir=args.schema_dir,
+            dry_run=args.dry_run,
+        )
+        if "error" in result:
+            print(f"Error: {result['error']}", file=sys.stderr)
+            sys.exit(1)
+        if args.dry_run:
+            print(f"Would rollback {len(result.get('would_rollback', []))} migration(s):")
+            for m in result.get("would_rollback", []):
+                print(f"  ○ {m['version']} {m['filename']}")
+        else:
+            print(f"Rolled back {len(result['rolled_back'])} migration(s):")
+            for m in result["rolled_back"]:
+                status = "✓" if m["status"] == "rolled_back" else "○"
+                print(f"  {status} {m['version']} {m['filename']} ({m['status']})")
+        return
 
     result = run_migrations(
         conn_str=args.conn,

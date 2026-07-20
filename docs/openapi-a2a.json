@@ -14,35 +14,17 @@
     { "ApiKeyAuth": [] }
   ],
   "paths": {
-    "/.well-known/agent-card.json": {
-      "get": {
-        "summary": "Get Agent Card",
-        "description": "Returns the A2A agent card describing capabilities, skills, and authentication requirements.",
-        "tags": ["Agent Card"],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Agent card JSON",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/AgentCard" }
-              }
-            }
-          }
-        }
-      }
-    },
     "/": {
       "post": {
         "summary": "JSON-RPC 2.0 Endpoint",
-        "description": "Processes A2A JSON-RPC 2.0 requests: SendMessage, GetTask, CancelTask. Requires `X-A2A-Version: 1.0.0` header.",
+        "description": "Processes A2A JSON-RPC 2.0 requests. Supported methods: SendMessage, GetTask, CancelTask, setTaskPushNotification, getTaskPushNotification. Requires `A2A-Version: 1.0` header.",
         "tags": ["JSON-RPC"],
         "parameters": [
           {
-            "name": "X-A2A-Version",
+            "name": "A2A-Version",
             "in": "header",
             "required": true,
-            "schema": { "type": "string", "default": "1.0.0" }
+            "schema": { "type": "string", "default": "1.0" }
           }
         ],
         "requestBody": {
@@ -62,15 +44,67 @@
               }
             }
           },
-          "400": { "description": "Invalid JSON-RPC request" }
+          "400": { "description": "Invalid request" },
+          "413": { "description": "Request too large" }
+        }
+      }
+    },
+    "/.well-known/agent-card.json": {
+      "get": {
+        "summary": "Get Signed Agent Card",
+        "description": "Returns the Ed25519-signed A2A agent card describing capabilities, skills, and authentication requirements.",
+        "tags": ["Agent Card"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Signed agent card JSON",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentCard" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/public-key.pem": {
+      "get": {
+        "summary": "Get Public Key",
+        "description": "Returns the Ed25519 public key in PEM format for signature verification of the agent card.",
+        "tags": ["Agent Card"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PEM-encoded public key",
+            "content": {
+              "application/x-pem-file": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
         }
       }
     },
     "/message:send": {
       "post": {
         "summary": "Send Message (REST)",
-        "description": "REST-style wrapper around the SendMessage JSON-RPC method.",
+        "description": "REST-style wrapper around the SendMessage JSON-RPC method. Requires `A2A-Version: 1.0` header.",
         "tags": ["Messages"],
+        "parameters": [
+          {
+            "name": "A2A-Version",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "default": "1.0" }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Idempotency key to prevent duplicate task creation on retry"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -81,10 +115,47 @@
         },
         "responses": {
           "200": {
-            "description": "Message processed",
+            "description": "Task result",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "400": { "description": "Invalid request or A2A version" }
+        }
+      }
+    },
+    "/message:sendStream": {
+      "post": {
+        "summary": "Send Message (SSE Stream)",
+        "description": "Streams task lifecycle events via Server-Sent Events. Requires `A2A-Version: 1.0` header.",
+        "tags": ["Messages"],
+        "parameters": [
+          {
+            "name": "A2A-Version",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "default": "1.0" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MessageSendRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "example": "event: TaskStatusUpdate\ndata: {\"task_id\":\"abc\",\"status\":\"SUBMITTED\"}\n\nevent: TaskStatusUpdate\ndata: {\"task_id\":\"abc\",\"status\":\"WORKING\"}\n\nevent: TaskArtifactUpdate\ndata: {\"task_id\":\"abc\",\"artifact\":{\"parts\":[{\"text\":\"...\"}]}}\n\nevent: TaskStatusUpdate\ndata: {\"task_id\":\"abc\",\"status\":\"COMPLETED\"}\n\nevent: TaskComplete\ndata: {}\n\n"
+                }
               }
             }
           }
@@ -93,8 +164,8 @@
     },
     "/tasks/{task_id}": {
       "get": {
-        "summary": "Get Task Status",
-        "description": "Retrieves the current status of a previously submitted task.",
+        "summary": "Get Task",
+        "description": "Retrieves the current status and artifacts of a previously submitted task.",
         "tags": ["Tasks"],
         "parameters": [
           {
@@ -116,9 +187,79 @@
           "404": { "description": "Task not found" }
         }
       },
+      "put": {
+        "summary": "Update Task",
+        "description": "Update task metadata (e.g., callback URL for push notifications).",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callback_url": { "type": "string", "format": "uri", "description": "HTTPS callback URL for push notifications" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "400": { "description": "Invalid request or SSRF rejected callback URL" },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete Task",
+        "description": "Deletes a task in a terminal state (COMPLETED, FAILED, CANCELED).",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": { "type": "string" },
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Task not found" },
+          "409": { "description": "Task not in terminal state" }
+        }
+      }
+    },
+    "/tasks/{task_id}:cancel": {
       "post": {
         "summary": "Cancel Task",
-        "description": "Requests cancellation of a running or pending task.",
+        "description": "Requests cancellation of a task that is not in a terminal state.",
         "tags": ["Tasks"],
         "parameters": [
           {
@@ -136,7 +277,9 @@
                 "schema": { "$ref": "#/components/schemas/Task" }
               }
             }
-          }
+          },
+          "404": { "description": "Task not found" },
+          "400": { "description": "Task is already in a terminal state" }
         }
       }
     },
@@ -177,13 +320,13 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": { "type": "string", "example": "ready" }
+                    "status": { "type": "string", "example": "ok" }
                   }
                 }
               }
             }
           },
-          "503": { "description": "Server not ready (DB unavailable and no mock)" }
+          "503": { "description": "Server not ready" }
         }
       }
     },
@@ -211,17 +354,28 @@
       "ApiKeyAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "API key via `BASTION_API_KEY` environment variable. Send as `Authorization: Bearer <key>`."
+        "description": "API key via `BASTION_API_KEY` environment variable. Send as `Authorization: Bearer <key>`. Not required for /healthz, /readyz, /metrics, /public-key.pem."
       }
     },
     "schemas": {
       "AgentCard": {
         "type": "object",
-        "description": "A2A agent card exposing Bastion memory skills.",
+        "description": "Ed25519-signed A2A agent card exposing Bastion memory skills.",
         "properties": {
-          "name": { "type": "string", "example": "Bastion Memory Coordinator" },
+          "name": { "type": "string", "example": "Bastion Memory Agent" },
           "description": { "type": "string" },
+          "version": { "type": "string", "example": "0.1.0" },
+          "a2a_version": { "type": "string", "example": "1.0" },
           "url": { "type": "string", "format": "uri" },
+          "documentationUrl": { "type": "string", "format": "uri" },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "streaming": { "type": "boolean" },
+              "pushNotifications": { "type": "boolean" },
+              "stateTransitionHistory": { "type": "boolean" }
+            }
+          },
           "skills": {
             "type": "array",
             "items": {
@@ -230,20 +384,46 @@
                 "id": { "type": "string" },
                 "name": { "type": "string" },
                 "description": { "type": "string" },
-                "tags": { "type": "array", "items": { "type": "string" } }
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "examples": { "type": "array", "items": { "type": "string" } }
               }
+            }
+          },
+          "defaultInputModes": { "type": "array", "items": { "type": "string" } },
+          "defaultOutputModes": { "type": "array", "items": { "type": "string" } },
+          "supportsAuthenticatedExtendedCard": { "type": "boolean" },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "organization": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            }
+          },
+          "signature": {
+            "type": "object",
+            "properties": {
+              "algorithm": { "type": "string", "example": "ed25519" },
+              "value": { "type": "string", "description": "Base64-encoded signature" },
+              "publicKeyPem": { "type": "string" },
+              "signedFields": { "type": "array", "items": { "type": "string" } }
             }
           }
         }
       },
       "JsonRpcRequest": {
         "type": "object",
-        "required": ["jsonrpc", "method", "id"],
+        "required": ["jsonrpc", "method"],
         "properties": {
           "jsonrpc": { "type": "string", "enum": ["2.0"] },
-          "method": { "type": "string", "enum": ["SendMessage", "GetTask", "CancelTask"] },
           "id": { "type": "string" },
-          "params": { "type": "object" }
+          "method": { "type": "string", "enum": ["SendMessage", "GetTask", "CancelTask", "setTaskPushNotification", "getTaskPushNotification"] },
+          "params": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/SendMessageParams" },
+              { "$ref": "#/components/schemas/TaskIdParams" },
+              { "$ref": "#/components/schemas/PushNotificationParams" }
+            ]
+          }
         }
       },
       "JsonRpcResponse": {
@@ -256,33 +436,97 @@
             "type": "object",
             "properties": {
               "code": { "type": "integer" },
-              "message": { "type": "string" }
+              "message": { "type": "string" },
+              "data": { "type": "object" }
             }
           }
         }
       },
+      "SendMessageParams": {
+        "type": "object",
+        "properties": {
+          "message": { "$ref": "#/components/schemas/Message" }
+        },
+        "required": ["message"]
+      },
+      "TaskIdParams": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Task UUID" }
+        },
+        "required": ["id"]
+      },
+      "PushNotificationParams": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Task UUID" },
+          "url": { "type": "string", "format": "uri", "description": "HTTPS callback URL" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "integer", "example": 1 },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": { "type": "string" },
+                "mimeType": { "type": "string" }
+              }
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "skill": { "type": "string", "description": "Skill ID (e.g. memory_store, memory_search, graph_query, etc.)" },
+              "params": { "type": "object", "description": "Skill-specific parameters" }
+            }
+          }
+        },
+        "required": ["parts"]
+      },
       "MessageSendRequest": {
         "type": "object",
         "properties": {
-          "message": {
+          "message": { "$ref": "#/components/schemas/Message" },
+          "configuration": {
             "type": "object",
             "properties": {
-              "role": { "type": "string", "enum": ["user", "agent"] },
-              "content": { "type": "array", "items": { "type": "object" } }
+              "return_immediately": { "type": "boolean" }
             }
-          },
-          "skillId": { "type": "string" },
-          "metadata": { "type": "object" }
-        }
+          }
+        },
+        "required": ["message"]
       },
       "Task": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "status": { "type": "string", "enum": ["submitted", "working", "completed", "failed", "canceled"] },
-          "result": { "type": "object" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": { "type": "string", "description": "Task UUID" },
+          "status": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "enum": ["SUBMITTED", "WORKING", "COMPLETED", "FAILED", "CANCELED", "INPUT_REQUIRED"] }
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

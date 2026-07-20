@@ -30,7 +30,7 @@ _NOTIFICATION_TIMEOUT = 10.0  # seconds per HTTP request
 
 
 def _is_private_url(url: str) -> bool:
-    """SSRF protection: block private/local/internal IPs and domains."""
+    """SSRF protection: block private/local/internal IPs, domains, and non-HTTPS schemes."""
     import ipaddress
     from urllib.parse import urlparse
     try:
@@ -39,6 +39,9 @@ def _is_private_url(url: str) -> bool:
     except Exception:
         return True
     if not hostname:
+        return True
+    # Block non-HTTPS schemes (prevents http://, file://, gopher://, etc.)
+    if parsed.scheme != "https":
         return True
     # Try to parse as IP address
     try:
@@ -67,15 +70,28 @@ class PushNotificationDispatcher:
         self._delivered: set[str] = set()  # task_ids already notified
         self._lock = threading.Lock()
         self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT)
+        self._pending_threads: list[threading.Thread] = []
+        self._shutting_down = False
 
-    def register(self, task_id: str, callback_url: str) -> None:
-        """Register a callback URL for a task."""
+    def register(self, task_id: str, callback_url: str) -> bool:
+        """Register a callback URL for a task.
+
+        Returns True if the URL passes SSRF validation, False otherwise.
+        The URL is validated synchronously at registration time.
+        """
+        if _is_private_url(callback_url):
+            logger.warning(
+                "SSRF blocked callback URL at registration",
+                extra={"task_id": task_id, "callback_url": callback_url},
+            )
+            return False
         with self._lock:
             self._registrations[task_id] = callback_url
         logger.info(
             "Push notification registered",
             extra={"task_id": task_id, "callback_url": callback_url},
         )
+        return True
 
     def get_callback_url(self, task_id: str) -> str | None:
         """Get the registered callback URL for a task."""
@@ -107,20 +123,23 @@ class PushNotificationDispatcher:
             return
 
         with self._lock:
+            if self._shutting_down:
+                return
             if task_id in self._delivered:
-                return  # Already notified
+                return
             self._delivered.add(task_id)
             callback_url = self._registrations.get(task_id)
 
         if not callback_url:
             return
 
-        # Deliver in background thread
         thread = threading.Thread(
             target=self._deliver_sync,
             args=(task_id, callback_url, status, artifacts, error),
             daemon=True,
         )
+        with self._lock:
+            self._pending_threads.append(thread)
         thread.start()
 
     def _deliver_sync(
@@ -132,8 +151,24 @@ class PushNotificationDispatcher:
         error: str | None,
     ) -> None:
         """Deliver notification synchronously with retries."""
+        try:
+            self._do_deliver(task_id, callback_url, status, artifacts, error)
+        finally:
+            with self._lock:
+                if self._pending_threads:
+                    self._pending_threads.pop(0)
+
+    def _do_deliver(
+        self,
+        task_id: str,
+        callback_url: str,
+        status: str,
+        artifacts: list[dict[str, Any]] | None,
+        error: str | None,
+    ) -> None:
+        """Actual delivery logic with retries."""
         if _is_private_url(callback_url):
-            logger.warning("SSRF blocked callback URL", extra={"task_id": task_id, "callback_url": callback_url})
+            logger.warning("SSRF blocked callback URL at delivery", extra={"task_id": task_id, "callback_url": callback_url})
             return
 
         payload = {
@@ -206,8 +241,19 @@ class PushNotificationDispatcher:
             }
 
     def close(self) -> None:
-        """Close the HTTP client."""
+        """Close the HTTP client and prevent new notifications."""
+        with self._lock:
+            self._shutting_down = True
         self._client.close()
+
+    def wait_pending(self, timeout: float = 5.0) -> None:
+        """Wait for in-flight delivery threads to complete."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._lock:
+                if not self._pending_threads:
+                    break
+            time.sleep(0.05)
 
 
 # Global singleton

@@ -196,7 +196,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           <header className="viewport-header" style={{ position: "relative" }}>
             <div className="header-search">
               <span>🔍</span>
-              <input type="text" placeholder="Search cognitive memory context..." disabled />
+              <input
+                type="text"
+                placeholder="Search cognitive memory context..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const q = (e.target as HTMLInputElement).value.trim();
+                    if (q) window.location.href = `/logs?q=${encodeURIComponent(q)}`;
+                  }
+                }}
+                aria-label="Search memories"
+              />
             </div>
             
             <div className="header-actions">

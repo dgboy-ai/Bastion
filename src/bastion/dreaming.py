@@ -361,17 +361,55 @@ class MemoryDreamer:
         return None
 
     def _prune_low_value(self, agent_id: str) -> int:
-        """Remove memories that are expired, unused, and low-value."""
+        """Remove memories that are expired, unused, and low-value using SQL batch operations."""
+        if not hasattr(self._memory, "get_pool") or getattr(self._memory, "_mock", False):
+            return self._prune_low_value_mock(agent_id)
+
+        pool = self._memory.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
+                # Batch delete expired memories (not pinned)
+                cur.execute(
+                    "DELETE FROM agent_memory "
+                    "WHERE agent_id = %s AND is_pinned = FALSE "
+                    "AND expires_at IS NOT NULL AND expires_at <= now() "
+                    "RETURNING memory_id",
+                    (agent_id,),
+                )
+                expired_deleted = len(cur.fetchall())
+
+                # Batch delete old, unused, low-importance memories (not pinned)
+                cur.execute(
+                    "DELETE FROM agent_memory "
+                    "WHERE agent_id = %s AND is_pinned = FALSE "
+                    "AND created_at < now() - interval '7 days' "
+                    "AND access_count <= %s "
+                    "AND importance_score < 3.0 "
+                    "RETURNING memory_id",
+                    (agent_id, self._prune_access_threshold),
+                )
+                low_value_deleted = len(cur.fetchall())
+
+            conn.commit()
+            return expired_deleted + low_value_deleted
+        except Exception as e:
+            conn.rollback()
+            logger.warning("Prune failed: %s", e)
+            return 0
+        finally:
+            pool.release(conn)
+
+    def _prune_low_value_mock(self, agent_id: str) -> int:
+        """Mock mode fallback for pruning."""
         all_memories = self._memory.list_all(namespace_scope="own")
         pruned = 0
         now = datetime.now(UTC)
 
         for mem in all_memories:
-            # Don't prune pinned memories
             if mem.is_pinned:
                 continue
 
-            # Prune expired memories
             if mem.expires_at:
                 expires = mem.expires_at
                 if expires.tzinfo is None:
@@ -381,13 +419,12 @@ class MemoryDreamer:
                     pruned += 1
                     continue
 
-            # Prune very old, never-accessed, low-importance memories
             created = mem.created_at
             if created.tzinfo is None:
                 created = created.replace(tzinfo=UTC)
             age_days = (now - created).days
             if (
-                age_days > 7  # Older than a week
+                age_days > 7
                 and mem.access_count <= self._prune_access_threshold
                 and mem.importance_score < 3.0
             ):

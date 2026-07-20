@@ -148,13 +148,19 @@ class WebhookNotifier:
             ip = ipaddress.ip_address(host)
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 raise ValueError(f"Blocked private/internal IP URL: {url}")
-        except ValueError:
-            # Not an IP — check domain-based blocks
-            blocked_domains = ("localhost", "0.0.0.0", "::1")
-            if host.lower() in blocked_domains:
-                raise ValueError(f"Blocked internal URL: {url}")
-            if host.endswith((".local", ".internal", ".localhost")):
-                raise ValueError(f"Blocked internal domain URL: {url}")
+            # Valid public IP — nothing else to check
+            return
+        except ValueError as e:
+            # Re-raise our own blocked-IP error (not the ipaddress parsing error)
+            if "Blocked" in str(e):
+                raise
+            # Not an IP — fall through to domain-based checks
+        # Domain-based blocks
+        blocked_domains = ("localhost", "0.0.0.0", "::1")
+        if host.lower() in blocked_domains:
+            raise ValueError(f"Blocked internal URL: {url}")
+        if host.endswith((".local", ".internal", ".localhost")):
+            raise ValueError(f"Blocked internal domain URL: {url}")
 
     def _http_post(self, url: str, payload: dict[str, Any]) -> None:
         self._validate_url(url)
