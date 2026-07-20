@@ -105,7 +105,7 @@ describe("HashChainVisualizer", () => {
   });
 
   it("renders loading state", async () => {
-    mockFetch.mockReturnValueOnce(new Promise(() => {})); // Never resolves
+    mockFetch.mockReturnValueOnce(new Promise(() => { })); // Never resolves
     const { default: HashChainVisualizer } = await import("@/components/HashChainVisualizer");
     render(<HashChainVisualizer />);
     expect(screen.getByText("Loading hash chain...")).toBeDefined();

@@ -19,6 +19,12 @@ export async function GET(request: Request) {
     const params: unknown[] = [];
 
     if (asOf) {
+      // Validate as_of format: ISO timestamp or relative interval like "-5s", "-1h"
+      const validTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(asOf);
+      const validInterval = /^-\d+[smhd]$/.test(asOf);
+      if (!validTimestamp && !validInterval) {
+        return apiError("Invalid 'as_of' format — use ISO timestamp or relative interval (e.g., -5s, -1h)", 400, "INVALID_AS_OF");
+      }
       entitiesSql += " AS OF SYSTEM TIME $1";
       relationsSql += " AS OF SYSTEM TIME $1";
       params.push(asOf);

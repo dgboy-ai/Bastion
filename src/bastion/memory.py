@@ -27,6 +27,8 @@ logger = get_logger(__name__)
 
 _bedrock_client = None
 _bedrock_client_lock = threading.Lock()
+_local_model_lock = threading.Lock()
+_local_model = None
 
 
 def _get_bedrock_client():
@@ -891,6 +893,8 @@ class BastionMemory:
                 # If vector search returned nothing, fall back to keyword search
                 # This handles hash-based embeddings where cosine similarity is meaningless
                 if not results:
+                    pool.release(conn)
+                    _released = True
                     ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
                     keyword_results = self._search_keyword_fallback(query, k, 0.0, memory_type, ns_agent_id)
                     if keyword_results:
@@ -990,10 +994,10 @@ class BastionMemory:
                 cur.execute(
                     f"SELECT {_MEMORY_COLS} FROM agent_memory "
                     "WHERE agent_id = %s "
-                    "AND created_at >= now() - make_interval(hours => %s) "
+                    "AND created_at >= now() - (%s || ' hours')::INTERVAL "
                     "AND (expires_at IS NULL OR expires_at > now()) "
                     "ORDER BY created_at DESC LIMIT %s",
-                    (self.agent_id, hours, limit),
+                    (self.agent_id, str(hours), limit),
                 )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
         except Exception as e:
@@ -1306,26 +1310,39 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
         try:
-            # Try LLM-based merge first (uses Groq for speed, falls back to heuristic)
-            merged = self._smart_merge(fact_a, fact_b, context)
-
             with conn.cursor() as cur:
-                payload = json.dumps(
-                    {
-                        "fact_a": fact_a,
-                        "fact_b": fact_b,
-                        "merged": merged,
-                        "context": context,
-                    }
-                )
-                lock_resource = f"conflict:{int(hashlib.sha256((fact_a + fact_b).encode()).hexdigest(), 16)}"
+                # Acquire lock FIRST (before doing expensive merge work)
+                lock_resource = f"conflict:{hashlib.sha256((fact_a + fact_b).encode()).hexdigest()[:16]}"
                 cur.execute(
                     "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
                     "VALUES (%s, %s, 'exclusive', %s) RETURNING lock_id",
-                    (self.agent_id, lock_resource, payload),
+                    (self.agent_id, lock_resource, json.dumps({"status": "acquired"})),
                 )
+                lock_row = cur.fetchone()
+                lock_id = lock_row[0] if lock_row else None
                 conn.commit()
-            return merged
+
+            try:
+                # Do merge work AFTER lock is acquired
+                merged = self._smart_merge(fact_a, fact_b, context)
+
+                # Update lock payload with result
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE agent_coordination SET payload = %s WHERE lock_id = %s",
+                        (json.dumps({"fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context}), lock_id),
+                    )
+                    conn.commit()
+                return merged
+            finally:
+                # Always release the lock
+                if lock_id:
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM agent_coordination WHERE lock_id = %s", (lock_id,))
+                            conn.commit()
+                    except Exception:
+                        logger.warning("Failed to release coordination lock %s", lock_id)
         except Exception as e:
             logger.exception("resolve_conflict failed")
             raise RuntimeError(f"Conflict resolution failed") from e
@@ -1674,13 +1691,16 @@ class BastionMemory:
         If the local model dimension doesn't match the target, falls back to
         hash-based embedding rather than zero-padding (which degrades search quality).
         """
-        if not hasattr(self, "_local_model"):
-            try:
-                from sentence_transformers import SentenceTransformer
-                self._local_model = SentenceTransformer("all-MiniLM-L6-v2")
-            except ImportError:
-                raise RuntimeError("sentence-transformers not installed")
-        embedding = self._local_model.encode(text).tolist()
+        global _local_model
+        if _local_model is None:
+            with _local_model_lock:
+                if _local_model is None:
+                    try:
+                        from sentence_transformers import SentenceTransformer
+                        _local_model = SentenceTransformer("all-MiniLM-L6-v2")
+                    except ImportError:
+                        raise RuntimeError("sentence-transformers not installed")
+        embedding = _local_model.encode(text).tolist()
         settings = get_settings()
         target_dim = settings.embed_dim
         # If dimensions don't match, use hash fallback instead of zero-padding

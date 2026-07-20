@@ -7,7 +7,7 @@ from typing import Any
 from bastion.log_setup import get_logger
 from bastion.models import MemoryRecord
 
-_GROQ_MODEL = os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+_GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 _HAS_GROQ: bool = False
 _client: Any = None
 _client_lock = threading.Lock()

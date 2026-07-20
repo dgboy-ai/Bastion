@@ -120,13 +120,16 @@ class ConnectionPool:
 
         while True:
             conn_to_check = None
+            conn_last_used = 0.0
             with self._lock:
                 while self._pool:
-                    conn_to_check, _ = self._pool.popleft()
+                    conn_to_check, conn_last_used = self._pool.popleft()
                     break
 
             if conn_to_check is not None:
-                if self._is_healthy(conn_to_check):
+                # Only run full health check if connection has been idle > 30s
+                idle_seconds = time.time() - conn_last_used
+                if idle_seconds < 30 or self._is_healthy(conn_to_check):
                     with self._lock:
                         self._total_reused += 1
                     return conn_to_check
@@ -175,7 +178,7 @@ class ConnectionPool:
                 cur.execute("RESET ALL")
             reset_ok = True
         except Exception:
-            logger.warning("RESET ALL failed during release — discarding connection")
+            logger.debug("RESET ALL failed during release — discarding connection")
 
         # Check if connection is in error state
         is_healthy = True
@@ -276,7 +279,7 @@ class AsyncConnectionPool:
             await conn.execute("RESET ALL")
             reset_ok = True
         except Exception:
-            logger.warning("RESET ALL failed during async release — discarding connection")
+            logger.debug("RESET ALL failed during async release — discarding connection")
 
         # Check if connection is closed
         is_healthy = True

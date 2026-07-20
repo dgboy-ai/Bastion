@@ -281,7 +281,7 @@ class TestTaskStateMachine:
                 status = task.get("status", {}).get("state")
                 assert status == "COMPLETED"
 
-                # Try to cancel a completed task — should be rejected (returns same task)
+                # Try to cancel a completed task — should be rejected with error
                 r2 = await client.post(
                     "/",
                     json={
@@ -292,9 +292,10 @@ class TestTaskStateMachine:
                     },
                     headers=_h(),
                 )
-                # Task should still be COMPLETED (transition rejected)
-                result = r2.json().get("result", {})
-                assert result.get("status", {}).get("state") == "COMPLETED"
+                # Should return JSON-RPC error (cannot cancel terminal task)
+                error = r2.json().get("error", {})
+                assert error.get("code") == -32600
+                assert "cannot cancel" in error.get("message", "").lower()
 
         anyio.run(run)
 
@@ -520,7 +521,7 @@ class TestPushNotificationDelivery:
 
         async def run():
             async with client:
-                # Register push notification
+                # Register push notification (SSRF validation rejects http://)
                 r = await client.post(
                     "/",
                     json={
@@ -532,15 +533,30 @@ class TestPushNotificationDelivery:
                     headers=_h(),
                 )
                 assert r.status_code == 200
+                error = r.json().get("error", {})
+                assert error.get("code") == -32602
+
+                # Register with valid HTTPS URL
+                r = await client.post(
+                    "/",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "2",
+                        "method": "setTaskPushNotification",
+                        "params": {"id": "task-123", "url": "https://hooks.example.com/push"},
+                    },
+                    headers=_h(),
+                )
+                assert r.status_code == 200
                 result = r.json().get("result", {})
-                assert result.get("url") == "http://example.com/callback"
+                assert result.get("url") == "https://hooks.example.com/push"
 
                 # Retrieve push notification
                 r2 = await client.post(
                     "/",
                     json={
                         "jsonrpc": "2.0",
-                        "id": "2",
+                        "id": "3",
                         "method": "getTaskPushNotification",
                         "params": {"id": "task-123"},
                     },
@@ -548,7 +564,7 @@ class TestPushNotificationDelivery:
                 )
                 assert r2.status_code == 200
                 result2 = r2.json().get("result", {})
-                assert result2.get("url") == "http://example.com/callback"
+                assert result2.get("url") == "https://hooks.example.com/push"
 
         anyio.run(run)
 

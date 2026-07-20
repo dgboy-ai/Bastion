@@ -82,7 +82,7 @@ const NavBar = memo(function NavBar() {
             Bastion Agent
           </span>
           <span style={{ fontSize: "10px", color: "var(--mute)", fontFamily: "var(--font-mono)" }}>
-            v0.6.0
+            v0.1.0
           </span>
         </div>
       </div>

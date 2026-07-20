@@ -384,7 +384,7 @@ class KnowledgeGraph:
             if client is None:
                 return triples
             triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
-            model = os.environ.get("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+            model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
             resp = client.chat.completions.create(
                 model=model,
                 messages=[

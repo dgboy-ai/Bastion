@@ -197,8 +197,17 @@ class LocalKMS(KMSInterface):
         except FileNotFoundError:
             pass
         except ValueError:
-            logger.warning("Corrupt KMS key file, generating new key", extra={"path": key_path})
-            os.remove(key_path)
+            logger.critical(
+                "CRITICAL: KMS key file is corrupt. Data encrypted with the old key "
+                "will be PERMANENTLY IRRECOVERABLE if a new key is generated. "
+                "Manually restore from backup or investigate the corruption.",
+                extra={"path": key_path},
+            )
+            raise RuntimeError(
+                f"KMS key file at {key_path} is corrupt. "
+                "Do NOT auto-delete — data encrypted with the old key would be lost. "
+                "Restore from backup or manually delete the file to generate a new key."
+            )
 
         key = self.generate_key()
         tmp = key_path + ".tmp"

@@ -22,6 +22,35 @@ from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
 
+# RBAC roles and their allowed scopes
+RBAC_ROLES: dict[str, set[str]] = {
+    "admin": {"memory:read", "memory:write", "memory:delete", "admin"},
+    "writer": {"memory:read", "memory:write"},
+    "reader": {"memory:read"},
+}
+DEFAULT_ROLE = "writer"
+
+
+def resolve_role_from_scopes(scopes: list[str]) -> str:
+    """Determine the most privileged role from a set of scopes."""
+    scope_set = set(scopes or [])
+    if "admin" in scope_set:
+        return "admin"
+    if "memory:write" in scope_set:
+        return "writer"
+    return "reader"
+
+
+def role_has_scope(role: str, required_scope: str) -> bool:
+    """Check if a role grants the required scope."""
+    allowed = RBAC_ROLES.get(role, set())
+    return required_scope in allowed
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hash of a token for the revocation table lookup."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
 _PRE_REGISTERED_CLIENT_ID: str | None = None
 _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
@@ -272,6 +301,21 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         created_at TIMESTAMPTZ DEFAULT now()
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oauth_revoked_tokens (
+                        token_hash  STRING PRIMARY KEY,
+                        token_type  STRING NOT NULL DEFAULT 'access',
+                        revoked_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        expires_at  TIMESTAMPTZ
+                    )
+                """)
+                # RBAC: add role column if missing
+                cur.execute(
+                    "ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS role STRING NOT NULL DEFAULT 'writer'"
+                )
+                cur.execute(
+                    "ALTER TABLE oauth_refresh_tokens ADD COLUMN IF NOT EXISTS role STRING NOT NULL DEFAULT 'writer'"
+                )
             conn.commit()
             logger.info("OAuth DB tables initialized")
         finally:
@@ -500,6 +544,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)
         now = time.time()
+        token_role = resolve_role_from_scopes(authorization_code.scopes)
 
         access_token = AccessToken(
             token=access_token_str,
@@ -526,16 +571,18 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 try:
                     with conn.cursor() as cur:
                         cur.execute(
-                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, resource)
-                               VALUES (%s, %s, %s, %s, %s)""",
+                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, resource, role)
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
                             (access_token_str, client.client_id, json.dumps(authorization_code.scopes),
-                             int(now) + 3600, json.dumps(authorization_code.resource) if authorization_code.resource else None),
+                             int(now) + 3600,
+                             json.dumps(authorization_code.resource) if authorization_code.resource else None,
+                             token_role),
                         )
                         cur.execute(
-                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at)
-                               VALUES (%s, %s, %s, %s)""",
+                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
+                               VALUES (%s, %s, %s, %s, %s)""",
                             (refresh_token_str, client.client_id, json.dumps(authorization_code.scopes),
-                             int(now) + 86400 * 7),
+                             int(now) + 86400 * 7, token_role),
                         )
                         cur.execute("DELETE FROM oauth_auth_codes WHERE code = %s", (authorization_code.code,))
                     conn.commit()
@@ -598,6 +645,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)
         now = time.time()
+        token_role = resolve_role_from_scopes(final_scopes)
 
         new_access = AccessToken(
             token=access_token_str,
@@ -612,9 +660,11 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             expires_at=int(now) + 86400 * 7,
         )
 
+        # Delete old refresh token FIRST to prevent race condition
+        # (two concurrent requests using the same token)
+        self._refresh_tokens.pop(refresh_token.token, None)
         self._access_tokens[access_token_str] = new_access
         self._refresh_tokens[refresh_token_str] = new_refresh
-        self._refresh_tokens.pop(refresh_token.token, None)
 
         if self._use_db:
             try:
@@ -622,16 +672,16 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 try:
                     with conn.cursor() as cur:
                         cur.execute(
-                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at)
-                               VALUES (%s, %s, %s, %s)""",
+                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, role)
+                               VALUES (%s, %s, %s, %s, %s)""",
                             (access_token_str, client.client_id, json.dumps(list(final_scopes)),
-                             int(now) + 3600),
+                             int(now) + 3600, token_role),
                         )
                         cur.execute(
-                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at)
-                               VALUES (%s, %s, %s, %s)""",
+                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
+                               VALUES (%s, %s, %s, %s, %s)""",
                             (refresh_token_str, client.client_id, json.dumps(list(final_scopes)),
-                             int(now) + 86400 * 7),
+                             int(now) + 86400 * 7, token_role),
                         )
                         cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
                         cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (refresh_token.token,))
@@ -652,6 +702,23 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     # ── Token Verification ────────────────────────────────────────────
 
     async def load_access_token(self, token: str) -> AccessToken | None:
+        # Check revocation table first (fast fail for revoked tokens)
+        if self._use_db:
+            try:
+                conn = self._get_conn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT 1 FROM oauth_revoked_tokens WHERE token_hash = %s AND token_type = 'access'",
+                            (_hash_token(token),),
+                        )
+                        if cur.fetchone():
+                            return None  # Token has been revoked
+                finally:
+                    self._release_conn(conn)
+            except Exception:
+                pass  # If revocation check fails, proceed with normal validation
+
         if self._use_db:
             try:
                 conn = self._get_conn()
@@ -689,6 +756,17 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
+                        # Record in revocation table for distributed revocation checks
+                        token_hash = _hash_token(token.token)
+                        token_type = "access" if isinstance(token, AccessToken) else "refresh"
+                        cur.execute(
+                            "INSERT INTO oauth_revoked_tokens (token_hash, token_type, expires_at) "
+                            "VALUES (%s, %s, %s) "
+                            "ON CONFLICT (token_hash) DO NOTHING",
+                            (token_hash, token_type,
+                             int(token.expires_at) if token.expires_at else None),
+                        )
+                        # Also delete the token row
                         cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (token.token,))
                         cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (token.token,))
                     conn.commit()
@@ -696,3 +774,51 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     self._release_conn(conn)
             except Exception as exc:
                 logger.warning("DB revoke_token failed: %s", exc)
+
+    async def revoke_token_by_value(self, token_value: str, token_type_hint: str = "access") -> bool:
+        """Revoke a token by its raw value (RFC 7009). Returns True if revoked."""
+        token_hash = _hash_token(token_value)
+        revoked = False
+
+        # Remove from in-memory stores
+        self._access_tokens.pop(token_value, None)
+        self._refresh_tokens.pop(token_value, None)
+
+        if self._use_db:
+            try:
+                conn = self._get_conn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO oauth_revoked_tokens (token_hash, token_type) "
+                            "VALUES (%s, %s) ON CONFLICT (token_hash) DO NOTHING",
+                            (token_hash, token_type_hint),
+                        )
+                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (token_value,))
+                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (token_value,))
+                        revoked = cur.rowcount > 0
+                    conn.commit()
+                finally:
+                    self._release_conn(conn)
+            except Exception as exc:
+                logger.warning("DB revoke_token_by_value failed: %s", exc)
+
+        return revoked
+
+    async def is_token_revoked(self, token_value: str) -> bool:
+        """Check if a token has been revoked."""
+        if self._use_db:
+            try:
+                conn = self._get_conn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT 1 FROM oauth_revoked_tokens WHERE token_hash = %s",
+                            (_hash_token(token_value),),
+                        )
+                        return cur.fetchone() is not None
+                finally:
+                    self._release_conn(conn)
+            except Exception:
+                return False  # Fail open on DB error
+        return False

@@ -679,3 +679,231 @@ class TestA2ASignatureVerification:
                 assert r.status_code == 200
 
         anyio.run(run)
+
+
+class TestA2ARestEndpoints:
+    def setup_method(self):
+        reset()
+
+    def _client(self, app):
+        import anyio
+        from httpx import ASGITransport, AsyncClient
+        return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    def _h(self, extra: dict | None = None) -> dict:
+        h = {"A2A-Version": "1.0"}
+        if extra:
+            h.update(extra)
+        return h
+
+    def test_rest_get_task_not_found(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.get("/tasks/nonexistent-id")
+                assert r.status_code == 404
+        anyio.run(run)
+
+    def test_rest_get_task_exists(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "hello"}], "metadata": {"skill": "memory_store", "params": {"content": "hello"}}}},
+                    headers=self._h(),
+                )
+                assert r.status_code == 200
+                task_id = r.json()["result"]["id"]
+                r2 = await client.get(f"/tasks/{task_id}")
+                assert r2.status_code == 200
+                assert r2.json()["id"] == task_id
+        anyio.run(run)
+
+    def test_rest_cancel_terminal_task_returns_error(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "x"}], "metadata": {"skill": "memory_store", "params": {"content": "x"}}}},
+                    headers=self._h(),
+                )
+                task_id = r.json()["result"]["id"]
+                r2 = await client.post(f"/tasks/{task_id}:cancel")
+                assert r2.status_code == 400
+        anyio.run(run)
+
+    def test_rest_delete_terminal_task(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "x"}], "metadata": {"skill": "memory_store", "params": {"content": "x"}}}},
+                    headers=self._h(),
+                )
+                task_id = r.json()["result"]["id"]
+                r2 = await client.delete(f"/tasks/{task_id}")
+                assert r2.status_code == 200
+                assert r2.json()["deleted"] == task_id
+                r3 = await client.get(f"/tasks/{task_id}")
+                assert r3.status_code == 404
+        anyio.run(run)
+
+    def test_rest_delete_non_terminal_task_returns_409(self):
+        from bastion.a2a_server import create_a2a_server
+        app, memory = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "x"}], "metadata": {"skill": "memory_store", "params": {"content": "x"}}}},
+                    headers=self._h(),
+                )
+                task_id = r.json()["result"]["id"]
+                r2 = await client.delete(f"/tasks/{task_id}")
+                assert r2.status_code == 200  # completed task is terminal
+        anyio.run(run)
+
+    def test_rest_message_send_no_a2a_version(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "test"}], "metadata": {"skill": "memory_store", "params": {"content": "test"}}}},
+                )
+                assert r.status_code == 400
+        anyio.run(run)
+
+    def test_rest_put_callback_url(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "x"}], "metadata": {"skill": "memory_store", "params": {"content": "x"}}}},
+                    headers=self._h(),
+                )
+                task_id = r.json()["result"]["id"]
+                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "https://hooks.example.com/push"})
+                assert r2.status_code == 200
+        anyio.run(run)
+
+    def test_rest_put_rejects_http_url(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                r = await client.post(
+                    "/message:send",
+                    json={"message": {"parts": [{"text": "x"}], "metadata": {"skill": "memory_store", "params": {"content": "x"}}}},
+                    headers=self._h(),
+                )
+                task_id = r.json()["result"]["id"]
+                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "http://example.com/hook"})
+                assert r2.status_code == 400
+        anyio.run(run)
+
+    def test_idempotency_key_returns_cached(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        payload = {"message": {"parts": [{"text": "test"}], "metadata": {"skill": "memory_store", "params": {"content": "test"}}}}
+        async def run():
+            async with client:
+                h = self._h({"X-Idempotency-Key": "key-1"})
+                r1 = await client.post("/message:send", json=payload, headers=h)
+                assert r1.status_code == 200
+                r2 = await client.post("/message:send", json=payload, headers=h)
+                assert r2.status_code == 200
+                assert r1.json()["result"]["id"] == r2.json()["result"]["id"]
+        anyio.run(run)
+
+
+class TestA2AStreaming:
+    def setup_method(self):
+        reset()
+
+    def _client(self, app):
+        import anyio
+        from httpx import ASGITransport, AsyncClient
+        return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    def _h(self, extra: dict | None = None) -> dict:
+        h = {"A2A-Version": "1.0"}
+        if extra:
+            h.update(extra)
+        return h
+
+    def test_stream_store_and_complete(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                async with client.stream(
+                    "POST", "/message:sendStream",
+                    json={"message": {"parts": [{"text": "hello"}], "metadata": {"skill": "memory_store", "params": {"content": "hello"}}}},
+                    headers=self._h(),
+                ) as resp:
+                    assert resp.status_code == 200
+                    lines = []
+                    async for line in resp.aiter_lines():
+                        lines.append(line)
+                    all_text = " ".join(lines)
+                    assert '"COMPLETED"' in all_text
+        anyio.run(run)
+
+    def test_stream_unknown_skill(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                async with client.stream(
+                    "POST", "/message:sendStream",
+                    json={"message": {"parts": [{"text": ""}], "metadata": {"skill": "unknown_skill"}}},
+                    headers=self._h(),
+                ) as resp:
+                    assert resp.status_code == 200
+                    lines = []
+                    async for line in resp.aiter_lines():
+                        lines.append(line)
+                    all_text = " ".join(lines)
+                    assert '"FAILED"' in all_text
+        anyio.run(run)
+
+    def test_stream_graph_query(self):
+        from bastion.a2a_server import create_a2a_server
+        app, _ = create_a2a_server(mock=True)
+        anyio, client = self._client(app)
+        async def run():
+            async with client:
+                async with client.stream(
+                    "POST", "/message:sendStream",
+                    json={"message": {"parts": [{"text": "What entities are connected to project-x?"}], "metadata": {"skill": "graph_query"}}},
+                    headers=self._h(),
+                ) as resp:
+                    assert resp.status_code == 200
+                    lines = []
+                    async for line in resp.aiter_lines():
+                        lines.append(line)
+                    all_text = " ".join(lines)
+                    assert any(s in all_text for s in ('"COMPLETED"', '"FAILED"'))
+        anyio.run(run)

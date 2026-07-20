@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     name: "Bastion Memory Agent",
     description:
       "A2A-compliant memory agent with hash-chain integrity, C-SPANN vector indexing, knowledge graph, and time travel.",
-    version: "0.3.0",
+    version: "0.1.0",
     url: "https://bastion-self.vercel.app",
     documentationUrl: "https://github.com/dgboy-ai/Bastion",
     capabilities: {

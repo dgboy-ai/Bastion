@@ -95,6 +95,11 @@ class SerializationRetryEngine:
 
 
 def _is_serialization_error(e: Exception) -> bool:
+    # Prefer structured pgcode (psycopg) over fragile string matching
+    pgcode = getattr(e, "pgcode", None)
+    if pgcode == "40001":
+        return True
+    # Fallback: string matching for non-psycopg drivers
     estr = str(e)
     return (
         "40001" in estr
