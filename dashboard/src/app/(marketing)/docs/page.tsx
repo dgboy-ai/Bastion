@@ -227,8 +227,8 @@ export default function DocsPage() {
         </Link>
         <div style={{ display: "flex", gap: "36px", alignItems: "center" }}>
           <Link href="/" style={{ color: "#eae3e4", fontSize: "14px", textDecoration: "none", fontWeight: 700 }}>Home</Link>
-          <Link href="/dashboard" style={{ color: "#eae3e4", fontSize: "14px", textDecoration: "none", fontWeight: 700 }}>Cockpit</Link>
-          <Link href="/dashboard" className="glow-nether-btn" style={{ padding: "10px 24px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "13px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>Launch Cockpit</Link>
+          <Link href="/dashboard" style={{ color: "#eae3e4", fontSize: "14px", textDecoration: "none", fontWeight: 700 }}>Dashboard</Link>
+          <Link href="/dashboard" className="glow-nether-btn" style={{ padding: "10px 24px", borderRadius: "4px", background: `linear-gradient(135deg, ${C.lava}, ${C.magma})`, color: "#fff", fontSize: "13px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1.5px" }}>Launch Dashboard</Link>
         </div>
       </nav>
 
@@ -366,7 +366,7 @@ export default function DocsPage() {
               <li>The **SHA-256 hash of the previous memory block** in the ledger.</li>
             </ul>
             <p className="docs-para">
-              This sequential linking creates a blockchain-like signature. If any record is modified, the hash link breaks, signaling a security alert to the MemoryGuard cockpit.
+              This sequential linking creates a blockchain-like signature. If any record is modified, the hash link breaks, signaling a security alert to the MemoryGuard dashboard.
             </p>
           </section>
 
