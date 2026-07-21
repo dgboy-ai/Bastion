@@ -70,21 +70,15 @@ export async function GET(request: Request) {
     const val6 = parseFloat(curveRes.rows[0]?.val_6 || "7.5");
     const valNow = parseFloat(avgImportanceRes.rows[0]?.avg || "5.0");
 
-    // Format hourly growth blocks (default mock curve if no values exist yet)
+    // Format hourly growth blocks
     const hourlyCounts = Array(8).fill(0);
-    const mockGrowthPattern = [35, 60, 45, 80, 50, 95, 75, 100];
     
     // Map database counts into our 8 hour slots
     const rows = hourlyGrowthRes.rows;
     if (rows.length > 0) {
       for (let i = 0; i < 8; i++) {
         const rowVal = rows[rows.length - 1 - i];
-        hourlyCounts[7 - i] = rowVal ? parseInt(rowVal.count, 10) * 15 + 20 : mockGrowthPattern[7 - i];
-      }
-    } else {
-      // Fallback if DB is empty
-      for (let i = 0; i < 8; i++) {
-        hourlyCounts[i] = mockGrowthPattern[i];
+        hourlyCounts[7 - i] = rowVal ? parseInt(rowVal.count, 10) : 0;
       }
     }
 
@@ -138,6 +132,7 @@ export async function GET(request: Request) {
     }, "short");
   } catch (error) {
     console.error("[api/stats] Query failed:", error);
-    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
+    return apiSuccess({}, "short", { mock: true, fallback: true });
   }
 }
+

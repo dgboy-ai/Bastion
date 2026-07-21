@@ -5,13 +5,13 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --font-sg: 'Space Grotesk', sans-serif;
 
-  /* Canvas */
-  --canvas-bg: #0a0208;
-  --canvas-sidebar: #0e0210;
-  --canvas-card: #120314;
-  --canvas-elevated: #1a0520;
+  /* Canvas — Nether Theme */
+  --canvas-bg: #0a0508;
+  --canvas-sidebar: #120a0e;
+  --canvas-card: #1a1018;
+  --canvas-elevated: #201420;
 
-  /* Accent Palette */
+  /* Accent Palette — Nether */
   --accent-breeze: #00e5ff;
   --accent-breeze-glow: rgba(0, 229, 255, 0.35);
   --accent-emerald: #00ff66;
@@ -19,9 +19,9 @@
   --accent-sunset: #ff5500;
   --accent-sunset-glow: rgba(255, 85, 0, 0.3);
   --accent-magenta: #ff00aa;
-  --accent-dusk: #b026ff;
-  --accent-gold: #ffc200;
-  --accent-lava: #ffea00;
+  --accent-dusk: #ff5500;
+  --accent-gold: #ffc800;
+  --accent-lava: #ffaa00;
 
   /* Text */
   --ink: #ffffff;

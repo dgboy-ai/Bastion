@@ -27,8 +27,8 @@ interface Orb {
   driftY: number;
 }
 
-// Bastion Theme RGB Color Tokens (Sunset, Breeze, Dusk, Emerald)
-const COLORS = ["255,115,0", "0,240,255", "139,92,246", "0,255,136"];
+// Nether Theme RGB Color Tokens (Gold, Lava, Magma, Cyan)
+const COLORS = ["255,170,0", "255,42,0", "255,156,0", "0,229,255"];
 
 export default function BackgroundParticles() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

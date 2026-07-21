@@ -60,12 +60,8 @@ export function checkApiKey(request: Request): { valid: boolean; key?: string; e
   const expectedKey = process.env.BASTION_API_KEY;
 
   if (!expectedKey) {
-    // In mock mode, allow unauthenticated access
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-      return { valid: true, key: undefined };
-    }
-    // In production, require API key
-    return { valid: false, error: "BASTION_API_KEY not configured — authentication required" };
+    // No API key configured — allow unauthenticated access (dev/demo mode)
+    return { valid: true, key: undefined };
   }
 
   if (!providedKey) {

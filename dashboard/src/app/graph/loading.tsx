@@ -1,8 +1,8 @@
-export default function DashboardLoading() {
+export default function GraphLoading() {
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      minHeight: "100vh", background: "#0a0308",
+      minHeight: "60vh", gap: "16px",
     }}>
       <div style={{
         width: "48px", height: "48px", border: "3px solid rgba(255,170,0,.15)",
@@ -10,10 +10,10 @@ export default function DashboardLoading() {
         animation: "spin 0.8s linear infinite",
       }} />
       <div style={{
-        marginTop: "20px", fontFamily: "var(--font-mono)", fontSize: "12px",
+        fontFamily: "var(--font-mono)", fontSize: "12px",
         color: "#8a8290", letterSpacing: "2px", textTransform: "uppercase",
       }}>
-        Loading Dashboard...
+        Loading Knowledge Graph...
       </div>
       <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
     </div>

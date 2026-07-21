@@ -202,7 +202,7 @@ export default function GraphPage() {
       )}
 
       {/* Side-by-Side HUD Layout Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.9fr 1fr", gap: "24px", alignItems: "stretch" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.9fr 1fr", gap: "24px", alignItems: "stretch" }} className="graph-grid">
         
         {/* Left Column: Interactive Map Panel */}
         <div className="panel" style={{ padding: 0, overflow: "hidden", position: "relative", height: "640px" }}>
