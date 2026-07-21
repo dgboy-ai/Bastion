@@ -88,7 +88,7 @@ services:
     working_dir: /app
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
-      - BASTION_HMAC_SECRET=bastion-demo-hmac-secret-2026
+      - BASTION_HMAC_SECRET=${BASTION_HMAC_SECRET:-change-me-in-production}
     entrypoint: >
       sh -c "
         echo 'Installing dependencies...'
@@ -113,7 +113,7 @@ services:
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
       - BASTION_MOCK=false
-      - BASTION_HMAC_SECRET=bastion-demo-hmac-secret-2026
+      - BASTION_HMAC_SECRET=${BASTION_HMAC_SECRET:-change-me-in-production}
     depends_on:
       cockroachdb:
         condition: service_healthy
@@ -136,7 +136,7 @@ services:
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
       - BASTION_MOCK=false
-      - BASTION_HMAC_SECRET=bastion-demo-hmac-secret-2026
+      - BASTION_HMAC_SECRET=${BASTION_HMAC_SECRET:-change-me-in-production}
     depends_on:
       cockroachdb:
         condition: service_healthy
@@ -165,7 +165,7 @@ services:
       - ./scripts:/scripts:ro
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=require&sslrootcert=/certs/ca.crt&sslcert=/certs/client.root.crt&sslkey=/certs/client.root.key
-      - BASTION_HMAC_SECRET=bastion-demo-hmac-secret-2026
+      - BASTION_HMAC_SECRET=${BASTION_HMAC_SECRET:-change-me-in-production}
       - BASTION_TTL_INTERVAL=300
       - BASTION_AUDIT_RETENTION_DAYS=90
     entrypoint: >

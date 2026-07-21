@@ -103,6 +103,8 @@
 /* Responsive */
 @media (max-width: 768px) {
   .metrics-kpi-grid { grid-template-columns: 1fr; }
+  .graph-grid { grid-template-columns: 1fr !important; }
+  .graph-grid > * { height: auto !important; min-height: 400px; }
   .page-container { padding: 20px; }
   .viewport-header { padding: 0 20px; }
 }

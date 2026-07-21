@@ -37,29 +37,30 @@ export function getMockMemories() {
 
 export function getMockStats() {
   return {
-    totalMemories: 1247,
-    totalAgents: 5,
-    avgImportance: 7.2,
-    totalAuditEntries: 8923,
-    uniqueMemoryTypes: 8,
-    storageEstimateMb: 45.3,
-    topMemoryTypes: [
-      { type: "fact", count: 523 },
-      { type: "conversation", count: 341 },
-      { type: "observation", count: 198 },
-      { type: "decision", count: 124 },
-      { type: "entity", count: 61 },
+    memories: 1247,
+    entities: 342,
+    relations: 128,
+    auditLogs: 8923,
+    conflicts: 3,
+    avgImportance: "7.2",
+    decayCurve: [
+      { label: "24h ago", value: 8.5 },
+      { label: "18h ago", value: 6.2 },
+      { label: "12h ago", value: 3.8 },
+      { label: "6h ago", value: 7.5 },
+      { label: "Now", value: 5.0 },
     ],
-    hourlyGrowth: Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i.toString().padStart(2, "0")}:00`,
-      count: Math.floor(Math.random() * 15),
-    })),
-    decayDistribution: [
-      { range: "0.0-2.0", count: 45 },
-      { range: "2.0-4.0", count: 123 },
-      { range: "4.0-6.0", count: 312 },
-      { range: "6.0-8.0", count: 487 },
-      { range: "8.0-10.0", count: 280 },
+    hourlyGrowth: [35, 60, 45, 80, 50, 95, 75, 100],
+    topRecalls: [
+      { rank: 1, text: "User prefers Python for data science", count: 42 },
+      { rank: 2, text: "CockroachDB cluster in ap-south-1", count: 38 },
+      { rank: 3, text: "AWS Bedrock Titan embeddings active", count: 31 },
+    ],
+    cacheHitPct: "94.2",
+    recentAudits: [
+      { id: "a1", action: "memory_store", recordedAt: new Date().toISOString(), details: {} },
+      { id: "a2", action: "memory_search", recordedAt: new Date().toISOString(), details: {} },
+      { id: "a3", action: "memory_store", recordedAt: new Date().toISOString(), details: {} },
     ],
     mock: true,
   };
@@ -133,7 +134,7 @@ export function getMockGraph() {
 export function getMockDrift() {
   return {
     latest: {
-      overallDriftScore: 0.23,
+      overall_drift_score: 0.23,
       status: "HEALTHY",
       dimensions: {
         memory_access_pattern: 0.12,
@@ -143,15 +144,15 @@ export function getMockDrift() {
         hash_chain_gap_ratio: 0.15,
         namespace_isolation: 0.0,
       },
-      topDriftSignals: ["retrieval_to_store_ratio"],
-      baselineSessions: 847,
-      alertThreshold: 0.3,
+      top_drift_signals: ["retrieval_to_store_ratio"],
+      baseline_sessions: 847,
+      alert_threshold: 0.3,
       recommendation: "Monitor retrieval patterns — slight upward trend detected.",
       timestamp: new Date().toISOString(),
     },
     timeSeries: Array.from({ length: 30 }, (_, i) => ({
       timestamp: new Date(Date.now() - i * 86400000).toISOString(),
-      overallScore: Math.round((0.15 + Math.random() * 0.25) * 100) / 100,
+      overall_score: Math.round((0.15 + Math.random() * 0.25) * 100) / 100,
     })),
     mock: true,
   };

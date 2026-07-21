@@ -16,12 +16,12 @@ const HybridSearchPanel = dynamic(() => import("@/components/HybridSearchPanel")
 const HashChainVisualizer = dynamic(() => import("@/components/HashChainVisualizer"), { ssr: false });
 const FaultToleranceVisualizer = dynamic(() => import("@/components/FaultToleranceVisualizer"), { ssr: false });
 
-/* ── Design Tokens ─────────────────────────────────────────── */
+/* ── Design Tokens (Nether Theme) ─────────────────────────── */
 const C = {
-  canvas: "#0a0a0a", card: "#0c1018", cardHover: "#111827",
-  hairline: "rgba(255,255,255,0.06)", ink: "#ffffff", body: "#c8ccd4",
-  mute: "#6b7280", breeze: "#00e5ff", emerald: "#00ff88",
-  sunset: "#ff7a17", dusk: "#7c3aed",
+  canvas: "#0a0508", card: "#120a0e", cardHover: "#1a1018",
+  hairline: "rgba(255,170,0,.12)", ink: "#ffffff", body: "#c8c0cc",
+  mute: "#8a8290", breeze: "#00e5ff", emerald: "#00ff88",
+  sunset: "#ffaa00", dusk: "#ff5500", gold: "#ffc800", lava: "#ff2a00", magma: "#ff9c00",
 };
 
 /* ── Intersection Observer ─────────────────────────────────── */

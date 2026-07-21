@@ -84,7 +84,7 @@ services:
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       - BASTION_MOCK=false
-      - BASTION_API_KEY=bastion-demo-key-2026
+      - BASTION_API_KEY=${BASTION_API_KEY:-bastion-demo-key-2026}
     depends_on:
       cockroachdb:
         condition: service_healthy
@@ -143,7 +143,7 @@ services:
     environment:
       - BASTION_CONN=postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable
       - BASTION_MOCK=false
-      - BASTION_API_KEY=bastion-demo-key-2026
+      - BASTION_API_KEY=${BASTION_API_KEY:-bastion-demo-key-2026}
     depends_on:
       cockroachdb:
         condition: service_healthy

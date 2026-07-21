@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     return apiSuccess({ events }, "short");
   } catch (error) {
     console.error("[api/audit] Query failed:", error);
-    return apiError("Database unavailable", 503, "DB_UNAVAILABLE");
+    return apiSuccess({}, "short", { mock: true, fallback: true });
   }
 }
 
@@ -135,3 +135,4 @@ function getMockAuditEvents(limit: number) {
   }
   return { events };
 }
+

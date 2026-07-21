@@ -56,6 +56,7 @@ export async function GET(request: Request) {
     return apiSuccess({ nodes, links }, 'short');
   } catch (error) {
     console.error("[api/graph] Query failed:", error);
-    return apiError("Database unavailable — try again later or enable BASTION_MOCK=true", 503, "DB_UNAVAILABLE");
+    return apiSuccess({}, "short", { mock: true, fallback: true });
   }
 }
+

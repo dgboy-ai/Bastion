@@ -1206,7 +1206,7 @@ export default function Page() {
           <div style={{fontWeight:900,fontSize:"20px",letterSpacing:"3px",color:"#fff",textTransform:"uppercase",fontFamily:"var(--font-sg)"}}>BASTION</div>
         </Link>
         <div style={{display:"flex",gap:"26px",alignItems:"center"}} className="dnav">
-          {([["Docs","/docs"],["Logs","/logs"],["Health","/health"]] as const).map(([l,h])=>(
+          {([["Docs","/docs/introduction"],["Logs","/logs"],["Health","/health"]] as const).map(([l,h])=>(
             <Link key={l} href={h} className="nl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontWeight:600}}>{l}</Link>
           ))}
           <span style={{padding:"2px 8px",borderRadius:"2px",background:"rgba(255,194,0,.1)",border:`1px solid ${P.gold}40`,fontFamily:"var(--font-mono)",fontSize:"8.5px",color:P.gold,letterSpacing:"1px",display:"inline-flex",alignItems:"center",gap:"5px"}}>
@@ -1223,13 +1223,13 @@ export default function Page() {
       <section style={{
         minHeight:"100vh",
         display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",
-        padding:"180px 48px 100px",
+        padding:"200px 48px 120px",
         position:"relative",zIndex:2,
       }}>
         <div style={{
           position:"absolute",top:"35%",left:"50%",transform:"translate(-50%,-50%)",
-          width:"800px",height:"600px",
-          background:`radial-gradient(ellipse, rgba(255,170,0,0.14) 0%, rgba(180,20,0,0.05) 50%, transparent 80%)`,
+          width:"1000px",height:"800px",
+          background:`radial-gradient(ellipse, rgba(255,170,0,0.2) 0%, rgba(180,20,0,0.08) 40%, transparent 75%)`,
           pointerEvents:"none",
         }}/>
 
@@ -1239,14 +1239,14 @@ export default function Page() {
 
             {/* Shield icon */}
             <div style={{
-              width:"72px",height:"72px",borderRadius:"16px",
+              width:"80px",height:"80px",borderRadius:"18px",
               background:"linear-gradient(135deg,rgba(255,170,0,.15),rgba(255,85,0,.1))",
               border:"1.5px solid rgba(255,170,0,.3)",
               display:"flex",alignItems:"center",justifyContent:"center",
-              marginBottom:"28px",
-              boxShadow:"0 0 40px rgba(255,170,0,.15),0 0 80px rgba(255,170,0,.05)",
+              marginBottom:"32px",
+              boxShadow:"0 0 50px rgba(255,170,0,.18),0 0 100px rgba(255,170,0,.06)",
             }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ffaa00" strokeWidth="1.5">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ffaa00" strokeWidth="1.5">
                 <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/>
                 <path d="M9 12l2 2 4-4" stroke="#00ff66" strokeWidth="2"/>
               </svg>
@@ -1254,7 +1254,7 @@ export default function Page() {
 
             {/* Title */}
             <h1 style={{
-              fontSize:"clamp(48px, 6.5vw, 82px)",
+              fontSize:"clamp(52px, 7vw, 90px)",
               fontWeight:900,lineHeight:0.95,
               letterSpacing:"-3px",
               color:"#fff",
@@ -1262,20 +1262,18 @@ export default function Page() {
               fontFamily:"var(--font-sg)",
               textShadow:"0 4px 40px rgba(0,0,0,.9)",
             }}>
-              THE FORTRESS
+              BASTION
             </h1>
             <h1 style={{
-              fontSize:"clamp(48px, 6.5vw, 82px)",
-              fontWeight:900,lineHeight:0.95,
-              letterSpacing:"-3px",
-              margin:"0 0 20px",
-              fontFamily:"var(--font-sg)",
-              background:`linear-gradient(135deg,${P.lava},#ffaa00,#ffe500)`,
-              WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
-              backgroundClip:"text",
-              textShadow:"none",
+              fontSize:"clamp(28px, 3.5vw, 44px)",
+              fontWeight:700,lineHeight:1.1,
+              letterSpacing:"2px",
+              margin:"0 0 24px",
+              fontFamily:"var(--font-mono)",
+              color:"#8a8290",
+              textTransform:"uppercase",
             }}>
-              OF AGENTIC
+              Persistent Memory for Agentic
             </h1>
 
             {/* Typewriter */}
@@ -1285,8 +1283,8 @@ export default function Page() {
 
             {/* Subtitle */}
             <p style={{
-              fontSize:"17px",lineHeight:1.7,color:"#c8c0cc",fontWeight:500,
-              maxWidth:"560px",margin:"0 auto 40px",
+              fontSize:"18px",lineHeight:1.7,color:"#c8c0cc",fontWeight:500,
+              maxWidth:"580px",margin:"0 auto 44px",
               fontFamily:"var(--font-inter)",
             }}>
               Persistent, self-healing memory for autonomous AI agents.
@@ -1296,24 +1294,24 @@ export default function Page() {
             </p>
 
             {/* CTA Buttons */}
-            <div style={{display:"flex",gap:"14px",justifyContent:"center",flexWrap:"wrap",marginBottom:"48px"}}>
+            <div style={{display:"flex",gap:"16px",justifyContent:"center",flexWrap:"wrap",marginBottom:"52px"}}>
               <Link href="/dashboard" style={{
-                padding:"16px 36px",borderRadius:"8px",
+                padding:"18px 40px",borderRadius:"10px",
                 background:"linear-gradient(135deg,#ffea00,#ff5500)",
-                color:"#fff",fontSize:"14px",fontWeight:800,textDecoration:"none",
+                color:"#fff",fontSize:"15px",fontWeight:800,textDecoration:"none",
                 textTransform:"uppercase",letterSpacing:"1.5px",
                 display:"inline-flex",alignItems:"center",gap:"10px",
-                boxShadow:"0 4px 24px rgba(255,85,0,.35),0 0 60px rgba(255,170,0,.1)",
+                boxShadow:"0 6px 30px rgba(255,85,0,.4),0 0 80px rgba(255,170,0,.12)",
                 transition:"all .3s",
               }}>
                 Try Demo Dashboard
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </Link>
               <Link href="/docs" style={{
-                padding:"16px 32px",borderRadius:"8px",
-                border:"1.5px solid rgba(255,170,0,.4)",
+                padding:"18px 36px",borderRadius:"10px",
+                border:"1.5px solid rgba(255,170,0,.45)",
                 background:"rgba(18,5,12,.6)",
-                color:"#fff",fontSize:"14px",fontWeight:700,textDecoration:"none",
+                color:"#fff",fontSize:"15px",fontWeight:700,textDecoration:"none",
                 backdropFilter:"blur(8px)",
                 transition:"all .3s",
               }}>
@@ -1323,17 +1321,17 @@ export default function Page() {
 
             {/* Stats */}
             <div style={{
-              display:"flex",gap:"48px",justifyContent:"center",
-              paddingTop:"32px",
+              display:"flex",gap:"56px",justifyContent:"center",
+              paddingTop:"36px",
               borderTop:"1px solid rgba(255,170,0,.2)",
               flexWrap:"wrap",
             }}>
               {[{e:965,s:"+",l:"Memories Stored",c:"#00ff66"},{e:25,s:"",l:"MCP Tools",c:P.gold},{e:4,s:"",l:"Resources",c:P.cyan}].map(({e,s,l,c})=>(
-                <div key={l} style={{textAlign:"center"}}>
-                  <div style={{fontSize:"clamp(32px,4vw,48px)",fontWeight:900,color:c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 30px ${c}40`}}>
+                <div key={l} style={{textAlign:"center",minWidth:"120px"}}>
+                  <div style={{fontSize:"clamp(36px,4.5vw,52px)",fontWeight:900,color:c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 35px ${c}45`}}>
                     <CountUp end={e} suffix={s}/>
                   </div>
-                  <div style={{fontSize:"11px",color:"#8a8290",fontFamily:"var(--font-mono)",marginTop:"8px",textTransform:"uppercase",letterSpacing:"2px"}}>{l}</div>
+                  <div style={{fontSize:"11px",color:"#8a8290",fontFamily:"var(--font-mono)",marginTop:"10px",textTransform:"uppercase",letterSpacing:"2.5px"}}>{l}</div>
                 </div>
               ))}
             </div>

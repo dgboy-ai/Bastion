@@ -290,10 +290,17 @@ class BastionMemory:
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
         except Exception as exc:
-            logger.warning(
-                "Failed to set RLS context — row-level security may be bypassed",
-                extra={"agent_id": self.agent_id, "error": str(exc)},
-            )
+            if self._mock:
+                logger.debug("RLS context not set (mock mode)", extra={"agent_id": self.agent_id})
+            else:
+                logger.error(
+                    "Failed to set RLS context — agent data isolation may be compromised",
+                    extra={"agent_id": self.agent_id, "error": str(exc)},
+                )
+                raise RuntimeError(
+                    f"RLS context setup failed for agent '{self.agent_id}'. "
+                    "Agent data isolation cannot be guaranteed."
+                ) from exc
 
     @property
     def is_mock(self) -> bool:

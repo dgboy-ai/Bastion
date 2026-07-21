@@ -8,7 +8,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Project constants
-VERSION = "0.1.0"
+VERSION = "0.10.0"
 PROJECT_URL = os.environ.get("BASTION_PROJECT_URL", "https://bastion-self.vercel.app")
 DOCS_URL = os.environ.get("BASTION_DOCS_URL", "https://github.com/dgboy-ai/Bastion")
 

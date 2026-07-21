@@ -196,8 +196,17 @@ def create_a2a_server(
     _ROLE_HIERARCHY = {"reader": 0, "writer": 1, "admin": 2}
 
     def _resolve_role(api_key_value: str) -> str:
-        """Resolve role from API key. Default is 'admin' for single-key mode."""
+        """Resolve role from API key. Supports per-key role mapping via BASTION_A2A_ROLES env var.
+        Format: BASTION_A2A_ROLES=key1:writer,key2:reader,default:admin
+        Falls back to BASTION_A2A_ROLE env var, then 'admin' for single-key mode."""
         role_env = os.environ.get("BASTION_A2A_ROLE", "")
+        roles_map = os.environ.get("BASTION_A2A_ROLES", "")
+        if roles_map:
+            for pair in roles_map.split(","):
+                if ":" in pair:
+                    k, v = pair.split(":", 1)
+                    if k.strip() == api_key_value:
+                        return v.strip()
         if role_env:
             return role_env
         return "admin"
@@ -432,8 +441,17 @@ def create_a2a_server(
                     deleted = memory._a2a_store.cleanup_expired(max_age_seconds=_task_max_age)
                     if deleted:
                         logger.info("Cleaned up %d expired A2A tasks", extra={"count": deleted})
+                # Clean up expired brute-force cache entries
+                now = time.time()
+                with _brute_cache_lock:
+                    expired = [ip for ip, (_, ws, lu) in _brute_cache.items()
+                               if (lu and now > lu) or (not lu and now - ws > _auth_window_seconds)]
+                    for ip in expired:
+                        _brute_cache.pop(ip, None)
+                    if expired:
+                        logger.debug("Cleaned %d expired brute-force entries", extra={"count": len(expired)})
             except Exception:
-                logger.exception("Background task cleanup failed")
+                logger.exception("Background cleanup failed")
 
     _cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True, name="a2a-cleanup")
     _cleanup_thread.start()
@@ -1255,7 +1273,7 @@ def create_a2a_server(
                                 yield "event: TaskComplete\ndata: {}\n\n"
                                 return
                 except Exception as exc:
-                    logger.warning("OWASP guard check failed in streaming (blocking): %s", exc)
+                    logger.warning("OWASP guard check failed in streaming (blocking)", exc_info=True)
                     await _update_task(task_id, "FAILED")
                     yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Blocked by security guard: check failed'})}\n\n"
                     yield "event: TaskComplete\ndata: {}\n\n"
@@ -1487,7 +1505,6 @@ def create_a2a_server(
                 f"Insufficient permissions: skill '{skill_id}' requires '{required_role}' role, caller has '{caller_role}'",
                 req_id,
             )
-            return _rpc_result(_strip_internal(task), req_id)
 
         # Create task ID BEFORE guard check so guard can reference it on failure
         task_id = uuid.uuid4().hex
@@ -1656,7 +1673,8 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
                     findings = [f.__dict__ for f in _guard_result.findings]
                     return {"error": "Blocked by OWASP ASI06 guard", "findings": findings}
             except Exception:
-                logger.warning("Guard screening failed — skill will proceed unchecked", exc_info=True)
+                logger.warning("Guard screening failed — blocking operation for safety", exc_info=True)
+                return {"error": "Blocked: security guard check failed. Operation aborted for safety."}
 
     if method == "store":
         mtype = params.get("memory_type", "fact")

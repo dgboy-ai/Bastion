@@ -1437,6 +1437,28 @@ def create_server(
         # Forwarding mode: send request to A2A server
         import httpx
 
+        # SSRF protection: validate target URL
+        from urllib.parse import urlparse
+        import ipaddress
+        try:
+            parsed = urlparse(a2a_url)
+            if parsed.scheme not in ("http", "https"):
+                return json.dumps({"error": "Only http/https URLs allowed"})
+            hostname = parsed.hostname or ""
+            if not hostname:
+                return json.dumps({"error": "Invalid URL: no hostname"})
+            blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
+            if hostname.lower() in blocked or hostname.endswith((".local", ".internal", ".localhost")):
+                return json.dumps({"error": "Internal/private URLs are blocked (SSRF protection)"})
+            try:
+                ip = ipaddress.ip_address(hostname)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                    return json.dumps({"error": "Private/internal IP addresses are blocked (SSRF protection)"})
+            except ValueError:
+                pass  # hostname is a domain, not an IP
+        except Exception:
+            return json.dumps({"error": "Invalid URL format"})
+
         target_url = f"{a2a_url.rstrip('/')}/"
         payload = {
             "jsonrpc": "2.0",
@@ -1452,9 +1474,8 @@ def create_server(
             },
         }
         headers = {"A2A-Version": "1.0", "Content-Type": "application/json"}
-        api_key = os.environ.get("BASTION_API_KEY", "")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        # NOTE: Do NOT forward the server's own API key to external A2A servers.
+        # The target server should have its own auth configured.
 
         try:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
