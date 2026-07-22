@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[api/health] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    return apiSuccess(defaultHealth, "short", { mock: true, fallback: true });
   }
 }
 

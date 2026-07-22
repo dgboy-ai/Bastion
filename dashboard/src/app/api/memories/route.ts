@@ -31,28 +31,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    let countSql = "SELECT COUNT(*) as cnt FROM agent_memory";
-    let dataSql = `
-      SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, created_at, expires_at, access_count
-      FROM agent_memory
-    `;
-    const params: unknown[] = [];
-    const whereParams: unknown[] = [];
+    const dataParams: unknown[] = [];
+    const whereClause = search ? ` WHERE content ILIKE $${dataParams.length + 1} OR memory_type ILIKE $${dataParams.length + 1}` : "";
+    if (search) dataParams.push(`%${search}%`);
 
-    if (search) {
-      const whereClause = " WHERE content ILIKE $1 OR memory_type ILIKE $1";
-      countSql += whereClause;
-      dataSql += whereClause;
-      params.push(`%${search}%`);
-      whereParams.push(`%${search}%`);
-    }
+    const countSql = `SELECT COUNT(*) as cnt FROM agent_memory${search ? " WHERE content ILIKE $1 OR memory_type ILIKE $1" : ""}`;
+    const countParams = search ? [`%${search}%`] : [];
 
-    dataSql += " ORDER BY created_at DESC LIMIT $2 OFFSET $3";
-    params.push(limit, offset);
+    dataParams.push(limit, offset);
+    const dataSql = `SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, created_at, expires_at, access_count FROM agent_memory${whereClause} ORDER BY created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`;
 
     const [countRes, dataRes] = await Promise.all([
-      safeQuery(countSql, whereParams.length > 0 ? [`%${search}%`] : undefined),
-      safeQuery(dataSql, params),
+      safeQuery(countSql, countParams),
+      safeQuery(dataSql, dataParams),
     ]);
 
     if (countRes.mock || dataRes.mock) {
@@ -79,7 +70,7 @@ export async function GET(request: Request) {
     return apiSuccess({ memories, total, page, limit, totalPages }, "short");
   } catch (error) {
     console.error("[api/memories] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    const fallbackMemories = getMockMemories();
+    return apiSuccess({ memories: fallbackMemories, total: fallbackMemories.length, page: 1, limit: 20, totalPages: 1 }, "short", { mock: true, fallback: true });
   }
 }
-

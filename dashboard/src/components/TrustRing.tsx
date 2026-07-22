@@ -36,12 +36,12 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
   useEffect(() => {
     if (!svgRef.current || totalMemories === 0) return;
     const svg = svgRef.current;
-    const width = 160;
-    const height = 160;
+    const width = 240;
+    const height = 240;
     const cx = width / 2;
     const cy = height / 2;
-    const outerR = 60;
-    const innerR = 42;
+    const outerR = 92;
+    const innerR = 68;
 
     const arcs: { level: number; count: number; color: string }[] = [];
     for (let lvl = 0; lvl <= 4; lvl++) {
@@ -108,10 +108,23 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
       .attr("dy", "0.1em")
       .attr("fill", scoreColor)
       .attr("font-family", "'JetBrains Mono', monospace")
-      .attr("font-size", "22px")
-      .attr("font-weight", "700")
+      .attr("font-size", "56px")
+      .attr("font-weight", "900")
       .attr("filter", "url(#trust-text-glow)")
       .text((avgTrustScore * 100).toFixed(0));
+
+    // Add SECURE / DANGER label below number
+    const statusLabel = avgTrustScore >= 0.7 ? "SECURE" : avgTrustScore >= 0.4 ? "CAUTION" : "DANGER";
+    group.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", "2.8em")
+      .attr("fill", scoreColor)
+      .attr("font-family", "'JetBrains Mono', monospace")
+      .attr("font-size", "11px")
+      .attr("font-weight", "700")
+      .attr("letter-spacing", "3")
+      .attr("opacity", 0.8)
+      .text(statusLabel);
   }, [trustLevelDistribution, avgTrustScore, totalMemories]);
 
   if (totalMemories === 0) {
@@ -127,7 +140,15 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-        <svg ref={svgRef} width="160" height="160" viewBox="0 0 160 160" style={{ overflow: "visible" }} />
+        {/* Radial glow behind ring */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${dangerousMemories > 0 ? "rgba(255,85,0,0.08)" : "rgba(0,255,136,0.06)"} 0%, transparent 70%)`,
+          pointerEvents: "none",
+        }} />
+        <svg ref={svgRef} width="240" height="240" viewBox="0 0 240 240" style={{ overflow: "visible" }} />
         {hovered && (
           <div style={{
             position: "absolute",

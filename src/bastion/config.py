@@ -4,6 +4,14 @@ import os
 import threading
 from typing import ClassVar
 
+# Load .env.local before pydantic-settings (higher priority than .env)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env.local", override=False)
+    load_dotenv(".env", override=False)
+except ImportError:
+    pass  # dotenv not installed — rely on OS env vars
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

@@ -44,7 +44,7 @@ export default function RootLayout({
         color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
         margin: 0, minHeight: "100vh", overflowY: "auto",
-        background: "transparent",
+        background: "#0a0508",
       }}>
 
         <GlobalErrorHandler />

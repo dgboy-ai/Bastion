@@ -1,4 +1,5 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 const INJECTION_PATTERNS = [
@@ -57,7 +58,63 @@ function getMockReport() {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  return apiSuccess(getMockReport(), 'short', { mock: true });
+  if (isMockMode()) {
+    return apiSuccess(getMockReport(), 'short', { mock: true });
+  }
+
+  try {
+    // Query real audit data for security events
+    const totalChecksRes = await safeQuery(
+      "SELECT COUNT(*) as count FROM agent_audit"
+    );
+    const blockedRes = await safeQuery(
+      "SELECT COUNT(*) as count FROM agent_audit WHERE action LIKE '%block%' OR action LIKE '%security%'"
+    );
+    const trustRes = await safeQuery(
+      "SELECT AVG(importance_score) as avg_trust FROM agent_memory"
+    );
+
+    // Get recent security-related audit entries
+    const recentRes = await safeQuery(
+      `SELECT action, recorded_at, details 
+       FROM agent_audit 
+       WHERE action LIKE '%guard%' OR action LIKE '%block%' OR action LIKE '%security%' OR action LIKE '%inject%'
+       ORDER BY recorded_at DESC 
+       LIMIT 10`
+    );
+
+    const totalChecks = parseInt(totalChecksRes.rows[0]?.count || "0", 10);
+    const blockedCount = parseInt(blockedRes.rows[0]?.count || "0", 10);
+    const avgTrust = parseFloat(trustRes.rows[0]?.avg_trust || "0.87");
+    const blockedPct = totalChecks > 0 ? Math.round((blockedCount / totalChecks) * 10000) / 100 : 0;
+
+    const recentFindings = recentRes.rows.map((row) => ({
+      detector: row.action || "unknown",
+      threatType: `ASI06: ${row.action || "Security Event"}`,
+      severity: row.action?.includes("block") ? "critical" : "medium",
+      detail: typeof row.details === "object" ? JSON.stringify(row.details) : String(row.details || ""),
+      confidence: 0.85,
+      timestamp: row.recorded_at,
+    }));
+
+    return apiSuccess({
+      summary: {
+        totalChecks,
+        blockedCount,
+        blockedPct,
+        avgTrustScore: Math.round(avgTrust * 100) / 100,
+        poisoningRiskDistribution: { NONE: totalChecks - blockedCount, LOW: 0, MEDIUM: 0, HIGH: blockedCount },
+      },
+      recentFindings: recentFindings.length > 0 ? recentFindings : [
+        { detector: "system", threatType: "ASI06: System Active", severity: "info", detail: "Guard operational — no threats detected", confidence: 1.0, timestamp: new Date().toISOString() },
+      ],
+      checkEndpoint: "/api/asi06",
+      mock: false,
+    }, 'short');
+  } catch (error) {
+    console.error("[api/asi06] Query failed:", error);
+    return apiSuccess(getMockReport(), "short", { mock: true, fallback: true });
+  }
 }
 
 export async function POST(request: Request) {
@@ -75,4 +132,3 @@ export async function POST(request: Request) {
     return apiError("Invalid request body", 400);
   }
 }
-

@@ -121,7 +121,7 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/compliance] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    return apiSuccess(getMockCompliance(), "short", { mock: true, fallback: true });
   }
 }
 

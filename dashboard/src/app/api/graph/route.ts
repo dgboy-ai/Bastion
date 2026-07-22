@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     return apiSuccess({ nodes, links }, 'short');
   } catch (error) {
     console.error("[api/graph] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    return apiSuccess(getMockGraph(), "short", { mock: true, fallback: true });
   }
 }
 

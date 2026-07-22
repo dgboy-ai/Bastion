@@ -203,6 +203,19 @@ def create_server(
         mem = BastionMemory(agent_id, connection_string=conn, mock=is_mock)
         if _SHARED_POOL:
             mem._pool = _SHARED_POOL
+        # Set application name for query tracing in CockroachDB
+        request_id = getattr(ctx, "request_id", None) if ctx else None
+        if request_id and not is_mock:
+            try:
+                pool = mem.get_pool()
+                conn_obj = pool.acquire(timeout=5.0)
+                try:
+                    with conn_obj.cursor() as cur:
+                        cur.execute(f"SET application_name = 'mcp-{agent_id[:32]}'")
+                finally:
+                    pool.release(conn_obj)
+            except Exception:
+                pass  # Non-critical — don't fail the request
         return mem
 
     use_oauth = oauth_enabled if oauth_enabled is not None else is_oauth_enabled()
@@ -1904,12 +1917,24 @@ def create_server(
 
 
 def _make_http_app(mcp: FastMCP) -> Any:
-    """Wrap the FastMCP Streamable HTTP app with auth, rate limiting, and PKCE capture."""
+    """Wrap the FastMCP Streamable HTTP app with auth, rate limiting, CORS, and PKCE capture."""
     from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.middleware.cors import CORSMiddleware
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
     inner = mcp.streamable_http_app()
+
+    # CORS — allow browser-based MCP clients
+    allowed_origins = os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")
+    inner = CORSMiddleware(
+        inner,
+        allow_origins=[o.strip() for o in allowed_origins],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     oauth_active = mcp.settings.auth is not None
     skip_paths = frozenset(
         {
@@ -2122,7 +2147,32 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
+    # Graceful shutdown on SIGTERM/SIGINT
+    import signal
+
+    def _shutdown_handler(signum: int, frame: Any) -> None:
+        logger.info("Received signal %d — shutting down gracefully", signum)
+        close_shared_pool()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
+
     atexit.register(close_shared_pool)
+
+    # Metrics TTL cleanup — prevent unbounded memory growth
+    def _cleanup_metrics() -> None:
+        while True:
+            time.sleep(300)  # every 5 minutes
+            cutoff = time.monotonic() - 3600  # keep last hour
+            for key in list(_metrics_durations.keys()):
+                durations = _metrics_durations[key]
+                _metrics_durations[key] = [d for d in durations if d > cutoff]
+                if not _metrics_durations[key]:
+                    del _metrics_durations[key]
+
+    cleanup_thread = threading.Thread(target=_cleanup_metrics, daemon=True)
+    cleanup_thread.start()
 
     mcp = create_server(
         mock=args.mock,
