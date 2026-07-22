@@ -167,14 +167,18 @@
 .page-container {
   max-width: 1400px;
   margin: 0 auto;
+  padding: 24px 32px;
+  position: relative;
 }
 
 /* ── Dashboard Viewport ────────────────────────────────────── */
 .main-viewport {
   flex: 1;
   min-width: 0;
+  padding-left: 240px;
   display: flex;
   flex-direction: column;
+  background: var(--canvas-bg);
 }
 
 .viewport-header {
@@ -211,8 +215,11 @@
   }
 }
 
-/* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 1024px) {
+  .main-viewport {
+    padding-left: 0;
+  }
+
   .sidebar {
     position: fixed;
     left: 0;

@@ -48,9 +48,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             setDbName("Live CockroachDB");
           }
         } else if (!mockActive) {
-          setDbName("Static Config");
+          setDbName("CockroachDB Serverless");
         } else {
-          setDbName("Simulated Mock");
+          setDbName("Simulated DB");
         }
       }
     } catch (e) {
@@ -148,38 +148,48 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           top: 0,
           left: 0,
           right: 0,
-          height: "36px",
-          background: "linear-gradient(90deg, #ff5e00 0%, #ff8c00 100%)",
-          color: "#fff",
+          height: "32px",
+          background: "rgba(10, 2, 8, 0.88)",
+          backdropFilter: "blur(16px)",
+          color: "#b0a899",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          gap: "16px",
+          gap: "12px",
           zIndex: 2000,
-          fontSize: "13px",
-          fontWeight: 600,
-          boxShadow: "0 4px 20px rgba(255, 94, 0, 0.25)",
-          padding: "0 24px",
-          fontFamily: "'Space Grotesk', sans-serif"
+          fontSize: "11px",
+          fontWeight: 500,
+          borderBottom: "1px solid rgba(255, 85, 0, 0.15)",
+          fontFamily: "'JetBrains Mono', monospace",
+          letterSpacing: "0.5px",
         }}>
-          <span>⚠️ Bastion is running in Simulated Demo Mode.</span>
-          <button 
+          <span style={{
+            width: "5px", height: "5px", borderRadius: "50%",
+            background: "#ff5e00", boxShadow: "0 0 8px #ff5e00",
+            animation: "pulse-dot 2s ease-in-out infinite",
+          }} />
+          <span style={{ color: "#9e8486" }}>DEMO MODE</span>
+          <span style={{ color: "#5a3a40" }}>|</span>
+          <span>Simulated Mock Data</span>
+          <button
             onClick={() => setIsModalOpen(true)}
             style={{
-              background: "#ffffff",
-              border: "none",
-              color: "#ff5e00",
-              fontWeight: 700,
-              fontSize: "11px",
-              padding: "4px 12px",
+              background: "rgba(255, 85, 0, 0.1)",
+              border: "1px solid rgba(255, 85, 0, 0.25)",
+              color: "#ff9100",
+              fontWeight: 600,
+              fontSize: "10px",
+              padding: "3px 10px",
               borderRadius: "4px",
               cursor: "pointer",
               textTransform: "uppercase",
-              letterSpacing: "0.5px"
+              letterSpacing: "0.8px",
+              transition: "all 0.2s",
             }}
           >
-            Connect CockroachDB
+            Connect
           </button>
+          <style>{`@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
         </div>
       )}
 
@@ -187,7 +197,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       <div 
         className="dashboard-layout" 
         style={{ 
-          marginTop: isMock ? "36px" : "0px",
+          marginTop: isMock ? "32px" : "0px",
           transition: "margin 0.3s ease"
         }}
       >

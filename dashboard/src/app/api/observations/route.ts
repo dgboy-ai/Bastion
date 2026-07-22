@@ -126,7 +126,8 @@ export async function GET(request: Request) {
     }, "short");
   } catch (error) {
     console.error("[api/observations] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    const mockObs = getMockObservations();
+    return apiSuccess(mockObs, "short", { mock: true, fallback: true });
   }
 }
 

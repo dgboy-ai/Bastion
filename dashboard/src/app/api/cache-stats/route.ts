@@ -113,6 +113,6 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/cache-stats] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    return apiSuccess(getMockCacheStats(), "short", { mock: true, fallback: true });
   }
 }

@@ -57,7 +57,8 @@ export async function GET(request: Request) {
     return apiSuccess({ events }, "short");
   } catch (error) {
     console.error("[api/audit] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    const fallbackEvents = getMockAuditEvents(10);
+    return apiSuccess({ events: fallbackEvents }, "short", { mock: true, fallback: true });
   }
 }
 

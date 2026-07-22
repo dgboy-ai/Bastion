@@ -1,0 +1,41 @@
+services:
+  # MCP Server — connects AI agents to CockroachDB memory
+  - type: web
+    name: bastion-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile.mcp
+    envVars:
+      - key: BASTION_CONN
+        sync: false  # Set manually in Render dashboard
+      - key: BASTION_MOCK
+        value: "false"
+      - key: BASTION_API_KEY
+        generateValue: true
+      - key: BASTION_MCP_MAX_CONCURRENT
+        value: "20"
+      - key: BASTION_MCP_MAX_QUEUE
+        value: "200"
+      - key: BASTION_MCP_TIMEOUT
+        value: "60"
+      - key: CORS_ALLOW_ORIGINS
+        value: "https://bastion-self.vercel.app,http://localhost:3000"
+    healthCheckPath: /healthz
+    autoDeploy: true
+    plan: starter  # Free tier spins down after 15min idle
+
+  # A2A Server — agent-to-agent protocol
+  - type: web
+    name: bastion-a2a
+    runtime: docker
+    dockerfilePath: ./Dockerfile.python
+    envVars:
+      - key: BASTION_CONN
+        sync: false
+      - key: BASTION_MOCK
+        value: "false"
+      - key: BASTION_A2A_PRIVATE_KEY
+        generateValue: true
+    healthCheckPath: /healthz
+    autoDeploy: true
+    plan: starter
+    startCommand: python -m bastion.a2a_server

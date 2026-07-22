@@ -60,7 +60,8 @@ export async function GET(request: Request) {
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
   } catch (error) {
     console.error("[api/entity-memories] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    const fallbackMemories = getMockMemories().slice(0, 5);
+    return apiSuccess({ memories: fallbackMemories, total: fallbackMemories.length, page: 1, limit: 20, totalPages: 1 }, "short", { mock: true, fallback: true });
   }
 }
 

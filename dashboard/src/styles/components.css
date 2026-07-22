@@ -2,12 +2,18 @@
 
 /* Panel / Card */
 .panel {
-  background: var(--canvas-card);
+  background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
+  backdrop-filter: blur(12px);
   box-shadow: var(--shadow-md);
   position: relative;
   overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.panel:hover {
+  border-color: rgba(255, 85, 0, 0.25);
 }
 
 .panel::before {

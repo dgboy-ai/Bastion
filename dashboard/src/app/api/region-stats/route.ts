@@ -1,4 +1,4 @@
-import { apiSuccess, apiError } from "@/lib/api-response";
+import { apiSuccess } from "@/lib/api-response";
 import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -32,42 +32,63 @@ export async function GET(request: Request) {
   }
 
   try {
-    const regionSql = `
-      SELECT
-        crdb_region as region,
-        COUNT(*) as memories,
-        AVG(EXTRACT(EPOCH FROM (now() - created_at)) * 1000)::int as avg_latency_ms
-      FROM agent_memory
-      GROUP BY crdb_region
-      ORDER BY memories DESC
-    `;
-    const regionResult = await safeQuery(regionSql);
-    if (regionResult.mock) {
-      return apiSuccess(getMockRegionStats(), "short", { mock: true });
+    // Try region query — crdb_region may not exist on all clusters
+    let regions: { region: string; label: string; memories: number; latency_ms: number; status: string; utilization: number }[] = [];
+    let totalMemories = 0;
+    let avgLatency = 26;
+
+    try {
+      const regionSql = `
+        SELECT
+          crdb_region as region,
+          COUNT(*) as memories,
+          AVG(EXTRACT(EPOCH FROM (now() - created_at)) * 1000)::int as avg_latency_ms
+        FROM agent_memory
+        GROUP BY crdb_region
+        ORDER BY memories DESC
+      `;
+      const regionResult = await safeQuery(regionSql);
+      if (!regionResult.mock && regionResult.rows.length > 0) {
+        const regionLabels: Record<string, string> = {
+          "us-east1": "US East (Virginia)",
+          "us-west1": "US West (Oregon)",
+          "eu-west1": "EU West (Ireland)",
+          "eu-central1": "EU Central (Frankfurt)",
+          "ap-south1": "AP South (Mumbai)",
+          "ap-northeast1": "AP NE (Tokyo)",
+        };
+        regions = regionResult.rows.map((row) => ({
+          region: row.region,
+          label: regionLabels[row.region] ?? row.region,
+          memories: parseInt(row.memories ?? "0"),
+          latency_ms: parseInt(row.avg_latency_ms ?? "25"),
+          status: "healthy" as const,
+          utilization: Math.min(1, parseInt(row.memories ?? "0") / 2000),
+        }));
+        totalMemories = regions.reduce((sum, r) => sum + r.memories, 0);
+        avgLatency = regions.length > 0
+          ? Math.round(regions.reduce((sum, r) => sum + r.latency_ms, 0) / regions.length)
+          : 26;
+      }
+    } catch {
+      // crdb_region column doesn't exist — fall through to single-region display
     }
 
-    const regionLabels: Record<string, string> = {
-      "us-east1": "US East (Virginia)",
-      "us-west1": "US West (Oregon)",
-      "eu-west1": "EU West (Ireland)",
-      "eu-central1": "EU Central (Frankfurt)",
-      "ap-south1": "AP South (Mumbai)",
-      "ap-northeast1": "AP NE (Tokyo)",
-    };
-
-    const regions = regionResult.rows.map((row) => ({
-      region: row.region,
-      label: regionLabels[row.region] ?? row.region,
-      memories: parseInt(row.memories ?? "0"),
-      latency_ms: parseInt(row.avg_latency_ms ?? "25"),
-      status: "healthy" as const,
-      utilization: Math.min(1, parseInt(row.memories ?? "0") / 2000),
-    }));
-
-    const totalMemories = regions.reduce((sum, r) => sum + r.memories, 0);
-    const avgLatency = regions.length > 0
-      ? Math.round(regions.reduce((sum, r) => sum + r.latency_ms, 0) / regions.length)
-      : 26;
+    // If no region data, show single region with real count
+    if (regions.length === 0) {
+      const countRes = await safeQuery("SELECT COUNT(*) as count FROM agent_memory");
+      const realCount = parseInt(countRes.rows[0]?.count || "0");
+      regions = [{
+        region: "default",
+        label: "CockroachDB Cluster",
+        memories: realCount,
+        latency_ms: 15,
+        status: "healthy",
+        utilization: Math.min(1, realCount / 2000),
+      }];
+      totalMemories = realCount;
+      avgLatency = 15;
+    }
 
     return apiSuccess({
       regions,
@@ -83,8 +104,6 @@ export async function GET(request: Request) {
     }, "short");
   } catch (error) {
     console.error("[api/region-stats] Query failed:", error);
-    // Fall back to mock data instead of returning 503
     return apiSuccess(getMockRegionStats(), "short", { mock: true, fallback: true });
   }
 }
-

@@ -1,25 +1,13 @@
-import { apiSuccess, apiError } from "@/lib/api-response";
+import { apiSuccess } from "@/lib/api-response";
 import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockDrift } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
 
-const DRIFT_DIMENSIONS = [
-  "memory_access_pattern",
-  "semantic_similarity",
-  "conflict_resolution_rate",
-  "hash_chain_gap_ratio",
-  "retrieval_to_store_ratio",
-  "namespace_isolation",
-];
-
 interface DriftRow {
-  score_id: string;
   overall_drift_score: number;
-  dimensions: Record<string, number>;
-  baseline_sessions: number;
-  alert_threshold: number;
   status: string;
-  top_drift_signals: string[];
+  dimensions: string | Record<string, number>;
+  top_drift_signals: string | string[];
   recommendation: string;
   scorable_at: string;
 }
@@ -33,28 +21,42 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get("agent_id");
     const limit = Math.max(1, Math.min(200, parseInt(searchParams.get("limit") || "50", 10) || 50));
+    const entity_id = searchParams.get("entity_id");
 
     let sql = `
-      SELECT score_id, overall_drift_score, dimensions, baseline_sessions,
-             alert_threshold, status, top_drift_signals, recommendation,
-             scorable_at
+      SELECT 
+        overall_drift_score,
+        status,
+        dimensions,
+        top_drift_signals,
+        recommendation,
+        scorable_at
       FROM agent_drift_scores
     `;
     const params: unknown[] = [];
 
-    if (agentId) {
-      sql += ` WHERE agent_id = $1`;
-      params.push(agentId);
+    if (entity_id) {
+      sql += ` WHERE entity_id = $1`;
+      params.push(entity_id);
     }
 
     sql += ` ORDER BY scorable_at DESC LIMIT $${params.length + 1}`;
     params.push(limit);
 
     const res = await safeQuery(sql, params);
-    if (res.mock || res.rows.length === 0) {
+    if (res.mock) {
       return apiSuccess(getMockDrift(), 'short', { mock: true });
+    }
+
+    // Return real empty state instead of mock when table has no data
+    if (res.rows.length === 0) {
+      return apiSuccess({
+        latest: { overall_drift_score: 0, status: "HEALTHY", top_drift_signals: [], recommendation: "No drift data collected yet", dimensions: {} },
+        timeSeries: [],
+        dimensionAverages: {},
+        totalScores: 0,
+      }, 'short');
     }
 
     const scoreRows = res.rows as Record<string, unknown>[];
@@ -77,40 +79,38 @@ export async function GET(request: Request) {
       }
 
       const overall = Number(row.overall_drift_score);
-      const alertThresh = Number(row.alert_threshold);
+      let status = String(row.status || "HEALTHY");
+      if (status === "HEALTHY" && overall > 0.3) status = "DRIFTING";
+      if (status === "HEALTHY" && overall > 0.6) status = "CRITICAL";
 
       scores.push({
-        score_id: String(row.score_id ?? ""),
-        overall_drift_score: Number.isFinite(overall) ? overall : 0,
+        overall_drift_score: overall,
+        status,
         dimensions,
-        baseline_sessions: Math.max(0, Number(row.baseline_sessions) || 0),
-        alert_threshold: Number.isFinite(alertThresh) ? alertThresh : 0,
-        status: String(row.status ?? "unknown"),
         top_drift_signals,
-        recommendation: String(row.recommendation ?? ""),
-        scorable_at: String(row.scorable_at ?? ""),
+        recommendation: String(row.recommendation || ""),
+        scorable_at: String(row.scorable_at),
       });
     }
 
-    const latest = scores[0] ?? null;
+    const latest = scores[0];
+    const timeSeries = scores.map(s => ({
+      score: s.overall_drift_score,
+      timestamp: s.scorable_at,
+      status: s.status,
+    }));
 
-    const timeSeries = scores
-      .slice()
-      .reverse()
-      .map((s) => ({
-        score: s.overall_drift_score,
-        timestamp: s.scorable_at,
-        status: s.status,
-      }));
-
+    // Compute dimension averages
     const dimensionAverages: Record<string, number> = {};
-    for (const dim of DRIFT_DIMENSIONS) {
-      const vals = scores
-        .map((s) => s.dimensions[dim])
-        .filter((v): v is number => v !== undefined);
-      dimensionAverages[dim] = vals.length > 0
-        ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10000) / 10000
-        : 0;
+    const dimCounts: Record<string, number> = {};
+    for (const s of scores) {
+      for (const [dim, val] of Object.entries(s.dimensions)) {
+        dimensionAverages[dim] = (dimensionAverages[dim] || 0) + val;
+        dimCounts[dim] = (dimCounts[dim] || 0) + 1;
+      }
+    }
+    for (const dim of Object.keys(dimensionAverages)) {
+      dimensionAverages[dim] = Math.round((dimensionAverages[dim] / dimCounts[dim]) * 1000) / 1000;
     }
 
     return apiSuccess({
@@ -121,7 +121,6 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/drift] Query failed:", error);
-    return apiSuccess({}, "short", { mock: true, fallback: true });
+    return apiSuccess(getMockDrift(), "short", { mock: true, fallback: true });
   }
 }
-
