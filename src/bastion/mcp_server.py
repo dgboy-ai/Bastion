@@ -40,8 +40,15 @@ from bastion.auth_provider import BastionOAuthProvider, is_oauth_enabled
 from bastion.config import VERSION
 from bastion.errors import SecurityBlockError
 from bastion.limiter import RequestLimiter
+from bastion.mcp_scanner import scan_tool_manifest
 from bastion.memory import BastionMemory
 from bastion.pool import ConnectionPool
+from bastion.provenance import compute_provenance
+from bastion.spend_manager import SpendManager
+
+# Hard caps for production safety
+MAX_K = 100
+MAX_STORE_BYTES = 100_000
 
 logger = logging.getLogger("bastion-mcp")
 
@@ -60,6 +67,7 @@ _SHARED_POOL: ConnectionPool | None = None
 _SHARED_MEMORY: BastionMemory | None = None
 _API_KEYS: set[str] | None = None
 _RATE_LIMITER: RequestLimiter | None = None
+_SPEND_MANAGER: SpendManager | None = None
 _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 _INIT_LOCK = threading.Lock()
 
@@ -135,6 +143,19 @@ def _check_auth(headers: dict[str, str]) -> bool:
         return False
     # Constant-time comparison to prevent timing attacks
     return any(_secrets.compare_digest(provided, k) for k in keys)
+
+
+def _get_spend_manager() -> SpendManager:
+    global _SPEND_MANAGER
+    if _SPEND_MANAGER is None:
+        with _INIT_LOCK:
+            if _SPEND_MANAGER is None:
+                conn = os.environ.get("BASTION_CONN", "")
+                _SPEND_MANAGER = SpendManager(
+                    connection_string=conn,
+                    mock=not conn,
+                )
+    return _SPEND_MANAGER
 
 
 def _get_limiter() -> RequestLimiter:
@@ -466,11 +487,18 @@ def create_server(
     ) -> str:
         if k < 1:
             return json.dumps({"error": "k must be >= 1"})
+        k = min(k, MAX_K)
         if threshold is not None and not 0.0 <= threshold <= 1.0:
             return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
         if not query or not query.strip():
             return json.dumps({"error": "query must be a non-empty string"})
         mem = _resolve_memory(ctx)
+        agent_id = ctx.client_id or "mcp-agent"
+        spend = _get_spend_manager()
+        check = spend.check_and_increment(agent_id, "search", 1)
+        if not check["allowed"]:
+            return json.dumps({"error": f"Search budget exhausted: {check['reason']}",
+                               "remaining": check["remaining"], "suspended": check["suspended"]})
         # Use lower default threshold for mock mode (mock embeddings are less discriminative)
         if threshold is None:
             threshold = 0.3 if mem.is_mock else 0.8
@@ -532,8 +560,9 @@ def create_server(
         memory_type: str = "fact",
         metadata: dict[str, Any] | None = None,
         expires_in_seconds: int | None = None,
+        source_type: str = "agent_direct",
+        source_url: str | None = None,
     ) -> str:
-        # Input validation — accept all memory types used across the codebase
         valid_types = {
             "fact", "task", "preference", "learned", "procedure", "session", "instruction",
             "episodic", "semantic", "procedural", "system_event", "security",
@@ -544,13 +573,32 @@ def create_server(
             return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {sorted(valid_types)}"})
         if not content or not content.strip():
             return json.dumps({"error": "content must be a non-empty string"})
+        if len(content.encode("utf-8")) > MAX_STORE_BYTES:
+            return json.dumps({"error": f"content exceeds maximum size of {MAX_STORE_BYTES} bytes"})
+
+        agent_id = ctx.client_id or "mcp-agent"
+        spend = _get_spend_manager()
+        check = spend.check_and_increment(agent_id, "store", 1)
+        if not check["allowed"]:
+            return json.dumps({"error": f"Store budget exhausted: {check['reason']}",
+                               "remaining": check["remaining"], "suspended": check["suspended"]})
+
         mem = _resolve_memory(ctx)
+        meta = dict(metadata or {})
+
+        provenance = compute_provenance(
+            source_type=source_type,
+            source_url=source_url,
+            content=content,
+        )
+        meta["_provenance"] = provenance
+
         try:
             record = await anyio.to_thread.run_sync(
                 mem.store,
                 memory_type,
                 content,
-                metadata,
+                meta,
                 expires_in_seconds,
             )
         except SecurityBlockError as exc:
@@ -569,7 +617,7 @@ def create_server(
                 result["trust_score"] = report.trust_score
                 result["poisoning_risk"] = report.poisoning_risk
             return json.dumps(result, indent=2)
-        except Exception as exc:
+        except Exception:
             logger.exception("memory_store failed")
             return json.dumps({"error": "Store operation failed — check server logs for details"})
         await _notify_resource_updated(ctx, "bastion://stats")
@@ -610,7 +658,7 @@ def create_server(
                 agent_id,
             )
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_timetravel failed")
             return json.dumps({"error": "Time travel query failed — check server logs"})
 
@@ -631,7 +679,7 @@ def create_server(
         try:
             entries = await anyio.to_thread.run_sync(mem.audit, agent_id)
             return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_audit failed")
             return json.dumps({"error": "Audit query failed — check server logs"})
 
@@ -657,7 +705,7 @@ def create_server(
             await _report_progress(ctx, 2, 2, "Self-heal complete")
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(result, indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_heal failed")
             return json.dumps({"error": "Self-heal failed — check server logs"})
 
@@ -686,7 +734,7 @@ def create_server(
             await _notify_resource_updated(ctx, "bastion://stats")
             await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
             return json.dumps({"deleted": memory_id, "status": "ok"}, indent=2)
-        except Exception as exc:
+        except Exception:
             logger.exception("memory_delete failed")
             return json.dumps({"error": "Delete operation failed — check server logs"})
 
@@ -727,7 +775,7 @@ def create_server(
             )
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(record.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_pin failed")
             return json.dumps({"error": "Pin failed — check server logs"})
 
@@ -754,7 +802,7 @@ def create_server(
         try:
             results = await anyio.to_thread.run_sync(mem.get_pinned, min_priority)
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_get_pinned failed")
             return json.dumps({"error": "Get pinned failed — check server logs"})
 
@@ -788,7 +836,7 @@ def create_server(
         try:
             results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
             return json.dumps([r.to_dict() for r in results], indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_list failed")
             return json.dumps({"error": "List failed — check server logs"})
 
@@ -824,7 +872,7 @@ def create_server(
                 return json.dumps({"error": f"Memory {memory_id} not found"})
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(record.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_correct failed")
             return json.dumps({"error": "Correct failed — check server logs"})
 
@@ -848,7 +896,7 @@ def create_server(
             mem = _resolve_memory(ctx)
             health = await anyio.to_thread.run_sync(mem.memory_health)
             return json.dumps(health, indent=2, default=str)
-        except Exception as exc:
+        except Exception:
             logger.exception("memory_health failed")
             return json.dumps({"error": "Health check failed — check server logs"})
 
@@ -884,7 +932,7 @@ def create_server(
                 return json.dumps({"error": f"Memory {memory_id} not found"})
             await _notify_resource_updated(ctx, f"bastion://memory/{memory_id}")
             return json.dumps(result, indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("memory_apply_patch failed")
             return json.dumps({"error": "Patch failed — check server logs"})
 
@@ -921,7 +969,7 @@ def create_server(
             await _report_progress(ctx, 3, 3, "Conflict resolved")
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps({"merged": merged}, indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("resolve_conflict failed")
             return json.dumps({"error": "Conflict resolution failed — check server logs"})
 
@@ -974,7 +1022,7 @@ def create_server(
                 "reuse_found": True,
                 **result.to_dict(),
             }, indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("ltm_check_reuse failed")
             return json.dumps({"error": "LTM check failed — check server logs"})
 
@@ -1017,7 +1065,7 @@ def create_server(
             )
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(store_result.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("ltm_store_analysis failed")
             return json.dumps({"error": "LTM store failed — check server logs"})
 
@@ -1052,7 +1100,7 @@ def create_server(
             gateway = LTMMemoryGateway(mem)
             result = await anyio.to_thread.run_sync(gateway.invalidate, query, reason)
             return json.dumps(result, indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("ltm_invalidate failed")
             return json.dumps({"error": "LTM invalidate failed — check server logs"})
 
@@ -1092,7 +1140,7 @@ def create_server(
             detector = ContradictionDetector(mem)
             result = await anyio.to_thread.run_sync(detector.scan_after_store, record)
             return json.dumps(result.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("detect_contradictions failed")
             return json.dumps({"error": "Contradiction detection failed — check server logs"})
 
@@ -1124,7 +1172,7 @@ def create_server(
                 indent=2,
                 default=str,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("scan_all_contradictions failed")
             return json.dumps({"error": "Batch contradiction scan failed — check server logs"})
 
@@ -1160,7 +1208,7 @@ def create_server(
             await _report_progress(ctx, 4, 4, "Dream cycle complete")
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(journal.to_dict(), indent=2, default=str)
-        except Exception as exc:
+        except Exception:
             logger.exception("dream failed")
             return json.dumps({"error": "Dream consolidation failed — check server logs"})
 
@@ -1187,7 +1235,7 @@ def create_server(
             dreamer = MemoryDreamer(mem)
             history = await anyio.to_thread.run_sync(dreamer.get_dream_history)
             return json.dumps(history, indent=2, default=str)
-        except Exception as exc:
+        except Exception:
             logger.exception("dream_history failed")
             return json.dumps({"error": "Dream history failed — check server logs"})
 
@@ -1215,7 +1263,7 @@ def create_server(
             detector = ObservationDetector(mem)
             report = await anyio.to_thread.run_sync(detector.detect)
             return json.dumps(report.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("detect_observations failed")
             return json.dumps({"error": "Observation detection failed — check server logs"})
 
@@ -1267,7 +1315,7 @@ def create_server(
                 indent=2,
                 default=str,
             )
-        except Exception as exc:
+        except Exception:
             logger.exception("multi_signal_search failed")
             return json.dumps({"error": "Search failed — check server logs"})
 
@@ -1304,7 +1352,7 @@ def create_server(
                 packer.pack, budget_tokens, query,
             )
             return json.dumps(result.to_dict(), indent=2, default=str)
-        except Exception as e:
+        except Exception:
             logger.exception("context_pack failed")
             return json.dumps({"error": "Context packing failed — check server logs"})
 
@@ -1411,7 +1459,7 @@ def create_server(
                             schema = {"tables": tables}
                 finally:
                     pool.release(conn)
-            except Exception as e:
+            except Exception:
                 logger.exception("agent_schema failed")
                 schema = {"error": "Schema query failed — check server logs"}
 
@@ -1448,11 +1496,12 @@ def create_server(
             return json.dumps(signed, indent=2, default=str)
 
         # Forwarding mode: send request to A2A server
-        import httpx
+        import ipaddress
 
         # SSRF protection: validate target URL
         from urllib.parse import urlparse
-        import ipaddress
+
+        import httpx
         try:
             parsed = urlparse(a2a_url)
             if parsed.scheme not in ("http", "https"):
@@ -1858,7 +1907,7 @@ def create_server(
 
             # RFC 7009: always return 200, even if token was not found
             return Response(status_code=200)
-        except Exception as exc:
+        except Exception:
             logger.exception("Token revocation failed")
             return JSONResponse({"error": "revocation failed"}, status_code=500)
 
@@ -1908,11 +1957,37 @@ def create_server(
                     })
 
             return JSONResponse({"active": False})
-        except Exception as exc:
+        except Exception:
             logger.exception("Token introspection failed")
             return JSONResponse({"active": False})
 
     mcp._bastion_memory = _shared  # type: ignore[attr-defined]
+
+    # MCP tool manifest scanner: scan all tool descriptions for malicious patterns
+    scan_enabled = os.environ.get("BASTION_MCP_SCAN_TOOLS", "true").lower() in ("true", "1", "yes")
+    if scan_enabled and not is_mock:
+        tool_defs = {
+            "memory_search": "Search agent memories using C-SPANN vector similarity search",
+            "memory_store": "Store a memory with automatic SHA-256 hash chain integrity",
+            "memory_timetravel": "Query agent memory state at any past timestamp",
+            "memory_audit": "Retrieve the append-only hash-chain audit log",
+            "memory_heal": "CDC-triggered self-healing",
+            "memory_delete": "Delete a single memory by ID",
+            "resolve_conflict": "Resolve conflicting memories",
+            "a2a_bridge": "Retrieve the A2A Agent Card",
+            "dream": "Sleep-time memory consolidation",
+            "detect_contradictions": "Scan existing memories for contradictions",
+            "multi_signal_search": "4-signal fusion search",
+            "context_pack": "Pack memories into a token budget",
+        }
+        for tool_name, tool_desc in tool_defs.items():
+            findings = scan_tool_manifest(tool_desc, tool_name)
+            if findings:
+                logger.warning(
+                    "MCP tool manifest flagged during startup",
+                    extra={"tool": tool_name, "findings": findings},
+                )
+
     return mcp
 
 
@@ -2094,7 +2169,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
                 if len(dur_list) > 500:
                     dur_list.pop(0)
                 return response
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 return JSONResponse({"error": "Request timeout"}, status_code=504)
             finally:
                 limiter.release()

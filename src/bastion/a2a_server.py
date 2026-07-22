@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import threading
 import json
 import logging
 import os
 import signal
 import sys
+import threading
 import time
 import uuid
 from collections import defaultdict, deque
@@ -35,8 +35,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from bastion.config import DOCS_URL, PROJECT_URL, VERSION
+from bastion.config import DOCS_URL, VERSION
 from bastion.log_setup import get_logger
+from bastion.spend_manager import SpendManager
 
 _SAFE_ERROR_MSG = "Internal server error (see server logs for details)"
 _MAX_REQUEST_BYTES = 1_048_576
@@ -424,9 +425,12 @@ def create_a2a_server(
     }
 
     # -- In-memory fallback cache (used when mock mode or DB unavailable) --
+    # WARNING: Tasks in mock mode are NOT persisted across restarts.
+    # For production, set BASTION_CONN and unset BASTION_MOCK.
 
     _tasks: dict[str, dict[str, Any]] = {}
     _tasks_lock = threading.Lock()
+    _tasks_warned = False
 
     # -- Background task cleanup ------------------------------------------
 
@@ -441,8 +445,18 @@ def create_a2a_server(
                     deleted = memory._a2a_store.cleanup_expired(max_age_seconds=_task_max_age)
                     if deleted:
                         logger.info("Cleaned up %d expired A2A tasks", extra={"count": deleted})
-                # Clean up expired brute-force cache entries
+                # Clean up in-memory stale tasks (mock mode TTL)
                 now = time.time()
+                mono = time.monotonic()
+                with _tasks_lock:
+                    stale = [k for k, v in list(_tasks.items())
+                             if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
+                    for k in stale:
+                        _tasks.pop(k, None)
+                    if len(_tasks) > _MAX_TASKS:
+                        oldest = min(_tasks, key=lambda k: _tasks[k]["_created_at"])
+                        _tasks.pop(oldest, None)
+                # Clean up expired brute-force cache entries
                 with _brute_cache_lock:
                     expired = [ip for ip, (_, ws, lu) in _brute_cache.items()
                                if (lu and now > lu) or (not lu and now - ws > _auth_window_seconds)]
@@ -462,24 +476,35 @@ def create_a2a_server(
         artifacts: list[dict[str, Any]] | None = None,
         callback_url: str | None = None,
     ) -> dict[str, Any]:
+        nonlocal _tasks_warned
         now = time.time()
         mono = time.monotonic()
 
         if not memory._mock:
-            task_record = await anyio.to_thread.run_sync(
-                memory.store_a2a_task, tid, agent_id, "unknown", status, callback_url,
-            )
-            return {
-                "id": task_record["task_id"],
-                "status": {"state": task_record["status"]},
-                "artifacts": artifacts or [],
-                "_created_at": now,
-                "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
-                "_cm": mono,
-                "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
-            }
+            try:
+                task_record = await anyio.to_thread.run_sync(
+                    memory.store_a2a_task, tid, agent_id, "unknown", status, callback_url,
+                )
+                return {
+                    "id": task_record["task_id"],
+                    "status": {"state": task_record["status"]},
+                    "artifacts": artifacts or [],
+                    "_created_at": now,
+                    "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
+                    "_cm": mono,
+                    "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
+                }
+            except Exception:
+                logger.exception("DB task store failed, falling back to in-memory")
+                # Fall through to in-memory fallback
 
-        # Mock mode: in-memory only
+        # In-memory fallback (mock mode or DB failure)
+        if not _tasks_warned:
+            _tasks_warned = True
+            logger.warning(
+                "A2A tasks are stored in-memory only — lost on restart. "
+                "Set BASTION_CONN for persistent task storage."
+            )
         task = {
             "id": tid,
             "status": {"state": status},
@@ -491,39 +516,34 @@ def create_a2a_server(
         }
         with _tasks_lock:
             _tasks[tid] = task
-            stale = [k for k, v in _tasks.items() if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
-            for k in stale:
-                _tasks.pop(k, None)
-            if len(_tasks) > _MAX_TASKS:
-                oldest = min(_tasks, key=lambda k: _tasks[k]["_created_at"])
-                _tasks.pop(oldest, None)
         return task
 
     async def _get_task(tid: str) -> dict[str, Any] | None:
         if not memory._mock:
-            record = await anyio.to_thread.run_sync(memory.get_a2a_task, tid)
-            if record:
-                now = time.time()
-                mono = time.monotonic()
-                return {
-                    "id": record["task_id"],
-                    "status": {"state": record["status"]},
-                    "artifacts": record.get("artifacts") or [],
-                    "_created_at": now,
-                    "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                    "_cm": mono,
-                    "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                }
-            return None
+            try:
+                record = await anyio.to_thread.run_sync(memory.get_a2a_task, tid)
+                if record:
+                    now = time.time()
+                    mono = time.monotonic()
+                    return {
+                        "id": record["task_id"],
+                        "status": {"state": record["status"]},
+                        "artifacts": record.get("artifacts") or [],
+                        "_created_at": now,
+                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "_cm": mono,
+                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    }
+            except Exception:
+                logger.exception("DB task get failed, falling back to in-memory")
 
-        # Mock mode: in-memory only
+        # In-memory fallback (mock mode or DB failure)
         with _tasks_lock:
             return _tasks.get(tid)
 
     async def _update_task(
         tid: str, status: str, artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
-        # Validate state transition
         existing_task = await _get_task(tid)
         if existing_task:
             current_state = existing_task.get("status", {}).get("state", "")
@@ -532,28 +552,28 @@ def create_a2a_server(
                     "Task state transition rejected",
                     extra={"task_id": tid, "from": current_state, "to": status},
                 )
-                return existing_task  # Return existing task unchanged
+                return existing_task
 
         if not memory._mock:
-            record = await anyio.to_thread.run_sync(memory.update_a2a_task, tid, status, artifacts)
-            if record:
-                now = time.time()
-                mono = time.monotonic()
-                # Deliver push notification on terminal state
-                if record["status"] in ("COMPLETED", "FAILED", "CANCELED"):
-                    _notify_push(tid, record["status"], artifacts)
-                return {
-                    "id": record["task_id"],
-                    "status": {"state": record["status"]},
-                    "artifacts": record.get("artifacts") or [],
-                    "_created_at": now,
-                    "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                    "_cm": mono,
-                    "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
-                }
-            return None
+            try:
+                record = await anyio.to_thread.run_sync(memory.update_a2a_task, tid, status, artifacts)
+                if record:
+                    now = time.time()
+                    mono = time.monotonic()
+                    _maybe_notify_push(tid, record["status"], artifacts, record.get("callback_url"))
+                    return {
+                        "id": record["task_id"],
+                        "status": {"state": record["status"]},
+                        "artifacts": record.get("artifacts") or [],
+                        "_created_at": now,
+                        "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "_cm": mono,
+                        "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                    }
+            except Exception:
+                logger.exception("DB task update failed, falling back to in-memory")
 
-        # Mock mode: in-memory only
+        # In-memory fallback (mock mode or DB failure)
         with _tasks_lock:
             task = _tasks.get(tid)
             if task:
@@ -563,8 +583,7 @@ def create_a2a_server(
                 if status in ("COMPLETED", "FAILED", "CANCELED"):
                     task["_completed_at"] = time.time()
                     task["_dm"] = time.monotonic()
-                    # Deliver push notification on terminal state
-                    _notify_push(tid, status, artifacts)
+                    _maybe_notify_push(tid, status, artifacts)
         return task
 
     # -- FastAPI app -------------------------------------------------------
@@ -635,7 +654,7 @@ def create_a2a_server(
                         cur.execute(
                             "SELECT count(*) FROM a2a_rate_limits "
                             "WHERE ip_address = %s AND request_time > %s",
-                            (client_ip, datetime.datetime.fromtimestamp(window_start, tz=datetime.timezone.utc)),
+                            (client_ip, datetime.datetime.fromtimestamp(window_start, tz=datetime.UTC)),
                         )
                         row = cur.fetchone()
                         count = int(row[0]) if row else 0
@@ -900,7 +919,7 @@ def create_a2a_server(
                     with pool_conn.cursor() as cur:
                         locked_until_ts = None
                         if _auth_max_failures <= 1:
-                            locked_until_ts = datetime.datetime.fromtimestamp(now + _auth_lockout_seconds, tz=datetime.timezone.utc)
+                            locked_until_ts = datetime.datetime.fromtimestamp(now + _auth_lockout_seconds, tz=datetime.UTC)
                         cur.execute(
                             "INSERT INTO auth_brute_force (ip_address, failure_count, window_start, last_failure) "
                             "VALUES (%s, 1, %s, %s) "
@@ -914,8 +933,8 @@ def create_a2a_server(
                             "  WHEN auth_brute_force.failure_count + 1 >= %s "
                             "  THEN now() + make_interval(secs => %s) "
                             "  ELSE auth_brute_force.locked_until END",
-                            (client_ip, datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc),
-                             datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc),
+                            (client_ip, datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
+                             datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
                              _auth_max_failures, _auth_lockout_seconds),
                         )
                     pool_conn.commit()
@@ -970,8 +989,10 @@ def create_a2a_server(
     from bastion.push_dispatcher import get_dispatcher
     _push_dispatch = get_dispatcher()
 
-    def _notify_push(task_id: str, status: str, artifacts: list | None = None) -> None:
-        """Trigger push notification delivery via the dispatcher."""
+    def _maybe_notify_push(task_id: str, status: str, artifacts: list | None = None, callback_url: str | None = None) -> None:
+        """Deliver push notification if a callback is registered or provided."""
+        if callback_url:
+            _push_dispatch.register(task_id, callback_url)
         _push_dispatch.notify(task_id, status, artifacts)
 
     # -- Middleware --------------------------------------------------------
@@ -1272,7 +1293,7 @@ def create_a2a_server(
                                 yield f"event: TaskStatusUpdate\ndata: {error_data}\n\n"
                                 yield "event: TaskComplete\ndata: {}\n\n"
                                 return
-                except Exception as exc:
+                except Exception:
                     logger.warning("OWASP guard check failed in streaming (blocking)", exc_info=True)
                     await _update_task(task_id, "FAILED")
                     yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Blocked by security guard: check failed'})}\n\n"
@@ -1301,7 +1322,7 @@ def create_a2a_server(
                 yield f"event: TaskArtifactUpdate\ndata: {json.dumps({'task_id': task_id, 'artifact': {'parts': parts_out}})}\n\n"
                 yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'COMPLETED'})}\n\n"
 
-            except Exception as exc:
+            except Exception:
                 logger.exception("Streaming skill execution failed", extra={"request_id": rid, "skill": skill_id})
                 await _update_task(task_id, "FAILED")
                 yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Skill execution failed (see server logs)'})}\n\n"
@@ -1489,7 +1510,7 @@ def create_a2a_server(
         if not method:
             task_id = uuid.uuid4().hex
             task = await _store_task(task_id, "FAILED")
-            _notify_push(task_id, "FAILED")
+            _maybe_notify_push(task_id, "FAILED")
             return _rpc_result(_strip_internal(task), req_id)
 
         # -- RBAC: check role permission for this skill --
@@ -1503,6 +1524,23 @@ def create_a2a_server(
             return _rpc_error(
                 _JSONRPC_INVALID_PARAMS,
                 f"Insufficient permissions: skill '{skill_id}' requires '{required_role}' role, caller has '{caller_role}'",
+                req_id,
+            )
+
+        # ── Spend check: enforce per-agent daily budgets ──
+        spend = SpendManager(
+            connection_string=conn,
+            mock=memory._mock,
+        )
+        caller_agent = metadata.get("agent_id", "unknown")
+        spend_category = "store" if skill_id in ("memory_store", "ltm_store_analysis") else "search"
+        budget_check = spend.check_and_increment(caller_agent, spend_category, 1)
+        if not budget_check["allowed"]:
+            task_id = uuid.uuid4().hex
+            await _store_task(task_id, "FAILED")
+            return _rpc_error(
+                _JSONRPC_INTERNAL_ERROR,
+                f"Budget exceeded for {spend_category}: {budget_check['reason']}",
                 req_id,
             )
 
