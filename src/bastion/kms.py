@@ -25,12 +25,20 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+# Per-tenant DEK cache: agent_id -> (dek_plaintext, expiry)
+_TENANT_DEK_CACHE: dict[str, tuple[bytes, float]] = {}
+_TENANT_DEK_CACHE_LOCK = threading.Lock()
+_TENANT_DEK_CACHE_TTL = 3600.0
+_TENANT_DEK_CACHE_MAX = 1000
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -436,6 +444,142 @@ def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInte
                 extra={"error": str(exc)},
             )
     return LocalKMS(generate=True)
+
+
+class TenantKMS:
+    """Per-tenant envelope encryption using AWS KMS or LocalKMS.
+
+    Each ``agent_id`` gets its own Data Encryption Key (DEK) stored in
+    the ``agent_keys`` CockroachDB table.  DEKs are themselves encrypted
+    by a master KMS key (AWS KMS or LocalKMS).
+
+    This provides cryptographic multi-tenant isolation: even if an attacker
+    bypasses Row-Level Security, they cannot decrypt another tenant's memory
+    without that tenant's DEK.
+    """
+
+    def __init__(
+        self,
+        master_kms: KMSInterface,
+        get_pool_fn: Any,
+        is_mock_fn: Any,
+    ):
+        self._master = master_kms
+        self._get_pool = get_pool_fn
+        self._is_mock = is_mock_fn
+
+    def _get_dek(self, agent_id: str) -> bytes:
+        """Get or create a DEK for *agent_id*.
+
+        Returns a 32-byte AES-256 key.
+        """
+        now = time.time()
+
+        # Check in-memory cache (fast path)
+        with _TENANT_DEK_CACHE_LOCK:
+            cached = _TENANT_DEK_CACHE.get(agent_id)
+            if cached and cached[1] > now:
+                return cached[0]
+
+        if self._is_mock():
+            dek = AESGCM.generate_key(bit_length=256)
+            with _TENANT_DEK_CACHE_LOCK:
+                _TENANT_DEK_CACHE[agent_id] = (dek, now + _TENANT_DEK_CACHE_TTL)
+            return dek
+
+        # Load from CockroachDB
+        pool = self._get_pool()
+        conn = pool.acquire(timeout=10.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT encrypted_dek, kms_key_id FROM agent_keys WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    encrypted_dek = bytes(row[0])
+                    kms_key_id = row[1]
+                    if kms_key_id != self._master.key_id():
+                        logger.warning(
+                            "KMS key ID mismatch for agent",
+                            extra={"agent_id": agent_id, "expected": self._master.key_id(), "got": kms_key_id},
+                        )
+                    dek = self._master.decrypt(encrypted_dek.hex(), {"agent_id": agent_id})
+                    dek_bytes = bytes.fromhex(dek)
+                else:
+                    # Generate new DEK
+                    dek_bytes = AESGCM.generate_key(bit_length=256)
+                    encrypted = self._master.encrypt(dek_bytes.hex(), {"agent_id": agent_id})
+                    cur.execute(
+                        "INSERT INTO agent_keys (agent_id, encrypted_dek, kms_key_id) "
+                        "VALUES (%s, %s, %s) "
+                        "ON CONFLICT (agent_id) DO NOTHING",
+                        (agent_id, encrypted.encode(), self._master.key_id()),
+                    )
+                    conn.commit()
+        finally:
+            pool.release(conn)
+
+        # Cache
+        with _TENANT_DEK_CACHE_LOCK:
+            if len(_TENANT_DEK_CACHE) >= _TENANT_DEK_CACHE_MAX:
+                oldest = min(_TENANT_DEK_CACHE, key=lambda k: _TENANT_DEK_CACHE[k][1])
+                _TENANT_DEK_CACHE.pop(oldest)
+            _TENANT_DEK_CACHE[agent_id] = (dek_bytes, now + _TENANT_DEK_CACHE_TTL)
+
+        return dek_bytes
+
+    def encrypt(self, plaintext: str, agent_id: str) -> str:
+        """Encrypt *plaintext* with *agent_id*'s DEK."""
+        dek = self._get_dek(agent_id)
+        aesgcm = AESGCM(dek)
+        nonce = os.urandom(12)
+        aad = agent_id.encode("utf-8")
+        ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
+        payload = b"\x02" + nonce + ct
+        return base64.b64encode(payload).decode("ascii")
+
+    def decrypt(self, ciphertext_b64: str, agent_id: str) -> str:
+        """Decrypt *ciphertext_b64* with *agent_id*'s DEK."""
+        payload = base64.b64decode(ciphertext_b64)
+        version = payload[0]
+        if version == 2:
+            nonce = payload[1:13]
+            ct = payload[13:]
+        else:
+            raise ValueError(f"Unsupported tenant ciphertext version: {version}")
+        dek = self._get_dek(agent_id)
+        aesgcm = AESGCM(dek)
+        aad = agent_id.encode("utf-8")
+        return aesgcm.decrypt(nonce, ct, aad).decode("utf-8")
+
+    def rotate_key(self, agent_id: str) -> bool:
+        """Rotate the DEK for *agent_id*.
+
+        New memories will be encrypted with the new key.
+        Old memories remain decryptable with the old key until re-encrypted.
+        """
+        if self._is_mock():
+            return True
+        pool = self._get_pool()
+        conn = pool.acquire(timeout=10.0)
+        try:
+            dek_bytes = AESGCM.generate_key(bit_length=256)
+            encrypted = self._master.encrypt(dek_bytes.hex(), {"agent_id": agent_id})
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE agent_keys SET encrypted_dek = %s, rotated_at = now(), "
+                    "key_version = key_version + 1 "
+                    "WHERE agent_id = %s",
+                    (encrypted.encode(), agent_id),
+                )
+                conn.commit()
+            with _TENANT_DEK_CACHE_LOCK:
+                _TENANT_DEK_CACHE.pop(agent_id, None)
+            return True
+        finally:
+            pool.release(conn)
 
 
 class EncryptedMemoryWrapper:
