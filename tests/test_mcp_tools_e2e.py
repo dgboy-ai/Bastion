@@ -667,7 +667,7 @@ async def test_a2a_bridge_returns_agent_card(mcp):
     result = await mcp.call_tool("a2a_bridge", {"agent_id": "test-agent"})
     data = json.loads(result[0][0].text)
     assert data["name"] == "Bastion/test-agent"
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "0.10.0"
     assert data["protocol"] == "a2a"
     assert data["capabilities"]["memory_store"] is True
     assert data["capabilities"]["memory_search"] is True

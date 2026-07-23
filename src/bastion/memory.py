@@ -1601,13 +1601,14 @@ class BastionMemory:
         self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
-                # Invalidate hash chain — correction changes content so the old hash
-                # no longer matches. Setting to NULL makes the break detectable.
+                # Compute new hash for the corrected content
+                from bastion.crypto import compute_hash
+                new_hash = compute_hash(new_content, metadata)
                 cur.execute(
                     "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata), "
-                    "cryptographic_hash = NULL "
+                    "cryptographic_hash = %s "
                     "WHERE memory_id = %s AND agent_id = %s RETURNING " + _MEMORY_COLS,
-                    (new_content, json.dumps(metadata) if metadata else None, memory_id, self.agent_id),
+                    (new_content, json.dumps(metadata) if metadata else None, new_hash, memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
                 if not row:
