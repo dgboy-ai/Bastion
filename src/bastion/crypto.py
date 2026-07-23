@@ -76,6 +76,7 @@ def _get_hmac_secret() -> bytes:
                 fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
                 try:
                     os.write(fd, _hmac_secret)
+                    os.fsync(fd)  # Ensure data is written to disk
                     if sys.platform == "win32":
                         logger.warning(
                             "Windows: file permissions (0o600) are NOT enforced by NTFS. "

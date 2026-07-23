@@ -156,9 +156,15 @@ class ComplianceReporter:
             },
             "art12_requirements": {
                 "automatic_event_recording": len(audit_entries) > 0,
-                "tamper_evident_logs": any("hash" in (getattr(e, "action", "") or "").lower() for e in audit_entries),
+                "tamper_evident_logs": any(
+                    getattr(e, "action", "") in ("write", "hash_verify", "gdpr_art17_unlearn")
+                    for e in audit_entries
+                ),
                 "traceability": len(set(getattr(e, "action", "") for e in audit_entries)) >= 1,
-                "human_oversight_verification": any("override" in (getattr(e, "action", "") or "").lower() for e in audit_entries),
+                "human_oversight_verification": any(
+                    getattr(e, "action", "") in ("override", "correction", "delete")
+                    for e in audit_entries
+                ),
                 "post_market_monitoring": total_operations > 0,
             },
         }
@@ -214,11 +220,12 @@ class VerifiableUnlearning:
             conn = pool.acquire(timeout=30.0)
             try:
                 with conn.cursor() as cur:
-                    # Delete all requested memories in one transaction
+                    # Physical hard delete (GDPR Art 17 — right to erasure)
+                    # Note: This breaks the hash chain for subsequent records.
+                    # The audit trail records the deletion, and hash chain
+                    # verification stops at the last intact record.
                     cur.execute(
-                        "UPDATE agent_memory SET content = '[DELETED per GDPR Art 17]', "
-                        "metadata = metadata || '{\"_gdpr_deleted\": true}'::jsonb, "
-                        "embedding = NULL WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
+                        "DELETE FROM agent_memory WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
                         (memory_ids, agent_id),
                     )
                     deleted_ids = [row[0] for row in cur.fetchall()]

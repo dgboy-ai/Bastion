@@ -1403,6 +1403,26 @@ def create_a2a_server(
     async def healthz():
         return JSONResponse({"status": "ok"})
 
+    # -- Task cleanup: mark orphaned non-terminal tasks as failed --------
+    _TASK_STALE_TIMEOUT = 3600  # 1 hour
+
+    async def _cleanup_orphaned_tasks() -> None:
+        """Periodically mark stale non-terminal tasks as failed."""
+        if memory._mock:
+            return
+        try:
+            await anyio.to_thread.run_sync(
+                partial(
+                    memory.update_a2a_task,
+                    None,  # agent_id — not needed for this query
+                    None,  # status
+                    cleanup_stale=True,
+                    stale_timeout=_TASK_STALE_TIMEOUT,
+                )
+            )
+        except Exception:
+            logger.debug("Orphaned task cleanup failed (non-critical)")
+
     @app.get("/readyz")
     async def readyz():
         try:

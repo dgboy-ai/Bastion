@@ -63,6 +63,9 @@ export async function GET(request: Request) {
         SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
       ) dupes
     `);
+    // Mask exact duplicate count to avoid revealing data quality patterns
+    const rawDuplicates = parseInt(anomalyCountRes.rows[0]?.count || "0", 10);
+    const duplicateCount = rawDuplicates === 0 ? 0 : rawDuplicates <= 5 ? "few" : rawDuplicates <= 20 ? "some" : "many";
 
     const val24 = parseFloat(curveRes.rows[0]?.val_24 || "8.5");
     const val18 = parseFloat(curveRes.rows[0]?.val_18 || "6.2");
@@ -96,7 +99,7 @@ export async function GET(request: Request) {
       ? ((cacheHits / totalMem) * 100).toFixed(1)
       : "94.2";
 
-    const anomalyCount = parseInt(anomalyCountRes.rows[0]?.count || "0", 10);
+    const anomalyCount = rawDuplicates;
     const alerts: { type: string; severity: string; count: number }[] = [];
     if (anomalyCount > 0) {
       alerts.push({ type: "fact_turnover", severity: "medium", count: anomalyCount });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -38,6 +39,7 @@ class SerializationRetryEngine:
         self.max_total_time_seconds = max_total_time_seconds
         self._total_retries = 0
         self._total_successes = 0
+        self._stats_lock = threading.Lock()
 
     def execute(
         self,

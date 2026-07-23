@@ -1833,13 +1833,44 @@ class BastionMemory:
 
     def update_a2a_task(
         self,
-        task_id: str,
-        status: str,
+        task_id: str | None = None,
+        status: str | None = None,
         artifacts: list[dict[str, Any]] | None = None,
         callback_url: str | None = None,
+        cleanup_stale: bool = False,
+        stale_timeout: int = 3600,
     ) -> dict[str, Any] | None:
-        """Update an A2A task's status and artifacts in CockroachDB."""
+        """Update an A2A task's status and artifacts in CockroachDB.
+
+        When cleanup_stale=True, marks all non-terminal tasks older than
+        stale_timeout seconds as FAILED (orphans from client disconnects).
+        """
+        if cleanup_stale:
+            return self._cleanup_stale_tasks(stale_timeout)
         return self._a2a_store.update_task(task_id, status, artifacts, callback_url)
+
+    def _cleanup_stale_tasks(self, stale_timeout: int = 3600) -> int:
+        """Mark stale non-terminal A2A tasks as FAILED. Returns count."""
+        if self._mock:
+            return 0
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=10.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE a2a_tasks SET status = 'FAILED', updated_at = now() "
+                    "WHERE status IN ('SUBMITTED', 'WORKING') "
+                    "AND created_at < now() - make_interval(secs => %s) "
+                    "RETURNING task_id",
+                    (stale_timeout,),
+                )
+                cleaned = [row[0] for row in cur.fetchall()]
+            conn.commit()
+            if cleaned:
+                logger.warning("Cleaned up %d orphaned A2A tasks", len(cleaned))
+            return len(cleaned)
+        finally:
+            pool.release(conn)
 
     def cancel_a2a_task(self, task_id: str) -> dict[str, Any] | None:
         """Cancel an A2A task."""
