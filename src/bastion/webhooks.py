@@ -164,14 +164,14 @@ class WebhookNotifier:
 
     def _http_post(self, url: str, payload: dict[str, Any]) -> None:
         self._validate_url(url)
-        import urllib.request
+        import httpx
         data = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            url, data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=10)
+        with httpx.Client(timeout=10, follow_redirects=False) as client:
+            client.post(
+                url,
+                content=data,
+                headers={"Content-Type": "application/json"},
+            )
 
     def get_stats(self) -> dict[str, int]:
         return {"sent": self._sent_count, "failed": self._failed_count, "endpoints": len(self._urls)}
