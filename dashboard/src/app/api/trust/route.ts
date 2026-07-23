@@ -57,7 +57,7 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const entityId = searchParams.get("entity_id");
+    const entityId = (searchParams.get("entity_id") || "").slice(0, 255);
     const limit = Math.max(1, Math.min(500, parseInt(searchParams.get("limit") || "100", 10) || 100));
 
     let sql = `

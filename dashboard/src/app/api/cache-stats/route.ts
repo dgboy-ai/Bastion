@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get("agent_id");
+    const agentId = (searchParams.get("agent_id") || "").slice(0, 255);
     const hours = Math.max(1, Math.min(168, parseInt(searchParams.get("hours") || "24", 10) || 24));
 
     const since = new Date(Date.now() - hours * 3600000).toISOString();

@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.max(1, Math.min(200, parseInt(searchParams.get("limit") || "50", 10) || 50));
-    const entity_id = searchParams.get("entity_id");
+    const entity_id = (searchParams.get("entity_id") || "").slice(0, 255);
 
     let sql = `
       SELECT 
