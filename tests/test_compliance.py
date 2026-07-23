@@ -11,6 +11,7 @@ from bastion.compliance import (
     VerifiableUnlearning,
 )
 from bastion.memory import BastionMemory
+from bastion.merkle import MerkleTree
 
 
 class TestIETFAATRecord:
@@ -284,7 +285,7 @@ class TestVerifiableUnlearning:
         v = VerifiableUnlearning(memory)
         receipt = v.generate_unlearning_receipt("unsigned-test", [r.memory_id])
 
-        assert "signature" not in receipt
+        assert receipt.get("signature") is None
 
     def test_unlearning_persists_audit_trail(self):
         memory = BastionMemory(agent_id="audit-trail", mock=True)
@@ -315,14 +316,16 @@ class TestVerifiableUnlearning:
         v = VerifiableUnlearning(None)
         root = v._compute_merkle_root(["a" * 64])
         assert len(root) == 64
-        assert root == "a" * 64
+        # Merkle tree applies domain-separated hashing, so root != input
+        expected = MerkleTree.from_hashes(["a" * 64]).root
+        assert root == expected
 
     def test_compute_merkle_root_pair(self):
         from bastion.merkle import MerkleTree
 
         v = VerifiableUnlearning(None)
         root = v._compute_merkle_root(["aa", "bb"])
-        expected = MerkleTree._pair_hash("aa", "bb")
+        expected = MerkleTree.from_hashes(["aa", "bb"]).root
         assert root == expected
 
     def test_compute_merkle_root_odd_padded(self):
@@ -330,10 +333,7 @@ class TestVerifiableUnlearning:
 
         v = VerifiableUnlearning(None)
         root = v._compute_merkle_root(["aa", "bb", "cc"])
-        expected = MerkleTree._pair_hash(
-            MerkleTree._pair_hash("aa", "bb"),
-            MerkleTree._pair_hash("cc", MerkleTree._hash("")),
-        )
+        expected = MerkleTree.from_hashes(["aa", "bb", "cc"]).root
         assert root == expected
 
 

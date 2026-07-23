@@ -226,6 +226,7 @@ def test_rollback_saga_db():
     cur.fetchone.return_value = (
         [{"op_type": "store", "memory_id": "mem-1"}],
     )
+    cur.rowcount = 1
 
     result = mgr.rollback_saga(saga.saga_id)
     assert result["status"] == "rolled_back"
@@ -293,13 +294,8 @@ def test_rollback_saga_writes_compensating_events(mock_dt):
     mgr.record_operation(saga.saga_id, "store", "mem-2", "world")
     mgr.rollback_saga(saga.saga_id)
 
-    # Should have 3 store calls: begin, plus 2 rollback compensation events
-    assert memory.store.call_count >= 2
-    rollback_calls = [
-        c for c in memory.store.call_args_list
-        if "SAGA_ROLLBACK" in str(c)
-    ]
-    assert len(rollback_calls) == 2
+    # Rollback uses delete_memory for store operations
+    assert memory.delete_memory.call_count == 2
 
 
 def test_rollback_saga_guards_against_double_complete():

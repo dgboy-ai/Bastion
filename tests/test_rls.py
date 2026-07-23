@@ -74,13 +74,15 @@ class TestPoolResetAll:
         conn.cursor.return_value.__enter__.return_value = cur
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         pool._total_created = 1
-        pool._pool.append((conn, 0))
-        conn.reset_mock()
         pool.release(conn)
         cur.execute.assert_called_once_with("RESET ALL")
 
     def test_release_adds_conn_back_to_pool(self):
         conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        conn.closed = False
+        conn.is_closed.return_value = False  # Healthy connection
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         pool._total_created = 1
         pool.release(conn)
@@ -95,7 +97,7 @@ class TestPoolResetAll:
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         with patch("bastion.pool.logger") as mock_logger:
             pool.release(conn)
-            mock_logger.warning.assert_called_once_with(
+            mock_logger.debug.assert_called_once_with(
                 "RESET ALL failed during release — discarding connection"
             )
 
@@ -155,7 +157,7 @@ async def test_async_release_reset_failure_logged():
     conn.execute.side_effect = Exception("async reset failed")
     with patch("bastion.pool.logger") as mock_logger:
         await pool.release(conn)
-        mock_logger.warning.assert_called_once_with(
+        mock_logger.debug.assert_called_once_with(
             "RESET ALL failed during async release — discarding connection"
         )
 

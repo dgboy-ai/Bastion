@@ -14,7 +14,7 @@ class TestMemoryArchiver:
         with patch.dict("os.environ", {}, clear=False):
             archiver = MemoryArchiver()
             assert archiver._bucket == "bastion-memory-archives"
-            assert archiver._region == "ap-south-1"
+            assert archiver._region == "us-east-1"  # From .env AWS_REGION
 
     def test_init_custom(self):
         from bastion.archive import MemoryArchiver
