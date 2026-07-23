@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       avg_importance_score: Number(Number(row.avg_importance_score || 0).toFixed(2)),
     });
   } catch (error) {
-    console.error("[api/health] Query failed:", error);
+    console.error("[api/health] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(defaultHealth, "short", { mock: true });

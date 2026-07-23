@@ -125,7 +125,7 @@ export async function GET(request: Request) {
       detected_at: new Date().toISOString(),
     }, "short");
   } catch (error) {
-    console.error("[api/observations] Query failed:", error);
+    console.error("[api/observations] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     const mockObs = getMockObservations();
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
