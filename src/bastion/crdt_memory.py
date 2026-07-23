@@ -622,6 +622,39 @@ class PNCounter:
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
+        seen_p: set[str] = set()
+        seen_n: set[str] = set()
+        self._p_clock = {}
+        self._n_clock = {}
+        p_total = 0
+        n_total = 0
+
+        for r in target:
+            try:
+                data = json.loads(r.content)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            vc_raw = (r.metadata or {}).get("_vector_clock", {})
+            tag_str = json.dumps(vc_raw, sort_keys=True) if vc_raw else r.memory_id
+            if data.get("op") == "inc":
+                if tag_str in seen_p:
+                    continue
+                seen_p.add(tag_str)
+                p_total += data.get("delta", 1)
+                if isinstance(vc_raw, dict):
+                    for agent, tick in vc_raw.items():
+                        self._p_clock[agent] = max(self._p_clock.get(agent, 0), tick)
+            elif data.get("op") == "dec":
+                if tag_str in seen_n:
+                    continue
+                seen_n.add(tag_str)
+                n_total += data.get("delta", 1)
+                if isinstance(vc_raw, dict):
+                    for agent, tick in vc_raw.items():
+                        self._n_clock[agent] = max(self._n_clock.get(agent, 0), tick)
+
+        return p_total - n_total
+
     def compact(self) -> int:
         """Remove redundant PNCounter operations after merge.
 
@@ -724,8 +757,13 @@ class RGA:
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
         # Sort by position, then by agent_id, then by memory_id as tiebreaker
-        def _sort_key(r: MemoryRecord) -> tuple[float, str, str]:
-            pos = float((r.metadata or {}).get("_crdt_position", "0"))
+        def _sort_key(r: MemoryRecord) -> tuple[int, str, str]:
+            pos_str = str((r.metadata or {}).get("_crdt_position", "0"))
+            # Extract numeric part after colon for numeric sorting
+            try:
+                pos = int(pos_str.split(":")[-1]) if ":" in pos_str else int(pos_str)
+            except (ValueError, IndexError):
+                pos = 0
             return (pos, r.memory_id, str(r.created_at))
 
         target.sort(key=_sort_key)
