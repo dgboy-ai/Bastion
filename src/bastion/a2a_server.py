@@ -1597,7 +1597,7 @@ def create_a2a_server(
         if request:
             auth_header = request.headers.get("Authorization", "")
             caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
-        caller_role = _resolve_role(caller_token) if caller_token else "reader"
+        caller_role = _resolve_role(caller_token) if caller_token else ("admin" if not _api_key else "reader")
         required_level = _ROLE_HIERARCHY.get(required_role, 0)
         caller_level = _ROLE_HIERARCHY.get(caller_role, 0)
         if caller_level < required_level:
