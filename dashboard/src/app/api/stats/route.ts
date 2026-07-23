@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       })),
     }, "short");
   } catch (error) {
-    console.error("[api/stats] Query failed:", error);
+    console.error("[api/stats] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(getMockStats(), "short", { mock: true });

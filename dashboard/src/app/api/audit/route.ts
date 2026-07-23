@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ events }, "short");
   } catch (error) {
-    console.error("[api/audit] Query failed:", error);
+    console.error("[api/audit] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     const fallbackEvents = getMockAuditEvents(10);
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 

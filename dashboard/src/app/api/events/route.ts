@@ -124,7 +124,6 @@ export async function GET(request: Request) {
                 seenIds.add(auditId);
 
                 const event = mapAuditToEvent(row);
-                console.log(`[Events SSE] Sending: ${event.event} from ${event.agentId}`);
                 if (!send(JSON.stringify({ type: "event", data: event }))) {
                   closedPromise.then(() => {
                     clearInterval(heartbeat);

@@ -112,7 +112,7 @@ export async function GET(request: Request) {
       mock: false,
     }, 'short');
   } catch (error) {
-    console.error("[api/asi06] Query failed:", error);
+    console.error("[api/asi06] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(getMockReport(), "short", { mock: true });

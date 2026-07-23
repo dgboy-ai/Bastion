@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ alerts }, 'short');
   } catch (error) {
-    console.error("[api/anomalies] Query failed:", error);
+    console.error("[api/anomalies] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(getMockAnomalies(), "short", { mock: true });

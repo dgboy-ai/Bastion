@@ -120,7 +120,7 @@ export async function GET(request: Request) {
       totalScores: scores.length,
     }, 'short');
   } catch (error) {
-    console.error("[api/drift] Query failed:", error);
+    console.error("[api/drift] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(getMockDrift(), "short", { mock: true });

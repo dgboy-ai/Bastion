@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
   } catch (error) {
-    console.error("[api/entity-memories] Query failed:", error);
+    console.error("[api/entity-memories] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     const fallbackMemories = getMockMemories().slice(0, 5);
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
