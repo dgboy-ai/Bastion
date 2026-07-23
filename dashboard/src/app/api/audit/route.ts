@@ -9,7 +9,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
-  const type = searchParams.get("type") || "";
+  const type = (searchParams.get("type") || "").slice(0, 255);
 
   if (isMockMode()) {
     return apiSuccess(getMockAuditEvents(limit), "short", { mock: true });
