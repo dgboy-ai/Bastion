@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({ nodes, links }, 'short');
   } catch (error) {
-    console.error("[api/graph] Query failed:", error);
+    console.error("[api/graph] Query failed:", error instanceof Error ? error.message : "Unknown error");
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
 
       return apiSuccess(getMockGraph(), "short", { mock: true });

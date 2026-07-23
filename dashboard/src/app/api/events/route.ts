@@ -87,6 +87,14 @@ export async function GET(request: Request) {
         send(JSON.stringify({ type: "heartbeat", timestamp: new Date().toISOString() }));
       }, 15000);
 
+      // Enforce max SSE lifetime (30 minutes) to prevent resource exhaustion
+      const maxLifetime = setTimeout(() => {
+        send(JSON.stringify({ type: "max_lifetime_reached", message: "SSE connection expired after 30 minutes" }));
+        clearInterval(heartbeat);
+        clearInterval(eventInterval);
+        controller.close();
+      }, 30 * 60 * 1000);
+
       // Track watermark and seen IDs for deduplication
       let lastChecked = new Date(Date.now() - 5000).toISOString();
       const seenIds = new Set<string>();
@@ -146,6 +154,7 @@ export async function GET(request: Request) {
       }, 1000); // Poll every 1 second for near-real-time
 
       await closedPromise;
+      clearTimeout(maxLifetime);
       clearInterval(heartbeat);
       clearInterval(eventInterval);
     },

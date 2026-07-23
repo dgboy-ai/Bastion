@@ -644,6 +644,8 @@ def create_server(
         # Validate timestamp format (ISO 8601 or relative like "5 minutes ago")
         import re
         ts = timestamp.strip()
+        if len(ts) > 100:
+            return json.dumps({"error": "timestamp too long (max 100 chars)"})
         valid_iso = bool(re.match(r"\d{4}-\d{2}-\d{2}", ts))
         valid_relative = bool(re.match(r"\d+\s+\w+\s+ago|now|just now", ts, re.I))
         if not valid_iso and not valid_relative:
@@ -761,6 +763,8 @@ def create_server(
     ) -> str:
         if not content or not content.strip():
             return json.dumps({"error": "content is required"})
+        if len(content) > _MAX_CONTENT_LENGTH:
+            return json.dumps({"error": f"Content too long (max {_MAX_CONTENT_LENGTH} chars)"})
         if pin_priority not in (0, 1, 2):
             return json.dumps({"error": "pin_priority must be 0 (normal), 1 (important), or 2 (CRITICAL)"})
         valid_types = {"fact", "task", "preference", "learned", "procedure", "safety_rule", "instruction"}
@@ -825,9 +829,9 @@ def create_server(
         limit: int = 50,
         offset: int = 0,
     ) -> str:
-        # Bounds checking
-        if limit < 1 or limit > 500:
-            return json.dumps({"error": "limit must be between 1 and 500"})
+        # Bounds checking — reduced max to prevent large payloads
+        if limit < 1 or limit > 200:
+            return json.dumps({"error": "limit must be between 1 and 200"})
         if offset < 0:
             return json.dumps({"error": "offset must be >= 0"})
         mem = _resolve_memory(ctx)
@@ -956,6 +960,8 @@ def create_server(
     ) -> str:
         if not fact_a or not fact_b:
             return json.dumps({"error": "Both fact_a and fact_b are required"})
+        if len(fact_a) > _MAX_CONTENT_LENGTH or len(fact_b) > _MAX_CONTENT_LENGTH:
+            return json.dumps({"error": f"Facts too long (max {_MAX_CONTENT_LENGTH} chars each)"})
         mem = _resolve_memory(ctx)
         try:
             await _report_progress(ctx, 0, 3, "Analyzing conflicting facts...")
@@ -1497,6 +1503,8 @@ def create_server(
         skill_params: dict[str, Any] | None = None,
         timeout_seconds: int = 60,
     ) -> str:
+        # Cap timeout to prevent SSRF via long-running connections
+        timeout_seconds = min(max(timeout_seconds, 1), 120)
         # Discovery mode: return signed Agent Card
         if not a2a_url or not skill:
             card = _build_a2a_card(agent_id)
