@@ -112,18 +112,23 @@ type MockFallbackFn<T> = () => T;
 type DbQueryFn<T> = Promise<T>;
 
 /**
- * Try a DB query, fall back to mock data on failure.
- * Returns a success-enveloped response either way.
+ * Try a DB query, fall back to mock data only in mock mode.
+ * In production, DB errors return an error response instead of fabricated data.
  */
 export async function withFallback<T>(
   dbQuery: DbQueryFn<T>,
   mockFallback: MockFallbackFn<T>,
   cacheType: CacheType = "short",
-): Promise<NextResponse<ApiSuccessResponse<T>>> {
+): Promise<NextResponse<ApiSuccessResponse<T> | ApiErrorResponse>> {
   try {
     const data = await dbQuery;
     return apiSuccess(data, cacheType);
-  } catch {
+  } catch (error) {
+    // In production, return error — don't fabricate data
+    if (process.env.BASTION_MOCK !== "true" && process.env.BASTION_MOCK !== "1") {
+      console.error("[withFallback] DB query failed:", error);
+      return apiError("Database query failed — try again later", 503, "DB_ERROR");
+    }
     const data = mockFallback();
     return apiSuccess(data, cacheType, { mock: true });
   }

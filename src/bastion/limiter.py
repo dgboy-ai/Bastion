@@ -256,10 +256,23 @@ class RequestLimiter:
                     "WHERE slot_id = %s AND instance_id = %s",
                     (slot_id, self._instance_id),
                 )
+                if cur.rowcount == 0:
+                    # Slot was not released in DB (stolen by another instance or never committed)
+                    # Log warning but don't restore to _held_slots — the slot is orphaned
+                    logger.warning(
+                        "Slot %d not released in DB (rowcount=0) — slot may have been stolen or expired",
+                        slot_id,
+                    )
             conn.commit()
         except Exception:
             logger.warning("DB error during release", exc_info=True)
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            with self._lock:
+                self._held_slots.append(slot_id)
+                self._active_count += 1
         finally:
             self._pool.release(conn)
 

@@ -138,21 +138,23 @@ class ConnectionPool:
                         conn_to_check.close()
                     with self._lock:
                         self._total_expired += 1
+                        self._total_created -= 1
                     conn_to_check = None
                     continue
 
             create_conn = False
             with self._lock:
                 if self._total_created < self.max_size:
+                    self._total_created += 1  # reserve atomically
                     create_conn = True
 
             if create_conn:
                 try:
                     conn = self._create_connection()
-                    with self._lock:
-                        self._total_created += 1
                     return conn
                 except Exception:
+                    with self._lock:
+                        self._total_created -= 1  # rollback on failure
                     logger.warning("Failed to create connection")
                     raise
 
@@ -171,7 +173,15 @@ class ConnectionPool:
         If RESET ALL fails or the connection is in an error state,
         the connection is closed instead of returned to the pool
         to prevent leaking stale session state.
+        
+        Tracks released connections to prevent double-release corruption.
         """
+        # Guard against double-release — track which connections are in the pool
+        with self._lock:
+            if conn in [c for c, _ in self._pool]:
+                logger.warning("Double-release detected for connection %s — discarding", id(conn))
+                return
+
         reset_ok = False
         try:
             with conn.cursor() as cur:
@@ -203,6 +213,7 @@ class ConnectionPool:
             else:
                 with contextlib.suppress(Exception):
                     conn.close()
+                self._total_expired += 1
 
     def get_stats(self) -> dict[str, Any]:
         """Return pool statistics."""

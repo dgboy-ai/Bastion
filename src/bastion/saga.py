@@ -110,7 +110,7 @@ class SagaMemoryManager:
                 conn.commit()
             except Exception:
                 logger.exception("Failed to persist saga begin for %s", saga.saga_id)
-                return saga
+                raise
             finally:
                 pool.release(conn)
         else:
@@ -240,7 +240,7 @@ class SagaMemoryManager:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT operations FROM saga_states "
-                        "WHERE saga_id = %s AND status = 'active'",
+                        "WHERE saga_id = %s AND status = 'active' FOR UPDATE",
                         (saga_id,),
                     )
                     row = cur.fetchone()
@@ -253,7 +253,16 @@ class SagaMemoryManager:
                     else:
                         operations = list(raw_ops) if raw_ops else []
 
-                    rolled_back = self._execute_rollback_ops(operations)
+                    rolled_back = 0
+                    for op in reversed(operations):
+                        if op["op_type"] == "store":
+                            mid = op.get("memory_id")
+                            if mid:
+                                cur.execute(
+                                    "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                                    (mid, self.memory.agent_id),
+                                )
+                                rolled_back += cur.rowcount
                     cur.execute(
                         "UPDATE saga_states SET status = 'rolled_back', completed_at = now() "
                         "WHERE saga_id = %s AND status = 'active'",
@@ -286,14 +295,9 @@ class SagaMemoryManager:
         rolled_back = 0
         for op in reversed(operations):
             if op["op_type"] == "store":
-                self.memory.store(
-                    memory_type="system_event",
-                    content=f"SAGA_ROLLBACK: Reverted {op['memory_id']}",
-                    metadata={
-                        "rollback": True,
-                        "original_memory_id": op["memory_id"],
-                    },
-                )
+                mid = op.get("memory_id")
+                if mid:
+                    self.memory.delete_memory(mid)
                 rolled_back += 1
         return rolled_back
 

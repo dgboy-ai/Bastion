@@ -113,7 +113,13 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/asi06] Query failed:", error);
-    return apiSuccess(getMockReport(), "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess(getMockReport(), "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 
@@ -121,9 +127,17 @@ export async function POST(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
   try {
+    // Limit request body size to 100KB to prevent DoS
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > 100_000) {
+      return apiError("Request body too large (max 100KB)", 413);
+    }
     const { content } = await request.json();
     if (!content || typeof content !== "string") {
       return apiError("Missing 'content' field", 400);
+    }
+    if (content.length > 50_000) {
+      return apiError("Content too large (max 50,000 characters)", 413);
     }
     const findings = scanContent(content);
     const isSafe = findings.filter(f => f.severity === "critical" || f.severity === "high").length === 0;

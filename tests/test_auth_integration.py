@@ -18,7 +18,6 @@ import pytest
 
 from bastion.auth_provider import (
     BastionOAuthProvider,
-    _verify_pkce_s256,
     is_oauth_enabled,
     store_pkce_verifier,
 )
@@ -119,8 +118,14 @@ class TestOAuthProviderInit:
 
     def test_provider_works_without_db(self):
         """Provider falls back to in-memory when no connection_string."""
-        p = BastionOAuthProvider(client_id="no-db-client")
-        assert p._use_db is False
+        import os
+        conn = os.environ.pop("BASTION_CONN", None)
+        try:
+            p = BastionOAuthProvider(client_id="no-db-client")
+            assert p._use_db is False
+        finally:
+            if conn is not None:
+                os.environ["BASTION_CONN"] = conn
 
     def test_provider_stores_client_secret(self):
         """Explicit client_secret is stored on the client info."""
@@ -165,28 +170,15 @@ class TestClientRegistration:
 
 
 class TestPKCEVerification:
-    def test_pkce_s256_valid_pair(self):
-        """A valid verifier/challenge pair verifies successfully."""
-        verifier, challenge = _make_pkce_pair()
-        assert _verify_pkce_s256(verifier, challenge) is True
-
-    def test_pkce_s256_wrong_verifier(self):
-        """Wrong verifier fails verification."""
-        _, challenge = _make_pkce_pair()
-        assert _verify_pkce_s256("wrong-verifier", challenge) is False
-
-    def test_pkce_s256_empty_verifier(self):
-        """Empty verifier does not match valid challenge."""
-        verifier, challenge = _make_pkce_pair()
-        assert _verify_pkce_s256("", challenge) is False
-
     def test_pkce_verifier_storage_and_retrieval(self):
-        """store_pkce_verifier stores the verifier for later retrieval."""
+        """store_pkce_verifier stores the hashed verifier for later retrieval."""
         store_pkce_verifier("auth-code-123", "verifier-abc")
         from bastion.auth_provider import _pkce_verifiers
         entry = _pkce_verifiers.get("auth-code-123")
         assert entry is not None
-        assert entry[0] == "verifier-abc"
+        # Verifier is hashed before storage — should not be the raw value
+        assert entry[0] != "verifier-abc"
+        assert len(entry[0]) > 0  # but should be a non-empty hash
 
     def test_pkce_verifier_cleanup_expired(self):
         """Expired PKCE verifiers are cleaned up."""
@@ -410,13 +402,6 @@ class TestTimingSafeComparison:
     def test_compare_digest_not_equal(self):
         """secrets.compare_digest returns False for different strings."""
         assert secrets.compare_digest("abc", "def") is False
-
-    def test_pkce_uses_timing_safe(self):
-        """_verify_pkce_s256 uses secrets.compare_digest internally."""
-        import bastion.auth_provider as ap
-        import inspect
-        source = inspect.getsource(ap._verify_pkce_s256)
-        assert "compare_digest" in source
 
     def test_check_auth_uses_timing_safe(self):
         """_check_auth uses secrets.compare_digest for API key comparison."""

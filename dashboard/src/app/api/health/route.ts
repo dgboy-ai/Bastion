@@ -1,5 +1,5 @@
 import { safeQuery, isMockMode } from "@/lib/db";
-import { checkRateLimit } from "@/lib/api-auth";
+import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 const defaultHealth = {
@@ -13,9 +13,8 @@ const defaultHealth = {
 };
 
 export async function GET(request: Request) {
-  // Health endpoint skips auth — it's just a connectivity check
-  const rateLimit = checkRateLimit(request);
-  if (rateLimit) return rateLimit;
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   if (isMockMode()) {
     return apiSuccess(defaultHealth, "short", { mock: true });
@@ -51,7 +50,12 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[api/health] Query failed:", error);
-    return apiSuccess(defaultHealth, "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess(defaultHealth, "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
-

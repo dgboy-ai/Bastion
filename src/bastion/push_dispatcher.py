@@ -69,7 +69,7 @@ class PushNotificationDispatcher:
         self._registrations: dict[str, str] = {}  # task_id -> callback_url
         self._delivered: set[str] = set()  # task_ids already notified
         self._lock = threading.Lock()
-        self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT)
+        self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT, follow_redirects=False)
         self._pending_threads: list[threading.Thread] = []
         self._shutting_down = False
 

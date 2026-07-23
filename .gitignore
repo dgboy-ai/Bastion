@@ -51,3 +51,12 @@ production.md
 test_real_crdb.py
 win.md
 msme_ideas*.md
+# Dev logs and temporary files
+dev_err.log
+dev_out.log
+dev_stdout.log
+dev_stderr.log
+mcp_stderr.log
+mcp_stdout.log
+verify_features.py
+run_remaining_migrations.py

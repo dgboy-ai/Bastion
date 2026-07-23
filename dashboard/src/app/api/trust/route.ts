@@ -123,7 +123,13 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/trust] Query failed:", error);
-    return apiSuccess(getMockTrust(), "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess(getMockTrust(), "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 

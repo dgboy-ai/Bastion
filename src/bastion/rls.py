@@ -21,20 +21,82 @@ ALTER TABLE agent_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_audit FORCE ROW LEVEL SECURITY;
 ALTER TABLE agent_checkpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_checkpoints FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_entities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_entities FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_relations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_relations FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_keys FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_budgets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_budgets FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_region_mapping ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_region_mapping FORCE ROW LEVEL SECURITY;
 """
 
 RLS_POLICY_SQL = """
-CREATE POLICY IF NOT EXISTS agent_isolation_policy ON agent_memory
-    USING (agent_id = current_setting('app.current_agent_id', true))
-    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_isolation_policy' AND tablename = 'agent_memory') THEN
+        CREATE POLICY agent_isolation_policy ON agent_memory
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
 
-CREATE POLICY IF NOT EXISTS agent_audit_isolation ON agent_audit
-    USING (agent_id = current_setting('app.current_agent_id', true))
-    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_audit_isolation' AND tablename = 'agent_audit') THEN
+        CREATE POLICY agent_audit_isolation ON agent_audit
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
 
-CREATE POLICY IF NOT EXISTS agent_checkpoint_isolation ON agent_checkpoints
-    USING (agent_id = current_setting('app.current_agent_id', true))
-    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_checkpoint_isolation' AND tablename = 'agent_checkpoints') THEN
+        CREATE POLICY agent_checkpoint_isolation ON agent_checkpoints
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_entities_isolation' AND tablename = 'agent_entities') THEN
+        CREATE POLICY agent_entities_isolation ON agent_entities
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_relations_isolation' AND tablename = 'agent_relations') THEN
+        CREATE POLICY agent_relations_isolation ON agent_relations
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_keys_isolation' AND tablename = 'agent_keys') THEN
+        CREATE POLICY agent_keys_isolation ON agent_keys
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_budgets_isolation' AND tablename = 'agent_budgets') THEN
+        CREATE POLICY agent_budgets_isolation ON agent_budgets
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_region_mapping_isolation' AND tablename = 'agent_region_mapping') THEN
+        CREATE POLICY agent_region_mapping_isolation ON agent_region_mapping
+            USING (agent_id = current_setting('app.current_agent_id', true))
+            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
+    END IF;
+END $$;
 """
 
 
@@ -63,7 +125,7 @@ class RowLevelSecurity:
                                 logger.warning("RLS policy creation: %s", e)
 
             self.conn.commit()
-            return {"status": "enabled", "tables": ["agent_memory", "agent_audit", "agent_checkpoints"]}
+            return {"status": "enabled", "tables": ["agent_memory", "agent_audit", "agent_checkpoints", "agent_entities", "agent_relations", "agent_keys", "agent_budgets", "agent_region_mapping"]}
         except Exception as e:
             logger.error("Failed to enable RLS: %s", e)
             return {"status": "error", "error": "RLS enablement failed — check server logs"}
