@@ -851,8 +851,11 @@ def create_a2a_server(
     if _mcp_keys_raw and not _api_key:
         _api_key = _mcp_keys_raw.split(",")[0].strip()
     if not _api_key:
-        logger.error("CRITICAL: No API key configured. Refusing to start.")
-        raise RuntimeError("BASTION_API_KEY must be set")
+        if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
+            logger.warning("No API key in mock mode — auth will be enforced on requests")
+        else:
+            logger.error("CRITICAL: No API key configured. Refusing to start.")
+            raise RuntimeError("BASTION_API_KEY must be set")
 
     # Brute-force protection: DB-backed with in-memory LRU cache for hot path.
     # Survives server restarts and works across multiple instances.

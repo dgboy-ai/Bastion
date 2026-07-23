@@ -49,6 +49,7 @@ from bastion.spend_manager import SpendManager
 # Hard caps for production safety
 MAX_K = 100
 MAX_STORE_BYTES = 100_000
+_MAX_CONTENT_LENGTH = 100_000
 
 logger = logging.getLogger("bastion-mcp")
 

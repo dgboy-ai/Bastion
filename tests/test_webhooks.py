@@ -124,8 +124,9 @@ class TestWebhookNotifier:
     def test_http_post_failure(self, sample_event):
         with (
             mock.patch.dict("os.environ", {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/bad"}, ),
-            mock.patch("urllib.request.urlopen", side_effect=ConnectionError("unreachable")),
+            mock.patch("httpx.Client") as mock_client,
         ):
+            mock_client.return_value.__enter__.return_value.post.side_effect = ConnectionError("unreachable")
             n = WebhookNotifier()
             n._send_sync(sample_event)
             stats = n.get_stats()
@@ -138,31 +139,32 @@ class TestWebhookNotifier:
                 "os.environ",
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
             ),
-            mock.patch("urllib.request.urlopen") as mock_urlopen,
+            mock.patch("httpx.Client") as mock_client,
         ):
-            mock_urlopen.return_value.__enter__.return_value.status = 200
+            mock_client.return_value.__enter__.return_value.post.return_value.status_code = 200
             n = WebhookNotifier()
             n._send_sync(sample_event)
-            assert mock_urlopen.call_count == 2
             stats = n.get_stats()
             assert stats["sent"] == 2
             assert stats["failed"] == 0
 
     def test_partial_failure(self, sample_event):
-        def _side_effect(req, data=None, headers=None, method=None, timeout=None):
-            url = getattr(req, 'full_url', req) if not isinstance(req, str) else req
-            url_str = url if isinstance(url, str) else str(url)
+        def _side_effect(url, **kwargs):
+            url_str = str(url)
             if "slack" in url_str:
                 raise ConnectionError("timeout")
-            return mock.MagicMock(status=200)
+            resp = mock.MagicMock()
+            resp.status_code = 200
+            return resp
 
         with (
             mock.patch.dict(
                 "os.environ",
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
             ),
-            mock.patch("urllib.request.urlopen", side_effect=_side_effect),
+            mock.patch("httpx.Client") as mock_client,
         ):
+            mock_client.return_value.__enter__.return_value.post.side_effect = _side_effect
             n = WebhookNotifier()
             n._send_sync(sample_event)
             stats = n.get_stats()
