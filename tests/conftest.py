@@ -15,12 +15,20 @@ def _clean_mock_state():
 def _disable_strict_a2a():
     import os
     orig = os.environ.get("BASTION_A2A_STRICT")
+    orig_mock = os.environ.get("BASTION_MOCK")
     os.environ["BASTION_A2A_STRICT"] = "false"
+    # Set mock mode for tests that don't set it explicitly
+    if "BASTION_MOCK" not in os.environ:
+        os.environ["BASTION_MOCK"] = "true"
     yield
     if orig is not None:
         os.environ["BASTION_A2A_STRICT"] = orig
     else:
         os.environ.pop("BASTION_A2A_STRICT", None)
+    if orig_mock is not None:
+        os.environ["BASTION_MOCK"] = orig_mock
+    else:
+        os.environ.pop("BASTION_MOCK", None)
 
 
 def pytest_addoption(parser):

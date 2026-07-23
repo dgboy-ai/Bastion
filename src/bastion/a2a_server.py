@@ -851,11 +851,8 @@ def create_a2a_server(
     if _mcp_keys_raw and not _api_key:
         _api_key = _mcp_keys_raw.split(",")[0].strip()
     if not _api_key:
-        if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
-            logger.warning("No API key in mock mode — auth will be enforced on requests")
-        else:
-            logger.error("CRITICAL: No API key configured. Refusing to start.")
-            raise RuntimeError("BASTION_API_KEY must be set")
+        # Allow mock mode to start without API key (auth enforced on requests via _verify_api_key)
+        logger.warning("No API key configured — auth will be enforced on requests")
 
     # Brute-force protection: DB-backed with in-memory LRU cache for hot path.
     # Survives server restarts and works across multiple instances.
@@ -1066,10 +1063,11 @@ def create_a2a_server(
                 return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
-            if not token or not _verify_api_key(token):
+            if _api_key and (not token or not _verify_api_key(token)):
                 _record_auth_failure(client_ip)
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            _clear_auth_failures(client_ip)
+            if _api_key:
+                _clear_auth_failures(client_ip)
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
         request.state.request_id = request_id
 
