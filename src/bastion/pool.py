@@ -200,9 +200,12 @@ class ConnectionPool:
         # Check if connection is in error state
         is_healthy = True
         try:
-            closed_val = getattr(conn, 'closed', None)
-            if closed_val is True:
-                is_healthy = False
+            # Use public API where available; fall back to attribute check
+            if hasattr(conn, 'is_closed') and callable(conn.is_closed):
+                is_healthy = not conn.is_closed()
+            elif hasattr(conn, 'closed'):
+                is_healthy = not getattr(conn, 'closed', False)
+            # If neither method available, assume healthy (will be caught on next use)
         except Exception:
             pass
 
