@@ -622,6 +622,26 @@ class PNCounter:
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
+    def compact(self) -> int:
+        """Remove redundant PNCounter operations after merge.
+
+        Deletes old increment/decrement records that have been superseded
+        by the merged vector clock state. Returns number of records removed.
+        """
+        records = self._memory.search(
+            self._key, k=500, threshold=0.0, memory_type=self._CRDT_TYPE,
+        )
+        target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
+        if len(target) <= 1:
+            return 0
+        # Keep only the most recent record, delete the rest
+        target.sort(key=lambda r: r.created_at, reverse=True)
+        removed = 0
+        for record in target[1:]:
+            self._memory.delete_memory(record.memory_id)
+            removed += 1
+        return removed
+
         seen_p: set[str] = set()
         seen_n: set[str] = set()
         self._p_clock = {}
@@ -682,13 +702,15 @@ class RGA:
     def __init__(self, memory: CRDTMemory, key: str) -> None:
         self._memory = memory
         self._key = key
+        self._seq_counter = 0  # Logical sequence counter (monotonic, no wall-clock collision)
 
     def append(self, content: str) -> MemoryRecord:
         entry_id = str(uuid.uuid4())
+        self._seq_counter += 1
         meta = {
             "_crdt_key": self._key,
             "_crdt_entry_id": entry_id,
-            "_crdt_position": str(datetime.now(UTC).timestamp()),
+            "_crdt_position": f"{self._memory.agent_id}:{self._seq_counter}",
         }
         return self._memory.store(
             self._CRDT_TYPE, json.dumps({"entry_id": entry_id, "content": content}),

@@ -118,11 +118,12 @@ def _is_serialization_error(e: Exception) -> bool:
     if pgcode == "40001":
         return True
     # Fallback: string matching for non-psycopg drivers
-    estr = str(e)
+    # Only match when the error message contains DB-specific context
+    estr = str(e).lower()
     return (
         "40001" in estr
-        or "serialization" in estr.lower()
-        or "restart transaction" in estr.lower()
+        or ("serialization" in estr and ("transaction" in estr or "conflict" in estr or "retry" in estr))
+        or "restart transaction" in estr
     )
 
 

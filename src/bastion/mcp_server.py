@@ -72,6 +72,7 @@ _LIMITER_INSTANCE_ID: str = uuid.uuid4().hex[:16]
 _INIT_LOCK = threading.Lock()
 
 # -- Metrics state (Prometheus format) --
+_metrics_lock = threading.Lock()
 _metrics_requests_total: dict[tuple[str, str, int], int] = {}
 _metrics_durations: dict[tuple[str, str], list[float]] = {}
 _metrics_rate_limit_hits: int = 0

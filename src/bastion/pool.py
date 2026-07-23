@@ -35,11 +35,16 @@ class ConnectionPool:
         min_size: int = 2,
         max_size: int = 10,
         max_idle_seconds: int = 300,
+        max_per_consumer: int = 0,
     ):
         if max_size < min_size:
             raise ValueError("max_size must be >= min_size")
         if max_size <= 0:
             raise ValueError("max_size must be > 0")
+        # Per-consumer quota: 0 = no limit
+        self._max_per_consumer = max_per_consumer
+        self._consumer_counts: dict[str, int] = {}
+        self._consumer_lock = threading.Lock()
 
         self.connection_string = connection_string
         self.min_size = min_size
@@ -127,9 +132,11 @@ class ConnectionPool:
                     break
 
             if conn_to_check is not None:
-                # Only run full health check if connection has been idle > 30s
+                # Only run full health check if connection has been idle > threshold
+                # Configurable via BASTION_POOL_IDLE_CHECK_SECONDS (default 30s)
+                idle_threshold = int(os.environ.get("BASTION_POOL_IDLE_CHECK_SECONDS", "30"))
                 idle_seconds = time.time() - conn_last_used
-                if idle_seconds < 30 or self._is_healthy(conn_to_check):
+                if idle_seconds < idle_threshold or self._is_healthy(conn_to_check):
                     with self._lock:
                         self._total_reused += 1
                     return conn_to_check
