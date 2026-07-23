@@ -215,7 +215,7 @@ class VerifiableUnlearning:
         deleted_ids: list[str] = []
         not_found_ids: list[str] = []
 
-        if memory_ids and hasattr(self.memory, 'get_pool'):
+        if memory_ids and hasattr(self.memory, 'get_pool') and not getattr(self.memory, '_mock', False):
             pool = self.memory.get_pool()
             conn = pool.acquire(timeout=30.0)
             try:

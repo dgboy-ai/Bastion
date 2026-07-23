@@ -122,7 +122,7 @@ def _is_serialization_error(e: Exception) -> bool:
     estr = str(e).lower()
     return (
         "40001" in estr
-        or ("serialization" in estr and ("transaction" in estr or "conflict" in estr or "retry" in estr))
+        or ("serialization" in estr and ("transaction" in estr or "conflict" in estr or "retry" in estr or "failure" in estr))
         or "restart transaction" in estr
     )
 

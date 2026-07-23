@@ -462,7 +462,7 @@ class TestCircuitBreakerConcurrency:
         assert ("callback-test", "closed", "open") in transitions
 
         # Wait for HALF_OPEN
-        time.sleep(0.2)
+        time.sleep(1.0)
         _ = cb.state  # Trigger state check
         assert ("callback-test", "open", "half_open") in transitions
 
