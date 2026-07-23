@@ -129,7 +129,10 @@ def _check_auth(headers: dict[str, str]) -> bool:
 
     keys = _load_api_keys()
     if not keys:
-        # No API keys configured — deny all requests
+        # No API keys configured — allow access in mock mode
+        if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
+            return True
+        # In production, deny
         logger.warning("No API keys configured — MCP server is locked down")
         return False
     auth = headers.get("authorization") or headers.get("Authorization") or ""
