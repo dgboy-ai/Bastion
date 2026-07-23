@@ -127,7 +127,13 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[api/observations] Query failed:", error);
     const mockObs = getMockObservations();
-    return apiSuccess(mockObs, "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess(mockObs, "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 

@@ -38,7 +38,7 @@ class CircuitBreaker:
     ):
         self.name = name
         self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
+        self.recovery_timeout = max(1, recovery_timeout)  # Minimum 1s to prevent oscillation
         self.success_threshold = success_threshold
         self._on_state_change = on_state_change
         self._lock = threading.RLock()  # Reentrant lock for nested calls
@@ -66,7 +66,10 @@ class CircuitBreaker:
                         self.name,
                     )
                     if self._on_state_change:
-                        self._on_state_change(self.name, old_state, "half_open")
+                        try:
+                            self._on_state_change(self.name, old_state, "half_open")
+                        except Exception:
+                            logger.exception("on_state_change callback failed during HALF_OPEN transition")
             return self._state
 
     def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
@@ -112,7 +115,10 @@ class CircuitBreaker:
                         self.name,
                     )
                     if self._on_state_change:
-                        self._on_state_change(self.name, old_state, "closed")
+                        try:
+                            self._on_state_change(self.name, old_state, "closed")
+                        except Exception:
+                            logger.exception("on_state_change callback failed during CLOSED transition")
             else:
                 self._failure_count = 0
 
@@ -134,7 +140,10 @@ class CircuitBreaker:
                     self._failure_count,
                 )
                 if self._on_state_change:
-                    self._on_state_change(self.name, old_state, "open")
+                    try:
+                        self._on_state_change(self.name, old_state, "open")
+                    except Exception:
+                        logger.exception("on_state_change callback failed during OPEN transition")
 
     def get_stats(self) -> dict[str, Any]:
         """Return circuit breaker statistics."""

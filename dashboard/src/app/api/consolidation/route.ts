@@ -83,13 +83,19 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[api/consolidation] Query failed:", error);
-    return apiSuccess({
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess({
       memories_reviewed: 47,
       memories_consolidated: 12,
       memories_promoted: 5,
       memories_pruned: 8,
       hash_chain: { chainValid: 1, chainTotal: 10 },
-    }, "short", { mock: true, fallback: true });
+    }, "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 

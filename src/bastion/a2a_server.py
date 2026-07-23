@@ -200,13 +200,15 @@ def create_a2a_server(
         """Resolve role from API key. Supports per-key role mapping via BASTION_A2A_ROLES env var.
         Format: BASTION_A2A_ROLES=key1:writer,key2:reader,default:admin
         Falls back to BASTION_A2A_ROLE env var, then 'admin' for single-key mode."""
+        import secrets as _secrets
         role_env = os.environ.get("BASTION_A2A_ROLE", "")
         roles_map = os.environ.get("BASTION_A2A_ROLES", "")
         if roles_map:
             for pair in roles_map.split(","):
                 if ":" in pair:
                     k, v = pair.split(":", 1)
-                    if k.strip() == api_key_value:
+                    # Constant-time comparison to prevent timing side-channel
+                    if len(k.strip()) == len(api_key_value) and _secrets.compare_digest(k.strip(), api_key_value):
                         return v.strip()
         if role_env:
             return role_env
@@ -464,6 +466,14 @@ def create_a2a_server(
                         _brute_cache.pop(ip, None)
                     if expired:
                         logger.debug("Cleaned %d expired brute-force entries", extra={"count": len(expired)})
+                # Clean up expired idempotency store entries
+                with _idempotency_lock:
+                    expired_keys = [k for k, v in _idempotency_store.items()
+                                    if now - v.get("_ts", 0) >= _idempotency_ttl]
+                    for k in expired_keys:
+                        _idempotency_store.pop(k, None)
+                    if expired_keys:
+                        logger.debug("Cleaned %d expired idempotency entries", extra={"count": len(expired_keys)})
             except Exception:
                 logger.exception("Background cleanup failed")
 
@@ -610,6 +620,7 @@ def create_a2a_server(
     _idempotency_store: dict[str, dict[str, Any]] = {}
     _idempotency_lock = threading.Lock()
     _idempotency_ttl = 86400
+    _idempotency_max_size = 10000  # Prevent unbounded memory growth
 
     async def _check_idempotency(key: str) -> dict[str, Any] | None:
         with _idempotency_lock:
@@ -622,6 +633,17 @@ def create_a2a_server(
 
     def _set_idempotency(key: str, data: dict[str, Any]) -> None:
         with _idempotency_lock:
+            # Evict expired entries and enforce max size
+            if len(_idempotency_store) >= _idempotency_max_size:
+                now = time.time()
+                expired = [k for k, v in _idempotency_store.items()
+                           if now - v.get("_ts", 0) >= _idempotency_ttl]
+                for k in expired[:len(expired) // 2 or 1]:
+                    _idempotency_store.pop(k, None)
+                # If still over limit, drop oldest
+                if len(_idempotency_store) >= _idempotency_max_size:
+                    oldest_key = min(_idempotency_store, key=lambda k: _idempotency_store[k].get("_ts", 0))
+                    _idempotency_store.pop(oldest_key, None)
             _idempotency_store[key] = data
 
     # -- Metrics state -----------------------------------------------------
@@ -703,17 +725,26 @@ def create_a2a_server(
 
     # -- Signature verification -------------------------------------------
 
-    from bastion.a2a_signing import verify_card_signed
+    from bastion.a2a_signing import verify_card_signed, verify_card_signed_trusted, TrustedKeyRegistry
 
     _sender_key_cache: dict[str, tuple[str, float]] = {}  # url -> (pem, expiry)
     _sender_key_cache_lock = threading.Lock()
     _signature_cache_ttl = 86400  # 24 hours
     _signature_cache_maxsize = 100  # prevent unbounded memory growth (DoS)
     _strict_auth = os.environ.get("BASTION_A2A_STRICT", "true").lower() in ("true", "1", "yes")
+    _trust_registry = TrustedKeyRegistry(
+        mode="strict" if _strict_auth else "tofu",
+    )
 
     def _is_safe_url(url: str) -> bool:
-        """Check if a URL is safe to fetch (no private/internal IPs)."""
+        """Check if a URL is safe to fetch (no private/internal IPs).
+
+        Resolves DNS to prevent rebinding attacks where a hostname initially
+        resolves to a public IP but later resolves to an internal IP.
+        """
         from urllib.parse import urlparse
+        import ipaddress
+        import socket
         try:
             parsed = urlparse(url)
             if parsed.scheme not in ("https",):
@@ -721,21 +752,22 @@ def create_a2a_server(
             hostname = parsed.hostname or ""
             if not hostname:
                 return False
-            # Block private/internal/link-local/loopback ranges
-            import ipaddress
+            # Block known internal hostnames
+            blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
+            if hostname.lower() in blocked:
+                return False
+            if hostname.endswith((".local", ".internal", ".localhost")):
+                return False
+            # Resolve DNS and check the resolved IP addresses
             try:
-                ip = ipaddress.ip_address(hostname)
-                return not (ip.is_private or ip.is_loopback or ip.is_link_local
-                            or ip.is_reserved or ip.is_multicast)
-            except ValueError:
-                # hostname is a domain — block localhost variants
-                blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
-                if hostname.lower() in blocked:
-                    return False
-                # Block .local, .internal TLDs
-                if hostname.endswith((".local", ".internal", ".localhost")):
-                    return False
-                return True
+                resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                for _, _, _, _, sockaddr in resolved:
+                    ip = ipaddress.ip_address(sockaddr[0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                        return False
+            except (socket.gaierror, OSError):
+                return False  # DNS resolution failed — block
+            return True
         except Exception:
             return False
 
@@ -744,9 +776,14 @@ def create_a2a_server(
         sender_url = request.headers.get("X-Sender-URL", "")
         signature_b64 = request.headers.get("X-Sender-Signature", "")
 
-        # If no signature headers, allow (backwards compatible)
+        # Require BOTH signature headers or NEITHER — partial headers are rejected
+        if not sender_url and not signature_b64:
+            # No signature headers — reject in strict mode, allow in legacy mode
+            if _strict_auth:
+                return False
+            return True  # backwards compatible only when strict_auth is off
         if not sender_url or not signature_b64:
-            return True
+            return False  # partial headers — reject (prevents signature bypass)
 
         # SSRF protection: validate URL before fetching
         if not _is_safe_url(sender_url):
@@ -770,7 +807,7 @@ def create_a2a_server(
                         logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
                         return False
                     card = resp.json()
-                    if not verify_card_signed(card):
+                    if not verify_card_signed_trusted(card, _trust_registry):
                         logger.warning("Sender card signature verification FAILED", extra={"sender_url": sender_url})
                         return False
                     sig_info = card.get("signature", {})
@@ -814,10 +851,8 @@ def create_a2a_server(
     if _mcp_keys_raw and not _api_key:
         _api_key = _mcp_keys_raw.split(",")[0].strip()
     if not _api_key:
-        logger.warning(
-            "No API key configured — authentication is DISABLED. "
-            "Set BASTION_API_KEY or BASTION_MCP_API_KEYS."
-        )
+        logger.error("CRITICAL: No API key configured. Refusing to start.")
+        raise RuntimeError("BASTION_API_KEY must be set")
 
     # Brute-force protection: DB-backed with in-memory LRU cache for hot path.
     # Survives server restarts and works across multiple instances.
@@ -894,7 +929,16 @@ def create_a2a_server(
                 finally:
                     _brute_pool.release(conn_obj)
             except Exception:
-                pass  # Fail open on DB error
+                logger.warning("DB brute-force check failed, falling back to in-memory cache")
+                # Fall back to in-memory cache instead of failing open
+                with _brute_cache_lock:
+                    entry = _brute_cache.get(client_ip)
+                    if entry:
+                        count, window_start, locked_until = entry
+                        if locked_until and now < locked_until:
+                            return True
+                        if count >= _auth_max_failures:
+                            return True
         return False
 
     def _record_auth_failure(client_ip: str) -> None:
@@ -961,10 +1005,7 @@ def create_a2a_server(
     def _verify_api_key(provided: str) -> bool:
         import secrets as _secrets
         if not _api_key:
-            # In mock mode, allow unauthenticated access
-            if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
-                return True
-            # In production, require API key
+            # No API key configured — deny all requests
             return False
         return _secrets.compare_digest(provided, _api_key)
 
@@ -1016,7 +1057,7 @@ def create_a2a_server(
             if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
             else (request.client.host if request.client else "unknown")
         )
-        if _api_key and request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith("/.well-known/"):
+        if request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith("/.well-known/"):
             if _check_brute_force(client_ip):
                 logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
                 return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
@@ -1139,6 +1180,21 @@ def create_a2a_server(
         params = body.get("params", {})
 
         try:
+            # Verify signature for ALL methods in strict mode (not just SendMessage)
+            if _strict_auth and request and raw:
+                sender_url = request.headers.get("X-Sender-URL", "")
+                sender_sig = request.headers.get("X-Sender-Signature", "")
+                if not (sender_url and sender_sig):
+                    return JSONResponse(
+                        {"error": "Missing required signature headers (X-Sender-URL, X-Sender-Signature)"},
+                        status_code=401,
+                    )
+                if not await _verify_sender_signature(request, raw):
+                    return JSONResponse(
+                        {"error": "Signature verification failed"},
+                        status_code=401,
+                    )
+
             if method == "SendMessage":
                 return await _handle_send_message(params, rid, req_id, raw, request)
             elif method == "GetTask":
@@ -1515,7 +1571,12 @@ def create_a2a_server(
 
         # -- RBAC: check role permission for this skill --
         required_role = _SKILL_ROLES.get(skill_id, "reader")
-        caller_role = _resolve_role(_api_key) if _api_key else "admin"
+        # Resolve role from CALLER's token, not the server's key
+        caller_token = ""
+        if request:
+            auth_header = request.headers.get("Authorization", "")
+            caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
+        caller_role = _resolve_role(caller_token) if caller_token else "reader"
         required_level = _ROLE_HIERARCHY.get(required_role, 0)
         caller_level = _ROLE_HIERARCHY.get(caller_role, 0)
         if caller_level < required_level:

@@ -71,6 +71,12 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[api/memories] Query failed:", error);
     const fallbackMemories = getMockMemories();
-    return apiSuccess({ memories: fallbackMemories, total: fallbackMemories.length, page: 1, limit: 20, totalPages: 1 }, "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess({ memories: fallbackMemories, total: fallbackMemories.length, page: 1, limit: 20, totalPages: 1 }, "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }

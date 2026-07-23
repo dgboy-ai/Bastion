@@ -232,7 +232,8 @@ def create_server(
                 conn_obj = pool.acquire(timeout=5.0)
                 try:
                     with conn_obj.cursor() as cur:
-                        cur.execute(f"SET application_name = 'mcp-{agent_id[:32]}'")
+                        safe_name = ''.join(c for c in agent_id[:32] if c.isalnum() or c in '-_')
+                        cur.execute("SET application_name = %s", (f"mcp-{safe_name}",))
                 finally:
                     pool.release(conn_obj)
             except Exception:
@@ -865,6 +866,8 @@ def create_server(
             return json.dumps({"error": "memory_id is required"})
         if not new_content:
             return json.dumps({"error": "new_content is required"})
+        if len(new_content) > _MAX_CONTENT_LENGTH:
+            return json.dumps({"error": f"Content too large (max {_MAX_CONTENT_LENGTH} chars)"})
         mem = _resolve_memory(ctx)
         try:
             record = await anyio.to_thread.run_sync(mem.correct_memory, memory_id, new_content, metadata)
@@ -1056,6 +1059,10 @@ def create_server(
             return json.dumps({"error": "query must be a non-empty string"})
         if not result or not result.strip():
             return json.dumps({"error": "result must be a non-empty string"})
+        if len(query) > _MAX_CONTENT_LENGTH:
+            return json.dumps({"error": f"query too large (max {_MAX_CONTENT_LENGTH} chars)"})
+        if len(result) > _MAX_CONTENT_LENGTH:
+            return json.dumps({"error": f"result too large (max {_MAX_CONTENT_LENGTH} chars)"})
 
         mem = _resolve_memory(ctx)
         try:
@@ -1564,8 +1571,9 @@ def create_server(
                 }, indent=2, default=str)
         except httpx.TimeoutException:
             return json.dumps({"error": f"A2A bridge timeout after {timeout_seconds}s", "source": "a2a_bridge"})
-        except Exception as exc:
-            return json.dumps({"error": f"A2A bridge failed: {exc}", "source": "a2a_bridge"})
+        except Exception:
+            logger.exception("A2A bridge failed")
+            return json.dumps({"error": "A2A bridge failed — check server logs", "source": "a2a_bridge"})
 
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
@@ -2001,14 +2009,25 @@ def _make_http_app(mcp: FastMCP) -> Any:
     inner = mcp.streamable_http_app()
 
     # CORS — allow browser-based MCP clients
-    allowed_origins = os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")
-    inner = CORSMiddleware(
-        inner,
-        allow_origins=[o.strip() for o in allowed_origins],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    allowed_origins = os.environ.get("CORS_ALLOW_ORIGINS", "").split(",")
+    allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
+    if allowed_origins:
+        inner = CORSMiddleware(
+            inner,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        )
+    else:
+        # No origins configured — block all cross-origin requests (secure default)
+        inner = CORSMiddleware(
+            inner,
+            allow_origins=[],
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        )
 
     oauth_active = mcp.settings.auth is not None
     skip_paths = frozenset(
@@ -2034,6 +2053,13 @@ def _make_http_app(mcp: FastMCP) -> Any:
     def _check_brute_force(client_ip: str) -> bool:
         now = time.time()
         with _brute_cache_lock:
+            # Periodic cleanup: evict entries older than window + lockout
+            if len(_brute_cache) > 1000:
+                max_age = _brute_window_seconds + _brute_lockout_seconds
+                expired = [k for k, v in _brute_cache.items() if now - v[1] > max_age]
+                for k in expired:
+                    _brute_cache.pop(k, None)
+
             entry = _brute_cache.get(client_ip)
             if entry:
                 count, window_start, locked_until = entry

@@ -58,7 +58,13 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[api/audit] Query failed:", error);
     const fallbackEvents = getMockAuditEvents(10);
-    return apiSuccess({ events: fallbackEvents }, "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess({ events: fallbackEvents }, "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 

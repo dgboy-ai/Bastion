@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import sys
 import threading
 
 from bastion.log_setup import get_logger
@@ -41,7 +42,10 @@ def _get_hmac_secret() -> bytes:
             return _hmac_secret
         env_secret = os.environ.get("BASTION_HMAC_SECRET", "")
         if env_secret:
-            _hmac_secret = env_secret.encode()
+            decoded = env_secret.encode("utf-8")
+            if len(decoded) < 16:
+                raise ValueError(f"BASTION_HMAC_SECRET too short ({len(decoded)} bytes), minimum 16")
+            _hmac_secret = decoded
         else:
             # Try to load from disk first
             try:
@@ -50,7 +54,17 @@ def _get_hmac_secret() -> bytes:
                         _hmac_secret = f.read()
                     if len(_hmac_secret) == 32:
                         logger.info("Loaded persisted HMAC secret from %s", _SECRET_FILE)
+                        if sys.platform == "win32":
+                            logger.warning(
+                                "Windows: loaded secret from disk. File permissions are not enforced by NTFS. "
+                                "Set BASTION_HMAC_SECRET env var to keep the secret out of disk."
+                            )
                         return _hmac_secret
+                    # Wrong length — regenerate
+                    logger.warning(
+                        "HMAC secret from %s has wrong length (%d bytes, expected 32). Regenerating.",
+                        _SECRET_FILE, len(_hmac_secret),
+                    )
             except Exception as exc:
                 logger.warning("Failed to load HMAC secret from disk: %s", exc)
 
@@ -62,6 +76,13 @@ def _get_hmac_secret() -> bytes:
                 fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
                 try:
                     os.write(fd, _hmac_secret)
+                    if sys.platform == "win32":
+                        logger.warning(
+                            "Windows: file permissions (0o600) are NOT enforced by NTFS. "
+                            "Any user on this machine can read %s. "
+                            "Set BASTION_HMAC_SECRET env var to avoid disk-based secret storage.",
+                            _SECRET_FILE,
+                        )
                 finally:
                     os.close(fd)
                 os.replace(tmp, _SECRET_FILE)
@@ -83,14 +104,24 @@ def compute_hash(content: str, metadata: dict | None = None, previous_hash: str 
     """Compute HMAC-SHA256 hash of content + metadata + previous_hash.
     
     Uses server secret key to prevent forgery by attackers with DB write access.
+    Fields are length-prefixed to prevent boundary ambiguity attacks.
     """
     meta_str = "" if metadata is None else (
         metadata if isinstance(metadata, str) else
         __import__("json").dumps(metadata, sort_keys=True)
     )
-    payload = content + meta_str + (previous_hash or "")
+    prev = previous_hash or ""
+    # Length-prefix each field to prevent concatenation collision
+    content_bytes = content.encode("utf-8")
+    meta_bytes = meta_str.encode("utf-8")
+    prev_bytes = prev.encode("utf-8")
+    payload = (
+        len(content_bytes).to_bytes(4, 'big') + content_bytes
+        + len(meta_bytes).to_bytes(4, 'big') + meta_bytes
+        + len(prev_bytes).to_bytes(4, 'big') + prev_bytes
+    )
     secret = _get_hmac_secret()
-    return hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
 
 
 def verify_hash(content: str, metadata: dict | None, previous_hash: str | None, expected_hash: str) -> bool:

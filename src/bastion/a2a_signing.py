@@ -5,6 +5,15 @@ Generates, loads, and verifies Ed25519 keypairs for agent card signing.
 Implements the A2A v1.0 Signed Agent Card spec under the Linux Foundation's
 Agentic AI Foundation.
 
+Includes a trust anchor registry to prevent circular trust (self-signed cards).
+Without a trust anchor, any agent can generate a keypair, sign a card, and pass
+verification.  The ``TrustedKeyRegistry`` maintains known public key fingerprints
+and supports three modes:
+
+- **strict**: Only pre-registered keys are accepted.
+- **tofu** (Trust On First Use): First-seen key is registered automatically.
+- **allowlist**: Keys must be in the allowlist; unknown keys are rejected.
+
 Usage:
     # Generate a new keypair
     signer = AgentCardSigner()
@@ -13,13 +22,19 @@ Usage:
     # Sign an agent card
     card = {"name": "Bastion Agent", ...}
     signed_card = signer.sign_card(card)
+
+    # Verify with trust check
+    registry = TrustedKeyRegistry(mode="tofu")
+    assert verify_card_signed_trusted(signed_card, registry)
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import threading
 from copy import deepcopy
 from typing import Any
 
@@ -159,3 +174,154 @@ def verify_card_signed(card: dict[str, Any]) -> bool:
     except Exception as exc:
         logger.warning("Signature verification error: %s", exc)
         return False
+
+
+def _public_key_fingerprint(public_pem: str) -> str:
+    """SHA-256 fingerprint of the raw public key bytes (DER-encoded)."""
+    from cryptography.hazmat.primitives import serialization
+
+    key = serialization.load_pem_public_key(public_pem.encode())
+    raw = key.public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return hashlib.sha256(raw).hexdigest()
+
+
+class TrustedKeyRegistry:
+    """Registry of trusted Ed25519 public key fingerprints for A2A cards.
+
+    Prevents circular trust where any agent can self-sign a card and pass
+    verification.  The registry maintains a set of known-good key fingerprints
+    and supports three trust modes:
+
+    - **strict**: Only pre-registered fingerprints are accepted.  Unknown keys
+      are rejected.  Best for production with a known set of agents.
+    - **tofu** (Trust On First Use): The first key seen for a given agent_id
+      is automatically registered.  Subsequent cards from the same agent must
+      use the same key.  Unknown agents are trusted on first contact.
+    - **allowlist**: Keys must be in the allowlist; unknown keys are rejected.
+      Same as strict, but semantically clearer.
+
+    Initialize from environment::
+
+        BASTION_A2A_TRUSTED_KEYS=sha256hex1,sha256hex2,...
+
+    Thread-safe for concurrent access.
+    """
+
+    def __init__(self, mode: str = "tofu", trusted_fingerprints: set[str] | None = None):
+        if mode not in ("strict", "tofu", "allowlist"):
+            raise ValueError(f"Invalid trust mode: {mode!r} (expected 'strict', 'tofu', or 'allowlist')")
+        self._mode = mode
+        self._fingerprints: set[str] = set(trusted_fingerprints or [])
+        self._agent_keys: dict[str, str] = {}  # agent_id -> fingerprint (for TOFU)
+        self._lock = threading.Lock()
+
+        # Load from environment
+        env_keys = os.environ.get("BASTION_A2A_TRUSTED_KEYS", "")
+        if env_keys:
+            for fp in env_keys.split(","):
+                fp = fp.strip()
+                if fp:
+                    self._fingerprints.add(fp)
+            logger.info(
+                "Loaded %d trusted key fingerprints from BASTION_A2A_TRUSTED_KEYS",
+                len(self._fingerprints),
+            )
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    @property
+    def fingerprint_count(self) -> int:
+        with self._lock:
+            return len(self._fingerprints)
+
+    def register(self, fingerprint: str, agent_id: str | None = None) -> None:
+        """Manually register a trusted key fingerprint."""
+        with self._lock:
+            self._fingerprints.add(fingerprint)
+            if agent_id:
+                self._agent_keys[agent_id] = fingerprint
+
+    def is_trusted(self, public_pem: str, agent_id: str | None = None) -> bool:
+        """Check if a public key is trusted."""
+        fingerprint = _public_key_fingerprint(public_pem)
+
+        with self._lock:
+            # Check explicit allowlist first
+            if fingerprint in self._fingerprints:
+                return True
+
+            # TOFU: trust first-seen key for this agent
+            if self._mode == "tofu" and agent_id:
+                existing = self._agent_keys.get(agent_id)
+                if existing is None:
+                    # First time seeing this agent — register the key
+                    self._agent_keys[agent_id] = fingerprint
+                    self._fingerprints.add(fingerprint)
+                    logger.info("TOFU: registered new key for agent %s", agent_id)
+                    return True
+                # Agent seen before — must match
+                if existing == fingerprint:
+                    return True
+                logger.warning(
+                    "TOFU: key mismatch for agent %s (expected %s, got %s)",
+                    agent_id, existing[:12], fingerprint[:12],
+                )
+                return False
+
+            # Strict/allowlist: unknown key rejected
+            logger.warning(
+                "Untrusted key fingerprint %s (mode=%s, agent=%s)",
+                fingerprint[:12], self._mode, agent_id or "unknown",
+            )
+            return False
+
+    def revoke(self, fingerprint: str) -> bool:
+        """Remove a fingerprint from the trust registry."""
+        with self._lock:
+            removed = self._fingerprints.discard(fingerprint)
+            # Also remove from agent_keys if present
+            self._agent_keys = {k: v for k, v in self._agent_keys.items() if v != fingerprint}
+            return removed is not None
+
+
+def verify_card_signed_trusted(
+    card: dict[str, Any],
+    registry: TrustedKeyRegistry | None = None,
+) -> bool:
+    """Verify an agent card's signature AND check the key is trusted.
+
+    This prevents circular trust where any agent can self-sign a card.
+
+    Args:
+        card: The signed agent card (with ``signature`` block).
+        registry: Trust anchor registry.  If None, creates a TOFU registry
+                  (trusts first-seen keys).
+
+    Returns:
+        True if the signature is valid AND the key is trusted.
+    """
+    if registry is None:
+        registry = TrustedKeyRegistry(mode="tofu")
+
+    # Step 1: Verify cryptographic signature
+    if not verify_card_signed(card):
+        return False
+
+    # Step 2: Check trust anchor
+    sig_info = card.get("signature", {})
+    public_pem = sig_info.get("publicKeyPem", "")
+    agent_id = card.get("agentId") or card.get("agent_id") or card.get("name")
+
+    if not registry.is_trusted(public_pem, agent_id):
+        logger.warning(
+            "Card rejected: signature valid but key not trusted (agent=%s)",
+            agent_id or "unknown",
+        )
+        return False
+
+    return True

@@ -49,7 +49,13 @@ export async function GET(request: Request) {
     return apiSuccess({ alerts }, 'short');
   } catch (error) {
     console.error("[api/anomalies] Query failed:", error);
-    return apiSuccess(getMockAnomalies(), "short", { mock: true, fallback: true });
+    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+
+      return apiSuccess(getMockAnomalies(), "short", { mock: true });
+
+    }
+
+    return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
 

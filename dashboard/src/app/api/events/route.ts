@@ -82,7 +82,6 @@ export async function GET(request: Request) {
       };
 
       send(JSON.stringify({ type: "connected", message: "SSE stream established" }));
-      send(JSON.stringify({ type: "debug", mockMode: isMockMode(), hasPool: hasDbPool() }));
 
       const heartbeat = setInterval(() => {
         send(JSON.stringify({ type: "heartbeat", timestamp: new Date().toISOString() }));

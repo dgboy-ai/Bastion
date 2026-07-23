@@ -408,6 +408,14 @@ class BastionMemory:
             raise ValueError(f"pin_priority must be 0, 1, or 2, got {pin_priority}")
         _validate_memory_type(memory_type)
         _validate_content(content)
+        # Run security guard — pinned memories are most dangerous to leave unguarded
+        report = self._guard.check(content, metadata=metadata)
+        if not report.is_safe:
+            from bastion.errors import SecurityBlockError
+            raise SecurityBlockError(
+                f"Content blocked by security guard: {report.findings}",
+                report=report,
+            )
         if self._mock:
             return _mock.mock_pin_memory(self.agent_id, memory_type, content, pin_priority, metadata)
         return self._pin_real(memory_type, content, pin_priority, metadata)
@@ -511,26 +519,38 @@ class BastionMemory:
     def get_at_time(self, timestamp: str, agent_id: str | None = None) -> list[MemoryRecord]:
         if not timestamp or not isinstance(timestamp, str):
             raise ValueError(f"timestamp must be a non-empty string, got {type(timestamp).__name__}")
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             return _mock.mock_get_memory_at_time(agent_id, timestamp)
         return self._get_at_time_real(agent_id, timestamp)
 
     def audit(self, agent_id: str | None = None) -> list[AuditEntry]:
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             return _mock.mock_get_audit(agent_id)
         return self._audit_real(agent_id)
 
     def store_audit(self, action: str, details: dict[str, Any] | str, agent_id: str | None = None) -> None:
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             _mock.mock_store_audit(agent_id, action, details)
         else:
             self._store_audit_real(agent_id, action, details)
 
     def heal(self, agent_id: str | None = None) -> dict[str, Any]:
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             return _mock.mock_heal(agent_id)
         return self._heal_real(agent_id)
@@ -558,7 +578,10 @@ class BastionMemory:
         return self._query_with_cache_real(query, llm_callback, memory_type, threshold)
 
     def detect_anomalies(self, agent_id: str | None = None) -> list[dict]:
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             return _mock.mock_detect_anomalies(agent_id)
         from bastion.health import detect_anomalies_real
@@ -569,7 +592,10 @@ class BastionMemory:
             raise ValueError(f"timestamp_a must be a non-empty string, got {type(timestamp_a).__name__}")
         if not timestamp_b or not isinstance(timestamp_b, str):
             raise ValueError(f"timestamp_b must be a non-empty string, got {type(timestamp_b).__name__}")
-        agent_id = agent_id or self.agent_id
+        target = agent_id or self.agent_id
+        if target != self.agent_id:
+            raise PermissionError("Cannot query memories for another agent")
+        agent_id = target
         if self._mock:
             return _mock.mock_diff(agent_id, timestamp_a, timestamp_b)
         from bastion.health import diff_real
@@ -618,6 +644,13 @@ class BastionMemory:
     ) -> tuple[MemoryRecord, list[EntityRecord], list[RelationRecord]]:
         _validate_content(content)
         _validate_expires_in(expires_in_seconds)
+        # Run security guard before storing — same as store()
+        report = self._guard.check(content, metadata=metadata)
+        if not report.is_safe:
+            raise SecurityBlockError(
+                f"Content blocked by security guard: {report.findings}",
+                report=report,
+            )
         if self._mock:
             return _mock.mock_store_with_graph(self.agent_id, content, metadata, expires_in_seconds)
         # Store the memory record first
@@ -1130,8 +1163,8 @@ class BastionMemory:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE memory_id = %s",
-                    (memory_id,),
+                    f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE memory_id = %s AND agent_id = %s AND (expires_at IS NULL OR expires_at > now())",
+                    (memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
                 return MemoryRecord.from_row(row) if row else None
@@ -1282,6 +1315,10 @@ class BastionMemory:
                 pruned = cur.rowcount
 
                 # 2. Recompute broken hashes (cryptographic_hash IS NULL)
+                # NOTE: This reseals corrupted data. An attacker who modifies
+                # the last record's content and sets hash=NULL can launder
+                # corruption through heal(). We flag this as a repair action
+                # in the audit trail so it's detectable.
                 from bastion.crypto import compute_hash
                 cur.execute(
                     "SELECT memory_id, content, metadata, previous_hash "
@@ -1298,6 +1335,11 @@ class BastionMemory:
                         (new_hash, mid),
                     )
                     resealed += 1
+                    # Log repair action for audit trail
+                    logger.warning(
+                        "Hash chain repair: resealed memory %s for agent %s — may indicate tampering",
+                        mid, agent_id,
+                    )
 
                 conn.commit()
                 return {

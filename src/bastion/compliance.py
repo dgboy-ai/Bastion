@@ -111,7 +111,7 @@ class ComplianceReporter:
             finally:
                 pool.release(conn)
         except Exception:
-            return True  # Assume intact if check fails
+            return False
 
     def generate_report(
         self,
@@ -213,7 +213,9 @@ class VerifiableUnlearning:
                 with conn.cursor() as cur:
                     # Delete all requested memories in one transaction
                     cur.execute(
-                        "DELETE FROM agent_memory WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
+                        "UPDATE agent_memory SET content = '[DELETED per GDPR Art 17]', "
+                        "metadata = metadata || '{\"_gdpr_deleted\": true}'::jsonb, "
+                        "embedding = NULL WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
                         (memory_ids, agent_id),
                     )
                     deleted_ids = [row[0] for row in cur.fetchall()]
@@ -307,6 +309,10 @@ class VerifiableUnlearning:
                 "publicKeyPem": self._signer.get_public_key_pem(),
                 "signedFields": sorted(k for k in receipt if k != "signature"),
             }
+        else:
+            # No signer — receipt has no cryptographic assurance
+            receipt["signature"] = None
+            receipt["unsigned_warning"] = "Receipt is not cryptographically signed — no assurance of integrity"
 
         return receipt
 

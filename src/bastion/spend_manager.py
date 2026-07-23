@@ -191,12 +191,15 @@ class SpendManager:
         """
         if self._mock:
             return True
+        _VALID_CATEGORIES = frozenset({"search", "store", "embed", "heal"})
         pool = self._get_pool()
         conn = pool.acquire(timeout=10.0)
         try:
             set_clauses = []
             params: list[Any] = []
             for cat, limit in limits.items():
+                if cat not in _VALID_CATEGORIES:
+                    raise ValueError(f"Invalid category: {cat}")
                 col = f"hard_limit_{cat}s"
                 set_clauses.append(f"{col} = %s")
                 params.append(limit)
@@ -322,6 +325,9 @@ class SpendManager:
         }
 
     def _increment_budget(self, agent_id: str, category: str, count: int) -> None:
+        _VALID_CATEGORIES = frozenset({"search", "store", "embed", "heal"})
+        if category not in _VALID_CATEGORIES:
+            raise ValueError(f"Invalid category: {category}")
         col = f"daily_{category}s"
         pool = self._get_pool()
         conn = pool.acquire(timeout=10.0)

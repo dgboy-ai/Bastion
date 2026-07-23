@@ -17,6 +17,7 @@ import json
 import os
 import re
 import threading
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -25,6 +26,73 @@ from typing import Any
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+
+# Cyrillic-to-Latin homoglyph mapping (visual confusables)
+# NFKC does NOT map these — they must be explicitly transliterated
+_CYRILLIC_HOMOGLYPHS = str.maketrans({
+    '\u0430': 'a',  # Cyrillic а → Latin a
+    '\u0441': 'c',  # Cyrillic с → Latin c
+    '\u0435': 'e',  # Cyrillic е → Latin e
+    '\u0456': 'i',  # Cyrillic і → Latin i
+    '\u043e': 'o',  # Cyrillic о → Latin o
+    '\u0440': 'p',  # Cyrillic р → Latin p
+    '\u0445': 'x',  # Cyrillic х → Latin x
+    '\u0455': 's',  # Cyrillic ѕ → Latin s
+    '\u043b': 'l',  # Cyrillic л → Latin l
+    '\u043d': 'n',  # Cyrillic н → Latin n
+    '\u043c': 'm',  # Cyrillic м → Latin m
+    '\u0443': 'y',  # Cyrillic у → Latin y (visual相似)
+})
+
+# Fullwidth-to-ASCII mapping (NFKC handles most, but add explicit fallbacks)
+_FULLWIDTH_MAP = str.maketrans({
+    '\uff21': 'A', '\uff22': 'B', '\uff23': 'C', '\uff24': 'D',
+    '\uff25': 'E', '\uff26': 'F', '\uff27': 'G', '\uff28': 'H',
+    '\uff29': 'I', '\uff2a': 'J', '\uff2b': 'K', '\uff2c': 'L',
+    '\uff2d': 'M', '\uff2e': 'N', '\uff2f': 'O', '\uff30': 'P',
+    '\uff31': 'Q', '\uff32': 'R', '\uff33': 'S', '\uff34': 'T',
+    '\uff35': 'U', '\uff36': 'V', '\uff37': 'W', '\uff38': 'X',
+    '\uff39': 'Y', '\uff3a': 'Z',
+    '\uff41': 'a', '\uff42': 'b', '\uff43': 'c', '\uff44': 'd',
+    '\uff45': 'e', '\uff46': 'f', '\uff47': 'g', '\uff48': 'h',
+    '\uff49': 'i', '\uff4a': 'j', '\uff4b': 'k', '\uff4c': 'l',
+    '\uff4d': 'm', '\uff4e': 'n', '\uff4f': 'o', '\uff50': 'p',
+    '\uff51': 'q', '\uff52': 'r', '\uff53': 's', '\uff54': 't',
+    '\uff55': 'u', '\uff56': 'v', '\uff57': 'w', '\uff58': 'x',
+    '\uff59': 'y', '\uff5a': 'z',
+})
+
+
+def _normalize_unicode(text: str) -> str:
+    """Normalize Unicode to prevent homoglyph and zero-width character bypasses.
+    
+    1. NFKC normalization maps fullwidth characters to ASCII equivalents
+    2. Explicit Cyrillic-to-Latin transliteration for visual confusables
+    3. Strip all zero-width, bidi override, and formatting characters
+       that break regex pattern matching or visually reorder text.
+    """
+    # NFKC normalization — maps fullwidth to ASCII, decomposes composites
+    normalized = unicodedata.normalize("NFKC", text)
+    # Explicit Cyrillic → Latin mapping (NFKC doesn't do this)
+    normalized = normalized.translate(_CYRILLIC_HOMOGLYPHS)
+    # Fullwidth fallback (NFKC handles most, but be safe)
+    normalized = normalized.translate(_FULLWIDTH_MAP)
+    # Strip zero-width, bidi override, and formatting characters
+    # Covers Unicode Cf (format) and Mn (mark) categories
+    _ZWC_RE = re.compile(
+        r'[\u00ad'           # soft hyphen
+        r'\u034f'            # combining grapheme joiner
+        r'\u061c'            # arabic letter mark
+        r'\u180e'            # mongolian vowel separator
+        r'\u200b-\u200f'     # ZWSP, ZWNJ, ZWJ, LRM, RLM
+        r'\u202a-\u202e'     # bidi overrides (LRE/RLE/PDF/LRO/RLO)
+        r'\u2060-\u2069'     # word joiner, invisible operators
+        r'\ufe00-\ufe0f'     # variation selectors
+        r'\ufeff]'           # BOM
+    )
+    normalized = _ZWC_RE.sub('', normalized)
+    return normalized
 
 # ── Trust Score Constants ──────────────────────────────────────────────────
 
@@ -183,6 +251,9 @@ class MemoryGuard:
         findings: list[Finding] = []
         with self._lock:
             self._total_checks += 1
+
+        # Normalize Unicode BEFORE any scanning to prevent homoglyph/zero-width bypasses
+        content = _normalize_unicode(content)
 
         # 1. Prompt injection scan
         findings.extend(self._scan_prompt_injection(content))

@@ -356,8 +356,23 @@ class CRDTMemory:
     # ------------------------------------------------------------------
 
     def _extract_clock(self, record: MemoryRecord) -> VectorClock:
+        """Extract vector clock from record metadata with validation.
+        
+        Rejects clocks with unreasonable tick values (> 1M) to prevent
+        attacker-fabricated clocks from dominating conflict resolution.
+        """
         raw = (record.metadata or {}).get("_vector_clock", {})
         if isinstance(raw, dict):
+            # Validate: reject clocks with ticks > 1M (attacker manipulation)
+            for agent_id, tick in raw.items():
+                if not isinstance(tick, (int, float)):
+                    return VectorClock()
+                if tick > 1_000_000:
+                    logger.warning(
+                        "Suspicious vector clock tick rejected",
+                        extra={"agent_id": agent_id, "tick": tick},
+                    )
+                    return VectorClock()
             return VectorClock(raw)
         return VectorClock()
 

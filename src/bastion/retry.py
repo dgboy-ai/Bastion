@@ -29,11 +29,13 @@ class SerializationRetryEngine:
         base_delay_ms: float = 10,
         max_delay_ms: float = 2000,
         jitter_factor: float = 0.5,
+        max_total_time_seconds: float = 30.0,
     ):
         self.max_retries = max_retries
         self.base_delay_ms = base_delay_ms
         self.max_delay_ms = max_delay_ms
         self.jitter_factor = jitter_factor
+        self.max_total_time_seconds = max_total_time_seconds
         self._total_retries = 0
         self._total_successes = 0
 
@@ -50,8 +52,19 @@ class SerializationRetryEngine:
             span = _null_context()
         with span:
             last_error: Exception | None = None
+            start_time = time.monotonic()
 
             for attempt in range(self.max_retries + 1):
+                # Check total time limit
+                elapsed = time.monotonic() - start_time
+                if elapsed >= self.max_total_time_seconds:
+                    logger.warning(
+                        "retry_time_limit",
+                        elapsed_seconds=round(elapsed, 1),
+                        max_seconds=self.max_total_time_seconds,
+                    )
+                    break
+
                 try:
                     with conn.cursor() as cur:
                         result = operation(cur)
@@ -66,6 +79,9 @@ class SerializationRetryEngine:
                     last_error = e
                     self._total_retries += 1
                     delay = self._compute_delay(attempt)
+                    # Cap delay to not exceed total time limit
+                    remaining = self.max_total_time_seconds - (time.monotonic() - start_time)
+                    delay = min(delay, remaining * 1000, self.max_delay_ms)
                     logger.warning(
                         "serialization_retry",
                         attempt=attempt + 1,

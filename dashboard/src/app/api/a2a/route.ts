@@ -115,6 +115,8 @@ export async function GET(request: Request) {
     },
   };
 
-  return apiSuccess(agentCard, 'static', undefined, { "Access-Control-Allow-Origin": "*" });
+  const corsOrigins = (process.env.CORS_ALLOW_ORIGINS || "").split(",").map(o => o.trim()).filter(Boolean);
+  const corsHeader = corsOrigins.length > 0 ? corsOrigins[0] : "null";
+  return apiSuccess(agentCard, 'static', undefined, { "Access-Control-Allow-Origin": corsHeader });
 }
 

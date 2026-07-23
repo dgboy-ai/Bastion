@@ -23,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import threading
@@ -129,7 +130,9 @@ class LocalKMS(KMSInterface):
         return plaintext.decode("utf-8")
 
     def key_id(self) -> str:
-        return f"local:aes256gcm:{self._key[:4].hex()}..."
+        # Use only the first 8 hex chars (4 bytes) of the hash — enough to
+        # identify the key without leaking meaningful key material.
+        return f"local:aes256gcm:{hashlib.sha256(self._key).hexdigest()[:8]}"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -508,16 +511,26 @@ class TenantKMS:
                     dek = self._master.decrypt(encrypted_dek.hex(), {"agent_id": agent_id})
                     dek_bytes = bytes.fromhex(dek)
                 else:
-                    # Generate new DEK
+                    # Generate new DEK — use INSERT with ON CONFLICT to handle races
                     dek_bytes = AESGCM.generate_key(bit_length=256)
                     encrypted = self._master.encrypt(dek_bytes.hex(), {"agent_id": agent_id})
                     cur.execute(
                         "INSERT INTO agent_keys (agent_id, encrypted_dek, kms_key_id) "
                         "VALUES (%s, %s, %s) "
-                        "ON CONFLICT (agent_id) DO NOTHING",
+                        "ON CONFLICT (agent_id) DO UPDATE SET "
+                        "encrypted_dek = EXCLUDED.encrypted_dek, kms_key_id = EXCLUDED.kms_key_id",
                         (agent_id, encrypted.encode(), self._master.key_id()),
                     )
                     conn.commit()
+                    # Re-read to ensure we use the persisted DEK (not a stale local copy)
+                    cur.execute(
+                        "SELECT encrypted_dek FROM agent_keys WHERE agent_id = %s",
+                        (agent_id,),
+                    )
+                    persisted = cur.fetchone()
+                    if persisted:
+                        dek = self._master.decrypt(bytes(persisted[0]).hex(), {"agent_id": agent_id})
+                        dek_bytes = bytes.fromhex(dek)
         finally:
             pool.release(conn)
 
@@ -558,6 +571,7 @@ class TenantKMS:
         """Rotate the DEK for *agent_id*.
 
         New memories will be encrypted with the new key.
+        Old DEK is preserved in previous_encrypted_dek for backward compatibility.
         Old memories remain decryptable with the old key until re-encrypted.
         """
         if self._is_mock():
@@ -565,18 +579,46 @@ class TenantKMS:
         pool = self._get_pool()
         conn = pool.acquire(timeout=10.0)
         try:
-            dek_bytes = AESGCM.generate_key(bit_length=256)
-            encrypted = self._master.encrypt(dek_bytes.hex(), {"agent_id": agent_id})
+            # Read current DEK before rotating
+            current_dek = None
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE agent_keys SET encrypted_dek = %s, rotated_at = now(), "
-                    "key_version = key_version + 1 "
-                    "WHERE agent_id = %s",
-                    (encrypted.encode(), agent_id),
+                    "SELECT encrypted_dek FROM agent_keys WHERE agent_id = %s",
+                    (agent_id,),
                 )
+                row = cur.fetchone()
+                if row:
+                    current_dek = row[0]
+
+            # Generate new DEK
+            dek_bytes = AESGCM.generate_key(bit_length=256)
+            encrypted = self._master.encrypt(dek_bytes.hex(), {"agent_id": agent_id})
+
+            with conn.cursor() as cur:
+                # Save old DEK in previous_encrypted_dek before overwriting
+                if current_dek:
+                    cur.execute(
+                        "UPDATE agent_keys SET "
+                        "previous_encrypted_dek = %s, "
+                        "encrypted_dek = %s, "
+                        "rotated_at = now(), "
+                        "key_version = key_version + 1 "
+                        "WHERE agent_id = %s",
+                        (current_dek, encrypted.encode(), agent_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE agent_keys SET "
+                        "encrypted_dek = %s, "
+                        "rotated_at = now(), "
+                        "key_version = key_version + 1 "
+                        "WHERE agent_id = %s",
+                        (encrypted.encode(), agent_id),
+                    )
                 conn.commit()
             with _TENANT_DEK_CACHE_LOCK:
                 _TENANT_DEK_CACHE.pop(agent_id, None)
+            logger.info("Key rotated for agent %s — old DEK preserved", agent_id)
             return True
         finally:
             pool.release(conn)

@@ -64,10 +64,17 @@ _PKCE_TTL = 600
 
 
 def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
-    """Store a code_verifier for later verification during token exchange."""
+    """Store a hashed code_verifier for later verification during token exchange."""
+    # Hash verifier before storage — never persist plaintext verifiers
+    verifier_hash = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
     with _pkce_lock:
-        _pkce_verifiers[authorization_code] = (code_verifier, time.time())
-    
+        _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
+
     conn_str = os.environ.get("BASTION_CONN")
     if conn_str:
         try:
@@ -80,7 +87,7 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
                         ON CONFLICT (code) DO UPDATE SET
                         code_verifier = EXCLUDED.code_verifier,
                         expires_at = EXCLUDED.expires_at
-                    """, (authorization_code, code_verifier, time.time() + _PKCE_TTL))
+                    """, (authorization_code, verifier_hash, time.time() + _PKCE_TTL))
                 conn.commit()
         except Exception as exc:
             logger.warning("Failed to store PKCE verifier in DB: %s", exc)
@@ -104,16 +111,6 @@ def _cleanup_pkce_verifiers() -> None:
                 conn.commit()
         except Exception as exc:
             logger.warning("Failed to clean up expired PKCE verifiers in DB: %s", exc)
-
-
-def _verify_pkce_s256(code_verifier: str, code_challenge: str) -> bool:
-    """Verify code_verifier against code_challenge using S256 method."""
-    computed = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
-        .rstrip(b"=")
-        .decode("ascii")
-    )
-    return secrets.compare_digest(computed, code_challenge)
 
 
 def _load_pkce_verifier_from_db(authorization_code: str) -> str | None:
@@ -523,8 +520,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     "PKCE code_verifier missing from token request — "
                     "middleware may have failed to capture it, or the verifier expired"
                 )
-            # Verify S256: SHA256(code_verifier) == code_challenge
-            if not _verify_pkce_s256(code_verifier, authorization_code.code_challenge):
+            # Verify stored hash matches code_challenge (verifier was hashed before storage)
+            if not secrets.compare_digest(code_verifier, authorization_code.code_challenge):
                 logger.warning(
                     "PKCE verification FAILED for client %s — code_verifier does not match code_challenge",
                     client.client_id,
@@ -534,11 +531,13 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 )
             logger.info("PKCE S256 verification passed for client %s", client.client_id)
         else:
-            # No code_challenge provided — PKCE is optional per RFC 7636
-            # Log at info level since this means the client didn't use PKCE
-            logger.info(
-                "No PKCE code_challenge in authorization — skipping PKCE verification for client %s",
+            # PKCE is mandatory in this server — reject requests without a code_challenge
+            logger.warning(
+                "PKCE code_challenge missing from token request — rejecting for client %s",
                 client.client_id,
+            )
+            raise ValueError(
+                "PKCE code_challenge is required — token requests without PKCE are not allowed"
             )
 
         access_token_str = secrets.token_urlsafe(48)
@@ -662,34 +661,39 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
         # Delete old refresh token FIRST to prevent race condition
         # (two concurrent requests using the same token)
-        self._refresh_tokens.pop(refresh_token.token, None)
-        self._access_tokens[access_token_str] = new_access
-        self._refresh_tokens[refresh_token_str] = new_refresh
+        # Use lock to make pop + insert atomic (both in-memory AND DB)
+        _token_lock = threading.Lock()
+        with _token_lock:
+            self._refresh_tokens.pop(refresh_token.token, None)
+            self._access_tokens[access_token_str] = new_access
+            self._refresh_tokens[refresh_token_str] = new_refresh
 
-        if self._use_db:
-            try:
-                conn = self._get_conn()
+            if self._use_db:
                 try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, role)
-                               VALUES (%s, %s, %s, %s, %s)""",
-                            (access_token_str, client.client_id, json.dumps(list(final_scopes)),
-                             int(now) + 3600, token_role),
-                        )
-                        cur.execute(
-                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
-                               VALUES (%s, %s, %s, %s, %s)""",
-                            (refresh_token_str, client.client_id, json.dumps(list(final_scopes)),
-                             int(now) + 86400 * 7, token_role),
-                        )
-                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
-                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (refresh_token.token,))
-                    conn.commit()
-                finally:
-                    self._release_conn(conn)
-            except Exception as exc:
-                logger.warning("DB exchange_refresh_token failed: %s", exc)
+                    conn = self._get_conn()
+                    try:
+                        with conn.cursor() as cur:
+                            # Delete old tokens first (atomic with inserts)
+                            cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
+                            cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (refresh_token.token,))
+                            # Then insert new tokens
+                            cur.execute(
+                                """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, role)
+                                   VALUES (%s, %s, %s, %s, %s)""",
+                                (access_token_str, client.client_id, json.dumps(list(final_scopes)),
+                                 int(now) + 3600, token_role),
+                            )
+                            cur.execute(
+                                """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
+                                   VALUES (%s, %s, %s, %s, %s)""",
+                                (refresh_token_str, client.client_id, json.dumps(list(final_scopes)),
+                                 int(now) + 86400 * 7, token_role),
+                            )
+                        conn.commit()
+                    finally:
+                        self._release_conn(conn)
+                except Exception as exc:
+                    logger.warning("DB exchange_refresh_token failed: %s", exc)
 
         return OAuthToken(
             access_token=access_token_str,
@@ -717,7 +721,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 finally:
                     self._release_conn(conn)
             except Exception:
-                pass  # If revocation check fails, proceed with normal validation
+                logger.warning("Revocation check failed in load_access_token — treating as revoked (fail-closed)")
+                return None  # Fail closed: treat DB error as revoked
 
         if self._use_db:
             try:
@@ -820,5 +825,5 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 finally:
                     self._release_conn(conn)
             except Exception:
-                return False  # Fail open on DB error
+                return True  # Fail closed on DB error — never allow revoked tokens through
         return False

@@ -27,11 +27,11 @@ export function checkRateLimit(request: Request): NextResponse | null {
     ip = forwarded.split(",")[0]?.trim() || "unknown";
   } else if (process.env.CLOUDFLARE && cfConnectingIp) {
     ip = cfConnectingIp;
+  } else if (process.env.BASTION_TRUST_PROXY && forwarded) {
+    // Only trust X-Forwarded-For behind an explicit proxy configuration
+    ip = forwarded.split(",")[0]?.trim() || "unknown";
   } else if (realIp) {
     ip = realIp;
-  } else if (forwarded) {
-    // Behind a reverse proxy (non-Vercel)
-    ip = forwarded.split(",")[0]?.trim() || "unknown";
   }
   // If still unknown, we can't rate-limit per-IP, but we still track
   const now = Date.now();
@@ -60,8 +60,8 @@ export function checkApiKey(request: Request): { valid: boolean; key?: string; e
   const expectedKey = process.env.BASTION_API_KEY;
 
   if (!expectedKey) {
-    // No API key configured — allow unauthenticated access (dev/demo mode)
-    return { valid: true, key: undefined };
+    // No API key configured — deny all requests (set BASTION_API_KEY to enable access)
+    return { valid: false, error: "API key not configured. Set BASTION_API_KEY environment variable." };
   }
 
   if (!providedKey) {

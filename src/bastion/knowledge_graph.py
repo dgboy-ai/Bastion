@@ -93,11 +93,26 @@ class KnowledgeGraph:
     graph_stats, and store_with_graph (NLP extraction + entity/relation creation).
     """
 
+    _MAX_ENTITY_NAME_LEN = 256
+    _MAX_AGENT_ID_LEN = 256
+
     def __init__(self, agent_id: str, get_pool_fn: Callable, set_rls_fn: Callable | None = None):
+        if len(agent_id) > self._MAX_AGENT_ID_LEN:
+            raise ValueError(f"agent_id too long (max {self._MAX_AGENT_ID_LEN})")
         self.agent_id = agent_id
         self._get_pool = get_pool_fn
         self._set_rls = set_rls_fn
         self._groq_client: Any = None
+
+    @staticmethod
+    def _validate_entity_name(name: str) -> str:
+        """Validate and sanitize entity name — prevents injection and DoS."""
+        if not name or not isinstance(name, str):
+            raise ValueError("Entity name must be a non-empty string")
+        name = name.strip()
+        if len(name) > 256:
+            raise ValueError(f"Entity name too long (max 256 chars, got {len(name)})")
+        return name
 
     # ── Graph Query (BFS traversal) ────────────────────────────────────────
 
@@ -110,6 +125,8 @@ class KnowledgeGraph:
         """BFS traversal from start_entity. Returns list of {source, target, relation, confidence, depth}."""
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls:
+            self._set_rls(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -166,6 +183,8 @@ class KnowledgeGraph:
         """Snapshot of entities and relations at a specific point in time."""
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls:
+            self._set_rls(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
@@ -231,6 +250,8 @@ class KnowledgeGraph:
     def graph_stats(self) -> dict[str, Any]:
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls:
+            self._set_rls(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM agent_entities WHERE agent_id = %s", (self.agent_id,))
@@ -299,6 +320,8 @@ class KnowledgeGraph:
 
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls:
+            self._set_rls(conn)
         try:
             for src_name, tgt_name, rel_type, kind, confidence in triples:
                 if kind == "entity_type":
