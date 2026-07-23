@@ -929,6 +929,17 @@ def create_server(
             return json.dumps({"error": "memory_id is required"})
         if not patch_ops:
             return json.dumps({"error": "patch_ops is required"})
+        if not isinstance(patch_ops, list) or len(patch_ops) > 50:
+            return json.dumps({"error": "patch_ops must be a list of at most 50 operations"})
+        # Validate each patch operation has required fields
+        valid_ops = {"add", "remove", "replace", "move", "copy", "test"}
+        for i, op in enumerate(patch_ops):
+            if not isinstance(op, dict) or "op" not in op or "path" not in op:
+                return json.dumps({"error": f"patch_ops[{i}] must have 'op' and 'path' fields"})
+            if op["op"] not in valid_ops:
+                return json.dumps({"error": f"patch_ops[{i}].op must be one of: {valid_ops}"})
+            if not isinstance(op["path"], str) or not op["path"].startswith("/"):
+                return json.dumps({"error": f"patch_ops[{i}].path must start with /"})
         mem = _resolve_memory(ctx)
         try:
             result = await anyio.to_thread.run_sync(mem.apply_patch, memory_id, patch_ops)
