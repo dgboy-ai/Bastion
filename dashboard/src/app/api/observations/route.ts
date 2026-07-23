@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const memoriesSql = "SELECT memory_id, content, memory_type, created_at FROM agent_memory ORDER BY created_at DESC LIMIT 500";
+    const memoriesSql = "SELECT memory_id, content, memory_type, created_at FROM agent_memory ORDER BY created_at DESC LIMIT 200";
     const memoriesResult = await safeQuery(memoriesSql);
     if (memoriesResult.mock) {
       return apiSuccess(getMockObservations(), "short", { mock: true });

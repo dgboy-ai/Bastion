@@ -1246,7 +1246,18 @@ class BastionMemory:
                 dt = now
             return dt.isoformat()
 
-        # Already absolute timestamp
+        # Already absolute timestamp — validate it's not in the future
+        try:
+            parsed_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            if parsed_dt.tzinfo is None:
+                parsed_dt = parsed_dt.replace(tzinfo=UTC)
+            if parsed_dt > now + timedelta(minutes=5):  # Allow 5min clock skew
+                raise ValueError("Timestamp cannot be in the future")
+        except ValueError as e:
+            if "future" in str(e):
+                raise
+            # If it's not a valid ISO timestamp, let CockroachDB handle the error
+            pass
         return timestamp
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:

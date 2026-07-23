@@ -294,6 +294,7 @@ class AwsKMS(KMSInterface):
         self._dek_ciphertext: bytes = resp["CiphertextBlob"]
         # Cache for DEKs unwrapped by other processes: encrypted_dek -> plaintext_dek
         self._dek_cache: dict[str, bytes] = {}
+        self._dek_cache_max = 1000
         self._dek_cache[self._dek_ciphertext.hex()] = self._dek_plaintext
 
     def encrypt(self, plaintext: str, context: dict[str, str] | None = None) -> str:
@@ -334,6 +335,10 @@ class AwsKMS(KMSInterface):
                 logger.error("KMS decrypt of DEK failed", extra={"error": str(exc)})
                 raise RuntimeError(f"AWS KMS decrypt failed: {exc}") from exc
             dek = resp["Plaintext"]
+            # Evict oldest entries if cache exceeds max size
+            if len(self._dek_cache) >= self._dek_cache_max:
+                oldest_key = next(iter(self._dek_cache))
+                self._dek_cache.pop(oldest_key, None)
             self._dek_cache[dek_ct.hex()] = dek
 
         aesgcm = AESGCM(dek)
@@ -504,9 +509,13 @@ class TenantKMS:
                     encrypted_dek = bytes(row[0])
                     kms_key_id = row[1]
                     if kms_key_id != self._master.key_id():
-                        logger.warning(
-                            "KMS key ID mismatch for agent",
+                        logger.error(
+                            "KMS key ID mismatch for agent — possible key rotation without re-encryption",
                             extra={"agent_id": agent_id, "expected": self._master.key_id(), "got": kms_key_id},
+                        )
+                        raise RuntimeError(
+                            f"KMS key mismatch for agent {agent_id}: expected {self._master.key_id()}, got {kms_key_id}. "
+                            "Re-encrypt memories with the current key before using a new key."
                         )
                     dek = self._master.decrypt(encrypted_dek.hex(), {"agent_id": agent_id})
                     dek_bytes = bytes.fromhex(dek)

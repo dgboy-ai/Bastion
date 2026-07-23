@@ -3,6 +3,7 @@ import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
+const RATE_LIMIT_MAP_MAX = 10000;
 const _rateBuckets = new Map<string, number[]>();
 
 function safeCompare(a: string, b: string): boolean {
@@ -37,6 +38,14 @@ export function checkRateLimit(request: Request): NextResponse | null {
   const now = Date.now();
   let timestamps = _rateBuckets.get(ip);
   if (!timestamps) {
+    // Enforce max map size to prevent memory exhaustion
+    if (_rateBuckets.size >= RATE_LIMIT_MAP_MAX) {
+      // Evict oldest half of entries
+      const keys = Array.from(_rateBuckets.keys());
+      for (let i = 0; i < keys.length / 2; i++) {
+        _rateBuckets.delete(keys[i]);
+      }
+    }
     timestamps = [];
     _rateBuckets.set(ip, timestamps);
   }

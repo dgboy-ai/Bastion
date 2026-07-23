@@ -54,6 +54,7 @@ class CircuitBreaker:
     @property
     def state(self) -> CircuitState:
         """Get current state, checking for recovery timeout."""
+        state_change_callback = None
         with self._lock:
             if self._state == CircuitState.OPEN and self._last_failure_time:
                 elapsed = time.time() - self._last_failure_time
@@ -66,11 +67,15 @@ class CircuitBreaker:
                         self.name,
                     )
                     if self._on_state_change:
-                        try:
-                            self._on_state_change(self.name, old_state, "half_open")
-                        except Exception:
-                            logger.exception("on_state_change callback failed during HALF_OPEN transition")
-            return self._state
+                        state_change_callback = (old_state, "half_open")
+            current = self._state
+        # Call callback outside lock to prevent blocking
+        if state_change_callback:
+            try:
+                self._on_state_change(self.name, state_change_callback[0], state_change_callback[1])
+            except Exception:
+                logger.exception("on_state_change callback failed during HALF_OPEN transition")
+        return current
 
     def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Execute function through circuit breaker."""
@@ -85,12 +90,13 @@ class CircuitBreaker:
                     f"Retry after {self.recovery_timeout}s."
                 )
 
-        # In HALF_OPEN, limit concurrent probe calls
-        if current_state == CircuitState.HALF_OPEN:
-            if not self._half_open_semaphore.acquire(blocking=False):
-                raise CircuitBreakerOpenError(
-                    f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress."
-                )
+            # In HALF_OPEN, limit concurrent probe calls (check under lock to prevent TOCTOU)
+            if current_state == CircuitState.HALF_OPEN:
+                if not self._half_open_semaphore.acquire(blocking=False):
+                    self._total_rejected += 1
+                    raise CircuitBreakerOpenError(
+                        f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress."
+                    )
 
         try:
             result = func(*args, **kwargs)

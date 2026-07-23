@@ -20,6 +20,9 @@ export async function GET(request: Request) {
 
     if (asOf) {
       // Validate as_of format: ISO timestamp or relative interval like "-5s", "-1h"
+      if (asOf.length > 50) {
+        return apiError("as_of parameter too long (max 50 chars)", 400, "INVALID_AS_OF");
+      }
       const validTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(asOf);
       const validInterval = /^-\d+[smhd]$/.test(asOf);
       if (!validTimestamp && !validInterval) {

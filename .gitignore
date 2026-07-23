@@ -51,6 +51,7 @@ production.md
 test_real_crdb.py
 win.md
 msme_ideas*.md
+docs/archive/*.md
 # Dev logs and temporary files
 dev_err.log
 dev_out.log

@@ -193,7 +193,10 @@ class VerifiableUnlearning:
         """Generate a signed cryptographic receipt for physically purged memories."""
         memory_agent = getattr(self.memory, "agent_id", None)
         if memory_agent is not None and agent_id != memory_agent:
-            logger.warning("agent_id mismatch", extra={"requested": agent_id, "memory_agent": memory_agent})
+            raise PermissionError(
+                f"Cannot unlearn memories for agent {agent_id}: "
+                f"memory instance belongs to agent {memory_agent}"
+            )
 
         all_memories = self.memory.list_all()
         agent_memories = [m for m in all_memories if m.agent_id == agent_id]
