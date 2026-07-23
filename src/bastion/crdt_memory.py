@@ -411,8 +411,11 @@ class CRDTMemory:
         try:
             contents = [r.content for r in candidates]
             merged = self._llm_merge(contents, fact_key)
-            candidates[0].content = merged
-            return candidates[0]
+            # Return a copy to avoid mutating the original record
+            import copy
+            result = copy.deepcopy(candidates[0])
+            result.content = merged
+            return result
         except Exception:
             logger.exception("Semantic merge failed, falling back to LWW")
             return self._resolve_lww(candidates, clocks)

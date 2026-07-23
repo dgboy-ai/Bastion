@@ -1245,7 +1245,7 @@ def create_a2a_server(
             return JSONResponse({"error": "Task not found"}, status_code=404)
         current_state = task.get("status", {}).get("state", "")
         if current_state in ("COMPLETED", "FAILED", "CANCELED"):
-            return JSONResponse({"error": f"Cannot cancel task in terminal state: {current_state}"}, status_code=400)
+            return JSONResponse({"error": "Cannot modify task in terminal state"}, status_code=400)
         await _update_task(task_id, "CANCELED")
         task = (await _get_task(task_id)) or task
         return JSONResponse(_strip_internal(task))
@@ -1279,7 +1279,7 @@ def create_a2a_server(
             return JSONResponse({"error": "Task not found"}, status_code=404)
         state = task.get("status", {}).get("state", "")
         if state not in ("COMPLETED", "FAILED", "CANCELED"):
-            return JSONResponse({"error": f"Cannot delete task in state {state}. Only terminal tasks can be deleted."}, status_code=409)
+            return JSONResponse({"error": "Only terminal tasks can be deleted"}, status_code=409)
         _tasks.pop(task_id, None)
         if not memory._mock:
             try:

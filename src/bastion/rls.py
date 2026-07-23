@@ -148,26 +148,30 @@ class RowLevelSecurity:
 
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
-        prev_autocommit = self.conn.autocommit
-        try:
-            self.conn.autocommit = False
-            with self.conn.cursor() as cur:
-                self.set_agent_context(agent_id)
-                cur.execute("SELECT COUNT(*) FROM agent_memory")
-                count = cur.fetchone()[0]
-            self.conn.commit()
-            return {
-                "agent_id": agent_id,
-                "visible_memories": count,
-                "rls_active": True,
-            }
-        except Exception as e:
-            self.conn.rollback()
-            logger.error("RLS verification failed: %s", e)
-            return {
-                "agent_id": agent_id,
-                "rls_active": False,
-                "error": "Verification failed — check server logs",
-            }
-        finally:
-            self.conn.autocommit = prev_autocommit
+        import threading
+        if not hasattr(self, '_verify_lock'):
+            self._verify_lock = threading.Lock()
+        with self._verify_lock:
+            prev_autocommit = self.conn.autocommit
+            try:
+                self.conn.autocommit = False
+                with self.conn.cursor() as cur:
+                    self.set_agent_context(agent_id)
+                    cur.execute("SELECT COUNT(*) FROM agent_memory")
+                    count = cur.fetchone()[0]
+                self.conn.commit()
+                return {
+                    "agent_id": agent_id,
+                    "visible_memories": count,
+                    "rls_active": True,
+                }
+            except Exception as e:
+                self.conn.rollback()
+                logger.error("RLS verification failed: %s", e)
+                return {
+                    "agent_id": agent_id,
+                    "rls_active": False,
+                    "error": "Verification failed — check server logs",
+                }
+            finally:
+                self.conn.autocommit = prev_autocommit

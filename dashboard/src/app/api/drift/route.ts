@@ -1,4 +1,4 @@
-import { apiSuccess } from "@/lib/api-response";
+import { apiSuccess, apiError } from "@/lib/api-response";
 import { safeQuery, isMockMode } from "@/lib/db";
 import { getMockDrift } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";

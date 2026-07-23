@@ -127,10 +127,7 @@ def _check_auth(headers: dict[str, str]) -> bool:
 
     keys = _load_api_keys()
     if not keys:
-        # In mock mode, allow unauthenticated access
-        if os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes"):
-            return True
-        # In production, require API key
+        # No API keys configured — deny all requests
         logger.warning("No API keys configured — MCP server is locked down")
         return False
     auth = headers.get("authorization") or headers.get("Authorization") or ""
@@ -1174,6 +1171,8 @@ def create_server(
         try:
             detector = ContradictionDetector(mem)
             results = await anyio.to_thread.run_sync(detector.scan_all)
+            # Limit results to prevent DoS from large memory stores
+            results = results[:100]
             return json.dumps(
                 [r.to_dict() for r in results],
                 indent=2,
@@ -1269,6 +1268,8 @@ def create_server(
         try:
             detector = ObservationDetector(mem)
             report = await anyio.to_thread.run_sync(detector.detect)
+            # Limit observations to prevent DoS from large memory stores
+            report.observations = report.observations[:100]
             return json.dumps(report.to_dict(), indent=2, default=str)
         except Exception:
             logger.exception("detect_observations failed")
@@ -1505,7 +1506,7 @@ def create_server(
         # Forwarding mode: send request to A2A server
         import ipaddress
 
-        # SSRF protection: validate target URL
+        # SSRF protection: validate target URL (resolves DNS to prevent rebinding)
         from urllib.parse import urlparse
 
         import httpx
@@ -1519,12 +1520,16 @@ def create_server(
             blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
             if hostname.lower() in blocked or hostname.endswith((".local", ".internal", ".localhost")):
                 return json.dumps({"error": "Internal/private URLs are blocked (SSRF protection)"})
+            # Resolve DNS and check resolved IPs (prevents rebinding attacks)
+            import socket
             try:
-                ip = ipaddress.ip_address(hostname)
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-                    return json.dumps({"error": "Private/internal IP addresses are blocked (SSRF protection)"})
-            except ValueError:
-                pass  # hostname is a domain, not an IP
+                resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                for _, _, _, _, sockaddr in resolved:
+                    resolved_ip = ipaddress.ip_address(sockaddr[0])
+                    if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved or resolved_ip.is_multicast:
+                        return json.dumps({"error": "Private/internal IP addresses are blocked (SSRF protection)"})
+            except (socket.gaierror, OSError):
+                return json.dumps({"error": "DNS resolution failed — URL blocked"})
         except Exception:
             return json.dumps({"error": "Invalid URL format"})
 
@@ -2035,8 +2040,6 @@ def _make_http_app(mcp: FastMCP) -> Any:
             "/healthz",
             "/.well-known/mcp-server.json",
             "/.well-known/agent-card.json",
-            "/oauth/revoke",
-            "/oauth/introspect",
         }
     )
 
@@ -2109,11 +2112,19 @@ def _make_http_app(mcp: FastMCP) -> Any:
 
             # Request size limit — prevent OOM from oversized payloads
             content_length = request.headers.get("content-length")
-            if content_length and int(content_length) > _MAX_REQUEST_BYTES:
-                return JSONResponse(
-                    {"error": "Request too large — maximum 1MB allowed"},
-                    status_code=413,
-                )
+            if content_length:
+                try:
+                    cl = int(content_length)
+                except (ValueError, TypeError):
+                    return JSONResponse(
+                        {"error": "Invalid Content-Length header"},
+                        status_code=400,
+                    )
+                if cl > _MAX_REQUEST_BYTES:
+                    return JSONResponse(
+                        {"error": "Request too large — maximum 1MB allowed"},
+                        status_code=413,
+                    )
 
             # PKCE capture: intercept token endpoint to extract code_verifier
             if path.rstrip("/") in ("/token", "/mcp/token") and request.method == "POST":

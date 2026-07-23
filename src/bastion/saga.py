@@ -323,6 +323,33 @@ class SagaMemoryManager:
                 saga = self._active_sagas.get(saga_id)
             return saga.to_dict() if saga else None
 
+    def recover_orphaned_sagas(self) -> int:
+        """Mark stale active sagas as failed for crash recovery.
+
+        Sagas stuck in 'active' status for more than 1 hour are considered
+        orphaned (crash during execution) and marked as failed.
+        Returns the number of recovered sagas.
+        """
+        if self.memory._mock:
+            return 0
+        self._ensure_table()
+        pool = self.memory.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE saga_states SET status = 'failed', completed_at = now() "
+                    "WHERE status = 'active' AND created_at < now() - INTERVAL '1 hour' "
+                    "RETURNING saga_id",
+                )
+                recovered = [row[0] for row in cur.fetchall()]
+            conn.commit()
+            if recovered:
+                logger.warning("Recovered %d orphaned sagas", len(recovered))
+            return len(recovered)
+        finally:
+            pool.release(conn)
+
     @staticmethod
     def _row_to_dict(row: Any) -> dict[str, Any]:
         rm = row._mapping if hasattr(row, '_mapping') else {

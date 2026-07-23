@@ -74,6 +74,12 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
 
     with _pkce_lock:
         _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
+        # Periodic cleanup: evict expired entries when store grows large
+        if len(_pkce_verifiers) > 100:
+            now = time.time()
+            expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
+            for k in expired:
+                _pkce_verifiers.pop(k, None)
 
     conn_str = os.environ.get("BASTION_CONN")
     if conn_str:

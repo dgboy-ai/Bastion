@@ -101,6 +101,11 @@ class RequestLimiter:
                     acquired_at  TIMESTAMPTZ
                 )
             """)
+            # Remove excess slots if max_concurrent was reduced
+            cur.execute(
+                "DELETE FROM agent_limiter WHERE slot_id > %s",
+                (self.max_concurrent,),
+            )
             for slot_id in range(1, self.max_concurrent + 1):
                 cur.execute(
                     "INSERT INTO agent_limiter (slot_id, instance_id, acquired_at) "
@@ -226,7 +231,7 @@ class RequestLimiter:
             backoff = min(backoff * 1.5, 0.5)
 
         with self._lock:
-            self._queue_count -= 1
+            self._queue_count = max(0, self._queue_count - 1)
             self._total_timeout += 1
         logger.warning("Request timed out after %.1fs", effective_timeout)
         return False

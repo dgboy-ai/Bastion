@@ -55,7 +55,7 @@ export async function query(text: string, params?: unknown[]) {
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
   } catch (err) {
-    console.error("[DB Query] error:", err);
+    console.error("[DB Query] error:", err instanceof Error ? err.message : "Unknown error");
     throw err;
   }
 }
@@ -80,7 +80,7 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     return res;
   } catch (err) {
     const duration = Date.now() - start;
-    console.error(`[DB Query] failed after ${duration}ms:`, err);
+    console.error(`[DB Query] failed after ${duration}ms:`, err instanceof Error ? err.message : "Unknown error");
     throw err;
   }
 }
