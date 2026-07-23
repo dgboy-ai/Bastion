@@ -54,6 +54,7 @@ def _hash_token(token: str) -> str:
 _PRE_REGISTERED_CLIENT_ID: str | None = None
 _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
+_PRE_REGISTERED_LOCK = threading.Lock()
 
 # PKCE code_verifier storage: maps authorization_code -> code_verifier
 _pkce_verifiers: dict[str, str] = {}

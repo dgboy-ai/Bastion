@@ -129,3 +129,31 @@ def verify_hash(content: str, metadata: dict | None, previous_hash: str | None, 
     """Verify that content + metadata + previous_hash produces the expected hash."""
     actual = compute_hash(content, metadata, previous_hash)
     return hmac.compare_digest(actual, expected_hash)
+
+
+def rotate_hmac_secret() -> bytes:
+    """Generate a new HMAC secret and persist it.
+
+    Returns the new secret. Existing hashes remain valid (they were computed
+    with the old secret), but new hashes will use the new secret.
+    Callers should re-hash critical data after rotation.
+    """
+    global _hmac_secret
+    new_secret = secrets.token_bytes(32)
+    with _hmac_lock:
+        _hmac_secret = new_secret
+    # Persist to disk
+    try:
+        os.makedirs(_SECRET_DIR, exist_ok=True, mode=0o700)
+        tmp = _SECRET_FILE + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+        try:
+            os.write(fd, new_secret)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, _SECRET_FILE)
+        logger.info("HMAC secret rotated and persisted to %s", _SECRET_FILE)
+    except Exception as exc:
+        logger.error("Failed to persist rotated HMAC secret: %s", exc)
+    return new_secret
