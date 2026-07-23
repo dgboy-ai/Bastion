@@ -49,6 +49,7 @@ knowledge.md
 knowledge_mimo_Ana.md
 production.md
 test_real_crdb.py
+test_real_crdb_full.py
 win.md
 msme_ideas*.md
 docs/archive/*.md
