@@ -327,13 +327,13 @@ class TestPiiDeduplication:
 # ── Hash chain invalidation ──────────────────────────────────────────────────
 
 class TestHashChainInvalidation:
-    def test_correction_invalidates_hash(self, mem):
-        """correct_memory should set cryptographic_hash = NULL."""
+    def test_correction_updates_hash(self, mem):
+        """correct_memory should update cryptographic_hash with new hash."""
         import inspect
         from bastion.memory import BastionMemory
 
         source = inspect.getsource(BastionMemory._correct_memory_real)
-        assert "cryptographic_hash = NULL" in source
+        assert "cryptographic_hash = %s" in source  # Sets new hash, not NULL
 
     def test_correction_logs_warning(self, mem):
         """correct_memory should log a warning about hash chain."""

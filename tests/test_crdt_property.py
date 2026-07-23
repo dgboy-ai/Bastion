@@ -6,8 +6,9 @@ Tests standalone CRDT primitives (VectorClock) and CRDTMemory-based types.
 import pytest
 
 try:
-    from hypothesis import given
+    from hypothesis import given, settings
     from hypothesis import strategies as st
+    from hypothesis import HealthCheck
 except ImportError:
     pytest.skip("hypothesis not installed", allow_module_level=True)
 
@@ -30,6 +31,7 @@ def vector_clocks(draw):
     return VectorClock(clock)
 
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(vc1=vector_clocks(), vc2=vector_clocks())
 def test_vector_clock_merge_commutativity(vc1, vc2):
     """merge(a, b) must equal merge(b, a)."""
