@@ -28,9 +28,12 @@ def reset_circuit_breaker():
 
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
+    import hmac as hmac_mod
+    import cdc_handler
     meta_str = json.dumps(metadata, sort_keys=True)
-    raw = content + meta_str + (previous_hash or "")
-    return hashlib.sha256(raw.encode()).hexdigest()
+    payload = content + meta_str + (previous_hash or "")
+    secret = cdc_handler._get_hmac_secret()
+    return hmac_mod.new(secret, payload.encode(), hashlib.sha256).hexdigest()
 
 
 class TestHashChainVerification:

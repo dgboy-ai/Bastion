@@ -119,9 +119,19 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
       });
     svg.call(zoomBehavior);
 
+    // Filter valid links where both source and target nodes exist in the dataset
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const validLinks = links
+      .filter((l) => {
+        const srcId = typeof l.source === "object" ? l.source.id : l.source;
+        const tgtId = typeof l.target === "object" ? l.target.id : l.target;
+        return nodeIds.has(srcId) && nodeIds.has(tgtId);
+      })
+      .map((l) => ({ ...l }));
+
     // Dynamic layout constraints
     const simulation = forceSimulation<Node>(nodes)
-      .force("link", forceLink<Node, Link>(links).id(d => d.id).distance(240))
+      .force("link", forceLink<Node, Link>(validLinks).id(d => d.id).distance(240))
       .force("charge", forceManyBody().strength(-850))
       .force("center", forceCenter(width / 2, height / 2))
       .force("collision", forceCollide().radius(85));
@@ -132,7 +142,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     // Curved edge lines to avoid intersecting labels
     const link = linkGroup
       .selectAll("path")
-      .data(links)
+      .data(validLinks)
       .enter()
       .append("path")
       .attr("fill", "none")

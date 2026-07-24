@@ -217,12 +217,21 @@ def create_server(
                 if _SHARED_POOL is None:
                     _SHARED_POOL = _shared.get_pool()
 
+    def _safe_client_id(ctx: Context | None = None) -> str:
+        """Get client_id from context, returning 'mcp-agent' if unavailable."""
+        if ctx is None:
+            return "mcp-agent"
+        try:
+            return ctx.client_id or "mcp-agent"
+        except (ValueError, RuntimeError, AttributeError):
+            return "mcp-agent"
+
     def _resolve_memory(ctx: Context | None = None) -> BastionMemory:
         if not multi_tenant and not stateless:
             return _shared
         agent_id = "mcp-agent"
         if multi_tenant and ctx is not None:
-            agent_id = ctx.client_id or "mcp-agent"
+            agent_id = _safe_client_id(ctx)
         mem = BastionMemory(agent_id, connection_string=conn, mock=is_mock)
         if _SHARED_POOL:
             mem._pool = _SHARED_POOL
@@ -496,7 +505,7 @@ def create_server(
         if not query or not query.strip():
             return json.dumps({"error": "query must be a non-empty string"})
         mem = _resolve_memory(ctx)
-        agent_id = ctx.client_id or "mcp-agent"
+        agent_id = _safe_client_id(ctx)
         spend = _get_spend_manager()
         check = spend.check_and_increment(agent_id, "search", 1)
         if not check["allowed"]:
@@ -579,7 +588,7 @@ def create_server(
         if len(content.encode("utf-8")) > MAX_STORE_BYTES:
             return json.dumps({"error": f"content exceeds maximum size of {MAX_STORE_BYTES} bytes"})
 
-        agent_id = ctx.client_id or "mcp-agent"
+        agent_id = _safe_client_id(ctx)
         spend = _get_spend_manager()
         check = spend.check_and_increment(agent_id, "store", 1)
         if not check["allowed"]:
@@ -646,6 +655,9 @@ def create_server(
     ) -> str:
         if not timestamp or not timestamp.strip():
             return json.dumps({"error": "timestamp is required"})
+        # In multi-tenant mode, force agent_id to caller's identity
+        if multi_tenant:
+            agent_id = _safe_client_id(ctx)
         # Validate timestamp format (ISO 8601 or relative like "5 minutes ago")
         import re
         ts = timestamp.strip()
@@ -681,6 +693,9 @@ def create_server(
     )
     async def memory_audit(ctx: Context, agent_id: str | None = None) -> str:
         mem = _resolve_memory(ctx)
+        # In multi-tenant mode, force agent_id to caller's identity
+        if multi_tenant:
+            agent_id = _safe_client_id(ctx)
         try:
             entries = await anyio.to_thread.run_sync(mem.audit, agent_id)
             return json.dumps([e.to_dict() for e in entries], indent=2, default=str)
@@ -2210,7 +2225,9 @@ def _make_http_app(mcp: FastMCP) -> Any:
 
             limiter = _get_limiter()
             if not limiter.acquire():
-                _metrics_rate_limit_hits += 1
+                with _metrics_lock:
+                    global _metrics_rate_limit_hits
+                    _metrics_rate_limit_hits += 1
                 return JSONResponse(
                     {"error": "Rate limit exceeded. Please retry later."},
                     status_code=429,

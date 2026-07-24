@@ -110,6 +110,7 @@ class ProceduralMemory:
             content=content,
             metadata=meta,
             _skip_guard=True,
+            _guard_bypass_token=True,
         )
 
         return {
@@ -206,6 +207,7 @@ class ProceduralMemory:
             content=content,
             metadata=meta,
             _skip_guard=True,
+            _guard_bypass_token=True,
         )
 
         return {

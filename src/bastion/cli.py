@@ -66,7 +66,7 @@ def import_jsonl(
                 metadata["import_file"] = str(path.name)
 
                 try:
-                    mem.store(memory_type=memory_type, content=content, metadata=metadata, _skip_guard=True)
+                    mem.store(memory_type=memory_type, content=content, metadata=metadata, _skip_guard=True, _guard_bypass_token=True)
                     imported += 1
                 except Exception as e:
                     logger.warning("Failed to import line %d: %s", line_num, e)

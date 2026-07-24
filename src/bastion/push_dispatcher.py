@@ -70,6 +70,7 @@ class PushNotificationDispatcher:
         self._delivered: set[str] = set()  # task_ids already notified
         self._lock = threading.Lock()
         self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT, follow_redirects=False)
+        self._client_lock = threading.Lock()  # Protect client from concurrent use
         self._pending_threads: list[threading.Thread] = []
         self._shutting_down = False
 
@@ -182,11 +183,12 @@ class PushNotificationDispatcher:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                resp = self._client.post(
-                    callback_url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
+                with self._client_lock:
+                    resp = self._client.post(
+                        callback_url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
                 if resp.status_code < 400:
                     logger.info(
                         "Push notification delivered",

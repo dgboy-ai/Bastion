@@ -68,21 +68,42 @@ _TRIPLE_PATTERNS = [
     (re.compile(r"(\w+)\s+prevents\s+(\w+)", re.IGNORECASE), "prevents", "relation"),
     (re.compile(r"(\w+)\s+enables\s+(\w+)", re.IGNORECASE), "enables", "relation"),
     # Tool/technology patterns
-    (re.compile(r"(\w+)\s+built\s+with\s+(\w+)", re.IGNORECASE), "built_with", "relation"),
+    (re.compile(r"(\w+)\s+(?:is\s+)?built\s+with\s+(\w+)", re.IGNORECASE), "built_with", "relation"),
     (re.compile(r"(\w+)\s+powered\s+by\s+(\w+)", re.IGNORECASE), "powered_by", "relation"),
     (re.compile(r"(\w+)\s+runs\s+on\s+(\w+)", re.IGNORECASE), "runs_on", "relation"),
 ]
 
 
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "this", "that",
+    "these", "those", "it", "its", "i", "you", "he", "she", "we", "they",
+})
+
+
 def extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
-    """Extract (subject, object, relation, kind, confidence) triples from text."""
+    """Extract (subject, object, relation, kind, confidence) triples from text.
+
+    Confidence is reduced for generic entities (stop words) and simpler patterns.
+    """
     if len(text) > 5000:
         text = text[:5000]
     triples: list[tuple[str, str, str, str, float]] = []
     for compiled, rel_type, kind in _TRIPLE_PATTERNS:
         for match in compiled.finditer(text):
             src, tgt = match.group(1).lower(), match.group(2).lower()
-            triples.append((src, tgt, rel_type, kind, 1.0))
+            # Skip if subject is a stop word (object can be articles like "the dashboard")
+            if src in _STOP_WORDS:
+                continue
+            # Skip very short entities (likely false positives)
+            if len(src) < 2 or len(tgt) < 2:
+                continue
+            # Confidence: specific relations (is_a, entity_type) get higher confidence
+            confidence = 0.9 if kind == "entity_type" else 0.7
+            triples.append((src, tgt, rel_type, kind, confidence))
     return triples
 
 

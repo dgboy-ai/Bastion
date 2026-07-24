@@ -1,38 +1,38 @@
-/* ── Bastion Design Tokens ─────────────────────────────────── */
+/* ── Bastion Signature Amber-Orange & Obsidian Design Tokens ── */
 :root {
   /* Fonts */
   --font-sans: 'Inter', 'Space Grotesk', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --font-sg: 'Space Grotesk', sans-serif;
 
-  /* Canvas — Nether Theme */
-  --canvas-bg: #0a0508;
-  --canvas-sidebar: #120a0e;
-  --canvas-card: #1a1018;
-  --canvas-elevated: #201420;
+  /* Canvas — Deep Amber Obsidian */
+  --canvas-bg: #09070a;
+  --canvas-sidebar: #0f0b12;
+  --canvas-card: #16101a;
+  --canvas-elevated: #1e1624;
 
-  /* Accent Palette — Nether */
-  --accent-breeze: #00e5ff;
-  --accent-breeze-glow: rgba(0, 229, 255, 0.35);
-  --accent-emerald: #00ff66;
-  --accent-emerald-glow: rgba(0, 255, 102, 0.3);
-  --accent-sunset: #ff5500;
-  --accent-sunset-glow: rgba(255, 85, 0, 0.3);
+  /* Accent Palette — Bastion Flame Orange & Cyber Emerald */
+  --accent-breeze: #ff5e00;
+  --accent-breeze-glow: rgba(255, 94, 0, 0.35);
+  --accent-emerald: #00ff88;
+  --accent-emerald-glow: rgba(0, 255, 136, 0.3);
+  --accent-sunset: #ff3300;
+  --accent-sunset-glow: rgba(255, 51, 0, 0.3);
   --accent-magenta: #ff00aa;
-  --accent-dusk: #ff5500;
-  --accent-gold: #ffc800;
-  --accent-lava: #ffaa00;
+  --accent-dusk: #ff5e00;
+  --accent-gold: #ffaa00;
+  --accent-lava: #ff7700;
 
-  /* Text */
+  /* Text Colors */
   --ink: #ffffff;
-  --body: #e2d9dc;
-  --mute: #a69498;
-  --faint: #6e5458;
+  --body: #e5dbde;
+  --mute: #a09298;
+  --faint: #625258;
 
-  /* Glass */
-  --glass-border: rgba(255, 42, 0, 0.18);
-  --glass-bg: rgba(14, 2, 10, 0.85);
-  --glass-highlight: rgba(255, 255, 255, 0.06);
+  /* Glassmorphism — Warm Amber Tint */
+  --glass-border: rgba(255, 94, 0, 0.16);
+  --glass-bg: rgba(18, 12, 20, 0.88);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
 
   /* Radius */
   --radius-sm: 6px;
@@ -40,13 +40,13 @@
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.7);
-  --shadow-glow-breeze: 0 0 20px rgba(0, 229, 255, 0.15);
-  --shadow-glow-emerald: 0 0 20px rgba(0, 255, 102, 0.15);
-  --shadow-glow-sunset: 0 0 20px rgba(255, 85, 0, 0.15);
+  /* Shadows & Glows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.8);
+  --shadow-glow-breeze: 0 0 20px rgba(255, 94, 0, 0.25);
+  --shadow-glow-emerald: 0 0 20px rgba(0, 255, 136, 0.25);
+  --shadow-glow-sunset: 0 0 20px rgba(255, 51, 0, 0.25);
 
   /* Transitions */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

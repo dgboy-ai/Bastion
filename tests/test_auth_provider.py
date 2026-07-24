@@ -179,6 +179,9 @@ async def test_provider_with_explicit_client():
     )
     client = await p.get_client("explicit-client")
     assert client is not None
-    assert client.client_secret == "secret-123"
+    # Client secret is now hashed before storage (security hardening)
+    import hashlib
+    expected_hash = hashlib.sha256("secret-123".encode()).hexdigest()
+    assert client.client_secret == expected_hash
     assert str(client.redirect_uris[0]) == "http://localhost:9999/cb"
     assert client.token_endpoint_auth_method == "client_secret_post"

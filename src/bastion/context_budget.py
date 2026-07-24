@@ -23,9 +23,28 @@ TOKENS_PER_WORD = 1.3
 
 
 def _estimate_tokens(text: str) -> int:
-    """Estimate token count from text."""
+    """Estimate token count from text.
+
+    Uses a more robust heuristic than simple word count:
+    - For CJK characters: each character ≈ 1.5 tokens (no word boundaries)
+    - For code/JSON: characters/4 ≈ tokens (dense syntax)
+    - For regular English: words × 1.3
+    """
+    if not text:
+        return 1
+    # Check for CJK characters (Unicode ranges)
+    cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff')
+    if cjk_count > len(text) * 0.3:
+        # Mostly CJK: each character is roughly a token
+        return max(1, int(cjk_count * 1.5 + (len(text) - cjk_count) * 0.3))
+    # Check if content looks like code/JSON (high density of special chars)
+    special_chars = sum(1 for c in text if c in '{}[](),:;=<>!@#$%^&*')
+    if special_chars > len(text) * 0.1:
+        # Code-like: characters / 4 is a better estimate
+        return max(1, len(text) // 4)
+    # Default: word-based estimate
     words = len(text.split())
-    return max(1, int(words * TOKENS_PER_WORD))
+    return max(1, int(words * 1.3))
 
 
 @dataclass

@@ -70,7 +70,7 @@ class SpendManager:
           - ``suspended`` (bool)
           - ``reason`` (str | None)
 
-        Atomically increments the counter if allowed.
+        Atomically increments the counter if allowed (single SQL transaction).
         """
         if category not in _SPEND_CATEGORIES:
             return {"allowed": True, "remaining": 0, "limit": 0, "suspended": False, "reason": None}
@@ -82,62 +82,103 @@ class SpendManager:
         cache_key = f"{agent_id}:{today.isoformat()}"
         soft_limit_pct = 0.8
 
-        with self._cache_lock:
-            cached = self._cache.get(cache_key)
-            if cached and time.time() - cached.get("_ts", 0) < self._cache_ttl:
-                record = cached
-            else:
-                record = None
+        if not isinstance(count, int) or count < 1:
+            return {"allowed": False, "remaining": 0, "limit": 0, "suspended": False, "reason": "Invalid count"}
 
-        if record is None:
-            record = self._load_or_create_budget(agent_id)
+        # Atomic check-and-increment at the DB level to prevent TOCTOU race
+        pool = self._get_pool()
+        conn = pool.acquire(timeout=10.0)
+        try:
+            with conn.cursor() as cur:
+                # First ensure the budget row exists
+                cur.execute(
+                    "INSERT INTO agent_budgets (agent_id, daily_searches, daily_stores, daily_embeds, daily_heals) "
+                    "VALUES (%s, 0, 0, 0, 0) ON CONFLICT (agent_id) DO NOTHING",
+                    (agent_id,),
+                )
 
-        limit_key = f"hard_limit_{category}s"
-        current_key = f"daily_{category}s"
-        hard_limit = record.get(limit_key, _DEFAULT_LIMITS.get(category, 10000))
-        current = record.get(current_key, 0)
-        suspended = record.get("is_suspended", False)
-        suspension_reason = record.get("suspension_reason")
+                # Check if suspended
+                limit_col = f"hard_limit_{category}s"
+                daily_col = f"daily_{category}s"
+                cur.execute(
+                    f"SELECT {daily_col}, {limit_col}, is_suspended, suspension_reason "
+                    f"FROM agent_budgets WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    conn.rollback()
+                    # Fallback: allow in case of DB issues
+                    return {"allowed": True, "remaining": 999999, "limit": 999999, "suspended": False, "reason": None}
 
-        if suspended:
-            return {
-                "allowed": False,
-                "remaining": 0,
-                "limit": hard_limit,
-                "suspended": True,
-                "reason": suspension_reason or "Agent suspended due to budget overage",
-            }
+                current, hard_limit, suspended, suspension_reason = row
+                if hard_limit is None:
+                    hard_limit = _DEFAULT_LIMITS.get(category, 10000)
+                if current is None:
+                    current = 0
 
-        if current + count > hard_limit:
-            self._suspend_agent(agent_id, f"Hard limit exceeded for {category}s ({current + count}/{hard_limit})")
-            return {
-                "allowed": False,
-                "remaining": 0,
-                "limit": hard_limit,
-                "suspended": True,
-                "reason": f"Hard limit of {hard_limit} {category}s exceeded",
-            }
+                if suspended:
+                    conn.rollback()
+                    return {
+                        "allowed": False, "remaining": 0, "limit": hard_limit,
+                        "suspended": True, "reason": suspension_reason or "Agent suspended",
+                    }
 
-        if current + count > hard_limit * soft_limit_pct:
-            logger.warning(
-                "Agent approaching spend limit",
-                extra={"agent_id": agent_id, "category": category, "current": current, "limit": hard_limit},
-            )
+                if current + count > hard_limit:
+                    # Suspend atomically
+                    cur.execute(
+                        "UPDATE agent_budgets SET is_suspended = true, suspension_reason = %s, updated_at = now() "
+                        "WHERE agent_id = %s",
+                        (f"Hard limit exceeded for {category}s ({current + count}/{hard_limit})", agent_id),
+                    )
+                    conn.commit()
+                    return {
+                        "allowed": False, "remaining": 0, "limit": hard_limit,
+                        "suspended": True, "reason": f"Hard limit of {hard_limit} {category}s exceeded",
+                    }
 
-        self._increment_budget(agent_id, category, count)
+                # Increment atomically — only if still under limit
+                cur.execute(
+                    f"UPDATE agent_budgets SET {daily_col} = {daily_col} + %s, updated_at = now() "
+                    f"WHERE agent_id = %s AND {daily_col} + %s <= {limit_col}",
+                    (count, agent_id, count),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return {
+                        "allowed": False, "remaining": 0, "limit": hard_limit,
+                        "suspended": False, "reason": "Concurrent spend exceeded limit",
+                    }
+                conn.commit()
 
-        with self._cache_lock:
-            record[current_key] = current + count
-            record["_ts"] = time.time()
-            self._cache[cache_key] = record
+                new_remaining = hard_limit - (current + count)
+                if current + count > hard_limit * soft_limit_pct:
+                    logger.warning(
+                        "Agent approaching spend limit",
+                        extra={"agent_id": agent_id, "category": category, "current": current, "limit": hard_limit},
+                    )
 
-        return {
-            "allowed": True,
-            "remaining": hard_limit - (current + count),
-            "limit": hard_limit,
-            "suspended": False,
-            "reason": None,
-        }
+                # Update cache
+                with self._cache_lock:
+                    self._cache[cache_key] = {
+                        daily_col: current + count, limit_col: hard_limit,
+                        "is_suspended": False, "_ts": time.time(),
+                    }
+
+                return {
+                    "allowed": True, "remaining": new_remaining, "limit": hard_limit,
+                    "suspended": False, "reason": None,
+                }
+        except Exception as exc:
+            logger.error("check_and_increment failed", extra={"agent": agent_id[:32], "cat": category, "err": str(exc)})
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            # Fail open: allow the request but log the failure
+            return {"allowed": True, "remaining": 999999, "limit": 999999, "suspended": False, "reason": None}
+        finally:
+            pool.release(conn)
 
     def get_usage(self, agent_id: str) -> dict[str, Any]:
         """Return current usage snapshot for *agent_id*."""

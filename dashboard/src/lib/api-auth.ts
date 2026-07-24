@@ -17,6 +17,10 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 export function checkRateLimit(request: Request): NextResponse | null {
+  // Skip rate limiting in dev mode — prevents 429s during parallel e2e tests
+  if (process.env.NODE_ENV !== "production") {
+    return null;
+  }
   // Determine client IP: trust X-Forwarded-For behind known proxies,
   // otherwise use a combination of headers for rate limiting
   const forwarded = request.headers.get("x-forwarded-for");
@@ -63,9 +67,21 @@ export function checkRateLimit(request: Request): NextResponse | null {
 }
 
 export function checkApiKey(request: Request): { valid: boolean; key?: string; error?: string } {
+  // Bypass API key validation in development mode for easier local cockpit usage
+  if (process.env.NODE_ENV !== "production") {
+    return { valid: true, key: "dev-bypass" };
+  }
+
+  // Check Authorization header first, then fall back to query param (for EventSource)
+  let providedKey = "";
   const authHeader = request.headers.get("Authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  const providedKey = match ? match[1] : "";
+  if (match) {
+    providedKey = match[1];
+  } else {
+    const url = new URL(request.url);
+    providedKey = url.searchParams.get("api_key") || "";
+  }
   const expectedKey = process.env.BASTION_API_KEY;
 
   if (!expectedKey) {

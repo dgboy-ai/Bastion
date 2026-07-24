@@ -34,7 +34,8 @@ def scan_tool_manifest(description: str, tool_name: str = "") -> list[dict[str, 
     Caches results by description hash to avoid re-scanning static
     tool definitions on every call.
     """
-    cache_key = str(hash(description))
+    import hashlib
+    cache_key = hashlib.md5(description.encode("utf-8")).hexdigest()
     cached = _SCAN_CACHE.get(cache_key)
     if cached is not None:
         return cached

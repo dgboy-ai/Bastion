@@ -78,14 +78,22 @@ class BastionSettings(BaseSettings):
 
 _settings: BastionSettings | None = None
 _Settings_LOCK = threading.Lock()
+_api_key_warned = False
 
 
 def get_settings() -> BastionSettings:
-    global _settings
+    global _settings, _api_key_warned
     if _settings is None:
         with _Settings_LOCK:
             if _settings is None:
                 _settings = BastionSettings()
+                if not _api_key_warned and not _settings.api_key.get_secret_value():
+                    import logging
+                    logging.getLogger("bastion.config").warning(
+                        "BASTION_API_KEY is not set — authentication is effectively disabled. "
+                        "Set BASTION_API_KEY in your environment for production use."
+                    )
+                    _api_key_warned = True
     return _settings
 
 

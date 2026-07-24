@@ -173,10 +173,14 @@ class ComplianceReporter:
 class VerifiableUnlearning:
     """GDPR Article 17 verifiable unlearning with Merkle receipts.
 
-    Performs physical SQL ``DELETE`` (not tombstone) for each memory,
+    Performs soft-delete (UPDATE to tombstone content) for each memory,
     recalculates the active Merkle tree root, and optionally signs the
     receipt with the host agent's Ed25519 key for cryptographic
     non-repudiation.
+
+    NOTE: This implements soft-delete for audit trail purposes. True GDPR
+    Art 17 physical deletion requires additional steps (backup purging,
+    MVCC history cleanup) that are outside this module's scope.
 
     Usage::
 
@@ -277,9 +281,9 @@ class VerifiableUnlearning:
             )
             logger.info("Unlearning audit record: %s", record.to_jsonl())
 
-        # Capture post-deletion state safely — list_all() may fail after deletion
+        # Capture post-deletion state safely — use list_memories with limit to avoid OOM
         try:
-            after_memories = self.memory.list_all()
+            after_memories = self.memory.list_memories(limit=10_000)
             after_agent_memories = [m for m in after_memories if m.agent_id == agent_id]
             after_hashes = [m.cryptographic_hash for m in after_agent_memories]
             new_root = self._compute_merkle_root(after_hashes)

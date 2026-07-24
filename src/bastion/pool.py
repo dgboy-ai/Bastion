@@ -91,7 +91,12 @@ class ConnectionPool:
     def _create_connection(self) -> Any:
         """Create a new database connection with statement timeout."""
         import psycopg
-        conn = psycopg.connect(self.connection_string)
+        # Add connect_timeout if not already in the connection string
+        conn_str = self.connection_string
+        if "connect_timeout" not in conn_str:
+            sep = "&" if "?" in conn_str else "?"
+            conn_str = f"{conn_str}{sep}connect_timeout=10"
+        conn = psycopg.connect(conn_str)
         # Set statement timeout to prevent long-running queries from hanging
         try:
             with conn.cursor() as cur:
@@ -146,7 +151,8 @@ class ConnectionPool:
                         conn_to_check.close()
                     with self._lock:
                         self._total_expired += 1
-                        self._total_created -= 1
+                        if self._total_created > 0:
+                            self._total_created -= 1
                     conn_to_check = None
                     continue
 
@@ -193,6 +199,11 @@ class ConnectionPool:
         reset_ok = False
         try:
             with conn.cursor() as cur:
+                # Rollback any open transaction before resetting session state
+                try:
+                    cur.execute("ROLLBACK")
+                except Exception:
+                    pass  # No transaction open, that's fine
                 cur.execute("RESET ALL")
             reset_ok = True
         except Exception:

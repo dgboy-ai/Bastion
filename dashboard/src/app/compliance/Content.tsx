@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch";
 
 interface ComplianceReport {
@@ -23,8 +23,9 @@ export default function CompliancePage() {
   const [report, setReport] = useState<ComplianceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
-  const fetchReportData = async () => {
+  const fetchReportData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -33,26 +34,32 @@ export default function CompliancePage() {
         throw new Error(`Failed to load compliance details (HTTP ${res.status})`);
       }
       const json = await res.json();
+      if (cancelledRef.current) return;
       const data = json.data || json;
       setReport({
-        reportId: data.report_id ?? data.reportId,
-        agentId: data.agent_id ?? data.agentId,
-        status: data.compliance_status?.status ?? data.status,
-        generatedAt: data.generated_at ?? data.generatedAt,
+        reportId: data.report_id ?? data.reportId ?? "",
+        agentId: data.agent_id ?? data.agentId ?? "",
+        status: data.compliance_status?.status ?? data.status ?? "UNKNOWN",
+        generatedAt: data.generated_at ?? data.generatedAt ?? "",
         article12: data.art12_requirements ?? data.article12 ?? {},
         recentAuditTrail: data.recent_audit_trail ?? data.recentAuditTrail ?? [],
         mock: data.mock,
       });
     } catch (err: unknown) {
+      if (cancelledRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load compliance data");
     } finally {
-      setLoading(false);
+      if (!cancelledRef.current) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    cancelledRef.current = false;
     fetchReportData();
-  }, []);
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [fetchReportData]);
 
   if (loading) {
     return (
@@ -97,7 +104,7 @@ export default function CompliancePage() {
       <div>
         <div className="welcome-title">EU AI Act Conformance</div>
         <div className="welcome-subtitle">
-          Article 12 technical compliance ledger. Report ID: {r.reportId.slice(0, 18)}... &middot; Generated {new Date(r.generatedAt).toLocaleString()}
+          Article 12 technical compliance ledger. Report ID: {(r.reportId ?? "N/A").slice(0, 18)}... &middot; Generated {r.generatedAt ? new Date(r.generatedAt).toLocaleString() : "N/A"}
         </div>
       </div>
 

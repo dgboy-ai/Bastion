@@ -1,4 +1,4 @@
-/* ── Animations ────────────────────────────────────────────── */
+/* ── Animations & Motion Utilities ──────────────────────────── */
 
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -6,12 +6,12 @@
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fadeInDown {
-  from { opacity: 0; transform: translateY(-10px); }
+  from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -26,7 +26,7 @@
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -36,15 +36,72 @@
 }
 
 @keyframes glow {
-  0%, 100% { box-shadow: 0 0 10px rgba(0, 229, 255, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(0, 229, 255, 0.4); }
+  0%, 100% { box-shadow: 0 0 10px rgba(0, 229, 255, 0.2), 0 0 20px rgba(0, 229, 255, 0.1); }
+  50% { box-shadow: 0 0 22px rgba(0, 229, 255, 0.45), 0 0 35px rgba(0, 229, 255, 0.2); }
 }
 
-/* Reduced motion */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes springBounce {
+  0% { transform: scale(0.95); }
+  60% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+@keyframes backdropFadeIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(12px); }
+}
+
+@keyframes toastSlideIn {
+  0% { transform: translateY(24px) scale(0.95); opacity: 0; }
+  70% { transform: translateY(-4px) scale(1.01); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Micro-Interaction Utilities */
+.hover-elevate {
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out), border-color 0.25s var(--ease-out);
+}
+.hover-elevate:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md), 0 0 20px rgba(0, 229, 255, 0.12);
+}
+
+.hover-glow-border:hover {
+  border-color: rgba(0, 229, 255, 0.4);
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.2);
+}
+
+.active-press:active {
+  transform: scale(0.97);
+  transition: transform 0.1s var(--ease-out);
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--canvas-card) 25%, var(--canvas-elevated) 50%, var(--canvas-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s var(--ease-out) both;
+}
+
+.animate-toast {
+  animation: toastSlideIn 0.35s var(--ease-spring) both;
+}
+
+/* Reduced motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
+

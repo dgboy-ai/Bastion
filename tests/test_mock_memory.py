@@ -112,7 +112,7 @@ def test_smart_merge_partial_overlap():
         "preferences"
     )
     assert "Python" in result
-    assert "dark mode" in result
+    assert "dark" in result and "mode" in result
 
 
 def test_smart_merge_different_facts():

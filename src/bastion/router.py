@@ -140,6 +140,13 @@ class RecallRouter:
         if scores.get("temporal", 0) > 0.2 and scores.get("summary", 0) > 0.2:
             best_type = "temporal"
             best_score = scores["temporal"]
+        elif not scores:
+            # No signals matched — use multi-signal fusion as default
+            return QueryClassification(
+                query_type="multi_signal",
+                confidence=0.3,
+                signals=["no_signals"],
+            )
         else:
             best_type = max(scores, key=scores.get)  # type: ignore[arg-type]
             best_score = scores[best_type]

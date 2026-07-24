@@ -14,10 +14,11 @@ logger = get_logger(__name__)
 class A2ATaskStore:
     """Manages A2A task lifecycle in CockroachDB."""
 
-    def __init__(self, agent_id: str, get_pool_fn: Any, is_mock_fn: Any):
+    def __init__(self, agent_id: str, get_pool_fn: Any, is_mock_fn: Any, set_rls_context_fn: Any = None):
         self.agent_id = agent_id
         self._get_pool = get_pool_fn
         self._is_mock = is_mock_fn
+        self._set_rls_context = set_rls_context_fn
 
     def _make_record(self, row: tuple) -> dict[str, Any]:
         return {
@@ -53,6 +54,8 @@ class A2ATaskStore:
             }
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -76,6 +79,8 @@ class A2ATaskStore:
             return None
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -103,6 +108,8 @@ class A2ATaskStore:
             return {"task_id": task_id, "status": status}
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 completed_at = datetime.now(UTC).isoformat() if status in ("COMPLETED", "FAILED", "CANCELED") else None
@@ -129,6 +136,8 @@ class A2ATaskStore:
             return False
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM a2a_tasks WHERE task_id = %s", (task_id,))
@@ -150,6 +159,8 @@ class A2ATaskStore:
             return []
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 conditions: list[str] = []
@@ -179,6 +190,8 @@ class A2ATaskStore:
             return 0
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
+        if self._set_rls_context:
+            self._set_rls_context(conn)
         try:
             with conn.cursor() as cur:
                 cur.execute(

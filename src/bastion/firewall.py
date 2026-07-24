@@ -8,6 +8,7 @@ agent response latency under 2ms.
 from __future__ import annotations
 
 import re
+import time
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 
 # Maximum content length for memory storage
 _MAX_CONTENT_LENGTH = 100_000
+_MAX_BLOCKED_AGENTS = 10_000
 
 
 class CognitiveFirewall:
@@ -27,7 +29,14 @@ class CognitiveFirewall:
         self.memory = memory
         self._lock = threading.Lock()
         self._blocked_agents: set[str] = set()
+        self._blocked_agents_expiry: dict[str, float] = {}  # agent_id -> expiry timestamp
         self._violation_count = 0
+
+    def unblock_agent(self, agent_id: str) -> None:
+        """Remove an agent from the blocked set."""
+        with self._lock:
+            self._blocked_agents.discard(agent_id)
+            self._blocked_agents_expiry.pop(agent_id, None)
 
     def validate_memory_write(
         self,
@@ -40,13 +49,20 @@ class CognitiveFirewall:
         violations = []
 
         if agent_id in self._blocked_agents:
-            violations.append(
-                {
-                    "rule": "BLOCKED_AGENT",
-                    "severity": "critical",
-                    "detail": f"Agent {agent_id} is blocked due to prior violations",
-                }
-            )
+            # Check if block has expired (only if it has an expiry set)
+            with self._lock:
+                expiry = self._blocked_agents_expiry.get(agent_id)
+                if expiry is not None and time.time() > expiry:
+                    self._blocked_agents.discard(agent_id)
+                    self._blocked_agents_expiry.pop(agent_id, None)
+                else:
+                    violations.append(
+                        {
+                            "rule": "BLOCKED_AGENT",
+                            "severity": "critical",
+                            "detail": f"Agent {agent_id} is blocked due to prior violations",
+                        }
+                    )
 
         from bastion.pii import PII_DETECTION_PATTERNS
         pii_patterns = [(p, d) for _, p, d in PII_DETECTION_PATTERNS]
@@ -85,7 +101,13 @@ class CognitiveFirewall:
         if blocked:
             with self._lock:
                 self._blocked_agents.add(agent_id)
+                self._blocked_agents_expiry[agent_id] = time.time() + 86400  # 24h TTL
                 self._violation_count += 1
+                # Evict oldest if over limit
+                if len(self._blocked_agents) > _MAX_BLOCKED_AGENTS:
+                    oldest = min(self._blocked_agents_expiry, key=self._blocked_agents_expiry.get)
+                    self._blocked_agents.discard(oldest)
+                    self._blocked_agents_expiry.pop(oldest, None)
 
         return {
             "safe": is_safe,
@@ -110,14 +132,15 @@ class CognitiveFirewall:
 
             pool = self.memory.get_pool()
             conn = pool.acquire(timeout=30.0)
+            self.memory._set_rls_context(conn)
             try:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT memory_id, agent_id, memory_type, content, embedding, metadata, "
                         "previous_hash, cryptographic_hash, created_at, expires_at, "
                         "access_count, importance_score, trust_level, source_provenance, overwrite_count "
-                        "FROM agent_memory WHERE agent_id = %s ORDER BY created_at ASC",
-                        (agent_id,),
+                        "FROM agent_memory WHERE agent_id = %s ORDER BY created_at ASC LIMIT %s",
+                        (agent_id, max_memories),
                     )
                     agent_memories = [MemoryRecord.from_row(r) for r in cur.fetchall()]
             finally:

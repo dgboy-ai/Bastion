@@ -45,7 +45,7 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
 
     const arcs: { level: number; count: number; color: string }[] = [];
     for (let lvl = 0; lvl <= 4; lvl++) {
-      const count = trustLevelDistribution[lvl] ?? 0;
+      const count = (trustLevelDistribution ?? {})[lvl] ?? 0;
       if (count > 0) {
         arcs.push({ level: lvl, count, color: TRUST_COLORS[lvl] });
       }
@@ -102,7 +102,8 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
         return (t: number) => arcGen(interp(t)) as string;
       });
 
-    const scoreColor = avgTrustScore >= 0.8 ? "#00ff88" : avgTrustScore >= 0.5 ? "#ffcc00" : avgTrustScore >= 0.2 ? "#ff6600" : "#ff3333";
+    const safeScore = avgTrustScore ?? 0;
+    const scoreColor = safeScore >= 0.8 ? "#00ff88" : safeScore >= 0.5 ? "#ffcc00" : safeScore >= 0.2 ? "#ff6600" : "#ff3333";
     group.append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "0.1em")
@@ -111,10 +112,10 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
       .attr("font-size", "56px")
       .attr("font-weight", "900")
       .attr("filter", "url(#trust-text-glow)")
-      .text((avgTrustScore * 100).toFixed(0));
+      .text((safeScore * 100).toFixed(0));
 
     // Add SECURE / DANGER label below number
-    const statusLabel = avgTrustScore >= 0.7 ? "SECURE" : avgTrustScore >= 0.4 ? "CAUTION" : "DANGER";
+    const statusLabel = safeScore >= 0.7 ? "SECURE" : safeScore >= 0.4 ? "CAUTION" : "DANGER";
     group.append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "2.8em")
@@ -175,7 +176,7 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
       </div>
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "center" }}>
         {[0, 1, 2, 3, 4].map((lvl) => {
-          const count = trustLevelDistribution[lvl] ?? 0;
+          const count = (trustLevelDistribution ?? {})[lvl] ?? 0;
           if (count === 0) return null;
           return (
             <div key={lvl} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>

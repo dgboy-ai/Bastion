@@ -601,6 +601,29 @@ def scan_tool_manifest(manifest: dict[str, Any]) -> ToolScanResult:
     for pattern in MALICIOUS_TOOL_PATTERNS:
         if pattern.search(text_to_scan):
             flagged.append(pattern.pattern)
+
+    # Check for overly broad permissions in inputSchema
+    schema = manifest.get("inputSchema", {})
+    if isinstance(schema, dict):
+        props = schema.get("properties", {})
+        if isinstance(props, dict):
+            for prop_name, prop_def in props.items():
+                if isinstance(prop_def, dict):
+                    # Flag properties that accept arbitrary objects or arrays
+                    if prop_def.get("type") in ("object", "array") and "description" not in prop_def:
+                        flagged.append(f"broad_type:{prop_name}")
+                    # Flag properties with very long descriptions (possible injection)
+                    desc = prop_def.get("description", "")
+                    if isinstance(desc, str) and len(desc) > 1000:
+                        flagged.append(f"long_description:{prop_name}")
+
+    # Check for suspicious tool names
+    name = manifest.get("name", "")
+    if isinstance(name, str):
+        suspicious_names = ("exec", "eval", "system", "shell", "run_command", "execute")
+        if any(s in name.lower() for s in suspicious_names):
+            flagged.append(f"suspicious_name:{name}")
+
     if flagged:
         return ToolScanResult(verdict="BLOCKED", matched_patterns=flagged)
     return ToolScanResult(verdict="SAFE", matched_patterns=[])
@@ -648,18 +671,17 @@ def multilang_scan(content: str) -> list[str]:
 
 # ── PII Firewall (GDPR/CCPA Compliance) ────────────────────────────────────
 
-from bastion.pii import PII_PATTERNS, scan_pii as _shared_scan_pii
+from bastion.pii import redact_pii as _shared_redact_pii
 
 
 def pii_scan(content: str) -> tuple[str, list[str]]:
     """Scan content for PII and redact detected items.
 
+    Delegates to ``pii.redact_pii`` (canonical implementation).
+
     Returns (redacted_text, list_of_detected_types).
     Each detection type is like 'email', 'phone', 'ssn', etc.
     """
-    detected = _shared_scan_pii(content)
-    redacted = content
-    for pii_type in detected:
-        pattern = PII_PATTERNS[pii_type]
-        redacted = pattern.sub(f"[{pii_type.upper()}]", redacted)
+    redacted, redactions = _shared_redact_pii(content)
+    detected = sorted({r["type"] for r in redactions})
     return redacted, detected

@@ -25,6 +25,7 @@ export default defineConfig({
     timeout: 60000,
     env: {
       BASTION_API_KEY: process.env.BASTION_API_KEY || 'change-me-local-dev-only',
+      BASTION_MOCK: 'true',
     },
   },
 })

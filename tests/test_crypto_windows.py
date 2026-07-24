@@ -148,26 +148,30 @@ class TestWindowsWarning:
         crypto._hmac_secret = None
 
     def test_windows_write_warning(self, monkeypatch, tmp_path, capsys):
-        """On Windows, writing the HMAC secret file should log a warning."""
+        """On Windows with DPAPI, the HMAC secret is encrypted."""
         monkeypatch.delenv("BASTION_HMAC_SECRET", raising=False)
         monkeypatch.setattr(crypto, "_SECRET_DIR", str(tmp_path))
         monkeypatch.setattr(crypto, "_SECRET_FILE", str(tmp_path / "hmac.key"))
         monkeypatch.setattr(sys, "platform", "win32")
         crypto._get_hmac_secret()
         output = capsys.readouterr().out
-        assert "Windows" in output and "NTFS" in output
+        assert "DPAPI-encrypted" in output
 
     def test_windows_read_warning(self, monkeypatch, tmp_path, capsys):
-        """On Windows, reading the HMAC secret file from disk should log a warning."""
+        """On Windows with DPAPI, the HMAC secret is decrypted on read."""
         monkeypatch.delenv("BASTION_HMAC_SECRET", raising=False)
+        monkeypatch.setattr(crypto, "_HAS_DPAPI", True)
         key_file = tmp_path / "hmac.key"
-        key_file.write_bytes(os.urandom(32))
+        # Write a DPAPI-encrypted key so the decrypt path is exercised
+        import win32crypt
+        encrypted = win32crypt.CryptProtectData(os.urandom(32), "bastion-hmac", None, None, None)
+        key_file.write_bytes(crypto._DPAPI_HEADER + encrypted)
         monkeypatch.setattr(crypto, "_SECRET_DIR", str(tmp_path))
         monkeypatch.setattr(crypto, "_SECRET_FILE", str(key_file))
         monkeypatch.setattr(sys, "platform", "win32")
         crypto._get_hmac_secret()
         output = capsys.readouterr().out
-        assert "Windows" in output and "disk" in output
+        assert "Loaded persisted HMAC secret" in output
 
     def test_non_windows_no_warning(self, monkeypatch, tmp_path, capsys):
         """On non-Windows, no platform warning should appear."""

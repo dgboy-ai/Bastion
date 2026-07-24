@@ -133,6 +133,9 @@ def create_a2a_server(
         )
         memory = BastionMemory(agent_id, mock=True)
 
+    # -- SpendManager: initialized once, reused across all requests --
+    _spend_manager = SpendManager(connection_string=conn, mock=_mock)
+
     skill_map = {
         "memory_store": "store",
         "memory_search": "search",
@@ -1281,7 +1284,8 @@ def create_a2a_server(
         state = task.get("status", {}).get("state", "")
         if state not in ("COMPLETED", "FAILED", "CANCELED"):
             return JSONResponse({"error": "Only terminal tasks can be deleted"}, status_code=409)
-        _tasks.pop(task_id, None)
+        with _tasks_lock:
+            _tasks.pop(task_id, None)
         if not memory._mock:
             try:
                 await anyio.to_thread.run_sync(memory._a2a_store.delete_task, task_id)
@@ -1598,6 +1602,9 @@ def create_a2a_server(
             auth_header = request.headers.get("Authorization", "")
             caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
         caller_role = _resolve_role(caller_token) if caller_token else ("admin" if not _api_key else "reader")
+        # Warn when running without API key (dev mode only — not for production)
+        if not _api_key and not caller_token:
+            logger.debug("No API key configured — unauthenticated requests treated as admin (dev mode)")
         required_level = _ROLE_HIERARCHY.get(required_role, 0)
         caller_level = _ROLE_HIERARCHY.get(caller_role, 0)
         if caller_level < required_level:
@@ -1610,13 +1617,9 @@ def create_a2a_server(
             )
 
         # ── Spend check: enforce per-agent daily budgets ──
-        spend = SpendManager(
-            connection_string=conn,
-            mock=memory._mock,
-        )
         caller_agent = metadata.get("agent_id", "unknown")
         spend_category = "store" if skill_id in ("memory_store", "ltm_store_analysis") else "search"
-        budget_check = spend.check_and_increment(caller_agent, spend_category, 1)
+        budget_check = _spend_manager.check_and_increment(caller_agent, spend_category, 1)
         if not budget_check["allowed"]:
             task_id = uuid.uuid4().hex
             await _store_task(task_id, "FAILED")

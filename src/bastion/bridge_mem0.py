@@ -247,6 +247,7 @@ class BastionMem0Bridge:
         if not self._memory.is_mock:
             pool = self._memory.get_pool()
             conn = pool.acquire(timeout=30.0)
+            self._memory._set_rls_context(conn)
             try:
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM agent_memory WHERE agent_id = %s", (eid,))

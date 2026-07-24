@@ -1,7 +1,12 @@
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import HealthContent from "./Content";
 
 export const dynamic = "force-dynamic";
 
 export default function HealthPage() {
-  return <HealthContent />;
+  return (
+    <DashboardLayoutWrapper>
+      <HealthContent />
+    </DashboardLayoutWrapper>
+  );
 }

@@ -298,7 +298,7 @@ class CaptureHooks:
                 memory_type=memory_type,
                 content=event.content,
                 metadata=event.metadata,
-                _skip_guard=True,  # Events are internally generated
+                _skip_guard=True, _guard_bypass_token=True,  # Events are internally generated
             )
             self._capture_count += 1
             self._recent_contents.append((event.content[:100], time.time()))

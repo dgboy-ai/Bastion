@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch";
 
 interface Memory {
@@ -22,23 +22,35 @@ export default function LogsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
+    let cancelled = false;
+
     async function fetchMemories() {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
       setLoading(true);
       try {
         const queryParams = search ? `?search=${encodeURIComponent(search)}` : "";
-        const res = await fetchWithTimeout(`/api/memories${queryParams}`);
+        const res = await fetchWithTimeout(`/api/memories${queryParams}`, { signal: ac.signal });
+        if (cancelled || !mountedRef.current) return;
         if (!res.ok) {
           throw new Error("Failed to fetch memories");
         }
         const json = await res.json();
+        if (cancelled) return;
         const data = json.data || json;
         setMemories(data.memories || []);
       } catch (err: unknown) {
+        if ((err as Error)?.name === "AbortError") return;
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -46,7 +58,11 @@ export default function LogsPage() {
       fetchMemories();
     }, 300); // Debounce search input
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      abortRef.current?.abort();
+    };
   }, [search]);
 
   return (
@@ -144,13 +160,13 @@ export default function LogsPage() {
                         {m.content}
                       </td>
                       <td style={{ padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--accent-sunset)", fontWeight: 700 }}>
-                        {m.importanceScore.toFixed(1)}
+                        {m.importanceScore != null ? m.importanceScore.toFixed(1) : "—"}
                       </td>
                       <td style={{ padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--body)" }}>
                         {m.accessCount}
                       </td>
                       <td style={{ padding: "12px 14px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--mute)" }}>
-                        {new Date(m.createdAt).toLocaleString()}
+                        {m.createdAt ? new Date(m.createdAt).toLocaleString() : "—"}
                       </td>
                       <td 
                         style={{ 
@@ -164,7 +180,7 @@ export default function LogsPage() {
                         }}
                         title={m.cryptographicHash}
                       >
-                        {m.cryptographicHash.slice(0, 14)}...
+                        {(m.cryptographicHash ?? "—").slice(0, 14)}...
                       </td>
                     </tr>
                   );
