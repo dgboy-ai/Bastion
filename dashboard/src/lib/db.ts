@@ -1,4 +1,5 @@
 import { type QueryResult, Pool } from "pg";
+import { headers } from "next/headers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
@@ -34,23 +35,65 @@ if (staticPool) {
     .catch((err: Error) => console.error("[Bastion] Static CockroachDB connection FAILED:", err.message));
 }
 
+// Map cache for dynamic connections (judges pasting CockroachDB URIs)
+const poolCache = new Map<string, Pool>();
+
+async function getDynamicConnectionString(): Promise<string | null> {
+  try {
+    const h = await headers();
+    return h.get("x-bastion-conn") || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getActivePool(): Promise<Pool | null> {
+  const dynamicConn = await getDynamicConnectionString();
+  const activeConn = dynamicConn || connectionString;
+
+  if (!activeConn || isMockForced) {
+    return null;
+  }
+
+  // If using default static pool, return it directly to avoid extra instantiation
+  if (activeConn === connectionString) {
+    return staticPool;
+  }
+
+  let pool = poolCache.get(activeConn);
+  if (!pool) {
+    console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
+    pool = new Pool({
+      connectionString: activeConn,
+      ssl: { rejectUnauthorized: false }, // Allow verify-full override for convenience
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 20000,
+      max: 3,
+    });
+    poolCache.set(activeConn, pool);
+  }
+  return pool;
+}
+
 /** Check if mock mode is explicitly enabled via environment variable. */
 export function isMockMode(): boolean {
   return isMockForced;
 }
 
 /** Whether a real database pool is available. */
-export function hasDbPool(): boolean {
-  return staticPool !== null;
+export async function hasDbPool(): Promise<boolean> {
+  const pool = await getActivePool();
+  return pool !== null;
 }
 
 export async function query(text: string, params?: unknown[]) {
-  if (!staticPool) {
+  const pool = await getActivePool();
+  if (!pool) {
     throw new Error("Database not available (BASTION_CONN not configured)");
   }
   const start = Date.now();
   try {
-    const res = await staticPool.query(text, params);
+    const res = await pool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
@@ -66,15 +109,17 @@ export async function query(text: string, params?: unknown[]) {
  * This prevents security dashboards from lying during database outages.
  */
 export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQueryResult> {
-  if (!staticPool) {
-    if (isMockForced) {
+  const pool = await getActivePool();
+  if (!pool) {
+    const dynamicConn = await getDynamicConnectionString();
+    if (isMockForced || dynamicConn) {
       return mockResult();
     }
     throw new Error("Database not available (BASTION_CONN not configured and BASTION_MOCK not enabled)");
   }
   const start = Date.now();
   try {
-    const res = await staticPool.query(text, params);
+    const res = await pool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     return res;
@@ -84,4 +129,3 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     throw err;
   }
 }
-

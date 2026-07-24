@@ -194,15 +194,17 @@ class LTMMemoryGateway:
         if best is None:
             return None
 
-        # Compute similarity score from the decay-weighted search results
-        # The search already applied decay weighting, so we use importance_score
-        # as a proxy for confidence in the cached result
-        similarity = min(1.0, max(0.0, best.importance_score / 10.0))
-        # Boost similarity if the content is very close
-        content_ratio = len(set(query.lower().split()) & set((best.content or "").lower().split()))
-        query_words = max(1, len(query.split()))
-        content_boost = content_ratio / query_words
-        similarity = min(1.0, similarity * 0.7 + content_boost * 0.3)
+        # Compute similarity score from content overlap (not importance_score)
+        # Use word-level Jaccard similarity for actual semantic relevance
+        query_words = set(query.lower().split())
+        content_words = set((best.content or "").lower().split())
+        if query_words and content_words:
+            jaccard = len(query_words & content_words) / max(1, len(query_words | content_words))
+        else:
+            jaccard = 0.0
+        # Blend with importance as a secondary signal (importance boosts confidence)
+        importance_signal = min(1.0, max(0.0, best.importance_score / 10.0))
+        similarity = min(1.0, jaccard * 0.7 + importance_signal * 0.3)
 
         if similarity < threshold:
             return None

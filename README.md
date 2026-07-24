@@ -243,7 +243,7 @@ Bastion **cannot work without CockroachDB**. Here's why:
 
 ### Verified With Real CockroachDB
 
-**10/10 core features** verified against a live CockroachDB cluster at `bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud`:
+**10/10 core features** verified against a live CockroachDB cluster at `bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud`:
 
 | Feature | Status | Verified |
 |---------|--------|----------|

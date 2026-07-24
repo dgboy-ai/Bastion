@@ -188,6 +188,7 @@ export function getMockTrust() {
     summary: {
       totalMemories: 1247,
       avgTrustScore: 0.87,
+      trustLevelDistribution: { 0: 75, 1: 180, 2: 320, 3: 450, 4: 222 },
       highTrust: 892,
       mediumTrust: 298,
       lowTrust: 57,

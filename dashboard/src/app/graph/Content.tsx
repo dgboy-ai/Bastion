@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import KnowledgeGraph from "@/components/KnowledgeGraph";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { fetchWithTimeout } from "@/lib/fetch";
@@ -72,29 +72,38 @@ export default function GraphPage() {
 
   // Fetch graph layout nodes
   useEffect(() => {
+    let cancelled = false;
+    const ac = new AbortController();
+
     async function fetchGraphData() {
       setLoading(true);
       try {
         const interval = INTERVALS[sliderVal].value;
         const queryParams = interval ? `?as_of=${encodeURIComponent(interval)}` : "";
         
-        const res = await fetchWithTimeout(`/api/graph${queryParams}`);
+        const res = await fetchWithTimeout(`/api/graph${queryParams}`, { signal: ac.signal });
+        if (cancelled) return;
         if (!res.ok) {
           throw new Error("Failed to fetch knowledge graph state");
         }
         const json = await res.json();
+        if (cancelled) return;
         const data = json.data || json;
         
         setNodes(data.nodes as Node[]);
         setLinks(data.links as Link[]);
       } catch (err: unknown) {
+        if ((err as Error)?.name === "AbortError") return;
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     fetchGraphData();
+
+    return () => { cancelled = true; ac.abort(); };
   }, [sliderVal]);
 
   // Fetch memory audit path + trust data when an entity is clicked
@@ -350,7 +359,7 @@ export default function GraphPage() {
                   </div>
                 </div>
 
-                {Object.entries(selectedNode.attributes).map(([key, val]) => (
+                {Object.entries(selectedNode.attributes ?? {}).map(([key, val]) => (
                   <div key={key} style={{ display: "flex", flexDirection: "column", gap: "4px", background: "rgba(255,255,255,0.01)", padding: "10px 12px", borderRadius: "6px", border: "1px solid var(--glass-border)" }}>
                     <span style={{ fontSize: "9px", color: "var(--mute)", fontFamily: "var(--font-mono)" }}>{key}</span>
                     <span style={{ fontSize: "12px", color: "var(--ink)", fontWeight: 500 }}>

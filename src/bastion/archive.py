@@ -47,6 +47,7 @@ class MemoryArchiver:
                 Key=key,
                 Body=json.dumps(archive, indent=2, default=str),
                 ContentType="application/json",
+                ServerSideEncryption="aws:kms",  # Encrypt at rest
                 Metadata={
                     "agent_id": agent_id,
                     "memory_count": str(len(memories)),

@@ -378,14 +378,21 @@ class ContradictionDetector:
         except Exception:
             logger.warning("Failed to log supersede to audit trail")
 
-    def scan_all(self, agent_id: str | None = None) -> list[ContradictionScanResult]:
+    def scan_all(self, agent_id: str | None = None, max_memories: int = 500) -> list[ContradictionScanResult]:
         """Scan ALL memories for existing contradictions (batch mode).
 
         Uses pairwise comparison to avoid O(n²) search calls.
         Only compares each pair once (i < j) and skips already-known contradictions.
+
+        Args:
+            max_memories: Maximum memories to scan (prevents O(n²) explosion on large datasets).
         """
         agent_id = agent_id or self._memory.agent_id
-        all_memories = self._memory.list_all(namespace_scope="own")
+        try:
+            all_memories = self._memory.list_memories(limit=max_memories)
+        except AttributeError:
+            # Fallback for engines without list_memories (e.g., FakeEngine in tests)
+            all_memories = self._memory.list_all()
 
         # Filter to scannable memories
         scannable = [

@@ -70,8 +70,10 @@ export default function MemoryGuardPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: scanInput }),
       });
+      if (!res.ok) {
+        throw new Error(`Scan failed (HTTP ${res.status})`);
+      }
       const data = await res.json();
-      // Unwrap apiSuccess envelope
       setScanResult(data?.data || data);
     } catch (err) {
       console.error("[MemoryGuardPanel] scan failed:", err);

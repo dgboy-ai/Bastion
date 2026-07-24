@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type LiveEvent = {
   type: string;
@@ -57,25 +57,17 @@ export default function InjectionTimeline() {
   const esRef = useRef<EventSource | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // Seed initial historical event points so timeline is populated visually
-    const initialEvents: LiveEvent[] = [
-      { type: "memory_stored", timestamp: new Date(Date.now() - 52 * 60000).toISOString(), agentId: "agent-1", content: "Ingested core system architecture document" },
-      { type: "hash_chain_verified", timestamp: new Date(Date.now() - 44 * 60000).toISOString(), agentId: "agent-2", content: "Verified block hash signature #849102" },
-      { type: "memory_searched", timestamp: new Date(Date.now() - 38 * 60000).toISOString(), agentId: "agent-1", content: "Semantic vector search query: cockroachdb isolation" },
-      { type: "guard_scan_passed", timestamp: new Date(Date.now() - 29 * 60000).toISOString(), agentId: "agent-3", content: "Blocked prompt injection: ignore previous rules" },
-      { type: "conflict_resolved", timestamp: new Date(Date.now() - 21 * 60000).toISOString(), agentId: "agent-2", content: "Consolidated conflicting entity facts for User_Preference" },
-      { type: "memory_stored", timestamp: new Date(Date.now() - 14 * 60000).toISOString(), agentId: "agent-1", content: "Stored LTM context summary" },
-      { type: "guard_scan_passed", timestamp: new Date(Date.now() - 6 * 60000).toISOString(), agentId: "agent-3", content: "Blocked secret leakage attempt" },
-      { type: "hash_chain_verified", timestamp: new Date(Date.now() - 2 * 60000).toISOString(), agentId: "agent-1", content: "Cryptographic hash sealed on chain" }
-    ];
-    setEvents(initialEvents);
-
-    const es = new EventSource("/api/events");
+  const connect = useCallback(() => {
+    const key = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-api-key') : ''
+    const es = new EventSource(`/api/events?api_key=${encodeURIComponent(key || '')}`);
     esRef.current = es;
 
     es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
+    es.onerror = () => {
+      setConnected(false);
+      es.close();
+      setTimeout(connect, 3000);
+    };
 
     es.onmessage = (e) => {
       try {
@@ -83,7 +75,7 @@ export default function InjectionTimeline() {
         if (parsed.type === "connected") setConnected(true);
         if (parsed.type === "event" && parsed.data) {
           setEvents((prev) => [
-            ...prev.slice(-80), // keep last 80 events
+            ...prev.slice(-80),
             {
               type: parsed.data.event ?? "memory_stored",
               timestamp: parsed.data.timestamp ?? new Date().toISOString(),
@@ -94,9 +86,25 @@ export default function InjectionTimeline() {
         }
       } catch {}
     };
-
-    return () => { es.close(); setConnected(false); };
   }, []);
+
+  useEffect(() => {
+    // Seed initial historical event points so timeline is populated visually
+    setEvents([
+      { type: "memory_stored", timestamp: new Date(Date.now() - 52 * 60000).toISOString(), agentId: "agent-1", content: "Ingested core system architecture document" },
+      { type: "hash_chain_verified", timestamp: new Date(Date.now() - 44 * 60000).toISOString(), agentId: "agent-2", content: "Verified block hash signature #849102" },
+      { type: "memory_searched", timestamp: new Date(Date.now() - 38 * 60000).toISOString(), agentId: "agent-1", content: "Semantic vector search query: cockroachdb isolation" },
+      { type: "guard_scan_passed", timestamp: new Date(Date.now() - 29 * 60000).toISOString(), agentId: "agent-3", content: "Blocked prompt injection: ignore previous rules" },
+      { type: "conflict_resolved", timestamp: new Date(Date.now() - 21 * 60000).toISOString(), agentId: "agent-2", content: "Consolidated conflicting entity facts for User_Preference" },
+      { type: "memory_stored", timestamp: new Date(Date.now() - 14 * 60000).toISOString(), agentId: "agent-1", content: "Stored LTM context summary" },
+      { type: "guard_scan_passed", timestamp: new Date(Date.now() - 6 * 60000).toISOString(), agentId: "agent-3", content: "Blocked secret leakage attempt" },
+      { type: "hash_chain_verified", timestamp: new Date(Date.now() - 2 * 60000).toISOString(), agentId: "agent-1", content: "Cryptographic hash sealed on chain" },
+    ]);
+
+    connect();
+
+    return () => { esRef.current?.close(); setConnected(false); };
+  }, [connect]);
 
   const now = Date.now();
   const windowMs = 60 * 60 * 1000; // 60 minutes
@@ -174,7 +182,9 @@ export default function InjectionTimeline() {
 
           {/* Event dots */}
           {events.map((ev, i) => {
-            const age = now - new Date(ev.timestamp).getTime();
+            const ts = new Date(ev.timestamp).getTime();
+            if (isNaN(ts)) return null;
+            const age = now - ts;
             if (age < 0 || age > windowMs) return null;
             const xPct = Math.max(1, Math.min(99, 100 - (age / windowMs) * 100));
             const color = EVENT_COLORS[ev.type] ?? "#9e8486";

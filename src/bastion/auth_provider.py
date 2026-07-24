@@ -56,12 +56,16 @@ _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
 _PRE_REGISTERED_LOCK = threading.Lock()
 
+# Token rotation lock: prevents concurrent refresh token reuse
+_TOKEN_ROTATION_LOCK = threading.Lock()
+
 # PKCE code_verifier storage: maps authorization_code -> code_verifier
 _pkce_verifiers: dict[str, str] = {}
 _pkce_lock = threading.Lock()
 
 # TTL for cleanup of stale PKCE entries (10 minutes)
 _PKCE_TTL = 600
+_PKCE_MAX_SIZE = 10_000  # Prevent memory exhaustion
 
 
 def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
@@ -80,6 +84,11 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
             now = time.time()
             expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
             for k in expired:
+                _pkce_verifiers.pop(k, None)
+        # Hard cap: evict oldest entries if still over limit
+        if len(_pkce_verifiers) > _PKCE_MAX_SIZE:
+            sorted_keys = sorted(_pkce_verifiers, key=lambda k: _pkce_verifiers[k][1])
+            for k in sorted_keys[:len(sorted_keys) - _PKCE_MAX_SIZE + 100]:
                 _pkce_verifiers.pop(k, None)
 
     conn_str = os.environ.get("BASTION_CONN")
@@ -197,9 +206,14 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             raw_uri = redirect_uri or os.environ.get("BASTION_OAUTH_REDIRECT_URI", "http://localhost:3000/callback")
             from pydantic import AnyUrl
             redirect_uris = [AnyUrl(raw_uri)]
+            # Hash client secret before storing in memory (prevent plaintext exposure)
+            hashed_secret = None
+            if client_secret:
+                import hashlib
+                hashed_secret = hashlib.sha256(client_secret.encode()).hexdigest()
             self._clients[client_id] = OAuthClientInformationFull(
                 client_id=client_id,
-                client_secret=client_secret,
+                client_secret=hashed_secret,
                 redirect_uris=redirect_uris,
                 token_endpoint_auth_method="client_secret_post" if client_secret else "none",
                 grant_types=["authorization_code", "refresh_token"],
@@ -669,8 +683,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         # Delete old refresh token FIRST to prevent race condition
         # (two concurrent requests using the same token)
         # Use lock to make pop + insert atomic (both in-memory AND DB)
-        _token_lock = threading.Lock()
-        with _token_lock:
+        with _TOKEN_ROTATION_LOCK:
             self._refresh_tokens.pop(refresh_token.token, None)
             self._access_tokens[access_token_str] = new_access
             self._refresh_tokens[refresh_token_str] = new_refresh
@@ -682,7 +695,11 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         with conn.cursor() as cur:
                             # Delete old tokens first (atomic with inserts)
                             cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
-                            cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (refresh_token.token,))
+                            # Delete old access tokens for this client (the old access token value is not available here)
+                            cur.execute(
+                                "DELETE FROM oauth_access_tokens WHERE client_id = %s AND expires_at < %s",
+                                (client.client_id, int(now)),
+                            )
                             # Then insert new tokens
                             cur.execute(
                                 """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, role)

@@ -118,6 +118,8 @@ export default function DashboardPage() {
   const prevDriftKey = useRef<string>("");
   const [kpiFlash, setKpiFlash] = useState(false);
   const prevMemCount = useRef(0);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   const [displayedMem, setDisplayedMem] = useState(0);
   const [displayedEnt, setDisplayedEnt] = useState(0);
@@ -125,9 +127,11 @@ export default function DashboardPage() {
   const countupRaf = useRef<number>(0);
 
   function animateCountup(target: number, setter: (v: number) => void) {
+    if (!mountedRef.current) return;
     const start = Date.now();
     const duration = 900;
     const tick = () => {
+      if (!mountedRef.current) return;
       const elapsed = Date.now() - start;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
@@ -138,22 +142,28 @@ export default function DashboardPage() {
   }
 
   const fetchData = useCallback(async () => {
+    fetchAbortRef.current?.abort();
     const ac = new AbortController();
+    fetchAbortRef.current = ac;
     const startTime = performance.now();
     try {
-      const [statsRes, trustRes, driftRes, asiRes] = await Promise.all([
+      const [statsRes, trustRes, driftRes, asiRes] = await Promise.allSettled([
         fetchWithTimeout("/api/stats", { signal: ac.signal }),
         fetchWithTimeout("/api/trust?limit=100", { signal: ac.signal }),
         fetchWithTimeout("/api/drift?limit=50", { signal: ac.signal }),
         fetchWithTimeout("/api/asi06", { signal: ac.signal }),
       ]);
-      if (!statsRes.ok) throw new Error("Failed to fetch telemetry");
-      const statsData = await statsRes.json();
-      const trustData = trustRes.ok ? await trustRes.json() : null;
-      const driftRaw = driftRes.ok ? await driftRes.json() : null;
-      const asiData = asiRes.ok ? await asiRes.json() : null;
-      if (asiData && (asiData.data?.summary?.blockedCount || asiData.summary?.blockedCount)) {
-        setBlockedInjectionsCount(asiData.data?.summary?.blockedCount ?? asiData.summary?.blockedCount);
+      if (ac.signal.aborted) return;
+      if (statsRes.status !== "fulfilled" || !statsRes.value.ok) {
+        throw new Error(statsRes.status === "rejected" ? statsRes.reason.message : "Failed to fetch telemetry");
+      }
+      const statsData = await statsRes.value.json();
+      const trustData = trustRes.status === "fulfilled" && trustRes.value.ok ? await trustRes.value.json() : null;
+      const driftRaw = driftRes.status === "fulfilled" && driftRes.value.ok ? await driftRes.value.json() : null;
+      const asiData = asiRes.status === "fulfilled" && asiRes.value.ok ? await asiRes.value.json() : null;
+      if (asiData) {
+        const bc = asiData.data?.summary?.blockedCount ?? asiData.summary?.blockedCount;
+        if (bc != null) setBlockedInjectionsCount(bc);
       }
 
       const statsKey = JSON.stringify(statsData);
@@ -198,9 +208,16 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     const id = setTimeout(fetchData, 0);
     const interval = setInterval(fetchData, 10000);
-    return () => { clearTimeout(id); clearInterval(interval); };
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(id);
+      clearInterval(interval);
+      fetchAbortRef.current?.abort();
+      if (countupRaf.current) cancelAnimationFrame(countupRaf.current);
+    };
   }, [fetchData]);
 
   const decayCurve = stats?.decayCurve;

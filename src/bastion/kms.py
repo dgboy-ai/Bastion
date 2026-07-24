@@ -698,7 +698,7 @@ class EncryptedMemoryWrapper:
         }
         if embedding is not None:
             meta["_precomputed_embedding"] = embedding
-        return self._memory.store(memory_type, encrypted, meta, expires_in_seconds, region, _skip_guard=True)
+        return self._memory.store(memory_type, encrypted, meta, expires_in_seconds, region, _skip_guard=True, _guard_bypass_token=True)
 
     def search(self, query: str, **kwargs: Any) -> list:
         ctx = {"agent_id": self._memory.agent_id}

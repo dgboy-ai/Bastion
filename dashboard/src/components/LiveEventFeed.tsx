@@ -22,16 +22,22 @@ export default function LiveEventFeed() {
     let retryDelay = 1000;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let es: EventSource | null = null;
+    let connecting = false;
 
     function connect() {
-      es = new EventSource("/api/events");
+      if (connecting) return;
+      connecting = true;
+      const key = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-api-key') : ''
+      const newEs = new EventSource(`/api/events?api_key=${encodeURIComponent(key || '')}`);
+      es = newEs;
 
-      es.onopen = () => {
+      newEs.onopen = () => {
+        connecting = false;
         setConnected(true);
         retryDelay = 1000;
       };
 
-      es.onmessage = (msg) => {
+      newEs.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data) as LiveEvent;
           setEvents((prev) => {
@@ -43,9 +49,11 @@ export default function LiveEventFeed() {
         }
       };
 
-      es.onerror = () => {
+      newEs.onerror = () => {
+        connecting = false;
         setConnected(false);
-        es?.close();
+        newEs.close();
+        if (es === newEs) es = null;
         retryTimer = setTimeout(() => {
           retryDelay = Math.min(retryDelay * 2, 30000);
           connect();

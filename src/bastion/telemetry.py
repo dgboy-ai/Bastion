@@ -220,3 +220,53 @@ class TracedBastionMemory:
 
     def close(self) -> None:
         self._memory.close()
+
+    # ── Missing method proxies (added to close API surface gap) ──
+
+    def delete_memory(self, memory_id: str) -> bool:
+        with self._span("bastion.delete_memory", {"memory_id": memory_id}):
+            return self._memory.delete_memory(memory_id)
+
+    def correct_memory(self, memory_id: str, new_content: str) -> MemoryRecord | None:
+        with self._span("bastion.correct_memory", {"memory_id": memory_id}):
+            return self._memory.correct_memory(memory_id, new_content)
+
+    def list_memories(self, memory_type: str | None = None, limit: int = 50, offset: int = 0) -> list[MemoryRecord]:
+        with self._span("bastion.list_memories", {"limit": limit, "offset": offset}):
+            return self._memory.list_memories(memory_type, limit, offset)
+
+    def apply_patch(self, memory_id: str, patch_ops: list[dict]) -> MemoryRecord | None:
+        with self._span("bastion.apply_patch", {"memory_id": memory_id}):
+            return self._memory.apply_patch(memory_id, patch_ops)
+
+    def pin(self, memory_id: str, priority: int = 5, reason: str = "") -> bool:
+        with self._span("bastion.pin", {"memory_id": memory_id, "priority": priority}):
+            return self._memory.pin(memory_id, priority, reason)
+
+    def unpin(self, memory_id: str) -> bool:
+        with self._span("bastion.unpin", {"memory_id": memory_id}):
+            return self._memory.unpin(memory_id)
+
+    def get_pinned(self, min_priority: int = 1) -> list[MemoryRecord]:
+        with self._span("bastion.get_pinned", {"min_priority": min_priority}):
+            return self._memory.get_pinned(min_priority)
+
+    def list_recent(self, hours: int = 24, limit: int = 200) -> list[MemoryRecord]:
+        with self._span("bastion.list_recent", {"hours": hours, "limit": limit}):
+            return self._memory.list_recent(hours, limit)
+
+    def list_pinned(self) -> list[MemoryRecord]:
+        with self._span("bastion.list_pinned"):
+            return self._memory.list_pinned()
+
+    def list_by_importance(self, min_importance: float = 5.0, limit: int = 100) -> list[MemoryRecord]:
+        with self._span("bastion.list_by_importance", {"min_importance": min_importance, "limit": limit}):
+            return self._memory.list_by_importance(min_importance, limit)
+
+    def keyword_search(self, keyword: str, limit: int = 50) -> list[MemoryRecord]:
+        with self._span("bastion.keyword_search", {"limit": limit}):
+            return self._memory.keyword_search(keyword, limit)
+
+    def count_by_agent(self) -> int:
+        with self._span("bastion.count_by_agent"):
+            return self._memory.count_by_agent()

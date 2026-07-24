@@ -37,9 +37,13 @@ class MemoryAnalytics:
     def __init__(self, memory: BastionMemory):
         self.memory = memory
 
-    def full_report(self) -> dict[str, Any]:
-        """Generate a comprehensive analytics report."""
-        all_memories = self.memory.list_all()
+    def full_report(self, max_memories: int = 10_000) -> dict[str, Any]:
+        """Generate a comprehensive analytics report.
+
+        Args:
+            max_memories: Maximum memories to load (prevents OOM for large agents).
+        """
+        all_memories = self.memory.list_memories(limit=max_memories)
         return {
             "agent_id": self.memory.agent_id,
             "generated_at": datetime.now(UTC).isoformat(),
@@ -262,10 +266,14 @@ class MemoryAnalytics:
             "decay_curve": decay_data[:20],  # Sample for visualization
         }
 
-    def quality_metrics(self, all_memories: list | None = None) -> dict[str, Any]:
-        """Assess memory quality metrics."""
+    def quality_metrics(self, all_memories: list | None = None, max_memories: int = 10_000) -> dict[str, Any]:
+        """Assess memory quality metrics.
+
+        Args:
+            max_memories: Maximum memories to load (prevents OOM for large agents).
+        """
         if all_memories is None:
-            all_memories = self.memory.list_all()
+            all_memories = self.memory.list_memories(limit=max_memories)
         if not all_memories:
             return {
                 "avg_content_length": 0,

@@ -223,6 +223,7 @@ class SessionMemory:
                     "promoted_at": datetime.now(UTC).isoformat(),
                 },
                 _skip_guard=True,
+                _guard_bypass_token=True,
             )
         except Exception as exc:
             logger.warning("Failed to promote session entry: %s", exc)

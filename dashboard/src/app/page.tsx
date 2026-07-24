@@ -822,7 +822,7 @@ function Consolidation() {
                 {/* Stage 1: Dedup — real duplicate pairs */}
                 {stage===1&&<div style={{display:"flex",flexDirection:"column",gap:"10px",width:"100%"}}>
                   <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,textAlign:"center",letterSpacing:"1.5px"}}>DUPLICATE DETECTION — JACCARD SIMILARITY</div>
-                  {dedup.pairs.length > 0 ? dedup.pairs.slice(0,3).map((pair:{a:string,b:string}, i:number) => (
+                  {dedup.pairs?.length > 0 ? dedup.pairs.slice(0,3).map((pair:{a:string,b:string}, i:number) => (
                     <div key={i} style={{
                       display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px",
                       background:"rgba(255,50,50,.06)",border:"1px solid rgba(255,50,50,.25)",borderRadius:"3px",

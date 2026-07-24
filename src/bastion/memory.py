@@ -25,6 +25,10 @@ from bastion.rls import RowLevelSecurity
 
 logger = get_logger(__name__)
 
+# Counter and lock for tracking unauthorized guard bypass attempts
+_guard_bypass_counter = 0
+_guard_bypass_lock = threading.Lock()
+
 _bedrock_client = None
 _bedrock_client_lock = threading.Lock()
 _local_model_lock = threading.Lock()
@@ -144,6 +148,8 @@ def _validate_agent_id(agent_id: str) -> None:
 def _validate_k(value: int) -> None:
     if not isinstance(value, int) or value < 1:
         raise ValueError(f"k must be a positive integer, got {value!r}")
+    if value > 10_000:
+        raise ValueError(f"k too large ({value} > 10000) — reduce to prevent OOM")
 
 
 def _validate_threshold(value: float) -> None:
@@ -228,7 +234,7 @@ class BastionMemory:
         from bastion.a2a_tasks import A2ATaskStore
         from bastion.knowledge_graph import KnowledgeGraph
         from bastion.messaging import MessageBroker
-        self._a2a_store = A2ATaskStore(agent_id, self.get_pool, lambda: self._mock)
+        self._a2a_store = A2ATaskStore(agent_id, self.get_pool, lambda: self._mock, self._set_rls_context)
         self._broker = MessageBroker(agent_id, self.get_pool, lambda: self._mock)
         self._kg = KnowledgeGraph(agent_id, self.get_pool, self._set_rls_context)
 
@@ -278,10 +284,9 @@ class BastionMemory:
         """
         if not self._rls_enabled:
             return
+        was_autocommit = getattr(conn, 'autocommit', False)
         try:
-            autocommit = getattr(conn, 'autocommit', False)
-            if autocommit:
-                # Start a transaction so SET LOCAL takes effect
+            if was_autocommit:
                 conn.autocommit = False
                 logger.debug(
                     "Auto-started transaction for RLS context (was autocommit)",
@@ -290,6 +295,8 @@ class BastionMemory:
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
         except Exception as exc:
+            if was_autocommit:
+                conn.autocommit = True
             if self._mock:
                 logger.debug("RLS context not set (mock mode)", extra={"agent_id": self.agent_id})
             else:
@@ -331,6 +338,7 @@ class BastionMemory:
         expires_in_seconds: int | None = None,
         region: str | None = None,
         _skip_guard: bool = False,
+        _guard_bypass_token: Any = None,
         _detect_contradictions: bool = False,
     ) -> MemoryRecord:
         _validate_memory_type(memory_type)
@@ -362,13 +370,25 @@ class BastionMemory:
                 )
                 content = redacted_content
         else:
-            # Audit trail for guard bypass — track which internal paths skip security
-            logger.info(
-                "Guard bypassed via _skip_guard=True",
-                agent_id=self.agent_id,
-                memory_type=memory_type,
-                content_preview=content[:80] if content else "",
-            )
+            global _guard_bypass_counter
+            if not _guard_bypass_token:
+                with _guard_bypass_lock:
+                    _guard_bypass_counter += 1
+                import traceback
+                logger.warning(
+                    "Guard bypass without token — possible unauthorized bypass",
+                    agent_id=self.agent_id,
+                    memory_type=memory_type,
+                    content_preview=content[:80] if content else "",
+                    bypass_count=_guard_bypass_counter,
+                    stack="\n".join(traceback.format_stack()[-4:-1]),
+                )
+            else:
+                logger.info(
+                    "Guard bypassed via _skip_guard=True (authorized internal caller)",
+                    agent_id=self.agent_id,
+                    memory_type=memory_type,
+                )
 
         if self._mock:
             record = _mock.mock_store_memory(
@@ -724,6 +744,7 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
+        committed = False
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -737,8 +758,14 @@ class BastionMemory:
                     (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id})),
                 )
                 conn.commit()
+                committed = True
                 return True
         finally:
+            if not committed:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             pool.release(conn)
 
     def close(self):
@@ -865,23 +892,18 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
         self._set_rls_context(conn)
-        _released = False
         try:
-            # Detect if we're using hash-based embeddings (not semantic)
-            # Hash embeddings produce random cosine similarity — always use keyword search
             using_hash_embeddings = self._mock or os.environ.get("BASTION_EMBED_FALLBACK")
             if not using_hash_embeddings and not self._bedrock_cb.state.value == "open":
-                # Bedrock might be available, try vector search
                 try:
                     from sentence_transformers import SentenceTransformer
-                    # If local model is available, vector search is semantic
                 except ImportError:
-                    # No local model and Bedrock may be down — use keyword
                     using_hash_embeddings = True
 
             if using_hash_embeddings:
                 ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
-                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id)
+                result = self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn)
+                return result
 
             query_vector = self._embed(query)
             query_vector_str = json.dumps(query_vector)
@@ -930,29 +952,22 @@ class BastionMemory:
                     if decay >= threshold:
                         results.append(MemoryRecord.from_row(r[:-1]))
 
-                # If vector search returned nothing, fall back to keyword search
-                # This handles hash-based embeddings where cosine similarity is meaningless
                 if not results:
-                    pool.release(conn)
-                    _released = True
                     ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
-                    keyword_results = self._search_keyword_fallback(query, k, 0.0, memory_type, ns_agent_id)
+                    keyword_results = self._search_keyword_fallback(query, k, 0.0, memory_type, ns_agent_id, _existing_conn=conn)
                     if keyword_results:
                         return keyword_results
 
                 return results[:k]
         except Exception as e:
-            # Graceful degradation: fall back to keyword search on embedding/index errors
             if any(s in str(e).lower() for s in ("embedding", "vector", "does not exist", "c-spann")):
                 logger.warning(
                     "Vector search failed, degrading to keyword search: %s",
                     str(e)[:200],
                     extra={"agent_id": self.agent_id, "query": query[:100]},
                 )
-                pool.release(conn)
-                _released = True
                 ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
-                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id)
+                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn)
             if "does not exist" in str(e).lower():
                 logger.warning(
                     "Schema may be missing columns. Run: "
@@ -963,8 +978,7 @@ class BastionMemory:
             logger.exception("Search query failed", extra={"agent_id": self.agent_id, "query": query[:100]})
             raise RuntimeError(f"Search failed for agent {self.agent_id}") from e
         finally:
-            if not _released:
-                pool.release(conn)
+            pool.release(conn)
 
     def _list_all_real(
         self,
@@ -1776,11 +1790,18 @@ class BastionMemory:
         threshold: float,
         memory_type: str | None,
         agent_id: str,
+        _existing_conn: Any = None,
     ) -> list[MemoryRecord]:
-        """Keyword-based fallback search when vector search degrades completely."""
+        """Keyword-based fallback search when vector search degrades completely.
+
+        If *_existing_conn* is provided, it is used instead of acquiring
+        a new connection from the pool. This avoids dual-connection hold
+        when called from ``_search_real`` fallback paths.
+        """
         pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
+        conn = _existing_conn or pool.acquire(timeout=30.0)
+        if not _existing_conn:
+            self._set_rls_context(conn)
         try:
             # Use ILIKE for fuzzy keyword matching as degraded-mode fallback
             keywords = [w.strip() for w in query.lower().split() if len(w.strip()) > 2]
@@ -1811,7 +1832,8 @@ class BastionMemory:
             logger.warning("Keyword fallback search failed: %s", exc)
             return []
         finally:
-            pool.release(conn)
+            if not _existing_conn:
+                pool.release(conn)
 
     # ------------------------------------------------------------------
     # A2A Task Store (CockroachDB-backed)

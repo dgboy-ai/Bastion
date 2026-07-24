@@ -332,7 +332,7 @@ class MemoryDreamer:
                 "analysis_result": True,
                 "analysis_type": "consolidation",
             },
-            _skip_guard=True,  # Derived from already-validated memory
+            _skip_guard=True, _guard_bypass_token=True,  # Derived from already-validated memory
         )
 
     def _extract_lesson(self, record: Any) -> str | None:

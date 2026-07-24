@@ -55,16 +55,15 @@ def redact_pii(content: str) -> tuple[str, list[dict]]:
     redacted = content
 
     for pii_type, pattern in PII_PATTERNS.items():
-        matches = pattern.findall(redacted)
-        for match in matches:
-            original = match if isinstance(match, str) else match[0] if match else ""
+        replacement = REDACTION_MAP.get(pii_type, f"[REDACTED_{pii_type.upper()}]")
+        for m in pattern.finditer(redacted):
+            original = m.group(0)
             if original:
-                replacement = REDACTION_MAP.get(pii_type, f"[REDACTED_{pii_type.upper()}]")
                 redactions.append({
                     "type": pii_type,
                     "original": original,
                     "redacted": replacement,
                 })
-        redacted = pattern.sub(REDACTION_MAP.get(pii_type, f"[REDACTED_{pii_type.upper()}]"), redacted)
+        redacted = pattern.sub(replacement, redacted)
 
     return redacted, redactions

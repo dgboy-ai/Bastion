@@ -537,7 +537,7 @@ class ThoughtChain:
                 "agent_id": node.agent_id,
                 "session_id": node.session_id,
             },
-            _skip_guard=True,  # Thought nodes are internally generated, not user content
+            _skip_guard=True, _guard_bypass_token=True,  # Thought nodes are internally generated, not user content
         )
 
     def _load_nodes(self) -> list[ThoughtNode]:

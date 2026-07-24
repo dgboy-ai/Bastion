@@ -91,6 +91,7 @@ def detect_anomalies_real(mem: BastionMemory, agent_id: str) -> list[dict]:
     """Detect anomalies in agent memory patterns."""
     pool = mem.get_pool()
     conn = pool.acquire(timeout=30.0)
+    mem._set_rls_context(conn)
     try:
         with conn.cursor() as cur:
             cur.execute(
