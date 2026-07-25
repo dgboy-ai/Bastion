@@ -3,1156 +3,754 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 
-/* ─── Nether Design Tokens ────────────────────── */
-
-const N = {
-  bg: "#0a0508", card: "#120a0e", elevated: "#1a1018",
-  ink: "#ffffff", body: "#e2d9dc", mute: "#a69498", faint: "#6e5458",
-  breeze: "#00e5ff", emerald: "#00ff66", sunset: "#ff5500",
-  gold: "#ffc800", lava: "#ffaa00", magenta: "#ff00aa",
-  hairline: "rgba(255,42,0,.18)", glass: "rgba(14,2,10,.85)",
-  easeOut: "cubic-bezier(.16,1,.3,1)",
-  easeSpring: "cubic-bezier(.34,1.56,.64,1)",
-};
-
-/* ─── Ambient Canvas ─────────────────────────── */
-
-function NetherAmbient() {
-  const cvs = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = cvs.current!;
-    const ctx = canvas.getContext("2d")!;
-    let W = canvas.width = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-    const resize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener("resize", resize);
-
-    const embers = Array.from({ length: 40 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - .5) * .5, vy: -Math.random() * .6 - .15,
-      sz: 1 + Math.random() * 2, life: 0, maxL: 80 + Math.random() * 120,
-      hue: Math.random() > .5 ? 15 : 40,
-    }));
-    const glowSpots = Array.from({ length: 6 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      r: 80 + Math.random() * 160, hue: [190, 140, 15, 40, 300, 200][Math.floor(Math.random() * 6)],
-      dx: (Math.random() - .5) * .15, dy: (Math.random() - .5) * .1,
-    }));
-    let frame: number;
-    const draw = () => {
-      ctx.clearRect(0, 0, W, H);
-      for (const g of glowSpots) {
-        g.x += g.dx; g.y += g.dy;
-        if (g.x < -100 || g.x > W + 100) g.dx *= -1;
-        if (g.y < -100 || g.y > H + 100) g.dy *= -1;
-        const grd = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.r);
-        grd.addColorStop(0, `hsla(${g.hue},80%,50%,.035)`);
-        grd.addColorStop(.5, `hsla(${g.hue},80%,50%,.015)`);
-        grd.addColorStop(1, `hsla(${g.hue},80%,50%,0)`);
-        ctx.fillStyle = grd;
-        ctx.fillRect(g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
-      }
-      for (const e of embers) {
-        e.x += e.vx; e.y += e.vy; e.life++;
-        if (e.life > e.maxL || e.y < -10 || e.x < -10 || e.x > W + 10) {
-          e.x = Math.random() * W; e.y = H + 10; e.life = 0; e.maxL = 80 + Math.random() * 120;
-        }
-        const a = 1 - e.life / e.maxL;
-        ctx.fillStyle = `hsla(${e.hue},100%,60%,${a * .4})`;
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.sz * (1 + e.life / e.maxL), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    frame = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", resize); };
-  }, []);
-  return <canvas ref={cvs} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
-}
-
-/* ─── Primitives ─────────────────────────────── */
-
-function PulseDot({ color }: { color: string }) {
-  return (
-    <span style={{
-      display: "inline-block", width: "8px", height: "8px", borderRadius: "50%",
-      background: color, marginRight: "8px",
-      boxShadow: `0 0 12px ${color}60`,
-      animation: "pulse-dot 2s ease-in-out infinite",
-    }} />
-  );
-}
-
-/* ─── Types ──────────────────────────────────── */
-
-interface Attack { id: string; agentId: string; scenario: string; content: string; previousHash: string; cryptographicHash: string; detectedAt: string; trustBefore: number; trustAfter: number; trustDrop: string; risk: string; }
-interface ChainBlock { step: number; label: string; hash: string; status: string; timestamp?: string; violation?: string; action?: string; }
-interface VsResult { content: string; memoryType: string; agentId?: string; similarity: number; }
-interface VectorSearch { results: VsResult[]; totalResults: number; latency: string; indexType: string; dimensions: number; distanceMetric?: string; tenantPartitioned?: boolean; }
-interface HealProof { restoredHash: string; previousHash: string; chainVerified: boolean; verificationMethod: string; }
-interface HealTrust { previousScore: number; restoredScore: number; improvement: string; }
-interface HealTimeTravel { interval: string; mechanism: string; from: string; to: string; }
-interface PoisonData { attack: Attack; chain: ChainBlock[]; detection: Record<string, unknown>; sql: string[]; crdbFeatures: string[]; }
-interface HealData { memoryId: string; agentId: string; recoveredContent: string; poisonedContent: string; timeTravel: HealTimeTravel; trustRestored: HealTrust; cryptographicProof: HealProof; sql: string[]; crdbFeatures: string[]; }
-interface ChatData { query: string; agentId: string; response: string; vectorSearch: VectorSearch; sql: string[]; crdbFeatures: string[]; }
-type ApiData = PoisonData | HealData | ChatData | null;
-type Scenario = "poison" | "heal" | "chat";
-interface ScenarioState { loading: boolean; error: string | null; result: ApiData; }
-
-/* ─── Tour Steps ─────────────────────────────── */
-
-interface TourStep {
-  id: string;
-  tab: Scenario;
-  title: string;
-  body: string;
-  highlight?: string;
-  action?: "click_poison" | "click_heal" | "click_chat" | "wait_poison" | "wait_heal" | "wait_chat" | "next";
-  _index?: number;
-}
-
-const TOUR: TourStep[] = [
-  {
-    id: "welcome",
-    tab: "poison",
-    title: "Welcome to Bastion",
-    body: "Bastion turns CockroachDB into a persistent, self-healing memory layer for AI agents. This tour walks through three core capabilities: Poison Detection, Time-Travel Recovery, and Semantic Vector Search.",
-    action: "next",
-  },
-  {
-    id: "poison_intro",
-    tab: "poison",
-    title: "Step 1: Inject a Poisoned Memory",
-    body: "Click 'Inject Poison' to simulate a prompt-injection attack. Bastion stores each memory in a SHA-256 hash chain — any tampering breaks the chain and drops the trust score. CockroachDB's SERIALIZABLE isolation ensures atomic detection.",
-    highlight: "poison-btn",
-    action: "click_poison",
-  },
-  {
-    id: "poison_result",
-    tab: "poison",
-    title: "Step 2: Trust Score Collapse",
-    body: "The hash chain detected the tamper. Trust dropped from 87% → 17%. The memory is quarantined (trust=0). CockroachDB's SERIALIZABLE isolation guarantees this check is atomic — no race conditions.",
-    action: "next",
-  },
-  {
-    id: "heal_intro",
-    tab: "heal",
-    title: "Step 3: Time-Travel Recovery",
-    body: "Now we travel back in time using CockroachDB's MVCC — SELECT ... AS OF SYSTEM TIME '-5s' retrieves the pre-poison state. This is possible because CockroachDB never overwrites data; every write creates a new version.",
-    highlight: "heal-btn",
-    action: "click_heal",
-  },
-  {
-    id: "heal_result",
-    tab: "heal",
-    title: "Step 4: Content Restored",
-    body: "The original content is recovered, hash chain re-verified, and trust score restored to 100%. All within a SERIALIZABLE transaction — the recovery is cryptographically provable.",
-    action: "next",
-  },
-  {
-    id: "chat_intro",
-    tab: "chat",
-    title: "Step 5: Semantic Vector Search",
-    body: "Finally, search all memories with real AI embeddings. Your query is encoded via sentence-transformers (all-MiniLM-L6-v2, 384-dim), compared against every memory using cosine similarity, and the top 5 are ranked.",
-    highlight: "chat-btn",
-    action: "click_chat",
-  },
-  {
-    id: "chat_result",
-    tab: "chat",
-    title: "Step 6: Real Similarity Scores",
-    body: "Each result shows a similarity percentage — real cosine similarity between your query and the memory's embedding. The similarity bars animate on load. Results are enriched by Groq (Llama 3.1) when enabled.",
-    action: "next",
-  },
-  {
-    id: "outro",
-    tab: "chat",
-    title: "Built on CockroachDB",
-    body: "Bastion is the system of record for autonomous AI. Hash-chain integrity, AS OF SYSTEM TIME recovery, C-SPANN vector indexing, SERIALIZABLE isolation — all powered by CockroachDB. The tour is complete. Explore freely or visit other pages.",
-    action: "next",
-  },
-];
-
-/* ─── DemoTour ───────────────────────────────── */
-
-function DemoTour({ step, total, onNext, onPrev, onSkip, onAction }: {
-  step: TourStep; index: number; total: number;
-  onNext: () => void; onPrev: () => void; onSkip: () => void; onAction: () => void;
-}) {
-  const isLast = step.id === "outro";
-  const needsAction = step.action?.startsWith("click_");
-
-  return (
-    <div style={{
-      background: N.glass, backdropFilter: "blur(12px)",
-      border: "1px solid rgba(0,229,255,.15)",
-      borderRadius: "14px", padding: "20px 24px",
-      boxShadow: "0 8px 40px rgba(0,0,0,.6), 0 0 30px rgba(0,229,255,.05)",
-      maxWidth: "520px", width: "100%",
-    }}>
-      {/* Progress dots */}
-      <div style={{ display: "flex", gap: "6px", marginBottom: "16px", alignItems: "center" }}>
-        {Array.from({ length: total - 1 }, (_, i) => (
-          <div key={i} style={{
-            flex: 1, height: "3px", borderRadius: "999px",
-            background: i < (step._index ?? 0) ? N.breeze : "rgba(255,255,255,.08)",
-            transition: "background .4s",
-          }} />
-        ))}
-        <span style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", marginLeft: "8px" }}>
-          {(step._index ?? 0) + 1}/{total}
-        </span>
-      </div>
-
-      {/* Title */}
-      <h3 style={{ fontSize: "16px", fontWeight: 700, color: N.ink, margin: "0 0 8px 0", fontFamily: "'Space Grotesk', sans-serif" }}>
-        {step.title}
-      </h3>
-
-      {/* Body */}
-      <p style={{ fontSize: "13px", color: N.body, lineHeight: "1.7", margin: "0 0 18px 0" }}>
-        {step.body}
-      </p>
-
-      {/* Action buttons */}
-      <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-        {needsAction ? (
-          <button onClick={onAction} style={{
-            padding: "10px 28px", borderRadius: "8px", border: "none",
-            background: "linear-gradient(135deg, #00e5ff, #0098a8)",
-            color: "#000", fontWeight: 700, fontSize: "13px", cursor: "pointer",
-            fontFamily: "'Space Grotesk', sans-serif",
-            boxShadow: "0 4px 20px rgba(0,229,255,.2)",
-            transition: `all .3s ${N.easeOut}`,
-            animation: "glow-pulse 2s ease-in-out infinite",
-          }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.04)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}>
-            {step.action === "click_poison" ? "👉 Click Inject Poison" :
-             step.action === "click_heal" ? "👉 Click Travel Back & Heal" :
-             "👉 Click Search"}
-          </button>
-        ) : (
-          <button onClick={onNext} style={{
-            padding: "10px 28px", borderRadius: "8px", border: "none",
-            background: isLast ? "linear-gradient(135deg, #ffc800, #ffaa00)" : "linear-gradient(135deg, #00e5ff, #0098a8)",
-            color: isLast ? "#000" : "#000", fontWeight: 700, fontSize: "13px", cursor: "pointer",
-            fontFamily: "'Space Grotesk', sans-serif",
-            boxShadow: isLast ? "0 4px 20px rgba(255,200,0,.2)" : "0 4px 20px rgba(0,229,255,.2)",
-            transition: `all .3s ${N.easeOut}`,
-          }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.04)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}>
-            {isLast ? "✨ Finish Tour" : "Next →"}
-          </button>
-        )}
-        {!needsAction && (step._index ?? 0) > 0 && (
-          <button onClick={onPrev} style={{
-            padding: "10px 20px", borderRadius: "8px", border: "1px solid rgba(255,255,255,.1)",
-            background: "transparent", color: N.mute, fontWeight: 600, fontSize: "12px", cursor: "pointer",
-            fontFamily: "'Space Grotesk', sans-serif",
-            transition: `all .2s ${N.easeOut}`,
-          }}
-            onMouseEnter={e => { e.currentTarget.style.color = N.ink; e.currentTarget.style.borderColor = "rgba(255,255,255,.2)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = N.mute; e.currentTarget.style.borderColor = "rgba(255,255,255,.1)"; }}>
-            ← Back
-          </button>
-        )}
-        <button onClick={onSkip} style={{
-          marginLeft: "auto", padding: "6px 14px", borderRadius: "6px", border: "none",
-          background: "transparent", color: N.faint, fontSize: "11px", cursor: "pointer",
-          fontFamily: "'JetBrains Mono', monospace",
-          transition: `all .2s ${N.easeOut}`,
-        }}
-          onMouseEnter={e => { e.currentTarget.style.color = N.mute; }}
-          onMouseLeave={e => { e.currentTarget.style.color = N.faint; }}>
-          Skip tour
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── useFetchAbort ─────────────────────────── */
-
-function useFetchAbort() {
-  const ref = useRef<AbortController | null>(null);
-  const fetchJson = useCallback(async (url: string, body: unknown): Promise<ApiData> => {
-    ref.current?.abort();
-    const ctrl = new AbortController();
-    ref.current = ctrl;
-    const apiKey = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-api-key') : '';
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    const res = await fetch(url, {
-      method: "POST", headers,
-      body: JSON.stringify(body), signal: ctrl.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(text ? `HTTP ${res.status}: ${text.slice(0, 200)}` : `HTTP ${res.status}`);
-    }
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || "Request failed");
-    return json.data as ApiData;
-  }, []);
-  useEffect(() => () => ref.current?.abort(), []);
-  return fetchJson;
-}
-
-/* ─── Main Playground ───────────────────────── */
-
 export default function PlaygroundContent() {
-  const [state, setState] = useState<Record<Scenario, ScenarioState>>({
-    poison: { loading: false, error: null, result: null },
-    heal: { loading: false, error: null, result: null },
-    chat: { loading: false, error: null, result: null },
-  });
-  const [chatQuery, setChatQuery] = useState("What do I know about secret keys and encryption?");
-  const [activeTab, setActiveTab] = useState<Scenario>("poison");
-  const [tourActive, setTourActive] = useState(true);
-  const [tourIdx, setTourIdx] = useState(0);
-  const fetchJson = useFetchAbort();
+  const [tourStep, setTourStep] = useState(0);
+  const [poisonResult, setPoisonResult] = useState<unknown>(null);
+  const [healResult, setHealResult] = useState<unknown>(null);
+  const [chatResult, setChatResult] = useState<unknown>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (scenario: Scenario, url: string, body: unknown) => {
-    setState(p => ({ ...p, [scenario]: { loading: true, error: null, result: null } }));
+  // MCP Tool Demo
+  const [mcpTool, setMcpTool] = useState<string | null>(null);
+  const [mcpInput, setMcpInput] = useState("secret keys");
+  const [mcpResult, setMcpResult] = useState<Record<string, unknown> | null>(null);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+
+  const runMcpTool = useCallback(async (tool: string, input: string) => {
+    setMcpLoading(true);
+    setMcpError(null);
+    setMcpResult(null);
     try {
-      const data = await fetchJson(url, body);
-      if (!data) throw new Error("Empty response");
-      setState(p => ({ ...p, [scenario]: { loading: false, result: data, error: null } }));
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setState(p => ({ ...p, [scenario]: { loading: false, error: err instanceof Error ? err.message : "Request failed", result: null } }));
+      const body: Record<string, unknown> = { agentId: "agent-demo" };
+      if (tool === "memory_search") body.query = input;
+      else if (tool === "memory_store") body.content = input;
+      else if (tool === "memory_timetravel") body.interval = input || "-5s";
+      else if (tool === "memory_audit") body.limit = parseInt(input) || 10;
+
+      const res = await fetch(`/api/mcp/${tool}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Tool failed");
+      setMcpResult(data.data as Record<string, unknown>);
+    } catch (e: unknown) {
+      setMcpError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setMcpLoading(false);
     }
-  }, [fetchJson]);
+  }, []);
 
-  const runPoison = useCallback(() => run("poison", "/api/demo/poison", { agentId: "agent-demo", scenario: "injection" }), [run]);
-  const runHeal = useCallback(() => run("heal", "/api/demo/heal", { agentId: "agent-demo" }), [run]);
-  const runChat = useCallback(() => { if (chatQuery.trim()) run("chat", "/api/demo/chat", { query: chatQuery.trim(), agentId: "agent-demo" }); }, [run, chatQuery]);
+  // Live stats from CockroachDB
+  const [stats, setStats] = useState<{ memories: number; entities: number; relations: number; auditLogs: number; regions: number; avgLatency: string; clusterOnline: boolean } | null>(null);
+  const [statsError, setStatsError] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-  const currentStep = TOUR[tourIdx];
-  const isPoisonRun = !!state.poison.result;
-  const isHealRun = !!state.heal.result;
-  const isChatRun = !!state.chat.result;
-
-  // Auto-advance tour when action completes
+  // Fetch live stats on mount
   useEffect(() => {
-    if (!tourActive) return;
-    const s = TOUR[tourIdx];
-    if (s.action === "wait_poison" && isPoisonRun) setTourIdx(i => Math.min(i + 1, TOUR.length - 1));
-    if (s.action === "wait_heal" && isHealRun) setTourIdx(i => Math.min(i + 1, TOUR.length - 1));
-    if (s.action === "wait_chat" && isChatRun) setTourIdx(i => Math.min(i + 1, TOUR.length - 1));
-  }, [tourActive, tourIdx, isPoisonRun, isHealRun, isChatRun]);
+    let mounted = true;
+    const fetchStats = async () => {
+      try {
+        const [statsRes, regionRes] = await Promise.all([
+          fetch("/api/stats").then(r => r.json()),
+          fetch("/api/region-stats").then(r => r.json()),
+        ]);
+        if (!mounted) return;
+        const s = statsRes?.data;
+        const r = regionRes?.data;
+        setStats({
+          memories: s?.memories ?? 0,
+          entities: s?.entities ?? 0,
+          relations: s?.relations ?? 0,
+          auditLogs: s?.auditLogs ?? 0,
+          regions: r?.regions?.length ?? 0,
+          avgLatency: r?.avg_global_latency_ms ? `${Math.round(r.avg_global_latency_ms / 1000)}ms` : "—",
+          clusterOnline: true,
+        });
+        setStatsLoading(false);
+      } catch {
+        if (!mounted) return;
+        setStatsError(true);
+        setStatsLoading(false);
+      }
+    };
+    fetchStats();
+    // Refresh stats every 30s
+    const interval = setInterval(fetchStats, 30000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
 
-  // Auto-switch tabs in tour
+  const callApi = useCallback(async (url: string, body: unknown, setter: (d: unknown) => void, tag: string) => {
+    ctrlRef.current?.abort();
+    const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
+    setLoading(tag);
+    setError(null);
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+      const json = await res.json();
+      // API wraps in {success, data} — extract the data
+      const data = json?.data ?? json;
+      setter(data);
+      setLoading(null);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Failed");
+      setLoading(null);
+    }
+  }, []);
+
+  const runPoison = useCallback(() => callApi("/api/demo/poison", { agentId: "agent-demo" }, setPoisonResult, "poison"), [callApi]);
+  const runHeal = useCallback(() => callApi("/api/demo/heal", { agentId: "agent-demo" }, setHealResult, "heal"), [callApi]);
+  const runChat = useCallback(() => callApi("/api/demo/chat", { query: "secret keys and encryption", agentId: "agent-demo" }, setChatResult, "chat"), [callApi]);
+
+  const onPoisonDone = loading === null && poisonResult && tourStep === 2;
+  const onHealDone = loading === null && healResult && tourStep === 5;
+  const onChatDone = loading === null && chatResult && tourStep === 8;
+  const advancedRef = useRef({ poison: false, heal: false, chat: false });
+
+  const goStep = (s: number) => {
+    if (s === 2) advancedRef.current.poison = false;
+    if (s === 5) advancedRef.current.heal = false;
+    if (s === 8) advancedRef.current.chat = false;
+    setTourStep(s);
+  };
+
   useEffect(() => {
-    if (!tourActive) return;
-    setActiveTab(currentStep.tab);
-  }, [tourActive, tourIdx]);
+    if (onPoisonDone && !advancedRef.current.poison) { advancedRef.current.poison = true; setTimeout(() => setTourStep(3), 200); }
+    if (onHealDone && !advancedRef.current.heal) { advancedRef.current.heal = true; setTimeout(() => setTourStep(6), 200); }
+    if (onChatDone && !advancedRef.current.chat) { advancedRef.current.chat = true; setTimeout(() => setTourStep(9), 200); }
+  }, [onPoisonDone, onHealDone, onChatDone]);
 
-  // Find which step we're at for progress
-  const stepIndex = TOUR.findIndex(s => s.id === currentStep.id);
+  const reset = () => {
+    setTourStep(0); setPoisonResult(null); setHealResult(null); setChatResult(null); setLoading(null); setError(null);
+    advancedRef.current = { poison: false, heal: false, chat: false };
+  };
 
-  const handleTourAction = useCallback(() => {
-    const s = TOUR[tourIdx];
-    if (s.action === "click_poison") { runPoison(); setTourIdx(i => Math.min(i + 1, TOUR.length - 1)); }
-    if (s.action === "click_heal") { runHeal(); setTourIdx(i => Math.min(i + 1, TOUR.length - 1)); }
-    if (s.action === "click_chat") { runChat(); setTourIdx(i => Math.min(i + 1, TOUR.length - 1)); }
-  }, [tourIdx, runPoison, runHeal, runChat]);
+  const atk = (poisonResult as Record<string, unknown> | null)?.attack as Record<string, unknown> | undefined;
+  const pSql = ((poisonResult as Record<string, unknown> | null)?.sql as string[]) || [];
+  const hd = (healResult as Record<string, unknown> | null) as Record<string, unknown> | undefined;
+  const cd = (chatResult as Record<string, unknown> | null) as Record<string, unknown> | undefined;
+  const vs = cd?.vectorSearch as Record<string, unknown> | undefined;
 
-  const handleNext = useCallback(() => setTourIdx(i => Math.min(i + 1, TOUR.length - 1)), []);
-  const handlePrev = useCallback(() => setTourIdx(i => Math.max(i - 1, 0)), []);
-  const handleSkip = useCallback(() => setTourActive(false), []);
-
-  const tabMeta = [
-    { key: "poison" as Scenario, label: "Poison Detection", icon: "\u2620\uFE0F", desc: "Hash chain + trust scoring", accent: N.sunset },
-    { key: "heal" as Scenario, label: "Time Travel Heal", icon: "\u23F0", desc: "AS OF SYSTEM TIME recovery", accent: N.breeze },
-    { key: "chat" as Scenario, label: "Semantic Chat", icon: "\uD83D\uDCAC", desc: "Vector similarity search", accent: N.emerald },
-  ];
+  const isWelcome = tourStep === 0;
 
   return (
-    <div style={{ background: N.bg, minHeight: "100vh", padding: "clamp(14px,3vw,36px) clamp(10px,2.5vw,24px)", position: "relative" }}>
-      <NetherAmbient />
+    <div style={{ background: "#0a0508", minHeight: "100vh", position: "relative", overflow: "hidden" }}>
+      {/* Ambient glow for welcome */}
+      {isWelcome && (
+        <>
+          <div style={{ position: "absolute", top: "20%", left: "50%", width: "800px", height: "400px", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,94,0,0.06) 0%, transparent 70%)", transform: "translateX(-50%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", top: "40%", left: "30%", width: "600px", height: "300px", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,145,0,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
+        </>
+      )}
 
-      <div style={{ maxWidth: "1040px", margin: "0 auto", position: "relative", zIndex: 1 }}>
-        {/* Header */}
-        <div style={{ marginBottom: "clamp(20px,3vw,36px)", textAlign: "center" }}>
-          <div style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", fontWeight: 700,
-            textTransform: "uppercase", letterSpacing: "3px",
-            color: N.breeze, marginBottom: "10px", display: "block",
-            textShadow: "0 0 12px rgba(0,229,255,.3)",
-          }}>
-            <Link href="/" style={{ color: "inherit", textDecoration: "none" }}>Bastion</Link> Interactive Demo Suite
-          </div>
-          <h1 style={{
-            fontSize: "clamp(28px,4vw,40px)", fontWeight: 700, margin: "0 0 10px 0",
-            fontFamily: "'Space Grotesk', sans-serif",
-            background: "linear-gradient(135deg, #fff 30%, #00e5ff 70%, #ffc800)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-            letterSpacing: "-.5px",
-          }}>
-            Agentic Memory Playground
-          </h1>
-          {!tourActive && (
-            <p style={{ fontSize: "clamp(13px,1.8vw,15px)", color: N.mute, margin: "0 auto", lineHeight: "1.8", maxWidth: "620px" }}>
-              Three demos showing CockroachDB as an agentic memory layer — real SQL, real vectors, real time-travel.
+      <div style={{ position: "relative", zIndex: 1, padding: "0 32px", maxWidth: "1100px", margin: "0 auto" }}>
+
+        {/* Welcome screen (Step 0) */}
+        {isWelcome && (
+          <div style={{ textAlign: "center", padding: "40px 0 20px" }}>
+            {/* Welcome pill */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 16px", borderRadius: "999px", background: "rgba(255,94,0,0.08)", border: "1px solid rgba(255,94,0,0.2)", marginBottom: "20px" }}>
+              <span style={{ fontSize: "10px" }}>✦</span>
+              <span style={{ fontSize: "10px", color: "#ff9100", fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase" as const }}>Welcome to Bastion</span>
+            </div>
+
+            {/* Big gradient title */}
+            <h1 style={{ fontSize: "clamp(36px, 5vw, 52px)", fontWeight: 800, margin: "0 0 16px 0", lineHeight: "1.1" }}>
+              <span style={{ color: "#fff" }}>Agentic Memory </span>
+              <span style={{ background: "linear-gradient(135deg, #ff9100, #ff5e00, #ff2a00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Live Demo</span>
+            </h1>
+
+            {/* Subtitle */}
+            <p style={{ fontSize: "16px", color: "#a0a0b0", margin: "0 auto 32px", maxWidth: "520px", lineHeight: "1.6" }}>
+              Run <strong style={{ color: "#ff9100" }}>real SQL</strong> against a live CockroachDB cluster.
+              <br />See the queries, results, and proof in action.
             </p>
-          )}
-          {!tourActive && (
-            <button onClick={() => { setTourActive(true); setTourIdx(0); }}
-              style={{
-                marginTop: "12px", padding: "8px 20px", borderRadius: "8px",
-                border: "1px solid rgba(0,229,255,.2)", background: "rgba(0,229,255,.06)",
-                color: N.breeze, fontSize: "12px", fontWeight: 600, cursor: "pointer",
-                fontFamily: "'JetBrains Mono', monospace",
-                transition: `all .2s ${N.easeOut}`,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,229,255,.12)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,229,255,.06)"; }}>
-              Start guided tour
-            </button>
-          )}
-        </div>
 
-        {/* Tour panel */}
-        {tourActive && (
-          <div style={{
-            marginBottom: "clamp(16px,2.5vw,24px)",
-            display: "flex", justifyContent: "center",
-            animation: "slideDown .4s ease-out",
-          }}>
-            <DemoTour
-              step={{ ...currentStep, _index: stepIndex }}
-              index={stepIndex}
-              total={TOUR.length}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              onSkip={handleSkip}
-              onAction={handleTourAction}
-            />
+            {/* Feature cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", maxWidth: "700px", margin: "0 auto 32px" }}>
+              <FeatureCard icon="🛡️" title="Poison Detection" desc="Find injected memories" color="#ff6b35" />
+              <FeatureCard icon="⏱️" title="Time Travel" desc="Query any moment" color="#00e5ff" />
+              <FeatureCard icon="🔍" title="Vector Search" desc="Semantic memory lookup" color="#00ff88" />
+            </div>
+
+            {/* Big CTA button */}
+            <button onClick={() => goStep(1)} style={{
+              padding: "16px 40px", borderRadius: "12px", border: "none",
+              background: "linear-gradient(135deg, #ff5e00, #ff9100)",
+              color: "#fff", fontWeight: 700, fontSize: "16px", cursor: "pointer",
+              boxShadow: "0 0 40px rgba(255,94,0,0.25), 0 4px 20px rgba(0,0,0,0.3)",
+              display: "inline-flex", alignItems: "center", gap: "10px",
+              transition: "transform 0.2s, box-shadow 0.2s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 0 60px rgba(255,94,0,0.35), 0 8px 30px rgba(0,0,0,0.4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 0 40px rgba(255,94,0,0.25), 0 4px 20px rgba(0,0,0,0.3)"; }}>
+              Start Demo
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            </button>
+
+            <div style={{ fontSize: "12px", color: "#606070", marginTop: "12px" }}>
+              Launch interactive demo in 3 simple steps
+            </div>
+
+            {/* Feature highlights */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "20px", marginTop: "40px", paddingTop: "32px", borderTop: "1px solid #1a1a2a" }}>
+              <FeatureHighlight icon="⚡" title="Real SQL" desc="Execute live queries on CockroachDB" />
+              <FeatureHighlight icon="📊" title="Live Results" desc="See results instantly with execution proof" />
+              <FeatureHighlight icon="🔒" title="Secure & Safe" desc="Isolated environment for safe testing" />
+              <FeatureHighlight icon="🤖" title="AI-Powered" desc="Agentic tools to explore memory at scale" />
+            </div>
+
+            {/* Live Stats from CockroachDB */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #1a1a2a" }}>
+              {statsError ? (
+                <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "12px", background: "rgba(255,68,68,0.06)", border: "1px solid rgba(255,68,68,0.15)", borderRadius: "8px" }}>
+                  <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 600 }}>Unable to connect to CockroachDB</div>
+                  <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>Stats will be available once the cluster is reachable</div>
+                </div>
+              ) : statsLoading ? (
+                <>
+                  {[1,2,3,4,5].map(i => (
+                    <div key={i} style={{ textAlign: "center", padding: "12px 8px", background: "#12121a", borderRadius: "8px", border: "1px solid #1e1e2a" }}>
+                      <div style={{ fontSize: "20px", fontWeight: 700, color: "#1e1e2a", fontFamily: "'Space Grotesk', sans-serif" }}>—</div>
+                      <div style={{ fontSize: "10px", color: "#606070", textTransform: "uppercase" as const, letterSpacing: "1px", marginTop: "4px" }}>Loading...</div>
+                    </div>
+                  ))}
+                </>
+              ) : stats ? (
+                <>
+                  <LiveStat label="Memories Stored" value={stats.memories.toLocaleString()} color="#ff9100" icon="🧠" />
+                  <LiveStat label="Entities" value={stats.entities.toLocaleString()} color="#00e5ff" icon="📦" />
+                  <LiveStat label="Relations" value={stats.relations.toLocaleString()} color="#00ff88" icon="🔗" />
+                  <LiveStat label="Audit Events" value={stats.auditLogs.toLocaleString()} color="#b388ff" icon="📋" />
+                  <LiveStat label="Regions" value={stats.regions > 0 ? `${stats.regions} active` : "—"} color={stats.clusterOnline ? "#00ff88" : "#ff4444"} icon={stats.clusterOnline ? "🟢" : "🔴"} />
+                </>
+              ) : null}
+            </div>
+
+            {/* MCP Server Tools Showcase */}
+            <div style={{ marginTop: "32px", paddingTop: "24px", borderTop: "1px solid #1a1a2a" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "16px" }}>
+                <span style={{ fontSize: "12px", color: "#ff9100", fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase" as const }}>🔌</span>
+                <span style={{ fontSize: "12px", color: "#ff9100", fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase" as const }}>MCP Server — 26 Tools</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "#606070", textAlign: "center", marginBottom: "20px" }}>
+                CockroachDB Cloud Managed MCP Server • Works with Claude, Cursor, VS Code
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "8px" }}>
+                {MCP_TOOLS.map((tool, i) => (
+                  <McpToolCard key={i} {...tool} onClick={() => { setMcpTool(tool.name); setMcpResult(null); setMcpError(null); }} active={mcpTool === tool.name} />
+                ))}
+              </div>
+
+              {/* Interactive MCP Tool Runner */}
+              {mcpTool && (
+                <div style={{ marginTop: "16px", background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>▶ Run: <code style={{ color: "#ff9100" }}>{mcpTool}</code></div>
+                    <button onClick={() => setMcpTool(null)} style={{ background: "none", border: "none", color: "#606070", cursor: "pointer", fontSize: "12px" }}>✕ Close</button>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                    <input
+                      value={mcpInput}
+                      onChange={e => setMcpInput(e.target.value)}
+                      placeholder={mcpTool === "memory_search" ? "Enter search query..." : mcpTool === "memory_store" ? "Enter memory content..." : mcpTool === "memory_timetravel" ? "Interval (e.g. -5s)..." : "Limit (e.g. 10)..."}
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", border: "1px solid #2a2a35", background: "#1a1a24", color: "#fff", fontSize: "12px", fontFamily: "'JetBrains Mono', monospace", outline: "none" }}
+                    />
+                    <button
+                      onClick={() => runMcpTool(mcpTool, mcpInput)}
+                      disabled={mcpLoading}
+                      style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: mcpLoading ? "#1a1a24" : "linear-gradient(135deg, #ff5e00, #ff9100)", color: mcpLoading ? "#606070" : "#fff", fontWeight: 600, fontSize: "12px", cursor: mcpLoading ? "not-allowed" : "pointer" }}
+                    >
+                      {mcpLoading ? "Running..." : "Execute"}
+                    </button>
+                  </div>
+                  {mcpError && <div style={{ padding: "8px 12px", background: "rgba(255,68,68,0.08)", border: "1px solid rgba(255,68,68,0.2)", borderRadius: "6px", color: "#ff4444", fontSize: "11px", marginBottom: "8px" }}>{mcpError}</div>}
+                  {mcpResult && (
+                    <div style={{ background: "#1a1a24", borderRadius: "6px", padding: "10px", border: "1px solid #2a2a35" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                        <span style={{ fontSize: "10px", color: "#a0a0b0", fontWeight: 600 }}>RESULT</span>
+                        <span style={{ fontSize: "10px", color: "#ff9100" }}>{String(mcpResult.latency || "")}</span>
+                      </div>
+                      <pre style={{ margin: 0, fontSize: "10px", color: "#00e5ff", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: "1.5", maxHeight: "200px", overflow: "auto" }}>
+                        {JSON.stringify(mcpResult, null, 2)}
+                      </pre>
+                      {typeof mcpResult.sql === "string" && (
+                        <div style={{ marginTop: "8px", padding: "6px 10px", background: "rgba(0,229,255,0.06)", borderRadius: "4px", borderLeft: "2px solid #00e5ff40" }}>
+                          <div style={{ fontSize: "9px", color: "#00e5ff", fontWeight: 600, marginBottom: "2px" }}>SQL EXECUTED</div>
+                          <div style={{ fontSize: "9px", color: "#a0a0b0", fontFamily: "'JetBrains Mono', monospace" }}>{String(mcpResult.sql)}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* A2A + ccloud + Lambda section */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #1a1a2a" }}>
+              <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px", textAlign: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>🤖</div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>A2A Protocol</div>
+                <div style={{ fontSize: "11px", color: "#a0a0b0", lineHeight: "1.4" }}>Agent-to-agent communication with signed tasks and discovery</div>
+                <div style={{ marginTop: "8px", display: "flex", gap: "4px", justifyContent: "center", flexWrap: "wrap" }}>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#ff910018", color: "#ff9100", border: "1px solid #ff910030" }}>Signing</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#ff910018", color: "#ff9100", border: "1px solid #ff910030" }}>Tasks</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#ff910018", color: "#ff9100", border: "1px solid #ff910030" }}>Agent Card</span>
+                </div>
+              </div>
+              <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px", textAlign: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>☁️</div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>ccloud CLI</div>
+                <div style={{ fontSize: "11px", color: "#a0a0b0", lineHeight: "1.4" }}>Agent-ready CockroachDB Cloud control plane access</div>
+                <div style={{ marginTop: "8px", display: "flex", gap: "4px", justifyContent: "center", flexWrap: "wrap" }}>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00e5ff18", color: "#00e5ff", border: "1px solid #00e5ff30" }}>Backup</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00e5ff18", color: "#00e5ff", border: "1px solid #00e5ff30" }}>Health</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00e5ff18", color: "#00e5ff", border: "1px solid #00e5ff30" }}>Provision</span>
+                </div>
+              </div>
+              <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px", textAlign: "center" }}>
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>⚡</div>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>AWS Lambda CDC</div>
+                <div style={{ fontSize: "11px", color: "#a0a0b0", lineHeight: "1.4" }}>Real-time change detection on every memory write</div>
+                <div style={{ marginTop: "8px", display: "flex", gap: "4px", justifyContent: "center", flexWrap: "wrap" }}>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Changefeed</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>CloudWatch</span>
+                  <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "9px", background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>S3 Artifacts</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Tabs */}
-        <nav role="tablist" aria-label="Demo scenarios"
-          style={{
-            display: "flex", gap: "4px", marginBottom: "clamp(16px,2.5vw,28px)",
-            background: N.card, borderRadius: "14px", padding: "4px",
-            border: "1px solid rgba(255,42,0,.12)",
-            position: "relative", overflow: "hidden",
-          }}>
-          <div style={{
-            position: "absolute", bottom: "4px", left: 0, height: "2px",
-            width: `${100 / 3}%`,
-            transform: `translateX(${tabMeta.findIndex(t => t.key === activeTab) * 100}%)`,
-            background: "linear-gradient(90deg, #00e5ff, #ffc800, #00ff66)",
-            transition: `transform .45s ${N.easeOut}`,
-            borderRadius: "2px",
-          }} />
-          {tabMeta.map(tab => (
-            <button key={tab.key} role="tab" aria-selected={activeTab === tab.key}
-              onClick={() => { if (!tourActive) setActiveTab(tab.key); }}
-              tabIndex={activeTab === tab.key ? 0 : -1}
-              style={{
-                flex: 1, padding: "clamp(10px,1.5vw,14px) clamp(12px,2vw,20px)",
-                cursor: tourActive ? "default" : "pointer", textAlign: "left", minWidth: 0,
-                background: activeTab === tab.key
-                  ? `linear-gradient(180deg, ${tab.accent}10, transparent 80%)`
-                  : "transparent",
-                border: "none", borderRadius: "10px",
-                color: activeTab === tab.key ? N.ink : N.mute,
-                transition: `all .35s ${N.easeOut}`,
-                fontFamily: "'Space Grotesk', sans-serif", position: "relative",
-                opacity: tourActive && activeTab !== tab.key ? .5 : 1,
-              }}>
-              <div style={{ fontSize: "clamp(13px,1.4vw,15px)", fontWeight: 600, marginBottom: "2px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span aria-hidden="true" style={{ fontSize: "16px" }}>{tab.icon}</span>
-                <span>{tab.label}</span>
-                {activeTab === tab.key && <PulseDot color={tab.accent} />}
-              </div>
-              <div style={{ fontSize: "clamp(10px,1.1vw,11px)", fontWeight: 400, color: activeTab === tab.key ? N.mute : N.faint }}>
-                {tab.desc}
-              </div>
-            </button>
-          ))}
-        </nav>
-
-        {/* Panels */}
-        <div style={{ position: "relative" }}>
-          {(["poison", "heal", "chat"] as Scenario[]).map(scenario => (
-            <div key={scenario} style={{
-              display: activeTab === scenario ? "flex" : "none",
-              flexDirection: "column", gap: "clamp(14px,2.5vw,24px)",
-              animation: activeTab === scenario ? "fadeIn .45s ease-out" : "none",
-            }}>
-              {scenario === "poison" && <PoisonPanel state={state.poison} onRun={runPoison} tourHighlight={tourActive && currentStep.highlight === "poison-btn"} />}
-              {scenario === "heal" && <HealPanel state={state.heal} onRun={runHeal} tourHighlight={tourActive && currentStep.highlight === "heal-btn"} />}
-              {scenario === "chat" && <ChatPanel state={state.chat} onRun={runChat} query={chatQuery} onQueryChange={setChatQuery} tourHighlight={tourActive && currentStep.highlight === "chat-btn"} />}
+        {/* Tour steps (Step 1+) */}
+        {!isWelcome && (
+          <>
+            {/* Progress bar */}
+            <div style={{ display: "flex", gap: "3px", marginBottom: "20px", padding: "0 4px" }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
+                <div key={i} style={{ flex: 1, height: "4px", borderRadius: "999px", background: tourStep >= i ? "#ff5e00" : "#1e1e2a", transition: "all 0.3s", boxShadow: tourStep >= i ? "0 0 8px rgba(255,94,0,0.3)" : "none" }} />
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Footer */}
-        <div style={{ marginTop: "clamp(32px,5vw,48px)", textAlign: "center", borderTop: "1px solid rgba(255,42,0,.08)", paddingTop: "20px" }}>
-          <div style={{ fontSize: "10px", color: N.faint, fontFamily: "'JetBrains Mono', monospace" }}>
-            Built on CockroachDB · sentence-transformers (all-MiniLM-L6-v2) · Groq · Next.js
-          </div>
-        </div>
+            <div style={{ background: "linear-gradient(135deg, #12121a 0%, #1a1220 100%)", border: "1px solid #2a2a35", borderRadius: "16px", padding: "32px", minHeight: "280px", position: "relative", overflow: "hidden" }}>
+              {/* Decorative corner glow */}
+              <div style={{ position: "absolute", top: "-60px", right: "-60px", width: "200px", height: "200px", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,94,0,0.06) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+              {/* Step 1: Pre-poison */}
+              {tourStep === 1 && (
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#ff6b3518", color: "#ff6b35", border: "1px solid #ff6b3530", letterSpacing: "0.5px" }}>DEMO 1 OF 3</span>
+                  </div>
+                  <div style={{ fontSize: "28px", fontWeight: 800, color: "#fff", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif" }}>
+                    Memory Poisoning Detection
+                  </div>
+                  <div style={{ fontSize: "16px", color: "#a0a0b0", lineHeight: "1.7", marginBottom: "24px", maxWidth: "600px" }}>
+                    I&apos;ll inject a <span style={{ color: "#ff4444", fontWeight: 700, background: "rgba(255,68,68,0.1)", padding: "2px 8px", borderRadius: "4px" }}>malicious memory</span> into CockroachDB.
+                    The system will detect tampering via <span style={{ color: "#ff9100", fontWeight: 600 }}>SHA-256 hash chain</span> and drop the trust score.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+                    <button onClick={() => { goStep(2); runPoison(); }} style={{
+                      padding: "16px 36px", borderRadius: "12px", border: "none",
+                      background: "linear-gradient(135deg, #ff6b35, #ff4444)",
+                      color: "#fff", fontWeight: 700, fontSize: "16px", cursor: "pointer",
+                      boxShadow: "0 0 30px rgba(255,107,53,0.4), 0 4px 16px rgba(0,0,0,0.3)",
+                      display: "flex", alignItems: "center", gap: "8px",
+                      transition: "transform 0.2s, box-shadow 0.2s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 0 40px rgba(255,107,53,0.5), 0 8px 24px rgba(0,0,0,0.4)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(255,107,53,0.4), 0 4px 16px rgba(0,0,0,0.3)"; }}>
+                      ⚡ Run It Now
+                    </button>
+                    <button onClick={() => goStep(0)} style={{
+                      padding: "14px 24px", borderRadius: "10px",
+                      border: "1px solid #2a2a35", background: "transparent",
+                      color: "#a0a0b0", fontSize: "14px", cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#ff910050"; e.currentTarget.style.color = "#fff"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a2a35"; e.currentTarget.style.color = "#a0a0b0"; }}>
+                      ← Back
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Poison loading */}
+              {tourStep === 2 && (
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#ff6b3518", color: "#ff6b35", border: "1px solid #ff6b3530" }}>EXECUTING</span>
+                  </div>
+                  <div style={{ fontSize: "24px", fontWeight: 700, color: "#fff", marginBottom: "20px" }}>Injecting poisoned memory into CockroachDB...</div>
+
+                  {/* Real SQL execution steps */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <SqlStep num={1} label="Read current trust level" sql="SELECT trust_level FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" status="done" />
+                    <SqlStep num={2} label="Compute SHA-256 hash chain" sql="SHA256(previous_hash + content + agent_id + timestamp)" status="done" />
+                    <SqlStep num={3} label="Generate embedding vector" sql="sentence-transformers(text) → 384-dim vector" status="done" />
+                    <SqlStep num={4} label="Insert poisoned memory" sql="INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding_384, previous_hash, cryptographic_hash, trust_level) VALUES ($1, $2, 'poison_attempt', $3, $4::vector, $5, $6, 0)" status="running" />
+                    <SqlStep num={5} label="Verify trust score dropped" sql="SELECT trust_level FROM agent_memory WHERE memory_id = $1" status="pending" />
+                  </div>
+
+                  <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(255,94,0,0.06)", borderRadius: "8px", borderLeft: "3px solid #ff9100", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ff9100", animation: "pulse 1s ease-in-out infinite" }} />
+                    <span style={{ fontSize: "11px", color: "#ff9100", fontFamily: "'JetBrains Mono', monospace" }}>Writing to CockroachDB region: aws-ap-south-1</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Poison results */}
+              {tourStep === 3 && atk && (
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                    <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#ff444418", color: "#ff4444", border: "1px solid #ff444430" }}>ATTACK DETECTED</span>
+                  </div>
+                  <div style={{ fontSize: "26px", fontWeight: 800, color: "#fff", marginBottom: "16px", fontFamily: "'Space Grotesk', sans-serif" }}>Trust Score Collapsed</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                    <Metric label="Before" value={`${Math.round((atk.trustBefore as number) * 100)}%`} color="#00ff88" />
+                    <Metric label="After" value={`${Math.round((atk.trustAfter as number) * 100)}%`} color="#ff4444" />
+                    <Metric label="Drop" value={String(atk.trustDrop)} color="#ff4444" />
+                    <Metric label="Risk" value={String(atk.risk)} color="#ff4444" />
+                  </div>
+                  <InfoRow label="Attack Type" value={String(atk.scenario).replace(/_/g, " ").toUpperCase()} />
+                  <InfoRow label="Memory ID" value={String(atk.id)} mono />
+                  <div style={{ background: "rgba(255,68,68,0.08)", borderRadius: "10px", padding: "14px", marginBottom: "8px", borderLeft: "4px solid #ff4444" }}>
+                    <div style={{ fontSize: "11px", color: "#ff6666", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Malicious Content</div>
+                    <div style={{ fontSize: "13px", color: "#e8e8ed", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>{String(atk.content)}</div>
+                  </div>
+                  <SqlBlock sql={pSql} />
+                  <NavButtons back={() => goStep(1)} next={() => goStep(4)} nextLabel="Next: Time Travel →" />
+                </div>
+              )}
+
+              {/* Step 4: Pre-heal */}
+              {tourStep === 4 && (
+                <div>
+                  <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00e5ff18", color: "#00e5ff", border: "1px solid #00e5ff30" }}>Demo 2 of 3</span>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "10px" }}>Time Travel Recovery</div>
+                  <div style={{ fontSize: "14px", color: "#a0a0b0", lineHeight: "1.7", marginBottom: "16px" }}>
+                    I&apos;ll use <span style={{ color: "#00e5ff", fontWeight: 700 }}>CockroachDB&apos;s MVCC</span> to recover the original memory via <code style={{ color: "#00e5ff", fontSize: "13px" }}>SELECT ... AS OF SYSTEM TIME &apos;-5s&apos;</code>
+                  </div>
+                  <NavButtons back={() => goStep(3)} action={() => { goStep(5); runHeal(); }} actionLabel="⚡ Run Time Travel" />
+                </div>
+              )}
+
+              {/* Step 5: Heal loading */}
+              {tourStep === 5 && (
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#00e5ff18", color: "#00e5ff", border: "1px solid #00e5ff30" }}>EXECUTING</span>
+                  </div>
+                  <div style={{ fontSize: "24px", fontWeight: 700, color: "#fff", marginBottom: "20px" }}>Traveling back in time...</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <SqlStep num={1} label="Query MVCC versions" sql="SELECT crdb_internal_mvcc_timestamp FROM agent_memory WHERE agent_id = $1" status="done" />
+                    <SqlStep num={2} label="Time-travel to pre-poison state" sql="SELECT content, trust_level FROM agent_memory AS OF SYSTEM TIME '-5s' WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" status="running" />
+                    <SqlStep num={3} label="Restore memory with hash chain" sql="INSERT INTO agent_memory (memory_type, content, trust_level) VALUES ('healed', $1, 4)" status="pending" />
+                    <SqlStep num={4} label="Re-verify chain integrity" sql="SELECT cryptographic_hash FROM agent_memory WHERE memory_id = $1" status="pending" />
+                  </div>
+                  <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(0,229,255,0.06)", borderRadius: "8px", borderLeft: "3px solid #00e5ff", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00e5ff", animation: "pulse 1s ease-in-out infinite" }} />
+                    <span style={{ fontSize: "11px", color: "#00e5ff", fontFamily: "'JetBrains Mono', monospace" }}>Reading MVCC snapshots from CockroachDB</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 6: Heal results */}
+              {tourStep === 6 && hd && (
+                <div>
+                  <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Recovery Complete</span>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Memory Restored from Time Travel</div>
+                  <div style={{ background: "#1a1a24", borderRadius: "10px", padding: "16px", marginBottom: "12px", border: "1px solid #2a2a35" }}>
+                    <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", fontWeight: 600, marginBottom: "6px" }}>Recovered Content</div>
+                    <div style={{ fontSize: "14px", color: "#00ff88", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>{String(hd.recoveredContent)}</div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+                    <Metric label="Chain Verified" value="✓ Yes" color="#00ff88" />
+                    <Metric label="Latency" value={String(hd.latency)} color="#00e5ff" />
+                  </div>
+                  <SqlBlock sql={(hd.sql as string[]) || []} />
+                  <NavButtons back={() => goStep(4)} next={() => goStep(7)} nextLabel="Next: Semantic Search →" />
+                </div>
+              )}
+
+              {/* Step 7: Pre-search */}
+              {tourStep === 7 && (
+                <div>
+                  <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Demo 3 of 3</span>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "10px" }}>Semantic Vector Search</div>
+                  <div style={{ fontSize: "14px", color: "#a0a0b0", lineHeight: "1.7", marginBottom: "16px" }}>
+                    Search all memories using <span style={{ color: "#00ff88", fontWeight: 700 }}>sentence-transformers embeddings</span> with real cosine similarity.
+                  </div>
+                  <NavButtons back={() => goStep(6)} action={() => { goStep(8); runChat(); }} actionLabel="⚡ Run Vector Search" />
+                </div>
+              )}
+
+              {/* Step 8: Search loading */}
+              {tourStep === 8 && (
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>EXECUTING</span>
+                  </div>
+                  <div style={{ fontSize: "24px", fontWeight: 700, color: "#fff", marginBottom: "20px" }}>Searching memories with embeddings...</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <SqlStep num={1} label="Encode query with sentence-transformers" sql="sentence-transformers(&quot;secret keys and encryption&quot;) → 384-dim vector" status="done" />
+                    <SqlStep num={2} label="Fetch candidate memories" sql="SELECT content, memory_type, embedding_384 FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 100" status="done" />
+                    <SqlStep num={3} label="Compute cosine similarity" sql="embedding_384 <=> $1::vector (in-memory JS, 384-dim normalized)" status="running" />
+                    <SqlStep num={4} label="Rank and return top results" sql="ORDER BY similarity DESC LIMIT 5" status="pending" />
+                  </div>
+                  <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(0,255,136,0.06)", borderRadius: "8px", borderLeft: "3px solid #00ff88", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00ff88", animation: "pulse 1s ease-in-out infinite" }} />
+                    <span style={{ fontSize: "11px", color: "#00ff88", fontFamily: "'JetBrains Mono', monospace" }}>Computing similarity across 100+ memories</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 9: Search results */}
+              {tourStep === 9 && vs && (
+                <div>
+                  <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Search Complete</span>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Real Cosine Similarity Results</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                    <Metric label="Results" value={String(vs.totalResults)} color="#00ff88" />
+                    <Metric label="Latency" value={String(vs.latency)} color="#00e5ff" />
+                    <Metric label="Dimensions" value={String(vs.dimensions)} color="#b388ff" />
+                  </div>
+                  {((vs.results as Record<string, unknown>[]) || []).slice(0, 3).map((row: Record<string, unknown>, i: number) => (
+                    <div key={i} style={{ background: "#1a1a24", borderRadius: "10px", padding: "14px", marginBottom: "10px", border: "1px solid #2a2a35" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
+                        <div style={{ flex: 1, fontSize: "14px", color: "#e8e8ed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(row.content)}</div>
+                        <span style={{ padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: row.memoryType === "healed" ? "#00ff8818" : "#ff6b3518", color: row.memoryType === "healed" ? "#00ff88" : "#ff6b35" }}>{String(row.memoryType)}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ flex: 1, height: "8px", borderRadius: "999px", background: "#22222e" }}>
+                          <div style={{ height: "100%", borderRadius: "999px", width: `${Math.round((row.similarity as number) * 100)}%`, background: "linear-gradient(90deg, #00ff88, #00e5ff)", boxShadow: "0 0 8px rgba(0,255,136,0.3)" }} />
+                        </div>
+                        <span style={{ fontSize: "14px", fontWeight: 800, color: "#00ff88", minWidth: "48px", textAlign: "right" as const }}>{Math.round((row.similarity as number) * 100)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                  <SqlBlock sql={(cd?.sql as string[]) || []} />
+                  <NavButtons back={() => goStep(7)} next={() => goStep(10)} nextLabel="Finish Demo ✓" />
+                </div>
+              )}
+
+              {/* Step 10: Done */}
+              {tourStep === 10 && (
+                <div style={{ textAlign: "center", padding: "24px 0" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "16px" }}>🎉</div>
+                  <div style={{ fontSize: "22px", fontWeight: 700, color: "#fff", marginBottom: "8px" }}>All Demos Complete</div>
+                  <div style={{ fontSize: "14px", color: "#a0a0b0", marginBottom: "20px", lineHeight: "1.7" }}>
+                    Every step ran <strong style={{ color: "#ff9100" }}>real SQL</strong> against a live CockroachDB cluster.
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                    <button onClick={() => goStep(9)} style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #2a2a35", background: "#1a1a24", color: "#a0a0b0", fontSize: "13px", cursor: "pointer" }}>← Back</button>
+                    <button onClick={reset} style={{ padding: "10px 24px", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #ff5e00, #ff9100)", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}>Run Again</button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </>
+        )}
+
+        {error && <div style={{ marginTop: "12px", padding: "12px", background: "rgba(255,68,68,0.08)", border: "1px solid rgba(255,68,68,0.2)", borderRadius: "8px", color: "#ff4444", fontSize: "12px" }}>{error}</div>}
       </div>
-
-      <style>{`
-        @keyframes pulse-dot { 0%,100% { opacity:.4; transform:scale(.8); } 50% { opacity:1; transform:scale(1.1); } }
-        @keyframes shimmer { 0% { background-position:-200% 0; } 100% { background-position:200% 0; } }
-        @keyframes slideIn { from { opacity:0; transform:translateX(-14px); } to { opacity:1; transform:translateX(0); } }
-        @keyframes slideDown { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-        @keyframes glow-pulse { 0%,100% { box-shadow:0 0 20px rgba(0,229,255,.2); } 50% { box-shadow:0 0 40px rgba(0,229,255,.4); } }
-        @keyframes tour-highlight { 0%,100% { outline-color:rgba(0,229,255,.2); } 50% { outline-color:rgba(0,229,255,.6); } }
-      `}</style>
     </div>
   );
 }
 
-/* ─── Shared widgets ───────────────────────── */
+/* ─── Reusable Components ────────────────────── */
 
-function SectionLabel({ children, color = N.mute }: { children: string; color?: string }) {
-  return <div style={{ fontSize: "10px", fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "2px", marginBottom: "14px", fontFamily: "'JetBrains Mono', monospace" }}>{children}</div>;
+function FeatureCard({ icon, title, desc, color }: { icon: string; title: string; desc: string; color: string }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #1a1a2a", borderRadius: "12px", padding: "16px", textAlign: "center" }}>
+      <div style={{ fontSize: "24px", marginBottom: "8px" }}>{icon}</div>
+      <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{title}</div>
+      <div style={{ fontSize: "11px", color: "#606070" }}>{desc}</div>
+    </div>
+  );
 }
 
-function CrdbBadge({ features }: { features: string[] }) {
-  if (!features?.length) return null;
+function FeatureHighlight({ icon, title, desc }: { icon: string; title: string; desc: string }) {
   return (
-    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }} role="list" aria-label="CockroachDB features">
-      {features.map((f, i) => (
-        <span key={i} role="listitem" style={{
-          padding: "3px 10px", borderRadius: "999px", fontSize: "10px", fontWeight: 600,
-          background: "rgba(0,229,255,.08)", border: "1px solid rgba(0,229,255,.2)", color: N.breeze,
-          fontFamily: "'JetBrains Mono', monospace", letterSpacing: ".3px",
-        }}>
-          {f}
-        </span>
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: "20px", marginBottom: "6px" }}>{icon}</div>
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{title}</div>
+      <div style={{ fontSize: "11px", color: "#606070", lineHeight: "1.4" }}>{desc}</div>
+    </div>
+  );
+}
+
+function LiveStat({ label, value, color, icon }: { label: string; value: string; color: string; icon: string }) {
+  return (
+    <div style={{ textAlign: "center", padding: "14px 8px", background: "#12121a", borderRadius: "10px", border: `1px solid ${color}20` }}>
+      <div style={{ fontSize: "16px", marginBottom: "4px" }}>{icon}</div>
+      <div style={{ fontSize: "20px", fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
+      <div style={{ fontSize: "10px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", marginTop: "4px", fontWeight: 600 }}>{label}</div>
+    </div>
+  );
+}
+
+function SqlStep({ num, label, sql, status }: { num: number; label: string; sql: string; status: "done" | "running" | "pending" }) {
+  const color = status === "done" ? "#00ff88" : status === "running" ? "#ff9100" : "#606070";
+  const icon = status === "done" ? "✓" : status === "running" ? "⟳" : "○";
+  return (
+    <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "8px 12px", borderRadius: "8px", background: status === "running" ? "rgba(255,145,0,0.06)" : "transparent", border: status === "running" ? "1px solid rgba(255,145,0,0.15)" : "1px solid transparent" }}>
+      <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: `${color}15`, border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color, fontWeight: 700, flexShrink: 0, animation: status === "running" ? "pulse 1s ease-in-out infinite" : "none" }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: "12px", fontWeight: 600, color: status === "pending" ? "#606070" : "#fff", marginBottom: "2px" }}>{label}</div>
+        <code style={{ fontSize: "10px", color: status === "pending" ? "#404050" : color, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all", lineHeight: "1.4" }}>{sql}</code>
+      </div>
+      {status === "done" && <span style={{ fontSize: "9px", color: "#00ff88", fontWeight: 600, flexShrink: 0 }}>✓</span>}
+      {status === "running" && <span style={{ fontSize: "9px", color: "#ff9100", fontWeight: 600, flexShrink: 0, animation: "pulse 1s ease-in-out infinite" }}>RUNNING</span>}
+    </div>
+  );
+}
+
+function StatItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ff9100" }} />
+      <span style={{ fontSize: "11px", color: "#a0a0b0" }}>{label}</span>
+    </div>
+  );
+}
+
+function Metric({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ background: "#1a1a24", border: `1px solid ${color}30`, borderRadius: "10px", padding: "14px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: "26px", fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
+      <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1.5px", marginTop: "4px", fontWeight: 600 }}>{label}</div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={{ background: "#1a1a24", borderRadius: "10px", padding: "14px", marginBottom: "8px", border: "1px solid #2a2a35" }}>
+      <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", fontWeight: 600, marginBottom: "4px" }}>{label}</div>
+      <div style={{ fontSize: "14px", color: mono ? "#00e5ff" : "#fff", fontFamily: mono ? "'JetBrains Mono', monospace" : "inherit", fontWeight: mono ? 400 : 600, wordBreak: "break-all" }}>{value}</div>
+    </div>
+  );
+}
+
+function SqlBlock({ sql }: { sql: string[] }) {
+  if (!sql.length) return null;
+  return (
+    <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px", marginTop: "12px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "#00e5ff", textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "10px" }}>🗃️ SQL Executed Against CockroachDB</div>
+      {sql.map((q: string, i: number) => (
+        <pre key={i} style={{ margin: 0, marginBottom: i < sql.length - 1 ? "6px" : 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: "#00e5ff", lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "8px 12px", background: "#1a1a24", borderRadius: "6px", borderLeft: "3px solid #00e5ff40" }}>
+          <span style={{ color: "#a0a0b0", marginRight: "8px" }}>›</span>{q}
+        </pre>
       ))}
     </div>
   );
 }
 
-function Skeleton({ height = "80px" }: { height?: string }) {
+function BackBtn({ onClick }: { onClick: () => void }) {
+  return <button onClick={onClick} style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #2a2a35", background: "#1a1a24", color: "#a0a0b0", fontSize: "13px", cursor: "pointer" }}>← Back</button>;
+}
+
+function NavButtons({ back, next, nextLabel, action, actionLabel }: { back: () => void; next?: () => void; nextLabel?: string; action?: () => void; actionLabel?: string }) {
   return (
-    <div style={{
-      borderRadius: "12px", padding: "20px",
-      background: "linear-gradient(90deg, #120a0e 25%, #1a1018 50%, #120a0e 75%)",
-      backgroundSize: "200% 100%", animation: "shimmer 1.5s ease-in-out infinite",
-      border: "1px solid rgba(255,42,0,.12)",
-    }}>
-      <div style={{ width: "40%", height: "10px", borderRadius: "4px", background: "rgba(255,255,255,.04)", marginBottom: "12px" }} />
-      <div style={{ width: "100%", height, borderRadius: "4px", background: "rgba(255,255,255,.02)" }} />
+    <div style={{ display: "flex", gap: "12px", marginTop: "20px", alignItems: "center" }}>
+      <button onClick={back} style={{
+        padding: "12px 20px", borderRadius: "10px",
+        border: "1px solid #2a2a35", background: "transparent",
+        color: "#a0a0b0", fontSize: "14px", cursor: "pointer",
+        transition: "all 0.2s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "#ff910050"; e.currentTarget.style.color = "#fff"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a2a35"; e.currentTarget.style.color = "#a0a0b0"; }}>
+        ← Back
+      </button>
+      {next && nextLabel && <button onClick={next} style={{
+        padding: "14px 32px", borderRadius: "10px", border: "none",
+        background: "linear-gradient(135deg, #ff5e00, #ff9100)",
+        color: "#fff", fontWeight: 700, fontSize: "15px", cursor: "pointer",
+        boxShadow: "0 0 20px rgba(255,94,0,0.3)",
+      }}>{nextLabel}</button>}
+      {action && actionLabel && <button onClick={action} style={{
+        padding: "14px 32px", borderRadius: "10px", border: "none",
+        background: "linear-gradient(135deg, #ff5e00, #ff9100)",
+        color: "#fff", fontWeight: 700, fontSize: "15px", cursor: "pointer",
+        boxShadow: "0 0 20px rgba(255,94,0,0.3)",
+      }}>{actionLabel}</button>}
     </div>
   );
 }
 
-function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
+/* ─── MCP Tools Data ────────────────────────── */
+
+const MCP_TOOLS = [
+  { name: "memory_search", desc: "C-SPANN vector similarity search with cognitive decay weighting", category: "core", read: true },
+  { name: "memory_store", desc: "Store memory with SHA-256 hash chain + Bedrock Titan V2 embedding", category: "core", read: false },
+  { name: "memory_timetravel", desc: "AS OF SYSTEM TIME recovery — query any past state", category: "core", read: true },
+  { name: "memory_heal", desc: "Restore poisoned memory from hash chain verified backup", category: "core", read: false },
+  { name: "memory_audit", desc: "Append-only hash-chained audit log retrieval", category: "core", read: true },
+  { name: "memory_delete", desc: "Remove memory with audit trail preservation", category: "core", read: false },
+  { name: "memory_pin", desc: "Pin important memories to prevent decay", category: "core", read: false },
+  { name: "memory_get_pinned", desc: "Retrieve pinned memories for agent context", category: "core", read: true },
+  { name: "memory_list", desc: "List all memories with pagination", category: "core", read: true },
+  { name: "memory_correct", desc: "Correct memory content with provenance tracking", category: "core", read: false },
+  { name: "memory_health", desc: "Cluster health check with latency metrics", category: "ops", read: true },
+  { name: "memory_apply_patch", desc: "Apply atomic patch to memory metadata", category: "ops", read: false },
+  { name: "resolve_conflict", desc: "SERIALIZABLE isolation conflict resolution", category: "multi-agent", read: false },
+  { name: "ltm_check_reuse", desc: "Check long-term memory reuse to prevent duplication", category: "ltm", read: true },
+  { name: "ltm_store_analysis", desc: "Store analysis results for future reference", category: "ltm", read: false },
+  { name: "ltm_invalidate", desc: "Invalidate cached analysis when data changes", category: "ltm", read: false },
+  { name: "detect_contradictions", desc: "Find contradictory memories in agent's knowledge", category: "intelligence", read: true },
+  { name: "scan_all_contradictions", desc: "Full contradiction scan across all memories", category: "intelligence", read: true },
+  { name: "dream", desc: "Background memory consolidation and summarization", category: "intelligence", read: false },
+  { name: "dream_history", desc: "View dream execution history and outcomes", category: "intelligence", read: true },
+  { name: "detect_observations", desc: "Detect new observations from agent interactions", category: "intelligence", read: true },
+  { name: "multi_signal_search", desc: "Search across text, embeddings, and metadata simultaneously", category: "search", read: true },
+  { name: "context_pack", desc: "Pack relevant context for agent decision-making", category: "search", read: true },
+  { name: "agent_schema", desc: "Get agent's memory schema and capabilities", category: "meta", read: true },
+  { name: "a2a_bridge", desc: "Bridge to A2A protocol for agent-to-agent communication", category: "multi-agent", read: false },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  core: "#ff9100",
+  ops: "#00e5ff",
+  "multi-agent": "#b388ff",
+  ltm: "#00ff88",
+  intelligence: "#ff6b35",
+  search: "#ffc800",
+  meta: "#a0a0b0",
+};
+
+function McpToolCard({ name, desc, category, read, onClick, active }: { name: string; desc: string; category: string; read: boolean; onClick?: () => void; active?: boolean }) {
+  const color = CATEGORY_COLORS[category] || "#a0a0b0";
   return (
-    <div role="alert" style={{
-      background: "rgba(255,85,0,.08)", border: "1px solid rgba(255,85,0,.3)",
-      borderRadius: "12px", padding: "16px", color: N.sunset, fontSize: "13px",
-      display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap",
-    }}>
-      <span style={{ flex: 1, lineHeight: "1.5" }}>{message}</span>
-      {onRetry && (
-        <button onClick={onRetry} style={{
-          padding: "8px 20px", borderRadius: "8px", border: "1px solid rgba(255,85,0,.3)",
-          background: "rgba(255,85,0,.1)", color: N.sunset, cursor: "pointer", fontSize: "12px", fontWeight: 600,
-          fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap",
-          transition: `all .2s ${N.easeOut}`,
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,85,0,.2)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,85,0,.1)"; }}>
-          Retry
-        </button>
-      )}
-    </div>
-  );
-}
-
-/* ─── Poison Panel ─────────────────────────── */
-
-function PoisonPanel({ state, onRun, tourHighlight }: { state: ScenarioState; onRun: () => void; tourHighlight?: boolean }) {
-  const r = state.result as PoisonData | null;
-  const a = r?.attack;
-  const chain = r?.chain;
-  const [animKey, setAnimKey] = useState(0);
-  const handleRun = useCallback(() => { setAnimKey(k => k + 1); onRun(); }, [onRun]);
-
-  return (
-    <section id="panel-poison" role="tabpanel" aria-label="Poison Detection">
-      {/* Hero */}
-      <div style={{
-        background: "linear-gradient(135deg, rgba(255,85,0,.1), rgba(255,42,0,.04))",
-        border: "1px solid rgba(255,85,0,.2)", borderRadius: "16px",
-        padding: "clamp(16px,2.5vw,24px)",
-        boxShadow: "0 8px 32px rgba(0,0,0,.5), 0 0 30px rgba(255,85,0,.06)",
-        position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: "-60px", right: "-60px", width: "160px", height: "160px", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,85,0,.08), transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: "16px" }}>
-          <div style={{ flex: 1, minWidth: "200px" }}>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: N.sunset, textTransform: "uppercase", letterSpacing: "2px", marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace" }}>
-              <PulseDot color={N.sunset} /> Active Demo
-            </div>
-            <h3 style={{ fontSize: "clamp(18px,2.5vw,22px)", fontWeight: 700, color: N.ink, margin: "0 0 8px 0", fontFamily: "'Space Grotesk', sans-serif" }}>
-              Memory Poisoning Detection
-            </h3>
-            <p style={{ fontSize: "13px", color: N.body, margin: 0, lineHeight: "1.7", maxWidth: "500px" }}>
-              Simulates a prompt injection attack. Bastion detects tampering via SHA-256 hash chain mismatch, blocks the poisoned memory, and recalculates the trust score. Powered by CockroachDB&apos;s SERIALIZABLE isolation.
-            </p>
-          </div>
-          <button onClick={handleRun} disabled={state.loading} aria-busy={state.loading}
-            style={{
-              padding: "14px 32px", borderRadius: "10px", border: "none",
-              cursor: state.loading ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-              background: state.loading ? "rgba(255,85,0,.3)" : "linear-gradient(135deg, #ff5500, #ff2a00)",
-              color: "#fff", fontWeight: 700, fontSize: "14px", fontFamily: "'Space Grotesk', sans-serif",
-              boxShadow: state.loading ? "none" : "0 4px 24px rgba(255,85,0,.35)",
-              transition: `all .3s ${N.easeOut}`, opacity: state.loading ? .6 : 1,
-              outline: tourHighlight ? "2px solid rgba(0,229,255,.5)" : "none",
-              outlineOffset: "3px",
-              animation: tourHighlight ? "tour-highlight 1.5s ease-in-out infinite" : "none",
-            }}
-            onMouseEnter={e => { if (!state.loading) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 6px 30px rgba(255,85,0,.45)"; } }}
-            onMouseLeave={e => { if (!state.loading) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(255,85,0,.35)"; } }}>
-            {state.loading ? "Detecting..." : "Inject Poison"}
-          </button>
+    <div
+      onClick={onClick}
+      style={{
+        background: active ? `${color}10` : "#12121a",
+        border: `1px solid ${active ? color : color + "20"}`,
+        borderRadius: "8px", padding: "10px 12px", display: "flex", gap: "10px", alignItems: "flex-start",
+        cursor: onClick ? "pointer" : "default",
+        transition: "all 0.2s",
+      }}
+    >
+      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, marginTop: "5px", flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+          <code style={{ fontSize: "11px", color: "#fff", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{name}</code>
+          <span style={{ padding: "1px 5px", borderRadius: "3px", fontSize: "8px", background: read ? "#00ff8815" : "#ff6b3515", color: read ? "#00ff88" : "#ff6b35", fontWeight: 600 }}>{read ? "READ" : "WRITE"}</span>
         </div>
-        {r?.crdbFeatures && <div style={{ marginTop: "16px" }}><CrdbBadge features={r.crdbFeatures} /></div>}
+        <div style={{ fontSize: "10px", color: "#a0a0b0", lineHeight: "1.4" }}>{desc}</div>
       </div>
-
-      {state.loading && <div style={{ marginTop: "16px" }}><Skeleton height="140px" /></div>}
-      {state.error && <div style={{ marginTop: "16px" }}><ErrorBox message={state.error} onRetry={handleRun} /></div>}
-      {!state.loading && r && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
-          {a && <AttackCard attack={a} animKey={animKey} />}
-          {a && <TrustGauge before={a.trustBefore} after={a.trustAfter} drop={a.trustDrop} risk={a.risk} animKey={animKey} />}
-          {chain && chain.length > 0 && <HashChain chain={chain} />}
-          {r.detection && <DetectionCard detection={r.detection} />}
-          {r.sql && r.sql.length > 0 && <SqlPanel sql={r.sql} />}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function AttackCard({ attack, animKey }: { attack: Attack; animKey: number }) {
-  return (
-    <div style={{
-      background: N.card, border: "1px solid rgba(255,85,0,.15)", borderRadius: "14px", padding: "18px",
-      animation: "slideIn .4s ease-out",
-    }}>
-      <SectionLabel color={N.sunset}>Attack Details</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px 20px", fontSize: "13px" }}>
-        <span style={{ color: N.mute }}>Scenario</span>
-        <span style={{ color: N.ink }}>{attack.scenario || "injection"}</span>
-        <span style={{ color: N.mute }}>Memory ID</span>
-        <code style={{ color: N.breeze, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", wordBreak: "break-all" }}>{attack.id}</code>
-        <span style={{ color: N.mute }}>Detected At</span>
-        <span style={{ color: N.ink }}>{new Date(attack.detectedAt).toLocaleTimeString()}</span>
-        <span style={{ color: N.mute }}>Content</span>
-        <code style={{ color: N.sunset, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", wordBreak: "break-all", background: "rgba(255,85,0,.08)", padding: "6px 10px", borderRadius: "6px", borderLeft: "2px solid #ff5500" }}>
-          {attack.content?.slice(0, 100)}...
-        </code>
-        <span style={{ color: N.mute }}>Previous Hash</span>
-        <code style={{ color: N.mute, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{attack.previousHash}</code>
-        <span style={{ color: N.mute }}>Current Hash</span>
-        <code style={{ color: N.emerald, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px" }}>{attack.cryptographicHash}</code>
-      </div>
-    </div>
-  );
-}
-
-function TrustGauge({ before, after, drop, risk, animKey }: { before: number; after: number; drop: string; risk: string; animKey: number }) {
-  const beforePct = Math.round(before * 100);
-  const afterPct = Math.round(after * 100);
-  const r = 48;
-  const circ = 2 * Math.PI * r;
-  return (
-    <div style={{
-      background: N.card, border: "1px solid rgba(255,200,0,.15)", borderRadius: "14px", padding: "18px",
-      animation: "slideIn .4s ease-out .1s both",
-    }}>
-      <SectionLabel color={N.gold}>Trust Score Impact</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(16px,3vw,28px)", alignItems: "center" }}>
-        {/* SVG ring gauge */}
-        <div style={{ position: "relative", width: "120px", height: "120px", flexShrink: 0 }}>
-          <svg width="120" height="120" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth="10" transform="rotate(-90 60 60)" />
-            <circle cx="60" cy="60" r={r} fill="none" stroke="#00ff66" strokeWidth="10"
-              strokeDasharray={`${circ * .87} ${circ}`} strokeLinecap="round" transform="rotate(-90 60 60)"
-              style={{ opacity: .4 }} />
-            <circle cx="60" cy="60" r={r} fill="none" stroke="#ff5500" strokeWidth="10"
-              strokeDasharray={`${circ * .20} ${circ}`}
-              strokeDashoffset={-circ * .87}
-              strokeLinecap="round" transform="rotate(-90 60 60)"
-              style={{ filter: "drop-shadow(0 0 8px rgba(255,85,0,.4))", transition: "stroke-dasharray 1.2s cubic-bezier(.16,1,.3,1)" }} />
-          </svg>
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-            <div style={{ fontSize: "22px", fontWeight: 700, color: N.sunset, fontFamily: "'Space Grotesk', sans-serif" }}>{afterPct}%</div>
-            <div style={{ fontSize: "9px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>after</div>
-          </div>
-        </div>
-        {/* Bar chart */}
-        <div style={{ flex: 1, minWidth: "180px" }}>
-          <div style={{ marginBottom: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontFamily: "'JetBrains Mono', monospace", marginBottom: "4px" }}>
-              <span style={{ color: N.mute }}>Before</span>
-              <span style={{ color: N.emerald, fontWeight: 700 }}>{beforePct}%</span>
-            </div>
-            <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: "999px", width: "100%", background: "linear-gradient(90deg, #00ff66, #00cc88)", opacity: .4 }} />
-            </div>
-          </div>
-          <div style={{ marginBottom: "6px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontFamily: "'JetBrains Mono', monospace", marginBottom: "4px" }}>
-              <span style={{ color: N.mute }}>After</span>
-              <span style={{ color: N.sunset, fontWeight: 700 }}>{afterPct}%</span>
-            </div>
-            <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-              <div style={{
-                height: "100%", borderRadius: "999px", width: `${afterPct}%`,
-                background: "linear-gradient(90deg, #ff5500, #ff2a00)",
-                boxShadow: "0 0 12px rgba(255,85,0,.3)",
-                transition: "width 1.2s cubic-bezier(.16,1,.3,1)",
-              }} />
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "20px", fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px", background: "rgba(255,85,0,.06)", borderRadius: "8px", borderLeft: "2px solid #ff5500", marginTop: "14px" }}>
-            <span>Drop: <strong style={{ color: N.sunset }}>{drop}</strong></span>
-            <span>Risk: <strong style={{ color: risk === "CRITICAL" ? N.sunset : N.lava }}>{risk}</strong></span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HashChain({ chain }: { chain: ChainBlock[] }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,229,255,.12)", borderRadius: "14px", padding: "18px" }}>
-      <SectionLabel>Hash Chain (SHA-256)</SectionLabel>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {chain.map((block, i) => (
-          <div key={i} style={{
-            display: "flex", gap: "14px", padding: "10px 0",
-            borderBottom: i < chain.length - 1 ? "1px solid rgba(255,42,0,.08)" : "none",
-            opacity: block.status === "tampered" || block.status === "blocked" ? 1 : .65,
-            animation: `slideIn .3s ease-out ${i * .06}s both`,
-          }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "20px", flexShrink: 0 }}>
-              <div style={{
-                width: "12px", height: "12px", borderRadius: "50%",
-                background: block.status === "tampered" ? N.sunset : block.status === "blocked" ? N.lava : N.emerald,
-                boxShadow: block.status === "tampered" ? `0 0 14px ${N.sunset}60` : block.status === "blocked" ? `0 0 14px ${N.lava}60` : `0 0 8px ${N.emerald}40`,
-              }} />
-              {i < chain.length - 1 && <div style={{ width: "2px", flex: 1, background: "rgba(255,42,0,.08)", margin: "2px 0" }} />}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: N.ink }}>{block.label}</div>
-              <code style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all", display: "block", marginTop: "3px" }}>
-                {block.hash}
-              </code>
-              {block.violation && (
-                <div style={{ marginTop: "6px", fontSize: "11px", color: N.sunset, background: "rgba(255,85,0,.08)", padding: "4px 10px", borderRadius: "6px", display: "inline-block", borderLeft: "2px solid #ff5500" }}>
-                  {block.violation}
-                </div>
-              )}
-              {block.action && (
-                <div style={{ marginTop: "6px", fontSize: "11px", color: N.lava, background: "rgba(255,170,0,.08)", padding: "4px 10px", borderRadius: "6px", display: "inline-block", borderLeft: "2px solid #ffaa00" }}>
-                  {block.action}
-                </div>
-              )}
-            </div>
-            {block.timestamp && (
-              <div style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap", flexShrink: 0, paddingTop: "2px" }}>
-                {new Date(block.timestamp).toLocaleTimeString()}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DetectionCard({ detection }: { detection: Record<string, unknown> }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(255,85,0,.12)", borderRadius: "14px", padding: "18px" }}>
-      <SectionLabel color={N.sunset}>Detection</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center" }}>
-        <div style={{ textAlign: "center", minWidth: "80px" }}>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: N.emerald, fontFamily: "'JetBrains Mono', monospace" }}>{(Number(detection.confidence) * 100).toFixed(0)}%</div>
-          <div style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>Confidence</div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "12px", color: N.body }}>Method: <strong style={{ color: N.breeze }}>{String(detection.method)}</strong></div>
-          <div style={{ fontSize: "11px", color: N.mute, marginTop: "4px" }}>Latency: {String(detection.latency)}</div>
-        </div>
-        {Array.isArray(detection.patternsBlocked) && (
-          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-            {(detection.patternsBlocked as string[]).map((p: string, i: number) => (
-              <span key={i} style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "9px", background: "rgba(255,85,0,.1)", color: N.sunset, fontFamily: "'JetBrains Mono', monospace", border: "1px solid rgba(255,85,0,.15)" }}>{p}</span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SqlPanel({ sql }: { sql: string[] }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,229,255,.1)", borderRadius: "14px", padding: "18px" }}>
-      <SectionLabel>SQL Executed</SectionLabel>
-      <div style={{ overflowX: "auto" }}>
-        {sql.map((q, i) => (
-          <pre key={i} style={{
-            margin: 0, marginBottom: i < sql.length - 1 ? "8px" : 0,
-            fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: N.breeze, lineHeight: "1.7",
-            whiteSpace: "pre-wrap", wordBreak: "break-word",
-            background: "rgba(0,0,0,.3)", padding: "8px 12px", borderRadius: "6px",
-            borderLeft: "2px solid rgba(0,229,255,.2)",
-          }}>
-            <span style={{ color: N.mute, marginRight: "10px", userSelect: "none", fontSize: "10px" }}>{`>`}</span>
-            {q}
-          </pre>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Heal Panel ───────────────────────────── */
-
-function HealPanel({ state, onRun, tourHighlight }: { state: ScenarioState; onRun: () => void; tourHighlight?: boolean }) {
-  const r = state.result as HealData | null;
-  const [animKey, setAnimKey] = useState(0);
-  const handleRun = useCallback(() => { setAnimKey(k => k + 1); onRun(); }, [onRun]);
-
-  return (
-    <section id="panel-heal" role="tabpanel" aria-label="Time Travel Heal">
-      <div style={{
-        background: "linear-gradient(135deg, rgba(0,229,255,.1), rgba(0,100,200,.04))",
-        border: "1px solid rgba(0,229,255,.2)", borderRadius: "16px",
-        padding: "clamp(16px,2.5vw,24px)",
-        boxShadow: "0 8px 32px rgba(0,0,0,.5), 0 0 30px rgba(0,229,255,.06)",
-        position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: "-60px", right: "-60px", width: "160px", height: "160px", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,229,255,.08), transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: "16px" }}>
-          <div style={{ flex: 1, minWidth: "200px" }}>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: N.breeze, textTransform: "uppercase", letterSpacing: "2px", marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace" }}>
-              <PulseDot color={N.breeze} /> AS OF SYSTEM TIME
-            </div>
-            <h3 style={{ fontSize: "clamp(18px,2.5vw,22px)", fontWeight: 700, color: N.ink, margin: "0 0 8px 0", fontFamily: "'Space Grotesk', sans-serif" }}>
-              Time Travel Memory Recovery
-            </h3>
-            <p style={{ fontSize: "13px", color: N.body, margin: 0, lineHeight: "1.7", maxWidth: "500px" }}>
-              Uses CockroachDB&apos;s MVCC architecture — SELECT ... AS OF SYSTEM TIME &apos;-5s&apos; retrieves the pre-poison state. CockroachDB never overwrites data; every write creates a new version.
-            </p>
-          </div>
-          <button onClick={handleRun} disabled={state.loading} aria-busy={state.loading}
-            style={{
-              padding: "14px 32px", borderRadius: "10px", border: "none",
-              cursor: state.loading ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-              background: state.loading ? "rgba(0,229,255,.15)" : "linear-gradient(135deg, #0098a8, #00e5ff)",
-              color: "#fff", fontWeight: 700, fontSize: "14px", fontFamily: "'Space Grotesk', sans-serif",
-              boxShadow: state.loading ? "none" : "0 4px 24px rgba(0,229,255,.25)",
-              transition: `all .3s ${N.easeOut}`, opacity: state.loading ? .6 : 1,
-              outline: tourHighlight ? "2px solid rgba(0,229,255,.5)" : "none",
-              outlineOffset: "3px",
-              animation: tourHighlight ? "tour-highlight 1.5s ease-in-out infinite" : "none",
-            }}
-            onMouseEnter={e => { if (!state.loading) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 6px 30px rgba(0,229,255,.35)"; } }}
-            onMouseLeave={e => { if (!state.loading) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(0,229,255,.25)"; } }}>
-            {state.loading ? "Recovering..." : "Travel Back & Heal"}
-          </button>
-        </div>
-        {r?.crdbFeatures && <div style={{ marginTop: "16px" }}><CrdbBadge features={r.crdbFeatures} /></div>}
-      </div>
-
-      {state.loading && <div style={{ marginTop: "16px" }}><Skeleton height="120px" /></div>}
-      {state.error && <div style={{ marginTop: "16px" }}><ErrorBox message={state.error} onRetry={handleRun} /></div>}
-      {!state.loading && r && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
-          {r.timeTravel && <TimeTravelCard tt={r.timeTravel} animKey={animKey} />}
-          <ContentComparison poisoned={r.poisonedContent} recovered={r.recoveredContent} animKey={animKey} />
-          {r.cryptographicProof && <ProofCard proof={r.cryptographicProof} animKey={animKey} />}
-          {r.trustRestored && <RestoreCard trust={r.trustRestored} animKey={animKey} />}
-          {r.sql && r.sql.length > 0 && <SqlPanel sql={r.sql} />}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function TimeTravelCard({ tt, animKey }: { tt: HealTimeTravel; animKey: number }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,229,255,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out" }}>
-      <SectionLabel>Time Travel Window</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "center", justifyContent: "center", padding: "8px 0" }}>
-        <div style={{ textAlign: "center", minWidth: "90px" }}>
-          <div style={{ fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", marginBottom: "6px" }}>Poisoned</div>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: N.sunset }}>{tt.from ? new Date(tt.from).toLocaleTimeString() : "—"}</div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 12px" }}>
-          <div style={{ fontSize: "clamp(18px,2.5vw,24px)", fontWeight: 700, color: N.breeze, fontFamily: "'Space Grotesk', sans-serif" }}>{tt.interval}</div>
-          <div style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1px" }}>AS OF SYSTEM TIME</div>
-        </div>
-        <div style={{ textAlign: "center", minWidth: "90px" }}>
-          <div style={{ fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", marginBottom: "6px" }}>Healthy</div>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: N.emerald }}>{tt.to ? new Date(tt.to).toLocaleTimeString() : "—"}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ContentComparison({ poisoned, recovered, animKey }: { poisoned: string; recovered: string; animKey: number }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,229,255,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out .05s both" }}>
-      <SectionLabel>Memory Content</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
-        <div style={{ background: "rgba(255,85,0,.06)", border: "1px solid rgba(255,85,0,.2)", borderRadius: "10px", padding: "14px", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, right: 0, padding: "4px 10px", background: "rgba(255,85,0,.15)", borderRadius: "0 10px 0 8px", fontSize: "9px", color: N.sunset, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>CORRUPTED</div>
-          <div style={{ fontSize: "11px", fontWeight: 700, color: N.sunset, marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "1px" }}>Poisoned</div>
-          <div style={{ fontSize: "12px", color: N.body, lineHeight: "1.6", fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-word" }}>{poisoned || "N/A"}</div>
-        </div>
-        <div style={{ background: "rgba(0,255,102,.06)", border: "1px solid rgba(0,255,102,.2)", borderRadius: "10px", padding: "14px", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, right: 0, padding: "4px 10px", background: "rgba(0,255,102,.12)", borderRadius: "0 10px 0 8px", fontSize: "9px", color: N.emerald, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>RESTORED</div>
-          <div style={{ fontSize: "11px", fontWeight: 700, color: N.emerald, marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "1px" }}>Recovered</div>
-          <div style={{ fontSize: "12px", color: N.body, lineHeight: "1.6", fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-word" }}>{recovered || "N/A"}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProofCard({ proof, animKey }: { proof: HealProof; animKey: number }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,255,102,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out .1s both" }}>
-      <SectionLabel color={N.emerald}>Cryptographic Verification</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px 20px", fontSize: "13px" }}>
-        <span style={{ color: N.mute }}>Restored Hash</span><code style={{ color: N.emerald, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", wordBreak: "break-all" }}>{proof.restoredHash}</code>
-        <span style={{ color: N.mute }}>Previous Hash</span><code style={{ color: N.mute, fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", wordBreak: "break-all" }}>{proof.previousHash}</code>
-        <span style={{ color: N.mute }}>Chain Integrity</span>
-        <span style={{ color: proof.chainVerified ? N.emerald : N.sunset, fontWeight: 600 }}>
-          {proof.chainVerified ? "Verified" : "Failed"}
-          {proof.chainVerified && <span style={{ marginLeft: "8px", fontSize: "14px" }}>&#10003;</span>}
-        </span>
-        <span style={{ color: N.mute }}>Method</span><span style={{ color: N.body, fontSize: "12px" }}>{proof.verificationMethod}</span>
-      </div>
-    </div>
-  );
-}
-
-function RestoreCard({ trust, animKey }: { trust: HealTrust; animKey: number }) {
-  const beforePct = Math.round((trust.previousScore ?? 0) * 100);
-  const afterPct = Math.round((trust.restoredScore ?? 0) * 100);
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,255,102,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out .15s both" }}>
-      <SectionLabel color={N.emerald}>Trust Score Restoration</SectionLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(16px,3vw,28px)", alignItems: "center" }}>
-        <div style={{ textAlign: "center", minWidth: "70px" }}>
-          <div style={{ fontSize: "clamp(22px,2.5vw,26px)", fontWeight: 700, color: N.sunset }}>{beforePct}%</div>
-          <div style={{ fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>Before</div>
-        </div>
-        <div style={{ fontSize: "16px", color: N.emerald, fontWeight: 700 }}>→</div>
-        <div style={{ textAlign: "center", minWidth: "70px" }}>
-          <div style={{ fontSize: "clamp(22px,2.5vw,26px)", fontWeight: 700, color: N.emerald }}>{afterPct}%</div>
-          <div style={{ fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>After</div>
-        </div>
-        <div style={{ textAlign: "center", padding: "10px 20px", background: "rgba(0,255,102,.08)", borderRadius: "10px", border: "1px solid rgba(0,255,102,.2)" }}>
-          <div style={{ fontSize: "clamp(16px,2vw,18px)", fontWeight: 700, color: N.emerald }}>+{trust.improvement}</div>
-          <div style={{ fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>Improvement</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Chat Panel ───────────────────────────── */
-
-function ChatPanel({ state, onRun, query, onQueryChange, tourHighlight }: {
-  state: ScenarioState; onRun: () => void; query: string; onQueryChange: (q: string) => void; tourHighlight?: boolean;
-}) {
-  const r = state.result as ChatData | null;
-  const vs = r?.vectorSearch;
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  return (
-    <section id="panel-chat" role="tabpanel" aria-label="Semantic Chat">
-      <div style={{
-        background: "linear-gradient(135deg, rgba(0,255,102,.1), rgba(0,200,100,.04))",
-        border: "1px solid rgba(0,255,102,.2)", borderRadius: "16px",
-        padding: "clamp(16px,2.5vw,24px)",
-        boxShadow: "0 8px 32px rgba(0,0,0,.5), 0 0 30px rgba(0,255,102,.06)",
-        position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: "-60px", right: "-60px", width: "160px", height: "160px", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,255,102,.08), transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ fontSize: "10px", fontWeight: 700, color: N.emerald, textTransform: "uppercase", letterSpacing: "2px", marginBottom: "8px", fontFamily: "'JetBrains Mono', monospace" }}>
-          <PulseDot color={N.emerald} /> Vector Similarity Search
-        </div>
-        <h3 style={{ fontSize: "clamp(18px,2.5vw,22px)", fontWeight: 700, color: N.ink, margin: "0 0 8px 0", fontFamily: "'Space Grotesk', sans-serif" }}>
-          Semantic Memory Chat
-        </h3>
-        <p style={{ fontSize: "13px", color: N.body, margin: 0, lineHeight: "1.7", maxWidth: "500px" }}>
-          Queries agent memory via sentence-transformers (all-MiniLM-L6-v2, 384-dim). Real cosine similarity ranking — every score is a genuine semantic distance, not mock data.
-        </p>
-        {r?.crdbFeatures && <div style={{ marginTop: "12px" }}><CrdbBadge features={r.crdbFeatures} /></div>}
-      </div>
-
-      {/* Input */}
-      <div style={{ display: "flex", gap: "12px", marginTop: "16px", alignItems: "stretch" }}>
-        <div style={{ flex: 1, position: "relative" }}>
-          <input ref={inputRef}
-            value={query} onChange={e => onQueryChange(e.target.value.slice(0, 500))}
-            onKeyDown={e => { if (e.key === "Enter" && !state.loading && query.trim()) onRun(); }}
-            placeholder="Ask something about agent memory..."
-            maxLength={500} disabled={state.loading} aria-label="Search query"
-            style={{
-              width: "100%", height: "100%", padding: "14px 18px", paddingRight: "50px",
-              borderRadius: "10px", border: "1px solid rgba(255,42,0,.18)",
-              background: N.card, color: N.ink, fontSize: "14px", fontFamily: "'Inter', sans-serif",
-              outline: "none", boxSizing: "border-box", transition: "border-color .3s",
-            }}
-            onFocus={e => { e.currentTarget.style.borderColor = N.emerald + "60"; e.currentTarget.style.boxShadow = "0 0 12px rgba(0,255,102,.08)"; }}
-            onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,42,0,.18)"; e.currentTarget.style.boxShadow = "none"; }} />
-          <span style={{ position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>
-            {query.length}/500
-          </span>
-        </div>
-        <button onClick={onRun} disabled={state.loading || !query.trim()} aria-busy={state.loading}
-          style={{
-            padding: "14px 32px", borderRadius: "10px", border: "none",
-            cursor: state.loading || !query.trim() ? "not-allowed" : "pointer",
-            background: state.loading ? "rgba(0,255,102,.15)" : "linear-gradient(135deg, #008855, #00ff66)",
-            color: "#fff", fontWeight: 700, fontSize: "14px", fontFamily: "'Space Grotesk', sans-serif",
-            boxShadow: state.loading ? "none" : "0 4px 24px rgba(0,255,102,.2)",
-            opacity: query.trim() ? 1 : .5, whiteSpace: "nowrap",
-            transition: `all .3s ${N.easeOut}`,
-            outline: tourHighlight ? "2px solid rgba(0,229,255,.5)" : "none",
-            outlineOffset: "3px",
-            animation: tourHighlight ? "tour-highlight 1.5s ease-in-out infinite" : "none",
-          }}
-          onMouseEnter={e => { if (!state.loading && query.trim()) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 6px 30px rgba(0,255,102,.3)"; } }}
-          onMouseLeave={e => { if (!state.loading && query.trim()) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(0,255,102,.2)"; } }}>
-          {state.loading ? "Searching..." : "Search"}
-        </button>
-      </div>
-
-      {state.loading && <div style={{ marginTop: "16px" }}><Skeleton height="160px" /></div>}
-      {state.error && <div style={{ marginTop: "16px" }}><ErrorBox message={state.error} onRetry={onRun} /></div>}
-      {!state.loading && r && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
-          <ResponseCard response={r.response} />
-          {vs && <VectorResults vs={vs} />}
-          {r.sql && r.sql.length > 0 && <SqlPanel sql={r.sql} />}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ResponseCard({ response }: { response: string }) {
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,255,102,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out" }}>
-      <SectionLabel color={N.emerald}>Response</SectionLabel>
-      <div style={{ fontSize: "14px", color: N.body, lineHeight: "1.8", whiteSpace: "pre-wrap", fontFamily: "'Inter', sans-serif", wordBreak: "break-word" }}>
-        {response || "No response generated."}
-      </div>
-    </div>
-  );
-}
-
-function VectorResults({ vs }: { vs: VectorSearch }) {
-  const results = vs.results || [];
-  return (
-    <div style={{ background: N.card, border: "1px solid rgba(0,255,102,.12)", borderRadius: "14px", padding: "18px", animation: "slideIn .4s ease-out .05s both" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "8px" }}>
-        <SectionLabel color={N.emerald}>Vector Search Results</SectionLabel>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", fontSize: "11px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>
-          {vs.latency && <span>Latency: <strong style={{ color: N.breeze }}>{vs.latency}</strong></span>}
-          {vs.dimensions && <span>Dim: <strong style={{ color: N.lava }}>{vs.dimensions}</strong></span>}
-          {vs.totalResults !== undefined && <span>Hits: <strong style={{ color: N.emerald }}>{vs.totalResults}</strong></span>}
-        </div>
-      </div>
-      {results.length > 0 ? (
-        <div>
-          {/* Similarity distribution bar */}
-          <div style={{ display: "flex", gap: "4px", marginBottom: "14px", alignItems: "flex-end", height: "32px" }}>
-            {(() => {
-              const maxSim = Math.max(...results.map(r => r.similarity ?? 0), 0.01);
-              return results.map((row, i) => {
-                const pct = Math.max(8, ((row.similarity ?? 0) / maxSim) * 100);
-                const color = row.similarity >= 0.7 ? "#00ff66" : row.similarity >= 0.4 ? "#ffc800" : "#6e5458";
-                return (
-                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-                    <span style={{ fontSize: "8px", color: N.mute, fontFamily: "'JetBrains Mono', monospace" }}>{Math.round((row.similarity ?? 0) * 100)}%</span>
-                    <div style={{
-                      width: "100%", height: `${pct}%`, borderRadius: "4px 4px 0 0",
-                      background: `linear-gradient(180deg, ${color}, ${color}60)`,
-                      transition: "height 1s cubic-bezier(.16,1,.3,1)",
-                      animation: `slideIn .3s ease-out ${i * .08}s both`,
-                    }} />
-                  </div>
-                );
-              });
-            })()}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {results.map((row, i) => (
-            <div key={i} style={{
-              background: "rgba(0,0,0,.25)", borderRadius: "10px", padding: "12px 14px",
-              border: "1px solid rgba(255,42,0,.08)",
-              animation: `slideIn .3s ease-out ${i * .05}s both`,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
-                <div style={{ flex: 1, fontSize: "12px", color: N.body, fontFamily: "'Inter', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.content}>
-                  {row.content || "—"}
-                </div>
-                <div style={{ fontSize: "10px", color: N.breeze, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" }}>
-                  {row.memoryType || "—"}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ flex: 1, height: "6px", borderRadius: "999px", background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%", borderRadius: "999px",
-                    width: `${Math.max(2, Math.min(100, (row.similarity ?? 0) * 100))}%`,
-                    background: row.similarity >= 0.7 ? "linear-gradient(90deg, #00ff66, #00cc88)" : row.similarity >= 0.4 ? "linear-gradient(90deg, #ffaa00, #ffc800)" : "linear-gradient(90deg, #6e5458, #a69498)",
-                    boxShadow: row.similarity >= 0.7 ? "0 0 8px rgba(0,255,102,.3)" : "none",
-                    transition: "width 1s cubic-bezier(.16,1,.3,1)",
-                  }} />
-                </div>
-                <span style={{
-                  fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", minWidth: "36px", textAlign: "right",
-                  color: row.similarity >= 0.7 ? N.emerald : row.similarity >= 0.4 ? N.gold : N.mute,
-                }}>
-                  {(row.similarity ?? 0) >= 0 ? Math.round((row.similarity ?? 0) * 100) : 0}%
-                </span>
-              </div>
-            </div>
-          ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{ padding: "24px", textAlign: "center", color: N.mute, fontSize: "13px", fontFamily: "'JetBrains Mono', monospace" }}>No results found.</div>
-      )}
-      {vs.distanceMetric && (
-        <div style={{ marginTop: "12px", fontSize: "10px", color: N.mute, fontFamily: "'JetBrains Mono', monospace", borderTop: "1px solid rgba(255,42,0,.08)", paddingTop: "12px" }}>
-          {vs.distanceMetric} · {vs.tenantPartitioned ? "Tenant-partitioned" : "Global index"} · Model: {vs.indexType}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,12 +1,26 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, createContext, useContext } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import BackgroundParticles from "@/components/BackgroundParticles";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import { fetchWithTimeout } from "@/lib/fetch";
+
+export interface ConnectionContextType {
+  isMock: boolean;
+  dbName: string;
+}
+
+export const ConnectionContext = createContext<ConnectionContextType>({
+  isMock: true,
+  dbName: "Simulated DB",
+});
+
+export function useConnection() {
+  return useContext(ConnectionContext);
+}
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -141,6 +155,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       <BackgroundParticles />
       
       {/* Main dashboard layout */}
+      <ConnectionContext.Provider value={{ isMock, dbName }}>
       <div className="dashboard-layout">
         <NavBar />
         <div className="main-viewport">
@@ -209,7 +224,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
           <main className="page-container page-view-enter" style={{ position: "relative" }}>
             <ErrorBoundary>
-              {children}
+                {children}
             </ErrorBoundary>
 
             {/* Floating Tour Guide Dialog */}
@@ -282,6 +297,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      </ConnectionContext.Provider>
 
       {/* Dynamic CockroachDB Connection Modal */}
       {isModalOpen && (

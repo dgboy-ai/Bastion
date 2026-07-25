@@ -1,10 +1,5 @@
 const DEFAULT_TIMEOUT = 10_000;
 
-function getApiKey(): string {
-  if (typeof document === "undefined") return "";
-  return document.documentElement.getAttribute("data-api-key") || "";
-}
-
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
   init?: RequestInit & { timeout?: number },
@@ -13,11 +8,7 @@ export async function fetchWithTimeout(
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeout);
 
-  const apiKey = getApiKey();
   const headers = new Headers(init?.headers);
-  if (apiKey && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${apiKey}`);
-  }
 
   if (typeof window !== "undefined") {
     try {
@@ -39,4 +30,3 @@ export async function fetchWithTimeout(
     clearTimeout(timer);
   }
 }
-

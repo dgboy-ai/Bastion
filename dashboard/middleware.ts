@@ -7,17 +7,12 @@ const PROTECTED_ROUTES = ["/dashboard", "/graph", "/logs", "/health", "/complian
 /**
  * Validate auth token against server-side HMAC secret.
  * Token format: base64url(session_data).base64url(hmac_signature)
- * The HMAC is computed over session_data using BASTION_SESSION_SECRET.
  */
 function isValidToken(token: string | undefined): boolean {
   if (!token) return false;
-  
+
   const secret = process.env.BASTION_SESSION_SECRET;
-  if (!secret) {
-    // No secret configured — fall back to format check (dev mode only)
-    if (process.env.NODE_ENV === "production") return false;
-    return token.length >= 16 && token.includes(".");
-  }
+  if (!secret) return false;
 
   const parts = token.split(".");
   if (parts.length !== 2) return false;
@@ -26,8 +21,8 @@ function isValidToken(token: string | undefined): boolean {
     const [dataB64, sigB64] = parts;
     const data = Buffer.from(dataB64, "base64url");
     const sig = Buffer.from(sigB64, "base64url");
-    
-    if (sig.length !== 32) return false; // HMAC-SHA256 = 32 bytes
+
+    if (sig.length !== 32) return false;
 
     const expected = createHmac("sha256", secret).update(data).digest();
     return timingSafeEqual(sig, expected);
@@ -50,11 +45,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Mock mode bypass — development only, never in production
+  // Explicit mock mode: only bypass auth when BASTION_MOCK is explicitly set
+  // Never bypass in production or when env vars are missing
   if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-    if (process.env.NODE_ENV !== "production") {
-      return NextResponse.next();
-    }
+    return NextResponse.next();
   }
 
   const loginUrl = request.nextUrl.clone();

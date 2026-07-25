@@ -119,8 +119,8 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
         </Link>
         <div style={{ display: "flex", gap: "28px", alignItems: "center" }}>
           <Link href="/" style={{ color: P.body, fontSize: "13px", textDecoration: "none", fontWeight: 600 }}>Home</Link>
-          <Link href="/dashboard" style={{ color: P.body, fontSize: "13px", textDecoration: "none", fontWeight: 600 }}>Dashboard</Link>
-          <Link href="/dashboard" style={{ padding: "8px 18px", borderRadius: "6px", background: `linear-gradient(135deg,${P.lava},${P.magma})`, color: "#fff", fontSize: "12px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px" }}>Launch Dashboard</Link>
+          <Link href="/playground" style={{ color: P.body, fontSize: "13px", textDecoration: "none", fontWeight: 600 }}>Live Demo</Link>
+          <Link href="/playground" style={{ padding: "8px 18px", borderRadius: "6px", background: `linear-gradient(135deg,${P.lava},${P.magma})`, color: "#fff", fontSize: "12px", fontWeight: 800, textDecoration: "none", textTransform: "uppercase", letterSpacing: "1px" }}>Enter Live Demo</Link>
         </div>
       </nav>
       {/* Content */}

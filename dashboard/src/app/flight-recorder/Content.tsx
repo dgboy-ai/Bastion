@@ -105,6 +105,8 @@ const DEFAULT_MOCK_EVENTS: FlightEvent[] = [
   }
 ];
 
+import { useConnection } from "@/components/DashboardLayoutWrapper";
+
 export default function FlightRecorderContent() {
   const [events, setEvents] = useState<FlightEvent[]>(DEFAULT_MOCK_EVENTS);
   const [loading, setLoading] = useState(true);
@@ -112,7 +114,8 @@ export default function FlightRecorderContent() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedEventId, setSelectedEventId] = useState<string>(DEFAULT_MOCK_EVENTS[0].id);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  
+  const { isMock: isDemoMode } = useConnection();
 
   // 2026 Developer Interactive Verification State
   const [verifyingLedger, setVerifyingLedger] = useState(false);
@@ -125,12 +128,6 @@ export default function FlightRecorderContent() {
 
   const fetchEvents = async () => {
     try {
-      const res = await fetchWithTimeout("/api/health");
-      if (res.ok) {
-        const json = await res.json();
-        setIsDemoMode(json.meta?.mock === true);
-      }
-
       const auditRes = await fetchWithTimeout("/api/audit?limit=50");
       if (auditRes.ok) {
         const data = await auditRes.json();

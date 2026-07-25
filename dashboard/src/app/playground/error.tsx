@@ -1,31 +1,51 @@
 "use client";
 
+import Link from "next/link";
+
 export default function PlaygroundError({ error, reset }: { error: Error; reset: () => void }) {
+  const isNetwork = error.message?.includes("fetch") || error.message?.includes("network") || error.message?.includes("Failed to fetch");
+
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      minHeight: "60vh", gap: "16px", padding: "40px", background: "#0a0508",
+      minHeight: "80vh", gap: "16px", padding: "40px", background: "#0a0508",
     }}>
-      <div style={{ fontSize: "48px", color: "#ff2a00" }}>!</div>
       <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "16px",
-        color: "#ffffff", fontWeight: 700,
+        width: "80px", height: "80px", borderRadius: "50%",
+        background: isNetwork ? "rgba(255,68,68,0.08)" : "rgba(255,145,0,0.08)",
+        border: `2px solid ${isNetwork ? "rgba(255,68,68,0.2)" : "rgba(255,145,0,0.2)"}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "32px", marginBottom: "8px",
       }}>
-        Playground Error
+        {isNetwork ? "📡" : "⚠️"}
+      </div>
+      <div style={{ fontSize: "22px", color: "#ffffff", fontWeight: 700 }}>
+        {isNetwork ? "Connection Lost" : "Something Went Wrong"}
       </div>
       <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "12px",
-        color: "#8a8290", maxWidth: "400px", textAlign: "center", lineHeight: "1.5",
+        fontSize: "14px", color: "#a0a0b0", maxWidth: "440px", textAlign: "center", lineHeight: "1.6",
       }}>
-        {error.message || "Something went wrong"}
+        {isNetwork
+          ? "Unable to reach CockroachDB. Check your internet connection and try again."
+          : error.message || "An unexpected error occurred while loading the playground."
+        }
       </div>
-      <button onClick={reset} style={{
-        padding: "10px 24px", borderRadius: "8px", border: "1px solid rgba(255,170,0,.3)",
-        background: "rgba(255,170,0,.08)", color: "#ffaa00", cursor: "pointer",
-        fontSize: "13px", fontWeight: 600, fontFamily: "var(--font-mono)",
-      }}>
-        Try again
-      </button>
+      <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+        <button onClick={reset} style={{
+          padding: "12px 28px", borderRadius: "10px", border: "none",
+          background: "linear-gradient(135deg, #ff5e00, #ff9100)",
+          color: "#fff", fontWeight: 700, fontSize: "14px", cursor: "pointer",
+        }}>
+          Try Again
+        </button>
+        <Link href="/" style={{
+          padding: "12px 28px", borderRadius: "10px",
+          border: "1px solid #2a2a35", background: "#1a1a24",
+          color: "#a0a0b0", fontSize: "14px", fontWeight: 600, textDecoration: "none",
+        }}>
+          Go Home
+        </Link>
+      </div>
     </div>
   );
 }

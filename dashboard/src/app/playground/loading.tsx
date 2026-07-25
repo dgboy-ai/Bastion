@@ -13,7 +13,7 @@ export default function PlaygroundLoading() {
         fontFamily: "var(--font-mono)", fontSize: "12px",
         color: "#8a8290", letterSpacing: "2px", textTransform: "uppercase",
       }}>
-        Loading Playground...
+        Loading Live Demo...
       </div>
       <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
     </div>

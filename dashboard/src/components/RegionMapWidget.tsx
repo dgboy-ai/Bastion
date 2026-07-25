@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { fetchWithTimeout } from "@/lib/fetch";
 
 interface Region {
@@ -20,18 +20,34 @@ interface RegionStats {
   compliance: Record<string, string[]>;
 }
 
-const REGION_COORDS: Record<string, { x: number; y: number }> = {
-  "us-east1": { x: 28, y: 38 },
-  "us-west1": { x: 15, y: 36 },
-  "eu-west1": { x: 45, y: 30 },
-  "eu-central1": { x: 50, y: 32 },
-  "ap-south1": { x: 65, y: 45 },
-  "ap-northeast1": { x: 80, y: 35 },
+const REGION_COORDS: Record<string, { x: number; y: number; name: string }> = {
+  "us-east1": { x: 28, y: 38, name: "US East (N. Virginia)" },
+  "us-west1": { x: 15, y: 36, name: "US West (Oregon)" },
+  "eu-west1": { x: 45, y: 30, name: "Europe West (Ireland)" },
+  "eu-central1": { x: 50, y: 32, name: "Europe Central (Frankfurt)" },
+  "ap-south1": { x: 68, y: 44, name: "Asia Pacific (Mumbai)" },
+  "ap-northeast1": { x: 84, y: 33, name: "Asia Pacific (Tokyo)" },
+};
+
+/* ── Cyber Nether Premium Design Tokens ──────────────────────────────── */
+const C = {
+  card: "rgba(18, 10, 20, 0.7)",
+  hairline: "rgba(255, 94, 0, 0.16)",
+  hairlineGlow: "rgba(255, 94, 0, 0.4)",
+  ink: "#ffffff",
+  body: "#d4cdd8",
+  mute: "#7e7586",
+  breeze: "#00f0ff",
+  emerald: "#00ff8c",
+  sunset: "#ffae00",
+  dusk: "#ff5e00",
+  magma: "#ff3c00",
 };
 
 export default function RegionMapWidget() {
   const [stats, setStats] = useState<RegionStats | null>(null);
   const [error, setError] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState<string>("us-east1");
 
   useEffect(() => {
     let cancelled = false;
@@ -49,119 +65,313 @@ export default function RegionMapWidget() {
     return () => { cancelled = true; };
   }, []);
 
-  if (error) return <div className="p-4 text-gray-500">Failed to load region data.</div>;
-  if (!stats) return <div className="p-4 text-gray-500 animate-pulse">Loading regions...</div>;
+  const activeRegionDetails = useMemo(() => {
+    if (!stats) return null;
+    const reg = stats.regions.find(r => r.region === selectedRegion);
+    if (!reg) return stats.regions[0];
+    return reg;
+  }, [stats, selectedRegion]);
+
+  if (error) {
+    return (
+      <div style={{ padding: "24px", color: C.magma, fontFamily: "var(--font-mono)", fontSize: "13px" }}>
+        ⚠️ Failed to synchronize global region coordinates.
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div style={{ padding: "32px", color: C.mute, display: "flex", gap: "10px", alignItems: "center", fontFamily: "var(--font-mono)" }}>
+        <span className="live-pulse-dot" /> SYNCHRONIZING MULTI-REGION TOPOLOGY MAP...
+      </div>
+    );
+  }
 
   const maxMemories = Math.max(1, ...stats.regions.map((r) => r.memories));
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">Multi-Region Memory Distribution</h3>
-        <span className="text-xs px-2 py-1 rounded bg-blue-900/50 text-blue-400 border border-blue-800">
-          CockroachDB Distributed
+    <div style={{
+      background: C.card,
+      border: `1px solid ${C.hairline}`,
+      borderRadius: "16px",
+      padding: "24px",
+      backdropFilter: "blur(12px)",
+      boxShadow: "0 10px 40px rgba(0, 0, 0, 0.4)"
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "20px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, color: C.ink, margin: 0, letterSpacing: "-0.3px", fontFamily: "var(--font-sg)" }}>
+            MULTI-REGION TOPOLOGY SCANNER
+          </h3>
+          <p style={{ fontSize: "12px", color: C.mute, margin: "4px 0 0 0" }}>
+            Replication status and cross-region consensus sweeps across CockroachDB nodes.
+          </p>
+        </div>
+        <span style={{
+          fontSize: "10.5px",
+          fontFamily: "var(--font-mono)",
+          color: C.emerald,
+          background: "rgba(0, 255, 140, 0.08)",
+          padding: "4px 10px",
+          borderRadius: "999px",
+          border: "1px solid rgba(0, 255, 140, 0.2)"
+        }}>
+          ● ACTIVE CONSENSUS
         </span>
       </div>
 
-      {/* World map with dots */}
-      <div className="relative bg-gray-800/50 rounded-lg mb-6" style={{ paddingBottom: "45%" }}>
-        <svg viewBox="0 0 100 60" className="absolute inset-0 w-full h-full" role="img" aria-label="Multi-region memory distribution map">
-          {/* Grid lines */}
-          {[0, 15, 30, 45, 60].map((y) => (
-            <line key={`h${y}`} x1="0" y1={y} x2="100" y2={y} stroke="#374151" strokeWidth="0.2" />
-          ))}
-          {[0, 20, 40, 60, 80, 100].map((x) => (
-            <line key={`v${x}`} x1={x} y1="0" x2={x} y2="60" stroke="#374151" strokeWidth="0.2" />
-          ))}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px", alignItems: "start" }}>
+        
+        {/* WORLD TOPOLOGY MAP AREA */}
+        <div style={{
+          position: "relative",
+          background: "rgba(0,0,0,0.6)",
+          border: "1px dashed rgba(255, 94, 0, 0.2)",
+          borderRadius: "12px",
+          overflow: "hidden"
+        }}>
+          {/* Futuristic radar rotating ring behind map */}
+          <div className="topo-radar-scan" />
 
-          {/* Connection lines between regions */}
-          {stats.regions.map((r, i) =>
-            stats.regions.slice(i + 1).map((r2) => {
-              const c1 = REGION_COORDS[r.region];
-              const c2 = REGION_COORDS[r2.region];
-              if (!c1 || !c2) return null;
+          <svg viewBox="0 0 100 60" style={{ width: "100%", height: "auto", display: "block" }}>
+            {/* Latitude Ellipses (Spherical projection effect) */}
+            {[10, 20, 30, 40, 50].map((y) => (
+              <path 
+                key={`lat-${y}`} 
+                d={`M 0 ${y} Q 50 ${y - 4} 100 ${y}`} 
+                fill="none" 
+                stroke="rgba(255, 94, 0, 0.08)" 
+                strokeWidth="0.15" 
+              />
+            ))}
+            
+            {/* Longitude curved lines */}
+            {[20, 40, 60, 80].map((x) => (
+              <path 
+                key={`lon-${x}`} 
+                d={`M ${x} 0 Q ${x + 6} 30 ${x} 60`} 
+                fill="none" 
+                stroke="rgba(255, 94, 0, 0.08)" 
+                strokeWidth="0.15" 
+              />
+            ))}
+
+            {/* Glowing Active Consensus flow lanes (Data packages traveling) */}
+            {stats.regions.map((r, i) =>
+              stats.regions.slice(i + 1).map((r2) => {
+                const c1 = REGION_COORDS[r.region];
+                const c2 = REGION_COORDS[r2.region];
+                if (!c1 || !c2) return null;
+                return (
+                  <path
+                    key={`${r.region}-${r2.region}`}
+                    d={`M ${c1.x} ${c1.y} Q ${(c1.x + c2.x) / 2} ${(c1.y + c2.y) / 2 - 4} ${c2.x} ${c2.y}`}
+                    fill="none"
+                    stroke={selectedRegion === r.region || selectedRegion === r2.region ? C.sunset : "rgba(255, 94, 0, 0.15)"}
+                    strokeWidth={selectedRegion === r.region || selectedRegion === r2.region ? "0.45" : "0.2"}
+                    className="consensus-lane"
+                  />
+                );
+              })
+            )}
+
+            {/* Region Node Elements */}
+            {stats.regions.map((r) => {
+              const coords = REGION_COORDS[r.region];
+              if (!coords) return null;
+              const isSelected = selectedRegion === r.region;
+              const size = 1.2 + (r.memories / maxMemories) * 2.2;
+              
               return (
-                <line
-                  key={`${r.region}-${r2.region}`}
-                  x1={c1.x} y1={c1.y} x2={c2.x} y2={c2.y}
-                  stroke="#1e40af" strokeWidth="0.3" strokeDasharray="1,1" opacity="0.4"
-                />
+                <g key={r.region} style={{ cursor: "pointer" }} onClick={() => setSelectedRegion(r.region)}>
+                  {/* Concentric rotating glowing ring */}
+                  <circle 
+                    cx={coords.x} 
+                    cy={coords.y} 
+                    r={size + 2} 
+                    fill="none" 
+                    stroke={isSelected ? C.sunset : "rgba(255, 94, 0, 0.3)"} 
+                    strokeWidth="0.25" 
+                    strokeDasharray="2,1.5"
+                    className="concentric-spin"
+                  />
+                  {/* Pulse wave ring */}
+                  <circle cx={coords.x} cy={coords.y} r={size} fill="none" stroke={isSelected ? C.dusk : "rgba(255, 94, 0, 0.2)"} strokeWidth="0.3">
+                    <animate attributeName="r" from={size} to={size + 3} dur="2.5s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" from="0.7" to="0" dur="2.5s" repeatCount="indefinite" />
+                  </circle>
+                  {/* Inner node cores */}
+                  <circle cx={coords.x} cy={coords.y} r={size} fill={isSelected ? C.sunset : "rgba(255, 94, 0, 0.45)"} />
+                  <circle cx={coords.x} cy={coords.y} r={size * 0.4} fill="#fff" />
+                  
+                  {/* Text tags */}
+                  <text 
+                    x={coords.x} 
+                    y={coords.y - size - 1.2} 
+                    textAnchor="middle" 
+                    fill={isSelected ? "#fff" : C.mute} 
+                    fontSize="1.6" 
+                    fontWeight={isSelected ? 800 : 500}
+                    fontFamily="var(--font-mono)"
+                  >
+                    {r.region}
+                  </text>
+                </g>
               );
-            })
+            })}
+          </svg>
+        </div>
+
+        {/* DETAILED SPEC SELECTED NODE HUD */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          
+          {activeRegionDetails ? (
+            <div style={{
+              padding: "20px",
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 94, 0, 0.25)",
+              borderRadius: "12px",
+              position: "relative"
+            }}>
+              {/* Regional identifier title */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <div>
+                  <div style={{ fontSize: "9.5px", fontFamily: "var(--font-mono)", color: C.sunset, letterSpacing: "1.5px", textTransform: "uppercase" }}>
+                    REGION INSTANCE HUD
+                  </div>
+                  <h4 style={{ fontSize: "16px", fontWeight: 800, color: "#fff", margin: "2px 0 0 0", fontFamily: "var(--font-sg)" }}>
+                    {REGION_COORDS[activeRegionDetails.region]?.name || activeRegionDetails.label}
+                  </h4>
+                </div>
+                <span className="live-pulse-dot" />
+              </div>
+
+              {/* Ingestion stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.03)" }}>
+                  <div style={{ fontSize: "9.5px", color: C.mute, textTransform: "uppercase" }}>Memories Ingested</div>
+                  <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+                    {activeRegionDetails.memories.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.03)" }}>
+                  <div style={{ fontSize: "9.5px", color: C.mute, textTransform: "uppercase" }}>Sync Latency</div>
+                  <div style={{ fontSize: "16px", fontWeight: 800, color: C.emerald, fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+                    {activeRegionDetails.latency_ms}ms
+                  </div>
+                </div>
+              </div>
+
+              {/* Replication parameters */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.mute }}>Consensus Leaseholder:</span>
+                  <span style={{ color: "#fff", fontFamily: "var(--font-mono)" }}>
+                    {activeRegionDetails.region === "us-east1" ? "TRUE (LEADER)" : "FALSE (FOLLOWER)"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.mute }}>Follower Reads:</span>
+                  <span style={{ color: C.emerald }}>ENABLED (AS OF TIME)</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.mute }}>Replication Zone Index:</span>
+                  <span style={{ color: C.breeze, fontFamily: "var(--font-mono)" }}>
+                    ZONE_CRDB_{activeRegionDetails.region.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: "20px", color: C.mute, textAlign: "center", fontSize: "13px" }}>
+              Click a coordinate node on the map scanner.
+            </div>
           )}
 
-          {/* Region dots */}
-          {stats.regions.map((r) => {
-            const coords = REGION_COORDS[r.region];
-            if (!coords) return null;
-            const size = 1.5 + (r.memories / maxMemories) * 2.5;
-            return (
-              <g key={r.region}>
-                {/* Pulse ring */}
-                <circle cx={coords.x} cy={coords.y} r={size + 1.5} fill="none" stroke="#3b82f6" strokeWidth="0.3" opacity="0.3">
-                  <animate attributeName="r" from={size} to={size + 3} dur="2s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.4" to="0" dur="2s" repeatCount="indefinite" />
-                </circle>
-                {/* Main dot */}
-                <circle cx={coords.x} cy={coords.y} r={size} fill="#3b82f6" opacity="0.9" />
-                <circle cx={coords.x} cy={coords.y} r={size * 0.4} fill="#93c5fd" />
-                {/* Label */}
-                <text x={coords.x} y={coords.y - size - 1} textAnchor="middle" fill="#9ca3af" fontSize="1.8">
-                  {r.region}
-                </text>
-                <text x={coords.x} y={coords.y + size + 2.5} textAnchor="middle" fill="#6b7280" fontSize="1.4">
-                  {r.memories.toLocaleString()} mem
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      {/* Region cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-        {stats.regions.map((r) => (
-          <div key={r.region} className="bg-gray-800/50 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium text-white">{r.label}</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-gray-500">Memories</span>
-                <div className="text-white font-medium">{r.memories.toLocaleString()}</div>
+          {/* GLOBAL CONSENSUS SUMMARY BAR */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "12px",
+            background: "rgba(0,0,0,0.4)",
+            border: "1px solid rgba(255, 94, 0, 0.12)",
+            borderRadius: "10px",
+            padding: "16px"
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", fontFamily: "var(--font-mono)" }}>
+                {stats.total_memories.toLocaleString()}
               </div>
-              <div>
-                <span className="text-gray-500">Latency</span>
-                <div className="text-white font-medium">{r.latency_ms}ms</div>
-              </div>
+              <div style={{ fontSize: "9.5px", color: C.mute, textTransform: "uppercase", marginTop: "2px" }}>Global Nodes</div>
             </div>
-            {/* Utilization bar */}
-            <div className="mt-2 w-full bg-gray-700 rounded-full h-1.5">
-              <div
-                className="bg-blue-500 h-1.5 rounded-full"
-                style={{ width: `${Math.round(r.utilization * 100)}%` }}
-              />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "18px", fontWeight: 900, color: C.breeze, fontFamily: "var(--font-mono)" }}>
+                {stats.avg_global_latency_ms}ms
+              </div>
+              <div style={{ fontSize: "9.5px", color: C.mute, textTransform: "uppercase", marginTop: "2px" }}>Avg Sync</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "18px", fontWeight: 900, color: C.emerald, fontFamily: "var(--font-mono)" }}>
+                {stats.regions.length}
+              </div>
+              <div style={{ fontSize: "9.5px", color: C.mute, textTransform: "uppercase", marginTop: "2px" }}>Zones</div>
             </div>
           </div>
-        ))}
+
+        </div>
+
       </div>
 
-      {/* Summary bar */}
-      <div className="grid grid-cols-3 gap-4 bg-gray-800/50 rounded-lg p-4">
-        <div className="text-center">
-          <div className="text-xl font-bold text-white">{stats.total_memories.toLocaleString()}</div>
-          <div className="text-xs text-gray-400">Total memories</div>
-        </div>
-        <div className="text-center">
-          <div className="text-xl font-bold text-blue-400">{stats.avg_global_latency_ms}ms</div>
-          <div className="text-xs text-gray-400">Avg latency</div>
-        </div>
-        <div className="text-center">
-          <div className="text-xl font-bold text-emerald-400">{stats.regions.length}</div>
-          <div className="text-xs text-gray-400">Active regions</div>
-        </div>
-      </div>
+      <style>{`
+        .topo-radar-scan {
+          position: absolute;
+          width: 320px;
+          height: 320px;
+          border-radius: 50%;
+          border: 1px dashed rgba(255, 94, 0, 0.08);
+          pointer-events: none;
+          animation: radarRotate 12s linear infinite;
+          opacity: 0.5;
+          top: -40px;
+          left: -40px;
+        }
+        @keyframes radarRotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        .consensus-lane {
+          stroke-dasharray: 2, 2;
+          animation: packetFlow 10s linear infinite;
+        }
+        @keyframes packetFlow {
+          from { stroke-dashoffset: 20; }
+          to { stroke-dashoffset: 0; }
+        }
+
+        .concentric-spin {
+          transform-origin: center;
+          animation: spinNode 8s linear infinite;
+        }
+        @keyframes spinNode {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        .live-pulse-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #00ff8c;
+          box-shadow: 0 0 10px #00ff8c;
+          animation: livePulse 1.8s infinite;
+        }
+        @keyframes livePulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.3); opacity: 0.6; }
+        }
+      `}</style>
     </div>
   );
 }

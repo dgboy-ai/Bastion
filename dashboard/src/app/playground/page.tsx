@@ -5,11 +5,11 @@ import PlaygroundContent from "./Content";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Bastion Playground — Agentic Memory Demos",
-  description: "Interactive demos showing CockroachDB as an agentic memory layer: C-SPANN vector search, AS OF SYSTEM TIME recovery, hash chain integrity, and trust scoring.",
+  title: "Bastion — Live CockroachDB Demo",
+  description: "Interactive demo running real SQL against CockroachDB: poison detection, time-travel recovery, and semantic vector search.",
   openGraph: {
-    title: "Bastion Playground — Agentic Memory Demos",
-    description: "Interactive CockroachDB demos: vector search, time-travel recovery, hash chain integrity.",
+    title: "Bastion — Live CockroachDB Demo",
+    description: "Interactive CockroachDB demo: poison detection, time-travel recovery, vector search.",
   },
 };
 

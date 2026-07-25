@@ -14,7 +14,8 @@ const mockResult = (): SafeQueryResult => ({
 });
 
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
-const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true";
+const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true"
+  || (!connectionString && !process.env.BASTION_MOCK);
 
 // Static pool from environment variable — rejects self-signed certs in production
 const staticPool = connectionString && !isMockForced
@@ -49,35 +50,39 @@ async function getDynamicConnectionString(): Promise<string | null> {
 
 async function getActivePool(): Promise<Pool | null> {
   const dynamicConn = await getDynamicConnectionString();
-  const activeConn = dynamicConn || connectionString;
 
-  if (!activeConn || isMockForced) {
+  // Dynamic connection (from Connect DB modal) always honored — bypasses mock mode
+  if (dynamicConn) {
+    let pool = poolCache.get(dynamicConn);
+    if (!pool) {
+      console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
+      pool = new Pool({
+        connectionString: dynamicConn,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
+        max: 3,
+      });
+      poolCache.set(dynamicConn, pool);
+    }
+    return pool;
+  }
+
+  if (!connectionString || isMockForced) {
     return null;
   }
 
-  // If using default static pool, return it directly to avoid extra instantiation
-  if (activeConn === connectionString) {
-    return staticPool;
-  }
-
-  let pool = poolCache.get(activeConn);
-  if (!pool) {
-    console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
-    pool = new Pool({
-      connectionString: activeConn,
-      ssl: { rejectUnauthorized: false }, // Allow verify-full override for convenience
-      connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 20000,
-      max: 3,
-    });
-    poolCache.set(activeConn, pool);
-  }
-  return pool;
+  return staticPool;
 }
 
-/** Check if mock mode is explicitly enabled via environment variable. */
+/** Check if mock mode is enabled (either explicitly or as a safe default when no DB is configured). */
 export function isMockMode(): boolean {
   return isMockForced;
+}
+
+/** Check if mock is only the default (nothing configured by user), not explicit BASTION_MOCK=true. */
+export function isMockDefault(): boolean {
+  return isMockForced && !(process.env.BASTION_MOCK?.toLowerCase() === "true");
 }
 
 /** Whether a real database pool is available. */
@@ -111,8 +116,7 @@ export async function query(text: string, params?: unknown[]) {
 export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQueryResult> {
   const pool = await getActivePool();
   if (!pool) {
-    const dynamicConn = await getDynamicConnectionString();
-    if (isMockForced || dynamicConn) {
+    if (isMockForced) {
       return mockResult();
     }
     throw new Error("Database not available (BASTION_CONN not configured and BASTION_MOCK not enabled)");

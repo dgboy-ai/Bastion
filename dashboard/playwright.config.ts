@@ -25,6 +25,10 @@ export default defineConfig({
     timeout: 60000,
     env: {
       BASTION_API_KEY: process.env.BASTION_API_KEY || 'change-me-local-dev-only',
+      // Mock mode keeps tests hermetic. Real DB queries still work via the
+      // Connect DB modal (dynamic x-bastion-conn header bypasses mock in db.ts).
+      // For tests against real data: start server manually with BASTION_MOCK=false
+      // then run `npx playwright test --reuse-existing-server`.
       BASTION_MOCK: 'true',
     },
   },
