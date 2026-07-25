@@ -58,8 +58,7 @@ export default function InjectionTimeline() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const connect = useCallback(() => {
-    const key = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-api-key') : ''
-    const es = new EventSource(`/api/events?api_key=${encodeURIComponent(key || '')}`);
+    const es = new EventSource("/api/events");
     esRef.current = es;
 
     es.onopen = () => setConnected(true);

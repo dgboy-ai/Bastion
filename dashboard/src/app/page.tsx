@@ -1213,8 +1213,8 @@ export default function Page() {
             <span style={{width:"5px",height:"5px",borderRadius:"50%",background:clusterStatus==="online"?"#00ff66":clusterStatus==="offline"?"#ff3306":"#ffaa00",boxShadow:clusterStatus==="online"?"0 0 6px #00ff66":clusterStatus==="offline"?"0 0 6px #ff3306":"0 0 6px #ffaa00",display:"inline-block",animation:clusterStatus==="checking"?"pulse 1.5s infinite":"none"}}/>
             CLUSTER: {clusterStatus==="online"?"ONLINE":clusterStatus==="offline"?"OFFLINE":"CHECKING"}
           </span>
-          <Link href="/dashboard" className="cta-btn" style={{padding:"9px 20px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,color:"#fff",fontSize:"12.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px"}}>
-            Launch Dashboard
+          <Link href="/playground" className="cta-btn" style={{padding:"9px 20px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,color:"#fff",fontSize:"12.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px"}}>
+            Enter Live Demo
           </Link>
         </div>
       </nav>
@@ -1295,7 +1295,7 @@ export default function Page() {
 
             {/* CTA Buttons */}
             <div style={{display:"flex",gap:"16px",justifyContent:"center",flexWrap:"wrap",marginBottom:"52px"}}>
-              <Link href="/dashboard" style={{
+              <Link href="/playground" style={{
                 padding:"18px 40px",borderRadius:"10px",
                 background:"linear-gradient(135deg,#ffea00,#ff5500)",
                 color:"#fff",fontSize:"15px",fontWeight:800,textDecoration:"none",
@@ -1304,7 +1304,7 @@ export default function Page() {
                 boxShadow:"0 6px 30px rgba(255,85,0,.4),0 0 80px rgba(255,170,0,.12)",
                 transition:"all .3s",
               }}>
-                Try Demo Dashboard
+                Enter Live Demo
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </Link>
               <Link href="/docs" style={{
@@ -1449,7 +1449,7 @@ export default function Page() {
           <div>
             <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2px",color:P.gold,marginBottom:"16px"}}>Product</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["Dashboard","/dashboard"],["Memory Graph","/graph"],["Ledger Logs","/logs"],["Health","/health"],["Compliance","/compliance"]].map(([l,h])=>(
+              {[["Live Demo","/playground"],["Dashboard","/dashboard"],["Memory Graph","/graph"],["Ledger Logs","/logs"],["Health","/health"],["Compliance","/compliance"]].map(([l,h])=>(
                 <Link key={l} href={h} className="fl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontFamily:"var(--font-inter)"}}>{l}</Link>
               ))}
             </div>

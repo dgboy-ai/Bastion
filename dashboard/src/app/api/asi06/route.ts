@@ -42,8 +42,13 @@ export async function GET(request: Request) {
     const totalChecksRes = await safeQuery(
       "SELECT COUNT(*) as count FROM agent_audit"
     );
+    // Count OWASP defended attacks from poison_attempt memories (actual blocked attacks)
     const blockedRes = await safeQuery(
-      "SELECT COUNT(*) as count FROM agent_audit WHERE action LIKE '%block%' OR action LIKE '%security%'"
+      "SELECT COUNT(*) as count FROM agent_memory WHERE memory_type = 'poison_attempt'"
+    );
+    // Count healed memories (attacks that were healed by the system)
+    const healedRes = await safeQuery(
+      "SELECT COUNT(*) as count FROM agent_memory WHERE memory_type = 'healed'"
     );
     const trustRes = await safeQuery(
       "SELECT AVG(importance_score) as avg_trust FROM agent_memory"
@@ -59,6 +64,7 @@ export async function GET(request: Request) {
 
     const totalChecks = parseInt(String(totalChecksRes.rows[0]?.count || "0"), 10);
     const blockedCount = parseInt(String(blockedRes.rows[0]?.count || "0"), 10);
+    const healedCount = parseInt(String(healedRes.rows[0]?.count || "0"), 10);
     const avgTrust = parseFloat(String(trustRes.rows[0]?.avg_trust || "0.87"));
     const blockedPct = totalChecks > 0 ? Math.round((blockedCount / totalChecks) * 10000) / 100 : 0;
 
@@ -75,6 +81,7 @@ export async function GET(request: Request) {
       summary: {
         totalChecks,
         blockedCount,
+        healedCount,
         blockedPct,
         avgTrustScore: Math.round(avgTrust * 100) / 100,
         poisoningRiskDistribution: { NONE: totalChecks - blockedCount, LOW: 0, MEDIUM: 0, HIGH: blockedCount },

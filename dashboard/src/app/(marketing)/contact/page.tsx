@@ -128,7 +128,7 @@ function Navbar() {
       <div style={{ display: "flex", gap: "40px", alignItems: "center" }}>
         {[
           { href: "/", label: "Home" },
-          { href: "/dashboard", label: "Dashboard" },
+          { href: "/playground", label: "Live Demo" },
           { href: "/docs", label: "Docs" },
           { href: "/contact", label: "Contact" },
         ].map((l) => (
@@ -139,12 +139,12 @@ function Navbar() {
             {l.label}
           </Link>
         ))}
-        <Link href="/dashboard" className="glow-btn" style={{
+        <Link href="/playground" className="glow-btn" style={{
           padding: "12px 32px", borderRadius: "9999px",
           border: "1px solid rgba(255,255,255,0.2)", background: "transparent",
           color: "#fff", fontSize: "14px", fontWeight: 500, textDecoration: "none",
         }}>
-          Launch Dashboard
+          Enter Live Demo
         </Link>
       </div>
     </nav>

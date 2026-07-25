@@ -67,7 +67,7 @@ export default function QuickStartPage() {
             <Link href="/docs/architecture" style={{ color: C.gold, fontSize: "13px", textDecoration: "none" }}>→ Database Architecture</Link>
             <Link href="/docs/security" style={{ color: C.gold, fontSize: "13px", textDecoration: "none" }}>→ Security (OWASP ASI06)</Link>
             <Link href="/docs/cockroachdb" style={{ color: C.gold, fontSize: "13px", textDecoration: "none" }}>→ CockroachDB Features</Link>
-            <Link href="/dashboard" style={{ color: C.gold, fontSize: "13px", textDecoration: "none" }}>→ Live Dashboard</Link>
+            <Link href="/playground" style={{ color: C.gold, fontSize: "13px", textDecoration: "none" }}>→ Enter Live Demo</Link>
           </div>
         </div>
       </div>

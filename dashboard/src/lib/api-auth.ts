@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
+import { timingSafeEqual as cryptoTimingSafeEqual, createHmac } from "crypto";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -7,7 +7,6 @@ const RATE_LIMIT_MAP_MAX = 10000;
 const _rateBuckets = new Map<string, number[]>();
 
 function safeCompare(a: string, b: string): boolean {
-  // Pad to same length to prevent timing side-channel on length
   const maxLen = Math.max(a.length, b.length);
   const bufA = Buffer.alloc(maxLen, 0);
   const bufB = Buffer.alloc(maxLen, 0);
@@ -16,13 +15,32 @@ function safeCompare(a: string, b: string): boolean {
   return cryptoTimingSafeEqual(bufA, bufB);
 }
 
+function isValidSessionCookie(request: Request): boolean {
+  const token = request.headers.get("cookie")?.match(/bastion_auth_token=([^;]+)/)?.[1];
+  if (!token) return false;
+
+  const secret = process.env.BASTION_SESSION_SECRET;
+  if (!secret) return false;
+
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+
+  try {
+    const [dataB64, sigB64] = parts;
+    const data = Buffer.from(dataB64, "base64url");
+    const sig = Buffer.from(sigB64, "base64url");
+    if (sig.length !== 32) return false;
+    const expected = createHmac("sha256", secret).update(data).digest();
+    return cryptoTimingSafeEqual(sig, expected);
+  } catch {
+    return false;
+  }
+}
+
 export function checkRateLimit(request: Request): NextResponse | null {
-  // Skip rate limiting in dev mode — prevents 429s during parallel e2e tests
   if (process.env.NODE_ENV !== "production") {
     return null;
   }
-  // Determine client IP: trust X-Forwarded-For behind known proxies,
-  // otherwise use a combination of headers for rate limiting
   const forwarded = request.headers.get("x-forwarded-for");
   const realIp = request.headers.get("x-real-ip");
   const cfConnectingIp = request.headers.get("cf-connecting-ip");
@@ -33,18 +51,14 @@ export function checkRateLimit(request: Request): NextResponse | null {
   } else if (process.env.CLOUDFLARE && cfConnectingIp) {
     ip = cfConnectingIp;
   } else if (process.env.BASTION_TRUST_PROXY && forwarded) {
-    // Only trust X-Forwarded-For behind an explicit proxy configuration
     ip = forwarded.split(",")[0]?.trim() || "unknown";
   } else if (realIp) {
     ip = realIp;
   }
-  // If still unknown, we can't rate-limit per-IP, but we still track
   const now = Date.now();
   let timestamps = _rateBuckets.get(ip);
   if (!timestamps) {
-    // Enforce max map size to prevent memory exhaustion
     if (_rateBuckets.size >= RATE_LIMIT_MAP_MAX) {
-      // Evict oldest half of entries
       const keys = Array.from(_rateBuckets.keys());
       for (let i = 0; i < keys.length / 2; i++) {
         _rateBuckets.delete(keys[i]);
@@ -66,57 +80,36 @@ export function checkRateLimit(request: Request): NextResponse | null {
   return null;
 }
 
-export function checkApiKey(request: Request): { valid: boolean; key?: string; error?: string } {
-  // Bypass API key validation in development mode for easier local cockpit usage
-  if (process.env.NODE_ENV !== "production") {
-    return { valid: true, key: "dev-bypass" };
-  }
-
-  // Check Authorization header first, then fall back to query param (for EventSource)
-  let providedKey = "";
-  const authHeader = request.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (match) {
-    providedKey = match[1];
-  } else {
-    const url = new URL(request.url);
-    providedKey = url.searchParams.get("api_key") || "";
-  }
-  const expectedKey = process.env.BASTION_API_KEY;
-
-  if (!expectedKey) {
-    // No API key configured — deny all requests (set BASTION_API_KEY to enable access)
-    return { valid: false, error: "API key not configured. Set BASTION_API_KEY environment variable." };
-  }
-
-  if (!providedKey) {
-    return { valid: false, error: "Missing Authorization header with Bearer token" };
-  }
-
-  if (!safeCompare(providedKey, expectedKey)) {
-    return { valid: false, error: "Invalid API key" };
-  }
-
-  return { valid: true, key: providedKey };
-}
-
-export function unauthorizedResponse(error: string): NextResponse {
-  return NextResponse.json(
-    {
-      error,
-      code: "UNAUTHORIZED",
-      docs: "https://bastion.ai/docs/api-auth",
-    },
-    { status: 401, headers: { "Content-Type": "application/json" } },
-  );
-}
-
 export function requireAuth(request: Request): NextResponse | null {
   const rateLimit = checkRateLimit(request);
   if (rateLimit) return rateLimit;
-  const auth = checkApiKey(request);
-  if (!auth.valid) {
-    return unauthorizedResponse(auth.error || "Authentication required");
+
+  // In dev/mock mode, allow unauthenticated access for easier local development
+  if (process.env.NODE_ENV !== "production") {
+    return null;
   }
-  return null;
+
+  // Check session cookie first (set by /login page)
+  if (isValidSessionCookie(request)) {
+    return null;
+  }
+
+  // Fall back to API key for programmatic access (e.g., SDK, CI)
+  const authHeader = request.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (match) {
+    const providedKey = match[1];
+    const expectedKey = process.env.BASTION_API_KEY;
+    if (expectedKey && safeCompare(providedKey, expectedKey)) {
+      return null;
+    }
+  }
+
+  return NextResponse.json(
+    {
+      error: "Authentication required. Log in at /login or provide a valid API key.",
+      code: "UNAUTHORIZED",
+    },
+    { status: 401, headers: { "Content-Type": "application/json" } },
+  );
 }

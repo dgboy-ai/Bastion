@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-api-key={process.env.BASTION_API_KEY || ''}>
+    <html lang="en">
       <body style={{
         color: "#ffffff",
         fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",

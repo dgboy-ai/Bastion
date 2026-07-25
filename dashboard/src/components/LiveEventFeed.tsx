@@ -27,8 +27,7 @@ export default function LiveEventFeed() {
     function connect() {
       if (connecting) return;
       connecting = true;
-      const key = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-api-key') : ''
-      const newEs = new EventSource(`/api/events?api_key=${encodeURIComponent(key || '')}`);
+      const newEs = new EventSource("/api/events");
       es = newEs;
 
       newEs.onopen = () => {
