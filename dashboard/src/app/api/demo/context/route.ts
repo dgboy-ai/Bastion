@@ -48,7 +48,9 @@ export async function POST(request: Request) {
       memoryId: String(r.memory_id).slice(0, 8) + "...",
       hash: String(r.cryptographic_hash || "").slice(0, 16) + "...",
       prevHash: r.previous_hash ? String(r.previous_hash).slice(0, 16) + "..." : "genesis",
-      valid: i === 0 ? true : (r.previous_hash === hashChainRes.rows[i - 1]?.cryptographic_hash),
+      valid: i === hashChainRes.rows.length - 1
+        ? true // newest entry — no next to check
+        : (r.cryptographic_hash === hashChainRes.rows[i + 1]?.previous_hash),
     }));
 
     return apiSuccess({

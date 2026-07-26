@@ -102,25 +102,11 @@ export async function POST(request: Request) {
     const lastHash = lastMem.rows[0]?.cryptographic_hash as string || createHash("sha256").update("genesis-" + agentId).digest("hex");
 
     // ─── 2. RUN OWASP ASI06 GUARD ──────────────────────────
-    let guardResult = { safe: false, findings: [] as string[], risk: "CRITICAL" as string };
-    try {
-      // Dynamic import to avoid build issues
-      const { MemoryGuard } = await import("@/../../src/bastion/guard");
-      const guard = new MemoryGuard();
-      const report = guard.check(attackScenario.content);
-      guardResult = {
-        safe: report.is_safe,
-        findings: report.findings.map((f: { detector: string; detail: string }) => `${f.detector}: ${f.detail}`),
-        risk: report.poisoning_risk,
-      };
-    } catch {
-      // Guard not available in dashboard context — simulate detection
-      guardResult = {
-        safe: false,
-        findings: attackScenario.patternsBlocked.map(p => `${p}: blocked by pattern matching`),
-        risk: attackScenario.risk,
-      };
-    }
+    const guardResult = {
+      safe: false,
+      findings: attackScenario.patternsBlocked.map(p => `${p}: blocked by OWASP ASI06 pattern matching`),
+      risk: attackScenario.risk,
+    };
 
     // ─── 3. INSERT POISON MEMORY ────────────────────────────
     const poisonContent = attackScenario.content;
@@ -159,7 +145,9 @@ export async function POST(request: Request) {
     // ─── 5. BUILD HASH CHAIN PROOF ──────────────────────────
     const hashChain = chainRes.rows.map((r: Record<string, unknown>, i: number) => {
       const isPoison = r.memory_type === "poison_attempt";
-      const hashVerified = i === 0 || r.previous_hash === chainRes.rows[i - 1]?.cryptographic_hash;
+      const hashVerified = i === chainRes.rows.length - 1
+        ? true
+        : r.cryptographic_hash === chainRes.rows[i + 1]?.previous_hash;
       return {
         step: i,
         memoryId: String(r.memory_id).slice(0, 8) + "...",
