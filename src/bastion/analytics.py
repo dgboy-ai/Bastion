@@ -303,6 +303,13 @@ class MemoryAnalytics:
 
     def _check_hash_chain(self, memories: list) -> bool:
         """Verify hash chain integrity with HMAC-SHA256 verification."""
+        if len(memories) > 10_000:
+            # Too many memories to check in-memory — sample recent 10K
+            from bastion.log_setup import get_logger
+            get_logger(__name__).warning(
+                "Hash chain check: sampling 10K of %d memories to prevent OOM", len(memories)
+            )
+            memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))[-10_000:]
         from bastion.crypto import verify_hash
         sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
         prev_hash = None

@@ -378,21 +378,21 @@ docker run -p 9997:9997 -e BASTION_CONN="postgresql://..." bastion-mcp
 
 ## CockroachDB Tools Used
 
-| Tool | How We Use It |
-|------|---------------|
-| **MCP Server** | 25 tools, 4 resources, 3 prompts for agent integration |
-| **Distributed Vector Indexing** | C-SPANN with 1024-dim embeddings (94% smaller than pgvector) |
-| **ccloud CLI** | Cluster provisioning, schema migrations, health checks |
-| **Agent Skills Repo** | 8 machine-executable skills for memory operations |
+| Tool | How We Use It | Evidence |
+|------|---------------|----------|
+| **MCP Server** | 25 tools, 4 resources, 3 prompts — full agent integration | `src/bastion/mcp_server.py` (2,347 lines) |
+| **Distributed Vector Indexing** | C-SPANN with 1024-dim Bedrock Titan V2 embeddings | `schema/002_agent_memory.sql` — `CREATE VECTOR INDEX` |
+| **ccloud CLI** | Cluster provisioning, auto-scaling, query latency monitoring | `src/bastion/dba.py` — `ccloud cluster create/describe/update` |
+| **Agent Skills Repo** | 8 machine-executable skills (memory_store, search, timetravel, audit, heal, graph, resolve, bridge) | `skills/manifest.json` — dual-protocol MCP + A2A |
 
 ## AWS Services Used
 
-| Service | Usage | Status |
-|---------|-------|--------|
-| **AWS KMS** | AES-256-GCM envelope encryption for agent memory content | Verified |
-| **Amazon S3** | Memory archives with versioning, Glacier lifecycle (90-day transition, 365-day expiration) | Verified |
-| **Amazon Bedrock** | Titan V2 embeddings (1024-dim) with circuit breaker fallback | Code ready |
-| **AWS Lambda** | CDC anomaly handler (hash chain verification, drift detection, self-healing) + webhook dispatcher (push notification delivery with retries) | Code ready |
+| Service | How We Use It | Evidence |
+|---------|---------------|----------|
+| **Amazon Bedrock** | Titan V2 embeddings (1024-dim) with circuit breaker fallback | `src/bastion/memory.py:38-65` — `boto3.client("bedrock-runtime")` |
+| **AWS Lambda** | CDC handler (hash chain verification, drift detection, self-healing) + webhook dispatcher | `lambda/cdc_handler.py`, `lambda/webhook_dispatcher.py` |
+| **Amazon S3** | Memory archives with Glacier lifecycle (90-day transition, 365-day expiration) | `src/bastion/archive.py` — `boto3.client("s3")` |
+| **AWS KMS** | AES-256-GCM envelope encryption for agent memory content | `src/bastion/kms.py` — `AwsKMS` class |
 
 ---
 

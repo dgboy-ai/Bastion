@@ -14,12 +14,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Passphrase required" }, { status: 400 });
   }
 
-  // In mock mode, accept any passphrase
-  // In production, validate against BASTION_LOGIN_PASSPHRASE or BASTION_API_KEY
-  const isMock = !process.env.BASTION_CONN || process.env.BASTION_MOCK === "true";
+  // Validate passphrase against BASTION_LOGIN_PASSPHRASE or BASTION_API_KEY.
+  // In mock mode (no CRDB conn, no expected key), allow any passphrase for local dev.
   const expectedPassphrase = process.env.BASTION_LOGIN_PASSPHRASE || process.env.BASTION_API_KEY;
 
-  if (!isMock && expectedPassphrase) {
+  if (expectedPassphrase) {
     const { timingSafeEqual } = await import("crypto");
     const bufA = Buffer.alloc(256, 0);
     const bufB = Buffer.alloc(256, 0);
@@ -31,12 +30,8 @@ export async function POST(request: Request) {
   }
 
   const secret = process.env.BASTION_SESSION_SECRET;
-  if (!secret) {
-    // No session secret configured — generate a temporary one for dev
-    // In production, BASTION_SESSION_SECRET must be set
-    if (process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
-    }
+  if (!secret && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
   // Create session payload

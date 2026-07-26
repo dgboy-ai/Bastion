@@ -12,16 +12,67 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
+import socket
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import boto3
 import requests
 
 logger = logging.getLogger("bastion-webhook-dispatcher")
+
+# SSRF protection: blocked networks and schemes
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),      # loopback
+    ipaddress.ip_network("10.0.0.0/8"),        # private
+    ipaddress.ip_network("172.16.0.0/12"),     # private
+    ipaddress.ip_network("192.168.0.0/16"),    # private
+    ipaddress.ip_network("169.254.0.0/16"),    # link-local (cloud metadata)
+    ipaddress.ip_network("::1/128"),           # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),          # IPv6 private
+    ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+]
+
+
+def _is_safe_url(url: str) -> bool:
+    """Validate URL against SSRF attacks. Returns True if safe to request."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+
+    # Only allow HTTP/HTTPS
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    # Block obviously dangerous hosts
+    blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
+    if hostname.lower() in blocked_hosts:
+        return False
+
+    # Resolve DNS and check against blocked networks
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+        for family, _, _, _, sockaddr in resolved:
+            ip = ipaddress.ip_address(sockaddr[0])
+            for net in _BLOCKED_NETWORKS:
+                if ip in net:
+                    logger.warning("SSRF blocked: %s resolves to private IP %s", hostname, ip)
+                    return False
+    except (socket.gaierror, ValueError):
+        # DNS resolution failed — block to be safe
+        return False
+
+    return True
 
 # Circuit breaker state
 _failures = 0
@@ -51,6 +102,9 @@ def _record_success() -> None:
 
 def _dispatch_webhook(callback_url: str, payload: dict[str, Any]) -> bool:
     """POST task state to callback URL. Returns True on success."""
+    if not _is_safe_url(callback_url):
+        logger.warning("SSRF blocked: unsafe callback URL", extra={"callback_url": callback_url})
+        return False
     try:
         resp = requests.post(
             callback_url,
@@ -60,6 +114,7 @@ def _dispatch_webhook(callback_url: str, payload: dict[str, Any]) -> bool:
                 "Content-Type": "application/json",
                 "X-Bastion-Event": "task.state_changed",
             },
+            allow_redirects=False,
         )
         if resp.status_code < 300:
             logger.info(

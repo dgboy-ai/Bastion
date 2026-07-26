@@ -20,7 +20,7 @@ try:
 except ImportError:
     pass  # dotenv not installed — rely on OS env vars
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Project constants
@@ -41,13 +41,21 @@ class BastionSettings(BaseSettings):
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="BASTION_",
-        env_file=".env",
+        env_file=(".env.local", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     connection_string: str = ""
     mock: bool = False
+
+    @field_validator("connection_string", mode="before")
+    @classmethod
+    def _read_conn_env(cls, v: str) -> str:
+        """Read BASTION_CONN if pydantic-settings didn't pick it up."""
+        if v:
+            return v
+        return os.environ.get("BASTION_CONN", "")
     bedrock_model_id: str = "amazon.titan-embed-text-v2:0"
     embed_dim: int = 1024
     aws_region: str = os.environ.get("AWS_REGION", "us-east-1")

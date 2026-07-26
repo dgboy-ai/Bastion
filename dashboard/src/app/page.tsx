@@ -1152,10 +1152,15 @@ function FAQ() {
 export default function Page() {
   const {y:sy, pct} = useScroll();
   const [clusterStatus, setClusterStatus] = useState<"online"|"offline"|"checking">("checking");
+  const [liveStats, setLiveStats] = useState<{memories:number;audits:number;entities:number}|null>(null);
   useEffect(()=>{
     fetch("/api/health").then(r=>r.json()).then(d=>{
-      setClusterStatus(d.status === "ok" ? "online" : "offline");
+      setClusterStatus(d.success ? "online" : "offline");
     }).catch(()=>setClusterStatus("offline"));
+    fetch("/api/stats").then(r=>r.json()).then(d=>{
+      const s = d?.data;
+      if (s) setLiveStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0 });
+    }).catch(()=>{});
   },[]);
 
   return (
@@ -1326,7 +1331,7 @@ export default function Page() {
               borderTop:"1px solid rgba(255,170,0,.2)",
               flexWrap:"wrap",
             }}>
-              {[{e:965,s:"+",l:"Memories Stored",c:"#00ff66"},{e:25,s:"",l:"MCP Tools",c:P.gold},{e:4,s:"",l:"Resources",c:P.cyan}].map(({e,s,l,c})=>(
+              {[{e:liveStats?.memories ?? 0,s:"",l:"Memories Stored",c:"#00ff66"},{e:25,s:"",l:"MCP Tools",c:P.gold},{e:4,s:"",l:"Resources",c:P.cyan}].map(({e,s,l,c})=>(
                 <div key={l} style={{textAlign:"center",minWidth:"120px"}}>
                   <div style={{fontSize:"clamp(36px,4.5vw,52px)",fontWeight:900,color:c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 35px ${c}45`}}>
                     <CountUp end={e} suffix={s}/>
@@ -1437,7 +1442,7 @@ export default function Page() {
               Open-source cryptographic memory ledger for autonomous AI agents. MIT licensed.
             </p>
             <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
-              {[["MIT","License"],["v0.16","Release"],["6","Regions"]].map(([n,l])=>(
+              {[["MIT","License"],["v0.10.0","Release"],["2","Regions"]].map(([n,l])=>(
                 <div key={l} style={{textAlign:"center"}}>
                   <div style={{fontFamily:"var(--font-sg)",fontSize:"15px",fontWeight:900,color:P.gold}}>{n}</div>
                   <div style={{fontFamily:"var(--font-mono)",fontSize:"8px",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>{l}</div>
@@ -1449,7 +1454,7 @@ export default function Page() {
           <div>
             <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2px",color:P.gold,marginBottom:"16px"}}>Product</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["Live Demo","/playground"],["Dashboard","/dashboard"],["Memory Graph","/graph"],["Ledger Logs","/logs"],["Health","/health"],["Compliance","/compliance"]].map(([l,h])=>(
+              {[["Live Demo","/playground"],["Dashboard","/dashboard"],["Knowledge Graph","/graph"],["Memory Logs","/logs"],["Health","/health"],["Compliance","/compliance"]].map(([l,h])=>(
                 <Link key={l} href={h} className="fl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontFamily:"var(--font-inter)"}}>{l}</Link>
               ))}
             </div>
@@ -1481,7 +1486,6 @@ export default function Page() {
         <div style={{maxWidth:"960px",margin:"0 auto",padding:"20px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"14px"}}>
           <span style={{fontSize:"11.5px",color:P.mute,fontFamily:"var(--font-mono)"}}>© 2026 Bastion Contributors · MIT License · Secured in CockroachDB</span>
           <div style={{display:"flex",gap:"18px",alignItems:"center"}}>
-            <span style={{padding:"2px 8px",background:"rgba(255,170,0,.15)",border:`1px solid rgba(255,170,0,0.3)`,borderRadius:"2px",fontFamily:"var(--font-mono)",fontSize:"9px",color:P.gold,animation:"sparkBeat 2s infinite"}}>LEDGER_ACTIVE</span>
             <a href="https://github.com/dgboy-ai/Bastion" target="_blank" rel="noopener noreferrer" className="fl" style={{color:P.mute,fontSize:"12px",textDecoration:"none",fontFamily:"var(--font-mono)"}}>GitHub ↗</a>
           </div>
         </div>

@@ -48,10 +48,12 @@ class AutonomousDBA:
             return {"error": "Invalid cluster_id format", "slow_queries": []}
 
         try:
+            # DBA_SLOW_QUERY_LIMIT is a validated integer constant from config
+            limit = int(DBA_SLOW_QUERY_LIMIT)
             sql = (
                 "SELECT key, count, max_total_time, max_service_latency "
                 "FROM crdb_internal.node_statement_statistics "
-                f"ORDER BY max_service_latency DESC LIMIT {DBA_SLOW_QUERY_LIMIT}"
+                f"ORDER BY max_service_latency DESC LIMIT {limit}"
             )
             cmd = [
                 "ccloud", "sql", "--cluster", self.cluster_id,
