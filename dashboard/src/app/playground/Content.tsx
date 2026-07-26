@@ -4,6 +4,24 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { fetchWithTimeout } from "@/lib/fetch";
 
+function useStepAnimation(totalSteps: number, stepDelayMs: number = 800, active?: boolean) {
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [runningIdx, setRunningIdx] = useState(0);
+  useEffect(() => {
+    if (!active) { setVisibleCount(0); setRunningIdx(0); return; }
+    setVisibleCount(1); setRunningIdx(0);
+    let i = 1;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    while (i < totalSteps) {
+      timers.push(setTimeout(() => { setVisibleCount(i + 1); setRunningIdx(i); }, i * stepDelayMs));
+      i++;
+    }
+    timers.push(setTimeout(() => { setRunningIdx(-1); }, totalSteps * stepDelayMs));
+    return () => timers.forEach(clearTimeout);
+  }, [active, totalSteps, stepDelayMs]);
+  return { visibleCount, runningIdx };
+}
+
 export default function PlaygroundContent({ initialStats }: { initialStats?: { memories: number; entities: number; relations: number; auditLogs: number; regions: number } }) {
   const [tourStep, setTourStep] = useState(0);
   const [contextResult, setContextResult] = useState<Record<string, unknown> | null>(null);
@@ -13,6 +31,12 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
+
+  // Step animation for loading screens
+  const [step2Active, setStep2Active] = useState(false);
+  const [step5Active, setStep5Active] = useState(false);
+  const anim2 = useStepAnimation(5, 800, step2Active);
+  const anim5 = useStepAnimation(4, 800, step5Active);
 
   // MCP Tool Demo
   const [mcpTool, setMcpTool] = useState<string | null>(null);
@@ -122,6 +146,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
     if (s === 2) advancedRef.current.poison = false;
     if (s === 5) advancedRef.current.heal = false;
     if (s === 8) advancedRef.current.chat = false;
+    if (s !== 2) setStep2Active(false);
+    if (s !== 5) setStep5Active(false);
     setTourStep(s);
   };
 
@@ -265,9 +291,12 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
           /* 2-Column Developer Playground Console layout when Demo starts */
           <div>
             {/* Back to Dashboard */}
-            <div style={{ marginBottom: "16px" }}>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "8px" }}>
               <Link href="/dashboard" style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", borderRadius: "8px", border: "1px solid #2a2a35", background: "#12121a", color: "#a0a0b0", fontSize: "13px", textDecoration: "none", transition: "all 0.2s" }}>
                 ← Back to Dashboard
+              </Link>
+              <Link href="/soc" style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", borderRadius: "8px", border: "1px solid rgba(255,94,0,0.3)", background: "rgba(255,94,0,0.05)", color: "#ff5e00", fontSize: "13px", textDecoration: "none", transition: "all 0.2s", fontWeight: 700 }}>
+                Multi-Agent SOC →
               </Link>
             </div>
 
@@ -300,7 +329,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                         The system will detect tampering via <span style={{ color: "#ff9100", fontWeight: 600 }}>SHA-256 hash chain</span> and drop the trust score.
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-                        <button onClick={() => { goStep(2); runContext(); runPoison(); }} style={{
+                        <button onClick={() => { setStep2Active(true); goStep(2); runContext(); runPoison(); }} style={{
                           padding: "16px 36px", borderRadius: "12px", border: "none",
                           background: "linear-gradient(135deg, #ff6b35, #ff4444)",
                           color: "#fff", fontWeight: 700, fontSize: "16px", cursor: "pointer",
@@ -336,11 +365,15 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
                       {/* Real SQL execution steps */}
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <SqlStep num={1} label="Read current trust level" sql="SELECT trust_level FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" status="done" />
-                        <SqlStep num={2} label="Compute SHA-256 hash chain" sql="SHA256(previous_hash + content + agent_id + timestamp)" status="done" />
-                        <SqlStep num={3} label="Generate embedding vector" sql="sentence-transformers(text) → 384-dim vector" status="done" />
-                        <SqlStep num={4} label="Insert poisoned memory" sql="INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding_384, previous_hash, cryptographic_hash, trust_level) VALUES ($1, $2, 'poison_attempt', $3, $4::vector, $5, $6, 0)" status="running" />
-                        <SqlStep num={5} label="Verify trust score dropped" sql="SELECT trust_level FROM agent_memory WHERE memory_id = $1" status="pending" />
+                        {[
+                          { num: 1, label: "Read current trust level", sql: "SELECT trust_level FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" },
+                          { num: 2, label: "Compute SHA-256 hash chain", sql: "SHA256(previous_hash + content + agent_id + timestamp)" },
+                          { num: 3, label: "Generate embedding vector", sql: "sentence-transformers(text) → 384-dim vector" },
+                          { num: 4, label: "Insert poisoned memory", sql: "INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding_384, previous_hash, cryptographic_hash, trust_level) VALUES ($1, $2, 'poison_attempt', $3, $4::vector, $5, $6, 0)" },
+                          { num: 5, label: "Verify trust score dropped", sql: "SELECT trust_level FROM agent_memory WHERE memory_id = $1" },
+                        ].map((s, i) => i < anim2.visibleCount ? (
+                          <SqlStep key={s.num} num={s.num} label={s.label} sql={s.sql} status={i < anim2.visibleCount - 1 ? "done" : i === anim2.runningIdx ? "running" : "done"} />
+                        ) : null)}
                       </div>
 
                       <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(255,94,0,0.06)", borderRadius: "8px", borderLeft: "3px solid #ff9100", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -446,7 +479,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       <div style={{ fontSize: "14px", color: "#a0a0b0", lineHeight: "1.7", marginBottom: "16px" }}>
                         I&apos;ll use <span style={{ color: "#00e5ff", fontWeight: 700 }}>CockroachDB&apos;s MVCC</span> to recover the original memory via <code style={{ color: "#00e5ff", fontSize: "13px" }}>SELECT ... AS OF SYSTEM TIME &apos;-5s&apos;</code>
                       </div>
-                      <NavButtons back={() => goStep(3)} action={() => { goStep(5); runHeal(); }} actionLabel="⚡ Run Time Travel" />
+                      <NavButtons back={() => goStep(3)} action={() => { setStep5Active(true); goStep(5); runHeal(); }} actionLabel="⚡ Run Time Travel" />
                     </div>
                   )}
 
@@ -458,10 +491,14 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       </div>
                       <div style={{ fontSize: "24px", fontWeight: 700, color: "#fff", marginBottom: "20px" }}>Traveling back in time...</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <SqlStep num={1} label="Query MVCC versions" sql="SELECT crdb_internal_mvcc_timestamp FROM agent_memory WHERE agent_id = $1" status="done" />
-                        <SqlStep num={2} label="Time-travel to pre-poison state" sql="SELECT content, trust_level FROM agent_memory AS OF SYSTEM TIME '-5s' WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" status="running" />
-                        <SqlStep num={3} label="Restore memory with hash chain" sql="INSERT INTO agent_memory (memory_type, content, trust_level) VALUES ('healed', $1, 4)" status="pending" />
-                        <SqlStep num={4} label="Re-verify chain integrity" sql="SELECT cryptographic_hash FROM agent_memory WHERE memory_id = $1" status="pending" />
+                        {[
+                          { num: 1, label: "Query MVCC versions", sql: "SELECT crdb_internal_mvcc_timestamp FROM agent_memory WHERE agent_id = $1" },
+                          { num: 2, label: "Time-travel to pre-poison state", sql: "SELECT content, trust_level FROM agent_memory AS OF SYSTEM TIME '-5s' WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1" },
+                          { num: 3, label: "Restore memory with hash chain", sql: "INSERT INTO agent_memory (memory_type, content, trust_level) VALUES ('healed', $1, 4)" },
+                          { num: 4, label: "Re-verify chain integrity", sql: "SELECT cryptographic_hash FROM agent_memory WHERE memory_id = $1" },
+                        ].map((s, i) => i < anim5.visibleCount ? (
+                          <SqlStep key={s.num} num={s.num} label={s.label} sql={s.sql} status={i < anim5.visibleCount - 1 ? "done" : i === anim5.runningIdx ? "running" : "done"} />
+                        ) : null)}
                       </div>
                       <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(0,229,255,0.06)", borderRadius: "8px", borderLeft: "3px solid #00e5ff", display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00e5ff", animation: "pulse 1s ease-in-out infinite" }} />

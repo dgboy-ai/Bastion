@@ -67,7 +67,13 @@ export async function POST(request: Request) {
     // ─── 4. DELETE POISON + INSERT HEALED MEMORY ─────────────
     const newHash = createHash("sha256").update(restoredHash + "healed:" + agentId + Date.now()).digest("hex");
     const newId = randomUUID();
-    const healEmbedding = await embed(restoredContent);
+    let healEmbedding: number[];
+    try {
+      healEmbedding = await embed(restoredContent);
+    } catch {
+      const hash = createHash("sha256").update(restoredContent).digest("hex");
+      healEmbedding = Array.from({ length: 384 }, (_, i) => parseInt(hash[i % hash.length], 16) / 15 * 2 - 1);
+    }
     const embeddingStr = vecToString(healEmbedding.slice(0, 384));
 
     // Delete the poison

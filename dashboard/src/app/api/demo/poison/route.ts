@@ -111,7 +111,14 @@ export async function POST(request: Request) {
     // ─── 3. INSERT POISON MEMORY ────────────────────────────
     const poisonContent = attackScenario.content;
     const poisonHash = createHash("sha256").update(lastHash + poisonContent + agentId + Date.now()).digest("hex");
-    const poisonEmbedding = await embed(poisonContent);
+    let poisonEmbedding: number[];
+    try {
+      poisonEmbedding = await embed(poisonContent);
+    } catch {
+      // Fallback: deterministic hash-based embedding when ML model unavailable
+      const hash = createHash("sha256").update(poisonContent).digest("hex");
+      poisonEmbedding = Array.from({ length: 384 }, (_, i) => parseInt(hash[i % hash.length], 16) / 15 * 2 - 1);
+    }
     const embeddingStr = vecToString(poisonEmbedding.slice(0, 384));
     const poisonId = randomUUID();
 

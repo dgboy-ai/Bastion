@@ -27,7 +27,15 @@ export async function POST(request: Request) {
     const startTime = Date.now();
 
     // ─── 1. EMBED THE QUERY ─────────────────────────────────
-    const queryVec = await embed(query);
+    let queryVec: number[];
+    try {
+      queryVec = await embed(query);
+    } catch {
+      // Fallback: hash-based embedding when ML model unavailable
+      const { createHash } = await import("crypto");
+      const h = createHash("sha256").update(query).digest("hex");
+      queryVec = Array.from({ length: 384 }, (_, i) => parseInt(h[i % h.length], 16) / 15 * 2 - 1);
+    }
 
     // ─── 2. FETCH ALL MEMORIES FOR THIS AGENT ───────────────
     const mems = await safeQuery(
