@@ -38,8 +38,10 @@ if (staticPool) {
 
 // Map cache for dynamic connections (judges pasting CockroachDB URIs)
 const poolCache = new Map<string, Pool>();
+const POOL_CACHE_MAX = 10;
 
 async function getDynamicConnectionString(): Promise<string | null> {
+  if (process.env.NODE_ENV === "production") return null;
   try {
     const h = await headers();
     return h.get("x-bastion-conn") || null;
@@ -55,6 +57,14 @@ async function getActivePool(): Promise<Pool | null> {
   if (dynamicConn) {
     let pool = poolCache.get(dynamicConn);
     if (!pool) {
+      if (poolCache.size >= POOL_CACHE_MAX) {
+        const oldest = poolCache.keys().next().value;
+        if (oldest) {
+          const oldPool = poolCache.get(oldest);
+          if (oldPool) oldPool.end().catch(() => {});
+          poolCache.delete(oldest);
+        }
+      }
       console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
       pool = new Pool({
         connectionString: dynamicConn,

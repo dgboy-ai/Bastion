@@ -176,7 +176,7 @@ In multi-agent systems, a single poisoned memory can corrupt an entire fleet. Ac
 | Time to detect poisoning | < 100ms (guard scan) |
 | Time to investigate | Instant (time-travel query) |
 | Time to recover | < 1s (hash chain restore) |
-| Tokens saved (LTM Gateway) | ~2,965 per cached analysis |
+| Tokens saved (LTM Gateway) | ~2,965 per cached analysis (estimated) |
 | Bedrock failures handled | Graceful degradation via circuit breaker |
 
 ### Performance Metrics
@@ -431,6 +431,8 @@ python -m pytest tests/ -v
 | [AI Safety](docs/AI_SAFETY.md) | OWASP ASI06 guard, PII detection |
 | [Comparison](docs/COMPARISON.md) | vs Mem0, Zep, Cognee, Letta |
 | [Deployment](docs/DEPLOYMENT.md) | Docker, AWS, CockroachDB Serverless |
+| [Claude Desktop](examples/claude_desktop_config.json) | MCP config for Claude Desktop |
+| [Cursor](examples/cursor_mcp.json) | MCP config for Cursor IDE |
 
 ---
 

@@ -1,12 +1,57 @@
 import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
+import { safeQuery, isMockMode } from "@/lib/db";
 import FlightRecorderContent from "./Content";
 
 export const dynamic = "force-dynamic";
 
-export default function FlightRecorderPage() {
+async function getAuditEvents() {
+  if (isMockMode()) {
+    return { events: [], total: 0 };
+  }
+  try {
+    const res = await safeQuery(
+      "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit ORDER BY recorded_at DESC LIMIT 50"
+    );
+    const events = res.rows.map((row: Record<string, unknown>) => {
+      // Parse details — could be JSONB object or string
+      let detailsStr = "";
+      let contentPreview = "audit entry";
+      if (row.details) {
+        if (typeof row.details === "string") {
+          detailsStr = row.details;
+          contentPreview = row.details.slice(0, 200);
+        } else if (typeof row.details === "object") {
+          detailsStr = JSON.stringify(row.details, null, 2);
+          // Extract meaningful content from JSONB
+          const d = row.details as Record<string, unknown>;
+          contentPreview = String(d.content_preview || d.memory_type || d.action || "").slice(0, 200) || JSON.stringify(row.details).slice(0, 200);
+        }
+      }
+      return {
+        id: String(row.audit_id),
+        timestamp: row.recorded_at instanceof Date ? row.recorded_at.toISOString() : String(row.recorded_at || new Date().toISOString()),
+        type: String(row.action || "audit_check"),
+        agent_id: String(row.agent_id || "unknown"),
+        content_preview: contentPreview,
+        hash: String(row.audit_id || "").slice(0, 16),
+        previous_hash: undefined,
+        trust_score: undefined,
+        status: "success",
+        details: detailsStr,
+      };
+    });
+    return { events, total: events.length };
+  } catch {
+    return { events: [], total: 0 };
+  }
+}
+
+export default async function FlightRecorderPage() {
+  const { events, total } = await getAuditEvents();
+
   return (
     <DashboardLayoutWrapper>
-      <FlightRecorderContent />
+      <FlightRecorderContent initialEvents={events} initialTotal={total} />
     </DashboardLayoutWrapper>
   );
 }

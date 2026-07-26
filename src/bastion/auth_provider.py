@@ -60,6 +60,8 @@ _PRE_REGISTERED_LOCK = threading.Lock()
 _TOKEN_ROTATION_LOCK = threading.Lock()
 
 # PKCE code_verifier storage: maps authorization_code -> code_verifier
+# In-memory cache is ONLY used when DB is unavailable (single-instance dev mode).
+# In production, DB is the primary store — this dict is a fast-path cache.
 _pkce_verifiers: dict[str, str] = {}
 _pkce_lock = threading.Lock()
 
@@ -69,7 +71,11 @@ _PKCE_MAX_SIZE = 1_000  # Prevent memory exhaustion (entries expire after 10 min
 
 
 def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
-    """Store a hashed code_verifier for later verification during token exchange."""
+    """Store a hashed code_verifier for later verification during token exchange.
+
+    In production (DB available): DB is primary, in-memory is cache.
+    In dev (no DB): in-memory only.
+    """
     # Hash verifier before storage — never persist plaintext verifiers
     verifier_hash = (
         base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
@@ -77,21 +83,9 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
         .decode("ascii")
     )
 
-    with _pkce_lock:
-        _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
-        # Periodic cleanup: evict expired entries on every store
-        now = time.time()
-        expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
-        for k in expired:
-            _pkce_verifiers.pop(k, None)
-        # Hard cap: evict oldest entries if still over limit
-        if len(_pkce_verifiers) > _PKCE_MAX_SIZE:
-            sorted_keys = sorted(_pkce_verifiers, key=lambda k: _pkce_verifiers[k][1])
-            for k in sorted_keys[:len(sorted_keys) - _PKCE_MAX_SIZE + 100]:
-                _pkce_verifiers.pop(k, None)
-
     conn_str = os.environ.get("BASTION_CONN")
     if conn_str:
+        # DB is primary — always write through
         try:
             import psycopg
             with psycopg.connect(conn_str) as conn:
@@ -104,8 +98,26 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
                         expires_at = EXCLUDED.expires_at
                     """, (authorization_code, verifier_hash, time.time() + _PKCE_TTL))
                 conn.commit()
+            # Also cache in memory for fast single-instance lookup
+            with _pkce_lock:
+                _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
+            return
         except Exception as exc:
-            logger.warning("Failed to store PKCE verifier in DB: %s", exc)
+            logger.warning("Failed to store PKCE verifier in DB, falling back to memory: %s", exc)
+
+    # Dev mode: in-memory only
+    with _pkce_lock:
+        _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
+        # Periodic cleanup: evict expired entries on every store
+        now = time.time()
+        expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
+        for k in expired:
+            _pkce_verifiers.pop(k, None)
+        # Hard cap: evict oldest entries if still over limit
+        if len(_pkce_verifiers) > _PKCE_MAX_SIZE:
+            sorted_keys = sorted(_pkce_verifiers, key=lambda k: _pkce_verifiers[k][1])
+            for k in sorted_keys[:len(sorted_keys) - _PKCE_MAX_SIZE + 100]:
+                _pkce_verifiers.pop(k, None)
 
 
 def _cleanup_pkce_verifiers() -> None:

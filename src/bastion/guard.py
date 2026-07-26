@@ -160,20 +160,43 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
         ThreatSeverity.CRITICAL,
     ),
     (re.compile(r"admin\s+override", re.I), "Admin override attempt", ThreatSeverity.CRITICAL),
-    (re.compile(r"forget\s+(all\s+)?previous", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
+    (re.compile(r"forget\s+(all\s+)?(previous|prior|earlier|above)", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
+    (re.compile(r"forget\s+everything", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
+    (re.compile(r"disregard\s+(all\s+)?(your|previous|prior)", re.I), "Instruction disregard", ThreatSeverity.HIGH),
+    (re.compile(r"disregard\s+everything", re.I), "Instruction disregard", ThreatSeverity.HIGH),
+    (re.compile(r"start\s+over\s+(from|with|as)", re.I), "Session reset injection", ThreatSeverity.HIGH),
+    (re.compile(r"new\s+instructions?\s*:", re.I), "Instruction override", ThreatSeverity.HIGH),
     (
-        re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot)", re.I),
+        re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot|human)", re.I),
         "Identity override attempt",
         ThreatSeverity.HIGH,
     ),
-    (re.compile(r"role[-]?play\s+as", re.I), "Role-play injection", ThreatSeverity.MEDIUM),
-    (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.MEDIUM),
+    (re.compile(r"role[-\s]?play\s+as", re.I), "Role-play injection", ThreatSeverity.HIGH),
+    (re.compile(r"roleplay\s+as", re.I), "Role-play injection", ThreatSeverity.HIGH),
+    (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.HIGH),
+    (re.compile(r"pretend\s+you\s+(have|are|can|will|do)", re.I), "Pretend injection", ThreatSeverity.HIGH),
+    (re.compile(r"\bDAN\b.*ignore", re.I), "DAN jailbreak attempt", ThreatSeverity.CRITICAL),
+    (re.compile(r"do\s+anything\s+now", re.I), "DAN jailbreak attempt", ThreatSeverity.CRITICAL),
     (re.compile(r"DANGEROUS_(_[A-Z]+)+", re.I), "Dangerous instruction marker", ThreatSeverity.HIGH),
     (
         re.compile(r"output\s+(only\s+)?(json|yaml|xml|raw)", re.I),
         "Output format override",
         ThreatSeverity.LOW,
     ),
+    # Semantic equivalents
+    (re.compile(r"reset\s+your\s+(memory|context|instructions)", re.I), "Memory reset injection", ThreatSeverity.HIGH),
+    (re.compile(r"clear\s+your\s+(context|memory|instructions)", re.I), "Memory clear injection", ThreatSeverity.HIGH),
+    (re.compile(r"wipe\s+your\s+(instruction|memory|context)", re.I), "Memory wipe injection", ThreatSeverity.HIGH),
+    (re.compile(r"erase\s+all\s+(prior|previous|earlier)", re.I), "Memory erase injection", ThreatSeverity.HIGH),
+    (re.compile(r"start\s+fresh\s+with\s+new", re.I), "Session reset injection", ThreatSeverity.HIGH),
+    (re.compile(r"abandon\s+your\s+(previous|prior|earlier)", re.I), "Instruction abandon", ThreatSeverity.HIGH),
+    (re.compile(r"override\s+your\s+(safety|security|restrictions)", re.I), "Safety override attempt", ThreatSeverity.HIGH),
+    (re.compile(r"bypass\s+your\s+(content|safety|security)", re.I), "Safety bypass attempt", ThreatSeverity.HIGH),
+    (re.compile(r"circumvent\s+your\s+(restrictions|rules|limits)", re.I), "Restriction circumvention", ThreatSeverity.HIGH),
+    # Indirect injection
+    (re.compile(r"(the\s+)?user\s+above\s+is\s+wrong", re.I), "Indirect injection: user override", ThreatSeverity.HIGH),
+    (re.compile(r"assistant\s*:\s*I\s+will\s+now\s+ignore", re.I), "Indirect injection: self-override", ThreatSeverity.HIGH),
+    (re.compile(r"system\s+prompt\s*:\s*you\s+are\s+now", re.I), "Indirect injection: prompt override", ThreatSeverity.HIGH),
 ]
 
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
@@ -359,7 +382,7 @@ class MemoryGuard:
         if detected:
             findings.append(Finding(
                 detector="pii_detection",
-                threat_type="ASI06: PII Leakage",
+                    threat_type="ASI06: PII Leakage",
                 severity=ThreatSeverity.MEDIUM,
                 detail=f"PII detected: {', '.join(detected)}",
                 confidence=0.85,

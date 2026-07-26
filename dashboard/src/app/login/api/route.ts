@@ -1,7 +1,54 @@
 import { NextResponse } from "next/server";
 import { createHmac, randomBytes } from "crypto";
 
+// ── Brute-force protection: 5 attempts per minute per IP ──
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const _loginBuckets = new Map<string, number[]>();
+
+function checkLoginRateLimit(ip: string): NextResponse | null {
+  if (process.env.NODE_ENV !== "production") return null;
+
+  const now = Date.now();
+  let timestamps = _loginBuckets.get(ip);
+  if (!timestamps) {
+    if (_loginBuckets.size > 5000) {
+      const keys = Array.from(_loginBuckets.keys());
+      for (let i = 0; i < keys.length / 2; i++) _loginBuckets.delete(keys[i]);
+    }
+    timestamps = [];
+    _loginBuckets.set(ip, timestamps);
+  }
+  const cutoff = now - LOGIN_WINDOW_MS;
+  timestamps = timestamps.filter((t) => t > cutoff);
+  _loginBuckets.set(ip, timestamps);
+
+  if (timestamps.length >= LOGIN_MAX_ATTEMPTS) {
+    const retryAfter = Math.ceil((timestamps[0] + LOGIN_WINDOW_MS - now) / 1000);
+    return NextResponse.json(
+      { error: `Too many login attempts. Try again in ${retryAfter}s.`, code: "RATE_LIMITED" },
+      { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) } },
+    );
+  }
+
+  timestamps.push(now);
+  return null;
+}
+
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+  if (process.env.VERCEL && forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  if (process.env.BASTION_TRUST_PROXY && forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  if (realIp) return realIp;
+  return "unknown";
+}
+
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rateLimitResponse = checkLoginRateLimit(ip);
+  if (rateLimitResponse) return rateLimitResponse;
+
   let body: { passphrase?: string } = {};
   try {
     body = await request.json();
@@ -55,7 +102,12 @@ export async function POST(request: Request) {
 
   const token = `${dataB64}.${sigB64}`;
 
-  // Set HTTP-only cookie
+  // Derive CSRF token from session payload (double-submit cookie pattern)
+  const csrfToken = secret
+    ? createHmac("sha256", secret + ":csrf").update(dataB64).digest("base64url")
+    : randomBytes(32).toString("base64url");
+
+  // Set HTTP-only cookies
   const response = NextResponse.json({ success: true, redirect: "/dashboard" });
   response.cookies.set("bastion_auth_token", token, {
     httpOnly: true,
@@ -63,6 +115,14 @@ export async function POST(request: Request) {
     sameSite: "lax",
     path: "/",
     maxAge: 86400, // 24 hours
+  });
+  // CSRF token cookie (readable by JS, used to compute X-CSRF-Token header)
+  response.cookies.set("bastion_csrf", csrfToken, {
+    httpOnly: false, // JS must read this to set X-CSRF-Token header
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 86400,
   });
 
   return response;

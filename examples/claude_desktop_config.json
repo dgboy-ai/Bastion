@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@your-cluster.cockroachcloud.cloud:26257/bastion?sslmode=verify-full",
+        "BASTION_MOCK": "false",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}

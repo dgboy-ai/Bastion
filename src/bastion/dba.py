@@ -1,8 +1,8 @@
 """Autonomous DBA Agent for CockroachDB.
 
-Uses ccloud CLI to manage cluster operations and MCP queries
-to inspect database performance. Enables agents to autonomously
-scale and optimize their own database infrastructure.
+Uses the CockroachDB Cloud API (ccloud CLI) to manage cluster operations
+and SQL queries to inspect database performance. Enables agents to
+autonomously scale and optimize their own database infrastructure.
 """
 
 from __future__ import annotations
@@ -17,6 +17,45 @@ from bastion.config import DBA_SLOW_QUERY_LIMIT
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+# ── CockroachDB Cloud API wrapper ──────────────────────────────────────────
+
+CCLOUD_CMD = "ccloud"
+_DEFAULT_TIMEOUT = 30
+_SCALE_TIMEOUT = 60
+
+
+def _run_ccloud(args: list[str], timeout: int = _DEFAULT_TIMEOUT) -> dict[str, Any]:
+    """Execute a ccloud CLI command and return parsed JSON output.
+
+    Uses subprocess with proper timeout, structured error handling,
+    and logging. This is the official CockroachDB Cloud CLI interface.
+    """
+    cmd = [CCLOUD_CMD] + args
+    cmd_str = " ".join(cmd)
+    logger.debug("ccloud exec: %s", cmd_str)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode == 0:
+            if result.stdout.strip():
+                return json.loads(result.stdout)
+            return {"status": "ok"}
+        logger.warning("ccloud failed (rc=%d): %s", result.returncode, result.stderr.strip())
+        return {"error": f"ccloud CLI error (rc={result.returncode})", "stderr": result.stderr.strip()}
+    except subprocess.TimeoutExpired:
+        logger.error("ccloud timed out after %ds: %s", timeout, cmd_str)
+        return {"error": f"ccloud CLI timed out after {timeout}s"}
+    except json.JSONDecodeError as exc:
+        logger.error("ccloud JSON parse error: %s", exc)
+        return {"error": "ccloud CLI returned invalid JSON"}
+    except FileNotFoundError:
+        logger.error("ccloud CLI not found in PATH")
+        return {"error": "ccloud CLI not installed — install from https://www.cockroachlabs.com/docs/stable/cockroach-cloud-cli"}
+    except Exception as exc:
+        logger.exception("Unexpected ccloud error")
+        return {"error": f"ccloud operation failed: {exc}"}
 
 
 class AutonomousDBA:
@@ -47,64 +86,42 @@ class AutonomousDBA:
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format", "slow_queries": []}
 
-        try:
-            # DBA_SLOW_QUERY_LIMIT is a validated integer constant from config
-            limit = int(DBA_SLOW_QUERY_LIMIT)
-            sql = (
-                "SELECT key, count, max_total_time, max_service_latency "
-                "FROM crdb_internal.node_statement_statistics "
-                f"ORDER BY max_service_latency DESC LIMIT {limit}"
-            )
-            cmd = [
-                "ccloud", "sql", "--cluster", self.cluster_id,
-                "--execute", sql,
-                "-o", "json",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                slow_queries = [
-                    q for q in data
-                    if q.get("max_service_latency", 0) > self.threshold_ms
-                ]
-                return {
-                    "slow_count": len(slow_queries),
-                    "threshold_ms": self.threshold_ms,
-                    "queries": slow_queries[:5],
-                }
-            logger.warning("ccloud query latency check failed: %s", result.stderr)
-            return {"error": "ccloud CLI error (see server logs)", "slow_queries": []}
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning("Failed to inspect query latency: %s", e)
-            return {"error": "ccloud operation failed", "slow_queries": []}
+        limit = int(DBA_SLOW_QUERY_LIMIT)
+        sql = (
+            "SELECT key, count, max_total_time, max_service_latency "
+            "FROM crdb_internal.node_statement_statistics "
+            f"ORDER BY max_service_latency DESC LIMIT {limit}"
+        )
+        data = _run_ccloud(["sql", "--cluster", self.cluster_id, "--execute", sql, "-o", "json"])
+
+        if "error" in data:
+            return {"error": data["error"], "slow_queries": []}
+
+        slow_queries = [
+            q for q in data
+            if q.get("max_service_latency", 0) > self.threshold_ms
+        ]
+        return {
+            "slow_count": len(slow_queries),
+            "threshold_ms": self.threshold_ms,
+            "queries": slow_queries[:5],
+        }
 
     def get_cluster_status(self) -> dict[str, Any]:
         """Get cluster status via ccloud CLI."""
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
-        # Security: Validate cluster_id
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
-        try:
-            cmd = ["ccloud", "cluster", "describe", self.cluster_id, "-o", "json"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                result_dict: dict[str, Any] = json.loads(result.stdout)
-                return result_dict
-            logger.warning("ccloud cluster status failed: %s", result.stderr)
-            return {"error": "ccloud CLI error (see server logs)"}
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning("Failed to get cluster status: %s", e)
-            return {"error": "ccloud operation failed"}
+        return _run_ccloud(["cluster", "describe", self.cluster_id, "-o", "json"])
 
     def scale_up_cluster(self, storage_gib: int | None = None, num_nodes: int | None = None) -> dict[str, Any]:
         """Trigger scale-up via ccloud CLI."""
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
-        # Security: Validate cluster_id
         if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
@@ -117,28 +134,24 @@ class AutonomousDBA:
                     "retry_after_seconds": int(self._scale_cooldown_seconds - elapsed),
                 }
 
-        try:
-            cmd = ["ccloud", "cluster", "update", self.cluster_id, "-o", "json"]
-            if storage_gib:
-                cmd.extend(["--storage-gib", str(storage_gib)])
-            if num_nodes:
-                cmd.extend(["--nodes", str(num_nodes)])
+        args = ["cluster", "update", self.cluster_id, "-o", "json"]
+        if storage_gib:
+            args.extend(["--storage-gib", str(storage_gib)])
+        if num_nodes:
+            args.extend(["--nodes", str(num_nodes)])
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if result.returncode == 0:
-                self._last_scale_time = now
-                return {
-                    "status": "scaled",
-                    "cluster_id": self.cluster_id,
-                    "storage_gib": storage_gib,
-                    "num_nodes": num_nodes,
-                    "timestamp": now.isoformat(),
-                }
-            logger.warning("ccloud cluster update failed: %s", result.stderr)
-            return {"error": "ccloud CLI error (see server logs)"}
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning("Failed to scale cluster: %s", e)
-            return {"error": "ccloud operation failed"}
+        data = _run_ccloud(args, timeout=_SCALE_TIMEOUT)
+        if "error" in data:
+            return data
+
+        self._last_scale_time = now
+        return {
+            "status": "scaled",
+            "cluster_id": self.cluster_id,
+            "storage_gib": storage_gib,
+            "num_nodes": num_nodes,
+            "timestamp": now.isoformat(),
+        }
 
     def health_check(self) -> dict[str, Any]:
         """Run a comprehensive health check."""
@@ -299,28 +312,21 @@ class SchemaEvolution:
         if default_value:
             ddl += f" DEFAULT {default_value}"
 
-        try:
-            cmd = [
-                "ccloud", "sql", "--cluster", self.cluster_id,
-                "--execute", ddl,
-                "-o", "json",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        data = _run_ccloud(
+            ["sql", "--cluster", self.cluster_id, "--execute", ddl, "-o", "json"],
+            timeout=_SCALE_TIMEOUT,
+        )
+        if "error" in data:
+            return {"status": "error", "error": data["error"], "ddl": ddl}
 
-            if result.returncode == 0:
-                return {
-                    "status": "executed",
-                    "ddl": ddl,
-                    "table_name": table_name,
-                    "column_name": column_name,
-                    "column_type": col_type,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-            logger.warning("ccloud migration failed: %s", result.stderr)
-            return {"status": "error", "error": "ccloud CLI error (see server logs)", "ddl": ddl}
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning("Failed to execute migration: %s", e)
-            return {"status": "error", "error": "ccloud operation failed", "ddl": ddl}
+        return {
+            "status": "executed",
+            "ddl": ddl,
+            "table_name": table_name,
+            "column_name": column_name,
+            "column_type": col_type,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
 
     def _validate_table_name(self, table_name: str) -> str | None:
         """Validate table name to prevent SQL injection. Returns None if valid, error message if invalid."""
@@ -359,23 +365,14 @@ class SchemaEvolution:
         if err:
             return {"error": err}
 
-        try:
-            sql = f"SHOW COLUMNS FROM {table_name}"
-            cmd = [
-                "ccloud", "sql", "--cluster", self.cluster_id,
-                "--execute", sql,
-                "-o", "json",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                columns = json.loads(result.stdout)
-                return {
-                    "table_name": table_name,
-                    "columns": columns,
-                    "column_count": len(columns),
-                }
-            logger.warning("ccloud list columns failed: %s", result.stderr)
-            return {"error": "ccloud CLI error (see server logs)"}
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning("Failed to list columns: %s", e)
-            return {"error": "ccloud operation failed"}
+        sql = f"SHOW COLUMNS FROM {table_name}"
+        data = _run_ccloud(["sql", "--cluster", self.cluster_id, "--execute", sql, "-o", "json"])
+
+        if "error" in data:
+            return data
+
+        return {
+            "table_name": table_name,
+            "columns": data,
+            "column_count": len(data),
+        }
