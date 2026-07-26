@@ -1,7 +1,11 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { agentId = "agent-demo", interval = "-5s" } = body;
@@ -35,9 +39,8 @@ export async function POST(request: Request) {
       })),
       total: result.rows.length,
       latency: latency + "ms",
-      sql: `SELECT memory_id, memory_type, content, trust_level, created_at FROM agent_memory AS OF SYSTEM TIME $1 WHERE agent_id = $2 ORDER BY created_at DESC LIMIT 10`,
     }, "dynamic");
   } catch (err) {
-    return apiError("memory_timetravel failed: " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("memory_timetravel failed", 500);
   }
 }

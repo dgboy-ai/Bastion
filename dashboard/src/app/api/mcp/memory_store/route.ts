@@ -1,13 +1,22 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 import { createHash, randomUUID } from "crypto";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { content, agentId = "agent-demo", memoryType = "fact" } = body;
 
     if (!content) return apiError("content is required", 400);
+
+    const MAX_CONTENT_BYTES = 100_000;
+    if (typeof content !== "string" || content.length > MAX_CONTENT_BYTES) {
+      return apiError(`content exceeds maximum size of ${MAX_CONTENT_BYTES} bytes`, 400);
+    }
 
     const startTime = Date.now();
 
@@ -46,10 +55,9 @@ export async function POST(request: Request) {
       cryptographicHash: cryptographicHash.slice(0, 20) + "...",
       trustLevel: 3,
       latency: latency + "ms",
-      sql: `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding_384, previous_hash, cryptographic_hash, trust_level, source_provenance) VALUES ($1, $2, $3, $4, $5::vector, $6, $7, 3, 'agent_direct')`,
     }, "dynamic");
   } catch (err) {
-    return apiError("memory_store failed: " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("memory_store failed", 500);
   }
 }
 

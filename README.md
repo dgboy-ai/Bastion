@@ -143,6 +143,8 @@ Bastion implements a complete memory operating system for AI agents:
 | **Long-Term** | Persistent knowledge, semantic recall | C-SPANN vector index | Never |
 | **Forensic** | Cryptographic proof of integrity | Hash chains, AS OF SYSTEM TIME | Never |
 
+Memory importance follows an [Ebbinghaus forgetting curve](https://en.wikipedia.org/wiki/Forgetting_curve) — memories decay in relevance unless reinforced by access. Bastion tracks `importance_score` and applies time-weighted decay scoring (`importance / (1 + rate × hours)`) to surface the most relevant memories during search.
+
 ### Why This Matters
 
 > "Every AI agent has short-term and long-term memory. But only Bastion has **forensic memory** — the ability to prove what the agent knew, when it knew it, and whether anyone tampered with it."

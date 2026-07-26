@@ -2,9 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
+import { fetchWithTimeout } from "@/lib/fetch";
 
-export default function PlaygroundContent() {
+export default function PlaygroundContent({ initialStats }: { initialStats?: { memories: number; entities: number; relations: number; auditLogs: number; regions: number } }) {
   const [tourStep, setTourStep] = useState(0);
+  const [contextResult, setContextResult] = useState<unknown>(null);
   const [poisonResult, setPoisonResult] = useState<unknown>(null);
   const [healResult, setHealResult] = useState<unknown>(null);
   const [chatResult, setChatResult] = useState<unknown>(null);
@@ -30,14 +32,9 @@ export default function PlaygroundContent() {
       else if (tool === "memory_timetravel") body.interval = input || "-5s";
       else if (tool === "memory_audit") body.limit = parseInt(input) || 10;
 
-      const csrfToken = typeof document !== "undefined"
-        ? (document.cookie.match(/bastion_csrf=([^;]+)/)?.[1] || "")
-        : "";
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-      const res = await fetch(`/api/mcp/${tool}`, {
+      const res = await fetchWithTimeout(`/api/mcp/${tool}`, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -51,22 +48,26 @@ export default function PlaygroundContent() {
   }, []);
 
   // Live stats from CockroachDB
-  const [stats, setStats] = useState<{ memories: number; entities: number; relations: number; auditLogs: number; regions: number; avgLatency: string; clusterOnline: boolean } | null>(null);
+  const [stats, setStats] = useState(initialStats ? { ...initialStats, avgLatency: "—", clusterOnline: true } : null);
   const [statsError, setStatsError] = useState(false);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(!initialStats);
+  const hasInitialStats = useRef(!!initialStats);
 
-  // Fetch live stats on mount
+  // Fetch live stats on mount — only if no server data
   useEffect(() => {
+    if (hasInitialStats.current) return;
     let mounted = true;
     const fetchStats = async () => {
       try {
         const [statsRes, regionRes] = await Promise.all([
-          fetch("/api/stats").then(r => r.json()),
-          fetch("/api/region-stats").then(r => r.json()),
+          fetchWithTimeout("/api/stats"),
+          fetchWithTimeout("/api/region-stats"),
         ]);
+        const statsJson = await statsRes.json();
+        const regionJson = await regionRes.json();
         if (!mounted) return;
-        const s = statsRes?.data;
-        const r = regionRes?.data;
+        const s = statsJson?.data;
+        const r = regionJson?.data;
         setStats({
           memories: s?.memories ?? 0,
           entities: s?.entities ?? 0,
@@ -84,7 +85,6 @@ export default function PlaygroundContent() {
       }
     };
     fetchStats();
-    // Refresh stats every 30s
     const interval = setInterval(fetchStats, 30000);
     return () => { mounted = false; clearInterval(interval); };
   }, []);
@@ -96,14 +96,8 @@ export default function PlaygroundContent() {
     setLoading(tag);
     setError(null);
     try {
-      const csrfToken = typeof document !== "undefined"
-        ? (document.cookie.match(/bastion_csrf=([^;]+)/)?.[1] || "")
-        : "";
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
-      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: ctrl.signal });
+      const res = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal } as any);
       const json = await res.json();
-      // API wraps in {success, data} — extract the data
       const data = json?.data ?? json;
       setter(data);
       setLoading(null);
@@ -117,6 +111,7 @@ export default function PlaygroundContent() {
   const runPoison = useCallback(() => callApi("/api/demo/poison", { agentId: "agent-demo" }, setPoisonResult, "poison"), [callApi]);
   const runHeal = useCallback(() => callApi("/api/demo/heal", { agentId: "agent-demo" }, setHealResult, "heal"), [callApi]);
   const runChat = useCallback(() => callApi("/api/demo/chat", { query: "secret keys and encryption", agentId: "agent-demo" }, setChatResult, "chat"), [callApi]);
+  const runContext = useCallback(() => callApi("/api/demo/context", { agentId: "agent-demo" }, setContextResult, "context"), [callApi]);
 
   const onPoisonDone = loading === null && poisonResult && tourStep === 2;
   const onHealDone = loading === null && healResult && tourStep === 5;
@@ -141,11 +136,18 @@ export default function PlaygroundContent() {
     advancedRef.current = { poison: false, heal: false, chat: false };
   };
 
-  const atk = (poisonResult as Record<string, unknown> | null)?.attack as Record<string, unknown> | undefined;
-  const pSql = ((poisonResult as Record<string, unknown> | null)?.sql as string[]) || [];
-  const hd = (healResult as Record<string, unknown> | null) as Record<string, unknown> | undefined;
-  const cd = (chatResult as Record<string, unknown> | null) as Record<string, unknown> | undefined;
-  const vs = cd?.vectorSearch as Record<string, unknown> | undefined;
+  const pRes = poisonResult as Record<string, unknown> | null;
+  const atk = pRes?.attack as Record<string, unknown> | undefined;
+  const pBefore = pRes?.before as Record<string, unknown> | undefined;
+  const pGuard = pRes?.guard as Record<string, unknown> | undefined;
+  const pAfter = pRes?.after as Record<string, unknown> | undefined;
+  const pChain = (pRes?.hashChain as Record<string, unknown>[]) || [];
+  const pSqlObj = pRes?.sql as Record<string, string> | undefined;
+  const pSql = pSqlObj ? Object.values(pSqlObj) : [];
+  const hRes = healResult as Record<string, unknown> | null;
+  const hd = hRes as Record<string, unknown> | undefined;
+  const cRes = chatResult as Record<string, unknown> | null;
+  const cd = cRes as Record<string, unknown> | undefined;
 
   const isWelcome = tourStep === 0;
 
@@ -162,118 +164,89 @@ export default function PlaygroundContent() {
       {/* Main container wrapper */}
       <div style={{ position: "relative", zIndex: 1, padding: "20px 32px", maxWidth: "1400px", margin: "0 auto" }}>
         
-        {/* Navigation header */}
-        {!isWelcome && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "16px", borderBottom: "1px solid #1c1c2a", marginBottom: "20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "18px", fontWeight: 900, color: "#fff", letterSpacing: "-1px" }}>BASTION</span>
-              <span style={{ fontSize: "9px", background: "rgba(255,94,0,0.15)", color: "#ff9100", border: "1px solid rgba(255,94,0,0.3)", padding: "2px 6px", borderRadius: "4px", fontWeight: 800 }}>PLAYGROUND</span>
-            </div>
-            <Link href="/dashboard" style={{ textDecoration: "none" }}>
-              <button style={{
-                background: "rgba(255,255,255,0.05)", border: "1px solid #2a2a35", color: "#fff",
-                padding: "8px 16px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, cursor: "pointer",
-                transition: "all 0.2s"
-              }}>
-                ← System Dashboard
-              </button>
-            </Link>
-          </div>
-        )}
-
         {isWelcome ? (
-          /* Option 1: Full-Width Visual Hero Landing Welcome Screen */
-          <div style={{ maxWidth: "1000px", margin: "40px auto 0 auto", textAlign: "center", animation: "fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
-            
-            {/* Live indicator badge */}
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "6px 16px", borderRadius: "999px", background: "rgba(0, 255, 136, 0.04)", border: "1px solid rgba(0, 255, 136, 0.15)", marginBottom: "24px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00ff88", animation: "pulse 1.5s ease-in-out infinite" }} />
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "#00ff88", letterSpacing: "1px", textTransform: "uppercase" }}>
-                LIVE • Real SQL • Real Hashes • {stats ? `${stats.memories} memories` : "connecting..."} • {stats ? `${stats.regions} region(s)` : "loading..."}
-              </span>
-            </div>
+          /* Welcome — full-width, no empty space */
+          <div style={{ animation: "fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
 
-            <div style={{ display: "inline-flex", padding: "4px 12px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "rgba(255, 94, 0, 0.08)", color: "#ff9100", border: "1px solid rgba(255, 94, 0, 0.2)", marginBottom: "16px", textTransform: "uppercase", letterSpacing: "1.5px" }}>
-              Welcome to Bastion
-            </div>
-
-            {/* Giant headline */}
-            <h1 style={{ fontSize: "52px", fontWeight: 900, margin: "0 0 20px 0", lineHeight: "1.15", letterSpacing: "-2.5px", color: "#fff" }}>
-              Never let an AI trust <span style={{ background: "linear-gradient(135deg, #ff5e00, #ff9100, #ffea00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>poisoned memory</span>.
-            </h1>
-
-            {/* Subtitle description */}
-            <p style={{ fontSize: "17px", color: "#a0a0b0", margin: "0 auto 36px auto", lineHeight: "1.7", maxWidth: "680px" }}>
-              Bastion detects, verifies, and recovers agentic database memories in real-time with cryptographic proof on live CockroachDB.
-            </p>
-
-            {/* 4 Feature Pills */}
-            <div style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap", marginBottom: "40px" }}>
-              {[
-                { label: "Detect", desc: "Malicious memories", color: "#ff6b35" },
-                { label: "Recover", desc: "Any point in time", color: "#00e5ff" },
-                { label: "Verify", desc: "Cryptographic proof", color: "#00ff88" },
-                { label: "Prove", desc: "With live SQL", color: "#b388ff" }
-              ].map((pill, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: `1px solid ${pill.color}25` }}>
-                  <span style={{ fontSize: "12px", fontWeight: 800, color: pill.color }}>{pill.label}</span>
-                  <span style={{ width: "1px", height: "12px", background: "rgba(255,255,255,0.15)" }} />
-                  <span style={{ fontSize: "11px", color: "#808090" }}>{pill.desc}</span>
+            {/* Hero: Headline + Features — 2 columns */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "28px", alignItems: "stretch", marginBottom: "16px" }}>
+              {/* Left: Badge + Headline + CTA */}
+              <div>
+                {/* Welcome badge */}
+                <div style={{ display: "inline-flex", padding: "4px 14px", borderRadius: "6px", fontSize: "11px", fontWeight: 800, background: "rgba(255,94,0,0.08)", color: "#ff5e00", border: `1px solid rgba(255,94,0,0.2)`, marginBottom: "14px", textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                  Welcome to Bastion
                 </div>
-              ))}
-            </div>
 
-            {/* CTA action button */}
-            <div style={{ marginBottom: "56px" }}>
-              <button onClick={() => goStep(1)} style={{
-                padding: "18px 48px", borderRadius: "12px", border: "none",
-                background: "linear-gradient(135deg, #ff5e00, #ff9100)",
-                color: "#fff", fontWeight: 800, fontSize: "16px", cursor: "pointer",
-                boxShadow: "0 0 35px rgba(255,94,0,0.35)",
-                display: "inline-flex", alignItems: "center", gap: "10px",
-                transition: "transform 0.2s, box-shadow 0.2s"
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 0 45px rgba(255,94,0,0.45)"; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 0 35px rgba(255,94,0,0.35)"; }}>
-                ▶ Launch Live Attack
-              </button>
-              <div style={{ fontSize: "12px", color: "#606070", marginTop: "12px", fontFamily: "monospace" }}>90 second interactive demo</div>
-            </div>
+                {/* Headline */}
+                <h1 style={{ fontSize: "clamp(38px, 5vw, 54px)", fontWeight: 900, margin: "0 0 12px 0", lineHeight: "1.08", letterSpacing: "-2px", color: "#fff" }}>
+                  Never let an AI trust <span style={{ background: "linear-gradient(135deg, #ff5e00, #ffea00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>poisoned memory</span>.
+                </h1>
 
-            {/* 4 Feature highlight blocks with dynamic stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "56px" }}>
-              {[
-                { title: "Real & Live", desc: stats?.clusterOnline ? `${stats?.memories || 0} memories stored in CockroachDB.` : "Connecting to CockroachDB...", icon: "⚡" },
-                { title: "Production Ready", desc: stats?.regions ? `Running across ${stats.regions} CockroachDB region${stats.regions !== 1 ? "s" : ""}.` : "CockroachDB cluster active.", icon: "🌍" },
-                { title: "Secure by Design", desc: "SHA-256 hash chain integrity on every memory write.", icon: "🔒" },
-                { title: "Always On", desc: stats?.avgLatency && stats.avgLatency !== "—" ? `Average query latency: ${stats.avgLatency}.` : "CockroachDB distributed SQL.", icon: "⏱️" }
-              ].map((x, i) => (
-                <div key={i} style={{ background: "linear-gradient(135deg, rgba(20,10,25,0.4) 0%, rgba(10,5,15,0.4) 100%)", border: "1px solid #1c1825", borderRadius: "12px", padding: "20px", textAlign: "left" }}>
-                  <div style={{ fontSize: "22px", marginBottom: "10px" }}>{x.icon}</div>
-                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#fff", marginBottom: "6px" }}>{x.title}</div>
-                  <div style={{ fontSize: "11px", color: "#808090", lineHeight: "1.5" }}>{x.desc}</div>
+                <p style={{ fontSize: "15px", color: "#a0a0b0", margin: "0 0 18px 0", lineHeight: "1.5" }}>
+                  Bastion detects, verifies, and recovers memories in real-time with cryptographic proof on live CockroachDB.
+                </p>
+
+                {/* CTA + Live badge */}
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <button onClick={() => goStep(1)} style={{ padding: "14px 36px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #ff5e00, #ff9100)", color: "#fff", fontWeight: 800, fontSize: "16px", cursor: "pointer", boxShadow: "0 0 30px rgba(255,94,0,0.3)", display: "inline-flex", alignItems: "center", gap: "8px", transition: "all 0.2s" }}>▶ Launch Live Attack</button>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#00ff88", animation: "pulse 1.5s infinite", boxShadow: "0 0 6px #00ff88" }} />
+                    <span style={{ fontSize: "12px", color: "#888" }}>{stats ? `${stats.memories} memories` : "connecting..."}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            {/* Timeline: What you will see in this demo */}
-            <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid #181522", borderRadius: "16px", padding: "28px", textAlign: "left" }}>
-              <div style={{ fontSize: "10px", fontWeight: 800, color: "#ff9100", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "20px", textAlign: "center" }}>
-                What you&apos;ll see in this demo
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "24px" }}>
+
+              {/* Right: Bastion Core Features — 2x2 grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 {[
-                  { num: "01", title: "Poison Memory", desc: "An attacker injects false memory into the agent." },
-                  { num: "02", title: "Detect Attack", desc: "Bastion identifies the compromised memory in real-time." },
-                  { num: "03", title: "Recover Memory", desc: "Time-travel restores agent memory to a known good state." },
-                  { num: "04", title: "Verify & Prove", desc: "Cryptographic proof validation with live SQL evidence." }
-                ].map((item, i) => (
-                  <div key={i} style={{ position: "relative" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 800, color: "#ff5e00", background: "rgba(255,94,0,0.1)", padding: "4px 8px", borderRadius: "6px" }}>{item.num}</span>
-                      <span style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>{item.title}</span>
+                  { title: "SHA-256 Hash Chains", desc: "Every memory cryptographically linked to the previous — tamper-proof ledger", icon: "🔐", color: "#ff5e00" },
+                  { title: "AS OF SYSTEM TIME", desc: "Time-travel to any past moment — CockroachDB MVCC", icon: "⏰", color: "#00e5ff" },
+                  { title: "25 MCP + 25 A2A", desc: "Dual protocol — agents choose their interface", icon: "🔗", color: "#34d399" },
+                  { title: "OWASP ASI06 Guard", desc: "Blocks 9 injection patterns before memory is stored", icon: "🛡️", color: "#ef4444" },
+                ].map((f, i) => (
+                  <div key={i} className="hover-lift" style={{ padding: "14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: `1px solid ${f.color}20`, transition: "all 0.2s" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "18px" }}>{f.icon}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: f.color }}>{f.title}</span>
                     </div>
-                    <p style={{ fontSize: "11px", color: "#707080", lineHeight: "1.4", margin: 0 }}>{item.desc}</p>
+                    <div style={{ fontSize: "12px", color: "#808090", lineHeight: "1.4" }}>{f.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Trust + Stats — full width row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "14px" }}>
+              {[
+                { label: "Real & Live", value: `${stats?.memories || 0} memories`, icon: "⚡", color: "#34d399" },
+                { label: "Secure", value: "SHA-256 hash chain", icon: "🔒", color: "#00e5ff" },
+                { label: "Production", value: `${stats?.regions || 0} regions`, icon: "🌍", color: "#ff5e00" },
+                { label: "Always On", value: stats?.avgLatency && stats.avgLatency !== "—" ? stats.avgLatency : "CockroachDB SQL", icon: "⏱️", color: "#a78bfa" },
+              ].map((b, i) => (
+                <div key={i} className="glass" style={{ padding: "12px", borderRadius: "10px", border: `1px solid ${b.color}15`, display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "18px" }}>{b.icon}</span>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: b.color }}>{b.label}</div>
+                    <div style={{ fontSize: "11px", color: "#888" }}>{b.value}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Demo Flow — full width, 4 equal columns */}
+            <div className="glass" style={{ borderRadius: "12px", padding: "20px", border: "1px solid rgba(255,94,0,0.15)", marginBottom: "16px", width: "100%" }}>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: "#ff5e00", textTransform: "uppercase" as const, letterSpacing: "2px", marginBottom: "16px", textAlign: "center" }}>What You&apos;ll See</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px" }}>
+                {[
+                  { num: "01", title: "Poison Memory", desc: "Attacker injects false memory into the system", color: "#ef4444" },
+                  { num: "02", title: "Detect Attack", desc: "Bastion identifies the compromised memory in real-time", color: "#ff5e00" },
+                  { num: "03", title: "Recover Memory", desc: "Time-travel restores agent to a known clean state", color: "#00e5ff" },
+                  { num: "04", title: "Verify & Prove", desc: "Cryptographic proof validation with live SQL evidence", color: "#34d399" },
+                ].map((s, i) => (
+                  <div key={i} style={{ padding: "14px", borderRadius: "10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+                    <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: `${s.color}15`, border: `2px solid ${s.color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 800, color: s.color, boxShadow: `0 0 14px ${s.color}25`, margin: "0 auto 10px" }}>{s.num}</div>
+                    <div style={{ fontSize: "15px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{s.title}</div>
+                    <div style={{ fontSize: "12px", color: "#888", lineHeight: "1.4" }}>{s.desc}</div>
                   </div>
                 ))}
               </div>
@@ -282,10 +255,18 @@ export default function PlaygroundContent() {
           </div>
         ) : (
           /* 2-Column Developer Playground Console layout when Demo starts */
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: "24px", alignItems: "start", animation: "fadeIn 0.4s ease-out" }}>
-            
-            {/* LEFT COLUMN: Active Demo steps */}
-            <div style={{ minHeight: "560px", paddingRight: "10px" }}>
+          <div>
+            {/* Back to Dashboard */}
+            <div style={{ marginBottom: "16px" }}>
+              <Link href="/dashboard" style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 16px", borderRadius: "8px", border: "1px solid #2a2a35", background: "#12121a", color: "#a0a0b0", fontSize: "13px", textDecoration: "none", transition: "all 0.2s" }}>
+                ← Back to Dashboard
+              </Link>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", alignItems: "start", animation: "fadeIn 0.4s ease-out" }}>
+              
+              {/* Active Demo steps — full width */}
+              <div style={{ minHeight: "560px" }}>
               {/* Progress bar */}
               <div style={{ display: "flex", gap: "3px", marginBottom: "20px" }}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => (
@@ -311,7 +292,7 @@ export default function PlaygroundContent() {
                         The system will detect tampering via <span style={{ color: "#ff9100", fontWeight: 600 }}>SHA-256 hash chain</span> and drop the trust score.
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-                        <button onClick={() => { goStep(2); runPoison(); }} style={{
+                        <button onClick={() => { goStep(2); runContext(); runPoison(); }} style={{
                           padding: "16px 36px", borderRadius: "12px", border: "none",
                           background: "linear-gradient(135deg, #ff6b35, #ff4444)",
                           color: "#fff", fontWeight: 700, fontSize: "16px", cursor: "pointer",
@@ -366,20 +347,84 @@ export default function PlaygroundContent() {
                     <div style={{ position: "relative", zIndex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
                         <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#ff444418", color: "#ff4444", border: "1px solid #ff444430" }}>ATTACK DETECTED</span>
+                        <span style={{ fontSize: "11px", color: "#606070" }}>{String(pRes?.latency || "")}</span>
                       </div>
                       <div style={{ fontSize: "26px", fontWeight: 800, color: "#fff", marginBottom: "16px", fontFamily: "'Space Grotesk', sans-serif" }}>Trust Score Collapsed</div>
+
+                      {/* Trust metrics */}
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
-                        <Metric label="Before" value={`${Math.round((atk.trustBefore as number) * 100)}%`} color="#00ff88" />
-                        <Metric label="After" value={`${Math.round((atk.trustAfter as number) * 100)}%`} color="#ff4444" />
-                        <Metric label="Drop" value={String(atk.trustDrop)} color="#ff4444" />
+                        <Metric label="Before" value={String(pBefore?.avgTrust || "—")} color="#00ff88" />
+                        <Metric label="After" value={String(pAfter?.avgTrust || "—")} color="#ff4444" />
+                        <Metric label="Drop" value={String(pAfter?.dropPercent || "—")} color="#ff4444" />
                         <Metric label="Risk" value={String(atk.risk)} color="#ff4444" />
                       </div>
-                      <InfoRow label="Attack Type" value={String(atk.scenario).replace(/_/g, " ").toUpperCase()} />
-                      <InfoRow label="Memory ID" value={String(atk.id)} mono />
-                      <div style={{ background: "rgba(255,68,68,0.08)", borderRadius: "10px", padding: "14px", marginBottom: "8px", borderLeft: "4px solid #ff4444" }}>
-                        <div style={{ fontSize: "11px", color: "#ff6666", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Malicious Content</div>
+
+                      {/* Before state */}
+                      {pBefore && (
+                        <div style={{ background: "rgba(0,255,136,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(0,255,136,0.12)" }}>
+                          <div style={{ fontSize: "11px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Agent State BEFORE Attack</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0", marginBottom: "6px" }}>{String(pBefore.narrative)}</div>
+                          {Array.isArray(pBefore.memories) && pBefore.memories.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              {(pBefore.memories as Record<string, unknown>[]).slice(0, 3).map((m, i) => (
+                                <div key={i} style={{ fontSize: "11px", color: "#888", fontFamily: "monospace" }}>
+                                  <span style={{ color: "#00ff88" }}>[trust:{String(m.trust)}]</span> {String(m.content).slice(0, 80)}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Attack details */}
+                      <InfoRow label="Attack Type" value={String(atk.type).replace(/_/g, " ").toUpperCase()} />
+                      <InfoRow label="Attacker Goal" value={String(atk.attackerGoal)} />
+                      <div style={{ background: "rgba(255,68,68,0.08)", borderRadius: "10px", padding: "14px", marginBottom: "12px", borderLeft: "4px solid #ff4444" }}>
+                        <div style={{ fontSize: "11px", color: "#ff6666", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Malicious Content Injected</div>
                         <div style={{ fontSize: "13px", color: "#e8e8ed", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>{String(atk.content)}</div>
                       </div>
+
+                      {/* Without Bastion comparison */}
+                      <div style={{ background: "rgba(255,145,0,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,145,0,0.12)" }}>
+                        <div style={{ fontSize: "11px", color: "#ff9100", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Without Bastion</div>
+                        <div style={{ fontSize: "12px", color: "#a0a0b0" }}>{String(atk.withoutBastion)}</div>
+                      </div>
+
+                      {/* Guard detection */}
+                      {pGuard && (
+                        <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,68,68,0.12)" }}>
+                          <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>OWASP ASI06 Guard Detection</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0", marginBottom: "6px" }}>Method: {String(pGuard.method)}</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                            {(pGuard.findings as string[] || []).map((f, i) => (
+                              <span key={i} style={{ padding: "3px 8px", borderRadius: "4px", fontSize: "10px", background: "rgba(255,68,68,0.1)", color: "#ff6666", border: "1px solid rgba(255,68,68,0.2)" }}>{f}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* After state */}
+                      {pAfter && (
+                        <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,68,68,0.12)" }}>
+                          <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Agent State AFTER Attack</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Trust: {String(pAfter.trustDrop)} — Poisoned memory stored with trust_level=0</div>
+                        </div>
+                      )}
+
+                      {/* Hash chain */}
+                      {pChain.length > 0 && (
+                        <div style={{ background: "#12121a", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid #2a2a35" }}>
+                          <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Hash Chain Verification</div>
+                          {pChain.slice(0, 4).map((link, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0", fontSize: "11px", fontFamily: "monospace" }}>
+                              <span style={{ color: link.isPoison ? "#ff4444" : "#00ff88", fontWeight: 700 }}>{link.isPoison ? "POISON" : "VALID"}</span>
+                              <span style={{ color: "#606070" }}>{String(link.hash)}</span>
+                              <span style={{ color: "#444" }}>← {String(link.prevHash)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <SqlBlock sql={pSql} />
                       <NavButtons back={() => goStep(1)} next={() => goStep(4)} nextLabel="Next: Time Travel →" />
                     </div>
@@ -421,16 +466,71 @@ export default function PlaygroundContent() {
                   {tourStep === 6 && hd && (
                     <div>
                       <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Recovery Complete</span>
-                      <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Memory Restored from Time Travel</div>
-                      <div style={{ background: "#1a1a24", borderRadius: "10px", padding: "16px", marginBottom: "12px", border: "1px solid #2a2a35" }}>
-                        <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", fontWeight: 600, marginBottom: "6px" }}>Recovered Content</div>
-                        <div style={{ fontSize: "14px", color: "#00ff88", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>{String(hd.recoveredContent)}</div>
-                      </div>
+                      <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Memory Restored via Time Travel</div>
+
+                      {/* Time travel proof */}
+                      {hd.timeTravel && (
+                        <div style={{ background: "rgba(0,229,255,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(0,229,255,0.12)" }}>
+                          <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>CockroachDB Time Travel Proof</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Mechanism: {String(hd.timeTravel.mechanism)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Query: {String(hd.timeTravel.queryTime)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Rows found: {String(hd.timeTravel.rowsFound)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Source: {String(hd.timeTravel.restoredFrom)}</div>
+                        </div>
+                      )}
+
+                      {/* Poisoned vs Restored */}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
-                        <Metric label="Chain Verified" value="✓ Yes" color="#00ff88" />
-                        <Metric label="Latency" value={String(hd.latency)} color="#00e5ff" />
+                        {hd.poisoned && (
+                          <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(255,68,68,0.12)" }}>
+                            <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Poisoned (Deleted)</div>
+                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hd.poisoned.content).slice(0, 80)}...</div>
+                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hd.poisoned.trustLevel)}</div>
+                          </div>
+                        )}
+                        {hd.restored && (
+                          <div style={{ background: "rgba(0,255,136,0.04)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(0,255,136,0.12)" }}>
+                            <div style={{ fontSize: "11px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Restored (Healed)</div>
+                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hd.restored.content).slice(0, 80)}...</div>
+                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hd.restored.trustLevel)} — provenance: system</div>
+                          </div>
+                        )}
                       </div>
-                      <SqlBlock sql={(hd.sql as string[]) || []} />
+
+                      {/* Trust recovery */}
+                      {hd.trustRecovery && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "12px" }}>
+                          <Metric label="Before Heal" value={String(hd.trustRecovery.beforeHeal)} color="#ff4444" />
+                          <Metric label="After Heal" value={String(hd.trustRecovery.afterHeal)} color="#00ff88" />
+                          <Metric label="Improvement" value={String(hd.trustRecovery.improvement)} color="#00ff88" />
+                        </div>
+                      )}
+
+                      {/* Hash chain before vs after */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+                        {Array.isArray(hd.chainBefore) && hd.chainBefore.length > 0 && (
+                          <div style={{ background: "#12121a", borderRadius: "10px", padding: "12px", border: "1px solid #2a2a35" }}>
+                            <div style={{ fontSize: "10px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Chain Before Heal</div>
+                            {(hd.chainBefore as Record<string, unknown>[]).slice(0, 3).map((link, i) => (
+                              <div key={i} style={{ fontSize: "10px", fontFamily: "monospace", padding: "2px 0", color: link.isPoison ? "#ff4444" : "#888" }}>
+                                {String(link.type).slice(0, 8)} — {String(link.hash).slice(0, 12)}...
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {Array.isArray(hd.chainAfter) && hd.chainAfter.length > 0 && (
+                          <div style={{ background: "#12121a", borderRadius: "10px", padding: "12px", border: "1px solid #2a2a35" }}>
+                            <div style={{ fontSize: "10px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Chain After Heal</div>
+                            {(hd.chainAfter as Record<string, unknown>[]).slice(0, 3).map((link, i) => (
+                              <div key={i} style={{ fontSize: "10px", fontFamily: "monospace", padding: "2px 0", color: link.hashVerified ? "#00ff88" : "#ff4444" }}>
+                                {String(link.type).slice(0, 8)} — {String(link.hash).slice(0, 12)}... {link.hashVerified ? "✓" : "✗"}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <SqlBlock sql={hd.sql ? Object.values(hd.sql as Record<string, string>) : []} />
                       <NavButtons back={() => goStep(5)} next={() => goStep(7)} nextLabel="Next: Semantic Search →" />
                     </div>
                   )}
@@ -468,30 +568,65 @@ export default function PlaygroundContent() {
                   )}
 
                   {/* Step 9: Search results */}
-                  {tourStep === 9 && vs && (
+                  {tourStep === 9 && cd && (
                     <div>
                       <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#00ff8818", color: "#00ff88", border: "1px solid #00ff8830" }}>Search Complete</span>
-                      <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Real Cosine Similarity Results</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "16px" }}>
-                        <Metric label="Results" value={String(vs.totalResults)} color="#00ff88" />
-                        <Metric label="Latency" value={String(vs.latency)} color="#00e5ff" />
-                        <Metric label="Dimensions" value={String(vs.dimensions)} color="#b388ff" />
-                      </div>
-                      {((vs.results as Record<string, unknown>[]) || []).slice(0, 3).map((row: Record<string, unknown>, i: number) => (
-                        <div key={i} style={{ background: "#1a1a24", borderRadius: "10px", padding: "14px", marginBottom: "10px", border: "1px solid #2a2a35" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "8px" }}>
-                            <div style={{ flex: 1, fontSize: "14px", color: "#e8e8ed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(row.content)}</div>
-                            <span style={{ padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: row.memoryType === "healed" ? "#00ff8818" : "#ff6b3518", color: row.memoryType === "healed" ? "#00ff88" : "#ff6b35" }}>{String(row.memoryType)}</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <div style={{ flex: 1, height: "8px", borderRadius: "999px", background: "#22222e" }}>
-                              <div style={{ height: "100%", borderRadius: "999px", width: `${Math.round((row.similarity as number) * 100)}%`, background: "linear-gradient(90deg, #00ff88, #00e5ff)", boxShadow: "0 0 8px rgba(0,255,136,0.3)" }} />
+                      <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Semantic Vector Search Results</div>
+
+                      {/* Search metadata */}
+                      {cd.search && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+                          <Metric label="Memories Scanned" value={String(cd.search.memoriesScanned)} color="#00e5ff" />
+                          <Metric label="Top K" value={String(cd.search.topK)} color="#00ff88" />
+                          <Metric label="Latency" value={String(cd.search.latency)} color="#00e5ff" />
+                          <Metric label="Model" value={String(cd.search.model).split("/").pop()} color="#b388ff" />
+                        </div>
+                      )}
+
+                      {/* Ranked results with explanation */}
+                      {((cd.results as Record<string, unknown>[]) || []).map((row: Record<string, unknown>, i: number) => {
+                        const explanation = ((cd.explanation as Record<string, unknown>[]) || [])[i] as Record<string, unknown> | undefined;
+                        return (
+                          <div key={i} style={{ background: "#1a1a24", borderRadius: "10px", padding: "14px", marginBottom: "10px", border: "1px solid #2a2a35" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "6px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span style={{ fontSize: "16px", fontWeight: 800, color: "#00ff88", minWidth: "24px" }}>#{String(row.rank)}</span>
+                                <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 600, background: row.isTrusted ? "#00ff8818" : "#ff444418", color: row.isTrusted ? "#00ff88" : "#ff4444" }}>{row.isTrusted ? "TRUSTED" : "UNTRUSTED"}</span>
+                                <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "10px", background: row.type === "healed" ? "#00ff8818" : row.type === "poison_attempt" ? "#ff444418" : "#ff6b3518", color: row.type === "healed" ? "#00ff88" : row.type === "poison_attempt" ? "#ff4444" : "#ff6b35" }}>{String(row.type)}</span>
+                              </div>
+                              <span style={{ fontSize: "18px", fontWeight: 800, color: "#00ff88" }}>{String(row.similarityPercent)}</span>
                             </div>
-                            <span style={{ fontSize: "14px", fontWeight: 800, color: "#00ff88", minWidth: "48px", textAlign: "right" as const }}>{Math.round((row.similarity as number) * 100)}%</span>
+                            <div style={{ fontSize: "13px", color: "#e8e8ed", marginBottom: "6px", lineHeight: "1.4" }}>{String(row.content).slice(0, 120)}</div>
+                            {/* Similarity bar */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                              <div style={{ flex: 1, height: "6px", borderRadius: "999px", background: "#22222e" }}>
+                                <div style={{ height: "100%", borderRadius: "999px", width: `${Math.round((row.similarity as number) * 100)}%`, background: "linear-gradient(90deg, #00ff88, #00e5ff)", boxShadow: "0 0 8px rgba(0,255,136,0.3)" }} />
+                              </div>
+                            </div>
+                            {/* Why it matched */}
+                            {explanation && (
+                              <div style={{ fontSize: "10px", color: "#606070", fontStyle: "italic" }}>
+                                {String(explanation.reasoning)}
+                                {(explanation.matchedTerms as string[] || []).length > 0 && (
+                                  <span style={{ color: "#ff9100" }}> — terms: {(explanation.matchedTerms as string[]).join(", ")}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Trust summary */}
+                      {cd.trustSummary && (
+                        <div style={{ background: "rgba(0,229,255,0.04)", borderRadius: "10px", padding: "14px", marginTop: "12px", border: "1px solid rgba(0,229,255,0.12)" }}>
+                          <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Trust Summary</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>
+                            {String(cd.trustSummary.trustedCount)} trusted, {String(cd.trustSummary.untrustedCount)} untrusted — avg trust: {String(cd.trustSummary.avgTrust)}
                           </div>
                         </div>
-                      ))}
-                      <SqlBlock sql={(cd?.sql as string[]) || []} />
+                      )}
+
+                      <SqlBlock sql={cd.sql ? (cd.sql as string[]) : []} />
                       <NavButtons back={() => goStep(8)} next={() => goStep(10)} nextLabel="Finish Demo ✓" />
                     </div>
                   )}
@@ -512,72 +647,6 @@ export default function PlaygroundContent() {
                   )}
                 </div>
               </div>
-            </div>
-
-            {/* RIGHT COLUMN: 26 MCP Tools + Selected Execution Console */}
-            <div>
-              <div style={{ background: "#0c0710", border: "1px solid #201a2a", borderRadius: "16px", padding: "20px", minHeight: "560px", display: "flex", flexDirection: "column" }}>
-                
-                {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#ff9100", fontWeight: 800, letterSpacing: "1.5px", textTransform: "uppercase" as const }}>
-                      🔌 MCP Toolchain
-                    </div>
-                    <div style={{ fontSize: "10px", color: "#606070", marginTop: "1px" }}>Select a tool to view schema definition and parameters</div>
-                  </div>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "9px", background: "rgba(0,255,136,0.1)", color: "#00ff88", border: "1px solid rgba(0,255,136,0.2)" }}>13 R</span>
-                    <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "9px", background: "rgba(255,107,0,0.1)", color: "#ff6b00", border: "1px solid rgba(255,107,0,0.2)" }}>13 W</span>
-                  </div>
-                </div>
-
-                {/* Tool list grid */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", overflowY: "auto", maxHeight: "360px", paddingRight: "4px" }}>
-                  {MCP_TOOLS.map((tool, i) => (
-                    <McpToolCard key={i} {...tool} onClick={() => { setMcpTool(tool.name); setMcpResult(null); setMcpError(null); }} active={mcpTool === tool.name} />
-                  ))}
-                </div>
-
-                {/* Selected tool runner console space */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", marginTop: "14px" }}>
-                  {mcpTool ? (
-                    <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "14px", animation: "fadeUp 0.2s ease" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#fff" }}>▶ Executing: <code style={{ color: "#ff9100" }}>{mcpTool}</code></div>
-                        <button onClick={() => setMcpTool(null)} style={{ background: "none", border: "none", color: "#606070", cursor: "pointer", fontSize: "11px" }}>✕ close</button>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-                        <input
-                          value={mcpInput}
-                          onChange={e => setMcpInput(e.target.value)}
-                          placeholder="Payload parameter input..."
-                          style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", border: "1px solid #2a2a35", background: "#161622", color: "#fff", fontSize: "12px", outline: "none" }}
-                        />
-                        <button
-                          onClick={() => runMcpTool(mcpTool, mcpInput)}
-                          disabled={mcpLoading}
-                          style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: mcpLoading ? "#20202a" : "linear-gradient(135deg, #ff5e00, #ff9100)", color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
-                        >
-                          {mcpLoading ? "..." : "Run"}
-                        </button>
-                      </div>
-                      {mcpError && <div style={{ padding: "6px 10px", background: "rgba(255,68,68,0.06)", border: "1px solid rgba(255,68,68,0.15)", borderRadius: "6px", color: "#ff4444", fontSize: "11px", marginBottom: "6px" }}>{mcpError}</div>}
-                      {mcpResult && (
-                        <div style={{ background: "#1a1a24", borderRadius: "6px", padding: "10px", border: "1px solid #2a2a35" }}>
-                          <pre style={{ margin: 0, fontSize: "9.5px", color: "#00e5ff", fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: "110px", overflow: "auto" }}>
-                            {JSON.stringify(mcpResult, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ border: "1.5px dashed #201a2a", borderRadius: "10px", padding: "30px 10px", textAlign: "center", color: "#606070", fontSize: "12px" }}>
-                      ℹ Select any MCP tool card above to execute it live against the active CockroachDB cluster.
-                    </div>
-                  )}
-                </div>
-
               </div>
             </div>
           </div>
