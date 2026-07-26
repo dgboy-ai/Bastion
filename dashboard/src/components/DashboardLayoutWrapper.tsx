@@ -203,7 +203,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   boxShadow: isMock ? "0 0 10px #ff5e00" : "0 0 10px #00ff88",
                   animation: "pulse 2s infinite"
                 }} />
-                <span>{isMock ? "CockroachDB (Demo Mode)" : `CockroachDB: ${dbName}`}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <img src="/cockroachdb-icon.png" alt="" style={{ width: "22px", height: "22px", flexShrink: 0, mixBlendMode: "screen" }} />
+                  {isMock ? "CockroachDB (Demo Mode)" : `CockroachDB: ${dbName}`}
+                </span>
                 {isMock && (
                   <span style={{
                     background: "linear-gradient(135deg, #ff5e00, #ff8800)",
