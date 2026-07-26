@@ -184,13 +184,16 @@ class MultiSignalRetriever:
         if not query or not query.strip():
             return []
 
-        # Step 1: Get candidate memories (fetch more than k for fusion)
-        candidates = self._memory.list_all(namespace_scope="own", memory_type=memory_type)
+        # Step 1: Get candidate memories via vector search (avoids O(N) list_all scan)
+        try:
+            candidates = self._memory.search(query, k=SEARCH_RESULT_LIMIT, threshold=0.0, memory_type=memory_type)
+        except Exception:
+            # Fallback to list_all if search fails
+            candidates = self._memory.list_all(namespace_scope="own", memory_type=memory_type)
+            if candidates:
+                candidates = candidates[:SEARCH_RESULT_LIMIT]
         if not candidates:
             return []
-
-        # Cap candidates to prevent O(n²) issues
-        candidates = candidates[:SEARCH_RESULT_LIMIT]
 
         # Step 2: Extract query features
         query_tokens = _tokenize(query)

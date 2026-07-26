@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
+import { safeQuery, isMockMode } from "@/lib/db";
 import PlaygroundContent from "./Content";
 
 export const dynamic = "force-dynamic";
@@ -7,16 +8,37 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Bastion — Live CockroachDB Demo",
   description: "Interactive demo running real SQL against CockroachDB: poison detection, time-travel recovery, and semantic vector search.",
-  openGraph: {
-    title: "Bastion — Live CockroachDB Demo",
-    description: "Interactive CockroachDB demo: poison detection, time-travel recovery, vector search.",
-  },
 };
 
-export default function PlaygroundPage() {
+async function getStats() {
+  if (isMockMode()) {
+    return { memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 0 };
+  }
+  try {
+    const [memRes, entRes, relRes, auditRes] = await Promise.all([
+      safeQuery("SELECT COUNT(*) as cnt FROM agent_memory"),
+      safeQuery("SELECT COUNT(*) as cnt FROM agent_entities"),
+      safeQuery("SELECT COUNT(*) as cnt FROM agent_relations"),
+      safeQuery("SELECT COUNT(*) as cnt FROM agent_audit"),
+    ]);
+    return {
+      memories: parseInt(memRes.rows[0]?.cnt ?? "0", 10),
+      entities: parseInt(entRes.rows[0]?.cnt ?? "0", 10),
+      relations: parseInt(relRes.rows[0]?.cnt ?? "0", 10),
+      auditLogs: parseInt(auditRes.rows[0]?.cnt ?? "0", 10),
+      regions: 2,
+    };
+  } catch {
+    return { memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 0 };
+  }
+}
+
+export default async function PlaygroundPage() {
+  const stats = await getStats();
+
   return (
     <DashboardLayoutWrapper>
-      <PlaygroundContent />
+      <PlaygroundContent initialStats={stats} />
     </DashboardLayoutWrapper>
   );
 }

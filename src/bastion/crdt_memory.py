@@ -178,12 +178,17 @@ class CRDTMemory:
             return candidates[0]
 
         clocks = [self._extract_clock(r) for r in candidates]
-        concurrent_pairs = [
-            (i, j) for i in range(len(clocks)) for j in range(i + 1, len(clocks))
-            if clocks[i].is_concurrent_with(clocks[j])
-        ]
 
-        if not concurrent_pairs:
+        has_concurrent = False
+        for i in range(len(clocks)):
+            for j in range(i + 1, len(clocks)):
+                if clocks[i].is_concurrent_with(clocks[j]):
+                    has_concurrent = True
+                    break
+            if has_concurrent:
+                break
+
+        if not has_concurrent:
             # Totally ordered by happens-before — pick the latest
             return max(candidates, key=lambda r: r.created_at or datetime.min.replace(tzinfo=UTC))
 
@@ -191,7 +196,6 @@ class CRDTMemory:
             "CRDT conflict detected",
             extra={
                 "fact_key": fact_key,
-                "concurrent_pairs": len(concurrent_pairs),
                 "strategy": self._strategy,
             },
         )

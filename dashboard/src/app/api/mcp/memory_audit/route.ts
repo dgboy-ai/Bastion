@@ -1,7 +1,11 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { agentId = "agent-demo", limit = 20 } = body;
@@ -46,9 +50,8 @@ export async function POST(request: Request) {
       chainVerified: chainValid,
       total: rows.length,
       latency: latency + "ms",
-      sql: `SELECT memory_id, memory_type, content, trust_level, created_at, previous_hash, cryptographic_hash FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2`,
     }, "dynamic");
   } catch (err) {
-    return apiError("memory_audit failed: " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("memory_audit failed", 500);
   }
 }

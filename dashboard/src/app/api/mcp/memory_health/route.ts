@@ -1,7 +1,11 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
+
   try {
     const startTime = Date.now();
 
@@ -52,13 +56,11 @@ export async function POST(request: Request) {
         memories: Number(r.count),
       })),
       latency: latency + "ms",
-      sql: `SELECT 1 as ping; SELECT COUNT(*) FROM agent_memory; SELECT crdb_region, COUNT(*) FROM agent_memory GROUP BY crdb_region`,
     }, "dynamic");
   } catch (err) {
     return apiSuccess({
       tool: "memory_health",
       status: "unhealthy",
-      error: err instanceof Error ? err.message : "Unknown error",
       cluster: { reachable: false },
     }, "dynamic");
   }

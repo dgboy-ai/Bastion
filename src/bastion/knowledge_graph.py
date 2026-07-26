@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import deque
 from collections.abc import Callable
 from typing import Any
 
@@ -160,14 +161,13 @@ class KnowledgeGraph:
                 start_id = str(row[0])
 
                 found: list[dict[str, Any]] = []
-                visited: set[str] = set()
-                queue: list[tuple[str, int]] = [(start_id, 0)]
+                visited: set[str] = {start_id}
+                queue: deque[tuple[str, int]] = deque([(start_id, 0)])
 
                 while queue:
-                    eid, depth = queue.pop(0)
-                    if depth >= hops or eid in visited:
+                    eid, depth = queue.popleft()
+                    if depth >= hops:
                         continue
-                    visited.add(eid)
 
                     rel_type_filter = ""
                     params: list[Any] = [eid]
@@ -184,6 +184,7 @@ class KnowledgeGraph:
                         params,
                     )
                     for rel_row in cur.fetchall():
+                        target_id = str(rel_row[4])
                         found.append(
                             {
                                 "source": start_entity,
@@ -193,7 +194,9 @@ class KnowledgeGraph:
                                 "depth": depth + 1,
                             }
                         )
-                        queue.append((str(rel_row[4]), depth + 1))
+                        if target_id not in visited:
+                            visited.add(target_id)
+                            queue.append((target_id, depth + 1))
                 return found
         finally:
             pool.release(conn)
