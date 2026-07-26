@@ -11,6 +11,17 @@ async function getModel(): Promise<ExtractFn> {
   return _extract;
 }
 
+// DB schema expects VECTOR(1024); all-MiniLM-L6-v2 outputs 384-dim.
+// Pad the remaining 640 dimensions with zeros, then re-normalize.
+const TARGET_DIM = 1024;
+
+function padToTarget(vec: number[]): number[] {
+  if (vec.length >= TARGET_DIM) return vec.slice(0, TARGET_DIM);
+  const padded = [...vec, ...new Array(TARGET_DIM - vec.length).fill(0)];
+  const norm = Math.sqrt(padded.reduce((s, v) => s + v * v, 0)) || 1;
+  return padded.map((v) => v / norm);
+}
+
 export async function embed(text: string): Promise<number[]>;
 export async function embed(texts: string[]): Promise<number[][]>;
 export async function embed(texts: string | string[]): Promise<number[] | number[][]> {
@@ -18,9 +29,9 @@ export async function embed(texts: string | string[]): Promise<number[] | number
   const result = await model(texts, { pooling: "mean", normalize: true });
   const list = result.tolist();
   if (typeof texts === "string") {
-    return list[0];
+    return padToTarget(list[0]);
   }
-  return list;
+  return list.map(padToTarget);
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {

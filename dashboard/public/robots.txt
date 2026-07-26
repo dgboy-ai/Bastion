@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /api/
+Disallow: /login
+Disallow: /dashboard
+Disallow: /graph
+Disallow: /logs
+Disallow: /health
+Disallow: /compliance
+Disallow: /flight-recorder
+Disallow: /playground
+
+Sitemap: https://bastion-self.vercel.app/sitemap.xml

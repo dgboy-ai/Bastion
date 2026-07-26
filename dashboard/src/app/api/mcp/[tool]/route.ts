@@ -1,12 +1,22 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 import { createHash, randomUUID } from "crypto";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ tool: string }> }
 ) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
+
   const { tool } = await params;
+
+  const ALLOWED_TOOLS = ["memory_pin", "memory_get_pinned", "memory_list", "memory_delete", "memory_correct"];
+  if (!ALLOWED_TOOLS.includes(tool)) {
+    return apiError(`Unknown tool: ${tool}. Allowed: ${ALLOWED_TOOLS.join(", ")}`, 400);
+  }
+
   try {
     const body = await request.json();
     const {
@@ -160,16 +170,15 @@ export async function POST(
       payloadReceived: body,
       results: [
         {
-          info: `Simulated response for MCP tool: ${tool}`,
+          info: `Simulated response for MCP tool`,
           timestamp: new Date().toISOString(),
           details: "Successfully executed in agent context",
         }
       ],
       latency: (Date.now() - startTime) + "ms",
-      sql: `SELECT * FROM agent_metadata WHERE tool_action = '${tool}'`,
     }, "dynamic");
 
   } catch (err) {
-    return apiError(`${tool} execution failed: ` + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("Tool execution failed", 500);
   }
 }

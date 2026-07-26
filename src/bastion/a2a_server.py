@@ -1601,7 +1601,7 @@ def create_a2a_server(
         if request:
             auth_header = request.headers.get("Authorization", "")
             caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
-        caller_role = _resolve_role(caller_token) if caller_token else ("admin" if not _api_key else "reader")
+        caller_role = _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
         # Warn when running without API key (dev mode only — not for production)
         if not _api_key and not caller_token:
             logger.debug("No API key configured — unauthenticated requests treated as admin (dev mode)")

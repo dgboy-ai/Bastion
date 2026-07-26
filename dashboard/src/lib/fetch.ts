@@ -1,5 +1,11 @@
 const DEFAULT_TIMEOUT = 10_000;
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/bastion_csrf=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
   init?: RequestInit & { timeout?: number },
@@ -17,6 +23,15 @@ export async function fetchWithTimeout(
         headers.set("x-bastion-conn", savedConn);
       }
     } catch {}
+
+    // Auto-attach CSRF token for state-changing methods
+    const method = (init?.method || "GET").toUpperCase();
+    if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
+      const csrfToken = getCsrfToken();
+      if (csrfToken && !headers.has("x-csrf-token")) {
+        headers.set("x-csrf-token", csrfToken);
+      }
+    }
   }
 
   try {
@@ -24,6 +39,7 @@ export async function fetchWithTimeout(
       ...init,
       headers,
       signal: ac.signal,
+      credentials: "include",
     });
     return res;
   } finally {

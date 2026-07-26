@@ -20,7 +20,7 @@ const NavBar = memo(function NavBar() {
   const links = [
     { href: "/playground", label: "Live Demo", icon: "▶️" },
     { href: "/dashboard", label: "Dashboard", icon: "📊" },
-    { href: "/flight-recorder", label: "Flight Recorder", icon: "✈️" },
+    { href: "/flight-recorder", label: "Audit Trail", icon: "📋" },
     { href: "/graph", label: "Knowledge Graph", icon: "🕸️" },
     { href: "/logs", label: "Memory Logs", icon: "📜" },
     { href: "/health", label: "Health", icon: "💓" },

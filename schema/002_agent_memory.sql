@@ -21,5 +21,12 @@ CREATE VECTOR INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory (agent_id
 
 -- CDC Changefeed: Streams every memory write for real-time anomaly detection and self-healing
 -- Lambda handler receives events, checks hash chain integrity, detects poisoning attacks
--- NOTE: CDC changefeeds are configured at runtime, not in schema files
--- Example: CREATE CHANGEFEED FOR TABLE agent_memory INTO 'function://cdc_memory_handler' WITH updated, resolved, on_error=resume, initial_scan='no';
+-- NOTE: CDC changefeeds require a running sink (Kafka, webhook, etc.)
+-- Create after deploying the CDC Lambda handler:
+--   CREATE CHANGEFEED FOR TABLE agent_memory
+--   INTO 'webhook-https://<LAMBDA_FUNCTION_URL>'
+--   WITH updated, resolved, on_error=resume, initial_scan='no';
+-- For local development with Kafka:
+--   CREATE CHANGEFEED FOR TABLE agent_memory
+--   INTO 'kafka://localhost:9092?topic_prefix=cdc_'
+--   WITH updated, resolved, on_error=resume, initial_scan='no';
