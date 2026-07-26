@@ -24,7 +24,6 @@ export async function fetchWithTimeout(
       }
     } catch {}
 
-    // Auto-attach CSRF token for state-changing methods
     const method = (init?.method || "GET").toUpperCase();
     if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
       const csrfToken = getCsrfToken();
@@ -42,6 +41,11 @@ export async function fetchWithTimeout(
       credentials: "include",
     });
     return res;
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw e;
+    }
+    throw e;
   } finally {
     clearTimeout(timer);
   }

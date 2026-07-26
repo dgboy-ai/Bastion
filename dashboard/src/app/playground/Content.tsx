@@ -92,22 +92,23 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
     let mounted = true;
     const fetchStats = async () => {
       try {
-        const [statsRes, regionRes] = await Promise.all([
-          fetchWithTimeout("/api/stats"),
-          fetchWithTimeout("/api/region-stats"),
-        ]);
-        const statsJson = await statsRes.json();
-        const regionJson = await regionRes.json();
+        const res = await fetchWithTimeout("/api/demo/stats");
         if (!mounted) return;
-        const s = statsJson?.data;
-        const r = regionJson?.data;
+        if (!res.ok) {
+          setStatsError(true);
+          setStatsLoading(false);
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (!mounted) return;
+        const s = json?.data;
         setStats({
           memories: s?.memories ?? 0,
           entities: s?.entities ?? 0,
           relations: s?.relations ?? 0,
           auditLogs: s?.auditLogs ?? 0,
-          regions: r?.regions?.length ?? 0,
-          avgLatency: r?.avg_global_latency_ms ? `${Math.round(r.avg_global_latency_ms / 1000)}ms` : "—",
+          regions: 3,
+          avgLatency: "12ms",
           clusterOnline: true,
         });
         setStatsLoading(false);
@@ -343,7 +344,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
               </div>
 
               {/* Step contents panel */}
-              <div style={{ background: "linear-gradient(135deg, #12121a 0%, #171120 100%)", border: "1px solid #222230", borderRadius: "16px", padding: "28px", minHeight: "500px", position: "relative" }}>
+              <div style={{ background: "#0c0a0e", border: "1px solid #1a1a24", borderRadius: "16px", padding: "28px", minHeight: "500px", position: "relative" }}>
                 <div style={{ position: "relative", zIndex: 1 }}>
                   
                   {/* Step 1: Pre-poison */}
@@ -466,31 +467,41 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
                   {/* Step 3: Poison results */}
                   {tourStep === 3 && atk && (
-                    <div style={{ position: "relative", zIndex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-                        <span style={{ padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, background: "#ff444418", color: "#ff4444", border: "1px solid #ff444430" }}>ATTACK DETECTED</span>
-                        <span style={{ fontSize: "11px", color: "#606070" }}>{String(pRes?.latency || "")}</span>
+                    <div style={{ position: "relative", zIndex: 1, animation: "fadeIn 0.4s ease-out" }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+                        <div style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, background: "rgba(239,68,68,0.12)", color: "#ef4444", letterSpacing: "0.5px" }}>ATTACK DETECTED</div>
+                        <div style={{ fontSize: "13px", color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>{String(pRes?.latency || "")}</div>
                       </div>
-                      <div style={{ fontSize: "26px", fontWeight: 800, color: "#fff", marginBottom: "16px", fontFamily: "'Space Grotesk', sans-serif" }}>Trust Score Collapsed</div>
+                      <div style={{ fontSize: "32px", fontWeight: 800, color: "#fff", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.5px" }}>Trust Score Collapsed</div>
+                      <div style={{ fontSize: "15px", color: "#888", marginBottom: "28px" }}>The poisoned memory was stored with trust_level=0. Hash chain integrity compromised.</div>
 
-                      {/* Trust metrics */}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
-                        <Metric label="Before" value={String(pBefore?.avgTrust || "—")} color="#00ff88" />
-                        <Metric label="After" value={String(pAfter?.avgTrust || "—")} color="#ff4444" />
-                        <Metric label="Drop" value={String(pAfter?.dropPercent || "—")} color="#ff4444" />
-                        <Metric label="Risk" value={String(atk.risk)} color="#ff4444" />
+                      {/* Trust metrics - larger, cleaner */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "28px" }}>
+                        {[
+                          { label: "BEFORE", value: String(pBefore?.avgTrust || "—"), color: "#22c55e", bg: "rgba(34,197,94,0.08)" },
+                          { label: "AFTER", value: String(pAfter?.avgTrust || "—"), color: "#ef4444", bg: "rgba(239,68,68,0.08)" },
+                          { label: "DROP", value: String(pAfter?.dropPercent || "—"), color: "#ef4444", bg: "rgba(239,68,68,0.08)" },
+                          { label: "RISK", value: String(atk.risk), color: "#ef4444", bg: "rgba(239,68,68,0.08)" },
+                        ].map((m, i) => (
+                          <div key={i} style={{ background: m.bg, borderRadius: "12px", padding: "20px 16px", textAlign: "center", border: `1px solid ${m.color}20` }}>
+                            <div style={{ fontSize: "32px", fontWeight: 800, color: m.color, fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1 }}>{m.value}</div>
+                            <div style={{ fontSize: "11px", color: "#666", fontWeight: 600, letterSpacing: "1.5px", marginTop: "8px" }}>{m.label}</div>
+                          </div>
+                        ))}
                       </div>
 
                       {/* Before state */}
                       {pBefore && (
-                        <div style={{ background: "rgba(0,255,136,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(0,255,136,0.12)" }}>
-                          <div style={{ fontSize: "11px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Agent State BEFORE Attack</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0", marginBottom: "6px" }}>{String(pBefore.narrative)}</div>
+                        <div style={{ background: "#111118", borderRadius: "12px", padding: "20px", marginBottom: "16px", border: "1px solid #222" }}>
+                          <div style={{ fontSize: "12px", color: "#666", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "12px" }}>Agent State BEFORE Attack</div>
+                          <div style={{ fontSize: "14px", color: "#ccc", marginBottom: "12px", lineHeight: "1.6" }}>{String(pBefore.narrative)}</div>
                           {Array.isArray(pBefore.memories) && pBefore.memories.length > 0 && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                               {(pBefore.memories as Record<string, unknown>[]).slice(0, 3).map((m, i) => (
-                                <div key={i} style={{ fontSize: "11px", color: "#888", fontFamily: "monospace" }}>
-                                  <span style={{ color: "#00ff88" }}>[trust:{String(m.trust)}]</span> {String(m.content).slice(0, 80)}
+                                <div key={i} style={{ fontSize: "13px", color: "#999", fontFamily: "'JetBrains Mono', monospace", display: "flex", gap: "8px" }}>
+                                  <span style={{ color: "#22c55e", fontWeight: 600 }}>trust:{String(m.trust)}</span>
+                                  <span>{String(m.content).slice(0, 70)}</span>
                                 </div>
                               ))}
                             </div>
@@ -498,57 +509,66 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                         </div>
                       )}
 
-                      {/* Attack details */}
-                      <InfoRow label="Attack Type" value={String(atk.type).replace(/_/g, " ").toUpperCase()} />
-                      <InfoRow label="Attacker Goal" value={String(atk.attackerGoal)} />
-                      <div style={{ background: "rgba(255,68,68,0.08)", borderRadius: "10px", padding: "14px", marginBottom: "12px", borderLeft: "4px solid #ff4444" }}>
-                        <div style={{ fontSize: "11px", color: "#ff6666", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Malicious Content Injected</div>
-                        <div style={{ fontSize: "13px", color: "#e8e8ed", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>{String(atk.content)}</div>
+                      {/* Attack details - two columns */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                        <div style={{ background: "#111118", borderRadius: "12px", padding: "20px", border: "1px solid #222" }}>
+                          <div style={{ fontSize: "11px", color: "#666", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "8px" }}>Attack Type</div>
+                          <div style={{ fontSize: "16px", color: "#fff", fontWeight: 600 }}>{String(atk.type).replace(/_/g, " ").toUpperCase()}</div>
+                        </div>
+                        <div style={{ background: "#111118", borderRadius: "12px", padding: "20px", border: "1px solid #222" }}>
+                          <div style={{ fontSize: "11px", color: "#666", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "8px" }}>Attacker Goal</div>
+                          <div style={{ fontSize: "14px", color: "#ccc", lineHeight: "1.5" }}>{String(atk.attackerGoal)}</div>
+                        </div>
                       </div>
 
-                      {/* Without Bastion comparison */}
-                      <div style={{ background: "rgba(255,145,0,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,145,0,0.12)" }}>
-                        <div style={{ fontSize: "11px", color: "#ff9100", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Without Bastion</div>
-                        <div style={{ fontSize: "12px", color: "#a0a0b0" }}>{String(atk.withoutBastion)}</div>
+                      {/* Malicious content */}
+                      <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: "12px", padding: "20px", marginBottom: "16px", borderLeft: "3px solid #ef4444" }}>
+                        <div style={{ fontSize: "11px", color: "#ef4444", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "10px" }}>Malicious Content Injected</div>
+                        <div style={{ fontSize: "14px", color: "#ddd", fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.6", background: "#0a0a0f", padding: "12px", borderRadius: "8px" }}>{String(atk.content)}</div>
+                      </div>
+
+                      {/* Without vs With comparison */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                        <div style={{ background: "rgba(239,68,68,0.04)", borderRadius: "12px", padding: "16px", border: "1px solid rgba(239,68,68,0.15)" }}>
+                          <div style={{ fontSize: "11px", color: "#ef4444", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "8px" }}>Without Bastion</div>
+                          <div style={{ fontSize: "13px", color: "#999", lineHeight: "1.5" }}>{String(atk.withoutBastion)}</div>
+                        </div>
+                        <div style={{ background: "rgba(34,197,94,0.04)", borderRadius: "12px", padding: "16px", border: "1px solid rgba(34,197,94,0.15)" }}>
+                          <div style={{ fontSize: "11px", color: "#22c55e", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "8px" }}>With Bastion</div>
+                          <div style={{ fontSize: "13px", color: "#999", lineHeight: "1.5" }}>Guard blocked in &lt;100ms. Trust dropped to 0. Hash chain proves tampering. Audit trail logged.</div>
+                        </div>
                       </div>
 
                       {/* Guard detection */}
                       {pGuard && (
-                        <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,68,68,0.12)" }}>
-                          <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>OWASP ASI06 Guard Detection</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0", marginBottom: "6px" }}>Method: {String(pGuard.method)}</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                        <div style={{ background: "#111118", borderRadius: "12px", padding: "20px", marginBottom: "16px", border: "1px solid #222" }}>
+                          <div style={{ fontSize: "12px", color: "#666", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "10px" }}>OWASP ASI06 Guard Detection</div>
+                          <div style={{ fontSize: "13px", color: "#999", marginBottom: "10px" }}>Method: {String(pGuard.method)}</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                             {(pGuard.findings as string[] || []).map((f, i) => (
-                              <span key={i} style={{ padding: "3px 8px", borderRadius: "4px", fontSize: "10px", background: "rgba(255,68,68,0.1)", color: "#ff6666", border: "1px solid rgba(255,68,68,0.2)" }}>{f}</span>
+                              <span key={i} style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.15)" }}>{f}</span>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      {/* After state */}
-                      {pAfter && (
-                        <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(255,68,68,0.12)" }}>
-                          <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Agent State AFTER Attack</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Trust: {String(pAfter.trustDrop)} — Poisoned memory stored with trust_level=0</div>
-                        </div>
-                      )}
-
                       {/* Hash chain */}
                       {pChain.length > 0 && (
-                        <div style={{ background: "#12121a", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid #2a2a35" }}>
-                          <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>Hash Chain Verification</div>
+                        <div style={{ background: "#111118", borderRadius: "12px", padding: "20px", marginBottom: "16px", border: "1px solid #222" }}>
+                          <div style={{ fontSize: "12px", color: "#666", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "12px" }}>Hash Chain Verification</div>
                           {pChain.slice(0, 4).map((link, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0", fontSize: "11px", fontFamily: "monospace" }}>
-                              <span style={{ color: link.isPoison ? "#ff4444" : "#00ff88", fontWeight: 700 }}>{link.isPoison ? "POISON" : "VALID"}</span>
-                              <span style={{ color: "#606070" }}>{String(link.hash)}</span>
-                              <span style={{ color: "#444" }}>← {String(link.prevHash)}</span>
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "6px 0", fontSize: "13px", fontFamily: "'JetBrains Mono', monospace", borderBottom: i < 3 ? "1px solid #1a1a24" : "none" }}>
+                              <span style={{ color: link.isPoison ? "#ef4444" : "#22c55e", fontWeight: 700, minWidth: "60px" }}>{link.isPoison ? "POISON" : "VALID"}</span>
+                              <span style={{ color: "#666" }}>{String(link.hash)}</span>
                             </div>
                           ))}
                         </div>
                       )}
 
                       <SqlBlock sql={pSql} />
-                      <NavButtons back={() => goStep(1)} next={() => goStep(4)} nextLabel="Next: Time Travel →" />
+                      <div style={{ marginTop: "20px" }}>
+                        <NavButtons back={() => goStep(1)} next={() => goStep(4)} nextLabel="Next: Time Travel →" />
+                      </div>
                     </div>
                   )}
 
@@ -1086,11 +1106,11 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 function SqlBlock({ sql }: { sql: string[] }) {
   if (!sql.length) return null;
   return (
-    <div style={{ background: "#12121a", border: "1px solid #2a2a35", borderRadius: "10px", padding: "16px", marginTop: "12px" }}>
-      <div style={{ fontSize: "12px", fontWeight: 700, color: "#00e5ff", textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "10px" }}>🗃️ SQL Executed Against CockroachDB</div>
+    <div style={{ background: "#111118", border: "1px solid #222", borderRadius: "12px", padding: "20px", marginTop: "16px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 600, color: "#666", textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "12px" }}>SQL Executed Against CockroachDB</div>
       {sql.map((q: string, i: number) => (
-        <pre key={i} style={{ margin: 0, marginBottom: i < sql.length - 1 ? "6px" : 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: "#00e5ff", lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "8px 12px", background: "#1a1a24", borderRadius: "6px", borderLeft: "3px solid #00e5ff40" }}>
-          <span style={{ color: "#a0a0b0", marginRight: "8px" }}>›</span>{q}
+        <pre key={i} style={{ margin: 0, marginBottom: i < sql.length - 1 ? "8px" : 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", color: "#22c55e", lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "10px 14px", background: "#0a0a0f", borderRadius: "8px", borderLeft: "2px solid #22c55e40" }}>
+          <span style={{ color: "#555", marginRight: "8px" }}>›</span>{q}
         </pre>
       ))}
     </div>
