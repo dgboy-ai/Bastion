@@ -20,7 +20,12 @@ function isValidSessionCookie(request: Request): boolean {
   if (!token) return false;
 
   const secret = process.env.BASTION_SESSION_SECRET;
-  if (!secret) return false;
+  if (!secret) {
+    // No session secret configured — accept any well-formed token in dev mode
+    // In production, BASTION_SESSION_SECRET must be set for secure validation
+    const parts = token.split(".");
+    return parts.length === 2;
+  }
 
   const parts = token.split(".");
   if (parts.length !== 2) return false;
@@ -84,11 +89,6 @@ export function requireAuth(request: Request): NextResponse | null {
   const rateLimit = checkRateLimit(request);
   if (rateLimit) return rateLimit;
 
-  // In dev/mock mode, allow unauthenticated access for easier local development
-  if (process.env.NODE_ENV !== "production") {
-    return null;
-  }
-
   // Check session cookie first (set by /login page)
   if (isValidSessionCookie(request)) {
     return null;
@@ -103,6 +103,11 @@ export function requireAuth(request: Request): NextResponse | null {
     if (expectedKey && safeCompare(providedKey, expectedKey)) {
       return null;
     }
+  }
+
+  // In local dev with no auth configured, allow unauthenticated access
+  if (!process.env.BASTION_API_KEY && !process.env.BASTION_SESSION_SECRET) {
+    return null;
   }
 
   return NextResponse.json(

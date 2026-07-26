@@ -391,17 +391,25 @@ def create_server(
                     "memory_audit",
                     "memory_heal",
                     "memory_delete",
+                    "memory_pin",
+                    "memory_get_pinned",
+                    "memory_list",
+                    "memory_correct",
+                    "memory_health",
+                    "memory_apply_patch",
                     "resolve_conflict",
-                    "a2a_bridge",
                     "ltm_check_reuse",
                     "ltm_store_analysis",
                     "ltm_invalidate",
-                    "dream",
-                    "dream_history",
                     "detect_contradictions",
                     "scan_all_contradictions",
+                    "dream",
+                    "dream_history",
                     "detect_observations",
                     "multi_signal_search",
+                    "context_pack",
+                    "agent_schema",
+                    "a2a_bridge",
                 ],
             },
             indent=2,
@@ -528,9 +536,12 @@ def create_server(
             try:
                 import base64
 
-                offset = int(base64.b64decode(cursor).decode())
+                decoded = base64.b64decode(cursor).decode("ascii")
+                offset = int(decoded)
+                if offset < 0 or offset > 1_000_000:
+                    raise ValueError(f"Cursor offset out of range: {offset}")
             except Exception:
-                logger.warning("Invalid cursor, resetting to offset 0", exc_info=True)
+                logger.warning("Invalid cursor, resetting to offset 0")
                 offset = 0
 
         page = results[offset : offset + k]

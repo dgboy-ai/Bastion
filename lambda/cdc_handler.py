@@ -52,6 +52,9 @@ def _get_hmac_secret() -> bytes:
 
     Loads from BASTION_HMAC_SECRET env var, or falls back to ~/.bastion/hmac.key.
     Must match the secret used by bastion.crypto.compute_hash().
+
+    Raises RuntimeError if no secret can be found — never falls back to empty string,
+    as that would make hash chain verification bypassable.
     """
     global _HMAC_SECRET
     if _HMAC_SECRET is not None:
@@ -66,16 +69,17 @@ def _get_hmac_secret() -> bytes:
         if os.path.exists(secret_file):
             with open(secret_file, "rb") as f:
                 _HMAC_SECRET = f.read()
-            return _HMAC_SECRET
+            if len(_HMAC_SECRET) >= 16:
+                return _HMAC_SECRET
+            logger.warning("HMAC key file too short (%d bytes), requires >= 16", len(_HMAC_SECRET))
+            _HMAC_SECRET = None
     except Exception:
         pass
-    # Fallback: generate a warning and use empty secret (hashes will not match)
-    logger.warning(
-        "BASTION_HMAC_SECRET not set and ~/.bastion/hmac.key not found. "
-        "Hash chain verification will use fallback. Set BASTION_HMAC_SECRET for production."
+    raise RuntimeError(
+        "BASTION_HMAC_SECRET not set and ~/.bastion/hmac.key not found or too short. "
+        "Set BASTION_HMAC_SECRET env var or create ~/.bastion/hmac.key (>= 16 bytes). "
+        "Hash chain verification cannot proceed without a valid HMAC secret."
     )
-    _HMAC_SECRET = b""
-    return _HMAC_SECRET
 
 # ── Circuit Breaker State ────────────────────────────────────────────────────
 

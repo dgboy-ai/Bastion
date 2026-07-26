@@ -65,7 +65,7 @@ _pkce_lock = threading.Lock()
 
 # TTL for cleanup of stale PKCE entries (10 minutes)
 _PKCE_TTL = 600
-_PKCE_MAX_SIZE = 10_000  # Prevent memory exhaustion
+_PKCE_MAX_SIZE = 1_000  # Prevent memory exhaustion (entries expire after 10 min)
 
 
 def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
@@ -79,12 +79,11 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
 
     with _pkce_lock:
         _pkce_verifiers[authorization_code] = (verifier_hash, time.time())
-        # Periodic cleanup: evict expired entries when store grows large
-        if len(_pkce_verifiers) > 100:
-            now = time.time()
-            expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
-            for k in expired:
-                _pkce_verifiers.pop(k, None)
+        # Periodic cleanup: evict expired entries on every store
+        now = time.time()
+        expired = [k for k, (_, ts) in _pkce_verifiers.items() if now - ts > _PKCE_TTL]
+        for k in expired:
+            _pkce_verifiers.pop(k, None)
         # Hard cap: evict oldest entries if still over limit
         if len(_pkce_verifiers) > _PKCE_MAX_SIZE:
             sorted_keys = sorted(_pkce_verifiers, key=lambda k: _pkce_verifiers[k][1])

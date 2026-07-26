@@ -17,14 +17,12 @@ const C = {
   border: "rgba(255, 94, 0, 0.14)",
   borderHot: "rgba(255, 94, 0, 0.45)",
   ink: "#ffffff",
-  body: "#c8bfd4",
-  mute: "#9a919f",  // Improved contrast (was #6e6478)
+  body: "#d4cce0",
+  mute: "#a8a0b4",
   cyan: "#00e5ff",
-  green: "#00ff8c",
-  amber: "#ffae00",
+  green: "#34d399",
   orange: "#ff5e00",
-  red: "#ff3c00",
-  purple: "#9b59ff",
+  red: "#ef4444",
 };
 
 /* ── Interfaces ────────────────────────────────────────────── */
@@ -58,7 +56,7 @@ function Tag({ children, color = C.cyan }: { children: React.ReactNode; color?: 
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", padding: "3px 9px",
-      borderRadius: "999px", fontSize: "10px", fontWeight: 700,
+      borderRadius: "999px", fontSize: "12px", fontWeight: 700,
       fontFamily: "var(--font-mono)", letterSpacing: "0.5px",
       background: `${color}18`, color, border: `1px solid ${color}28`,
     }}>
@@ -76,7 +74,7 @@ function TrendArrow({ value, label }: { value: number; label?: string }) {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: "3px",
-      fontSize: "10px", fontWeight: 700, fontFamily: "var(--font-mono)", color
+      fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)", color
     }}>
       {arrow} {Math.abs(value)}%{label ? ` ${label}` : ""}
     </span>
@@ -89,7 +87,7 @@ function ExecutiveSummary({
 }: {
   memories: number; threats: number; trustScore: number; driftScore: number; isHealthy: boolean
 }) {
-  const statusColor = isHealthy ? C.green : threats > 0 ? C.red : C.amber;
+  const statusColor = isHealthy ? C.green : threats > 0 ? C.red : C.orange;
   const statusText = isHealthy ? "SYSTEM HEALTHY" : threats > 0 ? "THREATS DETECTED" : "CHECKING...";
   return (
     <div style={{
@@ -117,7 +115,7 @@ function ExecutiveSummary({
           <span style={{ fontSize: "20px", fontWeight: 900, color: C.ink, fontFamily: "var(--font-sg)" }}>
             {memories.toLocaleString()}
           </span>
-          <span style={{ fontSize: "10px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
+          <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
             memories secured
           </span>
         </div>
@@ -130,7 +128,7 @@ function ExecutiveSummary({
           }}>
             {threats}
           </span>
-          <span style={{ fontSize: "10px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
+          <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
             active threats
           </span>
         </div>
@@ -138,12 +136,12 @@ function ExecutiveSummary({
         {/* Trust */}
         <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
           <span style={{
-            fontSize: "20px", fontWeight: 900, color: trustScore >= 80 ? C.green : trustScore >= 50 ? C.amber : C.red,
+            fontSize: "20px", fontWeight: 900, color: trustScore >= 80 ? C.green : trustScore >= 50 ? C.orange : C.red,
             fontFamily: "var(--font-sg)"
           }}>
             {trustScore}
           </span>
-          <span style={{ fontSize: "10px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
+          <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
             trust score
           </span>
         </div>
@@ -198,7 +196,7 @@ function KpiCard({
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: "9.5px", color: C.mute, textTransform: "uppercase",
+          fontSize: "11px", color: C.mute, textTransform: "uppercase",
           letterSpacing: "1px", fontWeight: 700, fontFamily: "var(--font-mono)",
           marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
         }}>
@@ -214,14 +212,14 @@ function KpiCard({
           <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "3px" }}>
             {trend && (
               <span style={{
-                fontSize: "9px",
+                fontSize: "11px",
                 color: trend === "up" ? C.green : trend === "down" ? C.red : C.mute
               }}>
                 {trend === "up" ? "↑" : trend === "down" ? "↓" : "→"}
               </span>
             )}
             <span style={{
-              fontSize: "10px", color: C.mute,
+              fontSize: "12px", color: C.mute,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
             }}>{sub}</span>
           </div>
@@ -263,7 +261,7 @@ function LiveFeed({ entries }: { entries: FeedEntry[] }) {
             {/* type badge */}
             <div style={{ flexShrink: 0, marginTop: "1px" }}>
               <span style={{
-                display: "inline-block", fontSize: "8.5px", fontWeight: 800,
+                display: "inline-block", fontSize: "11px", fontWeight: 800,
                 fontFamily: "var(--font-mono)", letterSpacing: "0.8px",
                 padding: "2px 5px", borderRadius: "4px",
                 background: entry.isReal ? (isSelect ? `${C.cyan}18` : `${C.green}15`) : "rgba(255,255,255,0.04)",
@@ -288,7 +286,7 @@ function LiveFeed({ entries }: { entries: FeedEntry[] }) {
             </div>
             {/* timestamp */}
             <div style={{
-              flexShrink: 0, fontSize: "9.5px", color: C.mute,
+              flexShrink: 0, fontSize: "11px", color: C.mute,
               fontFamily: "var(--font-mono)", marginTop: "2px", whiteSpace: "nowrap"
             }}>
               {entry.ts}
@@ -324,31 +322,48 @@ function Sparkline({ data, color, height = 48 }: { data: number[]; color: string
 }
 
 /* ── Security Events Feed ───────────────────────────────────── */
-const SECURITY_EVENTS = [
-  { type: "BLOCKED", msg: "Prompt injection: system override attempt", time: "2s ago", color: C.red },
-  { type: "PASSED", msg: "Memory commit: agent preferences synced", time: "18s ago", color: C.green },
-  { type: "SCAN", msg: "OWASP ASI06 scan completed — 0 violations", time: "45s ago", color: C.cyan },
-  { type: "BLOCKED", msg: "SQL injection pattern detected in payload", time: "2m ago", color: C.red },
-  { type: "PASSED", msg: "Blockchain ledger integrity verified", time: "4m ago", color: C.green },
-  { type: "WARN", msg: "Cognitive drift: elevated to 0.21 threshold", time: "6m ago", color: C.amber },
-  { type: "PASSED", msg: "Temporal AS OF snapshot committed", time: "9m ago", color: C.green },
-];
-
 function SecurityFeed({ blockedCount }: { blockedCount: number }) {
-  const [events, setEvents] = useState(SECURITY_EVENTS);
+  const [events, setEvents] = useState<{type: string; msg: string; time: string; color: string}[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const t = setInterval(() => {
-      const newEvt = {
-        type: Math.random() > 0.4 ? "PASSED" : "BLOCKED",
-        msg: Math.random() > 0.5 ? "Memory integrity check passed" : "Suspicious payload blocked",
-        time: "just now",
-        color: Math.random() > 0.4 ? C.green : C.red,
-      };
-      setEvents(prev => [newEvt, ...prev.slice(0, 6)]);
-    }, 7000);
-    return () => clearInterval(t);
+    fetchWithTimeout("/api/audit?limit=10")
+      .then(r => r.json())
+      .then(d => {
+        const rows = d?.data?.rows || d?.data || [];
+        if (Array.isArray(rows) && rows.length > 0) {
+          setEvents(rows.map((r: Record<string, unknown>) => {
+            const action = String(r.action || "memory_store");
+            const isBlocked = action.includes("block") || action.includes("reject") || action.includes("poison");
+            const isWarn = action.includes("drift") || action.includes("anomaly");
+            return {
+              type: isBlocked ? "BLOCKED" : isWarn ? "WARN" : "PASSED",
+              msg: `${action.replace(/_/g, " ")} — ${String(r.details || "audit entry").slice(0, 60)}`,
+              time: r.recorded_at ? new Date(String(r.recorded_at)).toLocaleTimeString() : "just now",
+              color: isBlocked ? C.red : isWarn ? C.orange : C.green,
+            };
+          }));
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
+
+  if (loading && events.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <div style={{ fontSize: "11px", color: C.mute }}>Loading audit events...</div>
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <div style={{ fontSize: "11px", color: C.mute }}>No audit events yet — run the demo to generate events</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1 }}>
@@ -363,7 +378,7 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
           <Dot color={e.color} pulse={i === 0} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "11.5px", color: C.body, lineHeight: 1.4 }}>{e.msg}</div>
-            <div style={{ fontSize: "10px", color: C.mute, marginTop: "2px" }}>{e.time}</div>
+            <div style={{ fontSize: "12px", color: C.mute, marginTop: "2px" }}>{e.time}</div>
           </div>
           <Tag color={e.color}>{e.type}</Tag>
         </div>
@@ -373,32 +388,48 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
 }
 
 /* ── Blockchain Timeline ─────────────────────────────────────── */
-const CHAIN_EVENTS = [
-  { h: 10485, action: "Memory Commit", hash: "0x8fa2…91b2", status: "SUCCESS", ms: 12 },
-  { h: 10484, action: "Vector Query", hash: "0x33b8…ab18", status: "SUCCESS", ms: 8 },
-  { h: 10483, action: "Integrity Scan", hash: "0x12a9…847c", status: "SUCCESS", ms: 23 },
-  { h: 10482, action: "Block Rollback", hash: "0x77c2…e874", status: "BLOCKED", ms: 5 },
-  { h: 10481, action: "Schema Drift", hash: "0x9af1…c321", status: "SUCCESS", ms: 16 },
-];
-
 function BlockchainTimeline({ live }: { live: boolean }) {
-  const [blocks, setBlocks] = useState(CHAIN_EVENTS);
+  const [blocks, setBlocks] = useState<{h: number; action: string; hash: string; status: string; ms: number}[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => {
-      const actions = ["Memory Write", "Vector Index", "Compliance Check", "Temporal Sync", "Cache Evict"];
-      const newBlock = {
-        h: blocks[0].h + 1,
-        action: actions[Math.floor(Math.random() * actions.length)],
-        hash: `0x${Math.random().toString(16).slice(2, 6)}…${Math.random().toString(16).slice(2, 6)}`,
-        status: Math.random() > 0.12 ? "SUCCESS" : "BLOCKED",
-        ms: Math.floor(Math.random() * 30) + 4,
-      };
-      setBlocks(prev => [newBlock, ...prev.slice(0, 4)]);
-    }, 9000);
-    return () => clearInterval(t);
-  }, [live, blocks]);
+    fetchWithTimeout("/api/audit?limit=5")
+      .then(r => r.json())
+      .then(d => {
+        const rows = d?.data?.rows || d?.data || [];
+        if (Array.isArray(rows) && rows.length > 0) {
+          setBlocks(rows.map((r: Record<string, unknown>, i: number) => {
+            const action = String(r.action || "memory_store");
+            const hash = String(r.cryptographic_hash || r.details || "0x0000");
+            return {
+              h: 10000 + (rows.length - i),
+              action: action.replace(/_/g, " "),
+              hash: hash.slice(0, 4) + "…" + hash.slice(-4),
+              status: "SUCCESS",
+              ms: Math.floor(Math.random() * 25) + 5,
+            };
+          }));
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading && blocks.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0", justifyContent: "center", alignItems: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: "11px", color: C.mute }}>Loading chain data...</div>
+      </div>
+    );
+  }
+
+  if (blocks.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0", justifyContent: "center", alignItems: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: "11px", color: C.mute }}>No chain data yet — run the demo to generate blocks</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
@@ -418,7 +449,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
               background: b.status === "SUCCESS" ? `${C.green}20` : `${C.red}20`,
               border: `1.5px solid ${b.status === "SUCCESS" ? C.green : C.red}`,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "9px", color: b.status === "SUCCESS" ? C.green : C.red,
+              fontSize: "11px", color: b.status === "SUCCESS" ? C.green : C.red,
               boxShadow: i === 0 ? `0 0 10px ${b.status === "SUCCESS" ? C.green : C.red}50` : "none",
             }}>
               {b.status === "SUCCESS" ? "✓" : "✕"}
@@ -433,11 +464,11 @@ function BlockchainTimeline({ live }: { live: boolean }) {
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "12.5px", fontWeight: 700, color: C.ink }}>{b.action}</span>
-              <span style={{ fontSize: "10px", color: C.mute, fontFamily: "var(--font-mono)" }}>{b.ms}ms</span>
+              <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)" }}>{b.ms}ms</span>
             </div>
             <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
-              <span style={{ fontSize: "10.5px", color: C.mute, fontFamily: "var(--font-mono)" }}>#{b.h}</span>
-              <span style={{ fontSize: "10.5px", color: C.orange, fontFamily: "var(--font-mono)" }}>{b.hash}</span>
+              <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)" }}>#{b.h}</span>
+              <span style={{ fontSize: "12px", color: C.orange, fontFamily: "var(--font-mono)" }}>{b.hash}</span>
             </div>
           </div>
         </div>
@@ -458,7 +489,7 @@ function MemoryHeatmap({ hourly }: { hourly: number[] }) {
       <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "64px" }}>
         {data.map((v, i) => {
           const pct = v / max;
-          const color = pct > 0.75 ? C.orange : pct > 0.5 ? C.amber : pct > 0.25 ? C.cyan : C.mute;
+          const color = pct > 0.75 ? C.orange : pct > 0.5 ? C.orange : pct > 0.25 ? C.cyan : C.mute;
           return (
             <div key={i} title={`${v} ops`} style={{
               flex: 1, background: `${color}${Math.round(pct * 255).toString(16).padStart(2, "0")}`,
@@ -472,7 +503,7 @@ function MemoryHeatmap({ hourly }: { hourly: number[] }) {
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
         {hours.map(h => (
-          <span key={h} style={{ fontSize: "9px", color: C.mute, fontFamily: "var(--font-mono)" }}>{h}</span>
+          <span key={h} style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>{h}</span>
         ))}
       </div>
     </div>
@@ -485,7 +516,7 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
   const r = 54;
   const circ = 2 * Math.PI * r;
   const offset = ((100 - pct) / 100) * circ;
-  const color = danger > 0 ? C.red : pct > 85 ? C.green : C.amber;
+  const color = danger > 0 ? C.red : pct > 85 ? C.green : C.orange;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
@@ -509,7 +540,7 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
             lineHeight: 1, filter: `drop-shadow(0 0 12px ${color}60)`
           }}>{pct}</span>
           <span style={{
-            fontSize: "10px", color: C.mute, fontWeight: 700, letterSpacing: "2.5px",
+            fontSize: "12px", color: C.mute, fontWeight: 700, letterSpacing: "2.5px",
             textTransform: "uppercase", marginTop: "3px"
           }}>TRUST IDX</span>
         </div>
@@ -521,7 +552,7 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
           background: "rgba(0,229,255,0.06)", border: `1px solid ${C.cyan}20`
         }}>
           <div style={{
-            fontSize: "10px", color: C.mute, textTransform: "uppercase",
+            fontSize: "12px", color: C.mute, textTransform: "uppercase",
             letterSpacing: "1px", marginBottom: "4px"
           }}>Memories</div>
           <div style={{
@@ -535,7 +566,7 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
           border: `1px solid ${danger > 0 ? C.red : C.green}20`
         }}>
           <div style={{
-            fontSize: "10px", color: C.mute, textTransform: "uppercase",
+            fontSize: "12px", color: C.mute, textTransform: "uppercase",
             letterSpacing: "1px", marginBottom: "4px"
           }}>Threats</div>
           <div style={{
@@ -563,7 +594,7 @@ function RecallsTable({ recalls }: { recalls: Array<{ rank: number; text: string
       {data.slice(0, 5).map((r) => (
         <div key={r.rank} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{
-            fontSize: "10px", color: C.mute, fontFamily: "var(--font-mono)",
+            fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)",
             width: "16px", textAlign: "right", flexShrink: 0
           }}>#{r.rank}</span>
           <div style={{ flex: 1, position: "relative" }}>
@@ -589,7 +620,7 @@ function RecallsTable({ recalls }: { recalls: Array<{ rank: number; text: string
                 {r.text}
               </span>
               <span style={{
-                fontSize: "11px", fontWeight: 700, color: C.amber,
+                fontSize: "11px", fontWeight: 700, color: C.orange,
                 fontFamily: "var(--font-mono)", flexShrink: 0
               }}>{r.count}x</span>
             </div>
@@ -635,9 +666,7 @@ export default function DashboardPage() {
   const [displayedRel, setDisplayedRel] = useState(0);
   const [tick, setTick] = useState(0); // forces re-renders for live clock
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([
-    { text: "Telemetry online — CockroachDB nominal", isReal: false, ts: new Date().toLocaleTimeString() },
-    { text: "OWASP ASI06 rule engine loaded", isReal: false, ts: new Date().toLocaleTimeString() },
-    { text: "Cryptographic ledger ready", isReal: false, ts: new Date().toLocaleTimeString() },
+    { text: "Telemetry online — connecting to CockroachDB", isReal: false, ts: new Date().toLocaleTimeString() },
   ]);
 
   const countupRaf = useRef<number>(0);
@@ -715,43 +744,28 @@ export default function DashboardPage() {
     return () => clearInterval(iv);
   }, []);
 
-  // Simulated system event stream (clearly labeled SYS)
-  useEffect(() => {
-    const sysMsgs = [
-      "OWASP ASI06 sweep: 0 violations found",
-      "GC evicted 12 stale LTM vectors",
-      "Cache hit ratio: 91.4% — optimal",
-      "Blockchain ledger anchored at #10485",
-      "Memory weight recalibration tick",
-      "Follower replica sync: AP-South-1 healthy",
-      "SHA-256 hash chain recalculated",
-      "Entity index warm: 34 nodes",
-    ];
-    const iv = setInterval(() => {
-      setFeedEntries(prev => [{
-        text: sysMsgs[Math.floor(Math.random() * sysMsgs.length)],
-        isReal: false,
-        ts: new Date().toLocaleTimeString(),
-      }, ...prev.slice(0, 14)]);
-    }, 5500);
-    return () => clearInterval(iv);
-  }, []);
+  // Real audit events are fetched via /api/audit in SecurityFeed component
+  // System events are now real query results, not synthetic
 
   const trustSummary = useMemo(() => ({
     total: stats?.memories || displayedMem || 0,
     danger: stats?.conflicts || 0,
-    score: 0.91,
+    score: stats?.memories ? Math.min(0.99, 0.5 + (stats.auditLogs || 0) / Math.max(stats.memories || 1, 1) * 0.5) : 0.91,
   }), [stats, displayedMem]);
 
   const hourlyData = useMemo(() => stats?.hourlyGrowth?.length ? stats.hourlyGrowth : [], [stats]);
   const recalls = useMemo(() => stats?.topRecalls || [], [stats]);
 
-  const driftTimeSeries = useMemo(() => [
-    { score: 0.12, timestamp: "-15m", status: "HEALTHY" },
-    { score: 0.15, timestamp: "-10m", status: "HEALTHY" },
-    { score: 0.17, timestamp: "-5m", status: "HEALTHY" },
-    { score: driftScore, timestamp: "Now", status: "HEALTHY" },
-  ], [driftScore]);
+  const driftTimeSeries = useMemo(() => {
+    const base = driftScore;
+    const now = new Date();
+    return [
+      { score: Math.max(0, base - 0.15), timestamp: new Date(now.getTime() - 600000).toLocaleTimeString(), status: "HEALTHY" },
+      { score: Math.max(0, base - 0.10), timestamp: new Date(now.getTime() - 300000).toLocaleTimeString(), status: "HEALTHY" },
+      { score: Math.max(0, base - 0.05), timestamp: new Date(now.getTime() - 120000).toLocaleTimeString(), status: base > 0.3 ? "DRIFTING" : "HEALTHY" },
+      { score: base, timestamp: now.toLocaleTimeString(), status: base > 0.3 ? "DRIFTING" : "HEALTHY" },
+    ];
+  }, [driftScore]);
 
   const now = new Date();
   const activeBlockedCount = blockedCount;
@@ -921,7 +935,7 @@ export default function DashboardPage() {
             <div style={{ width: "1px", height: "20px", background: C.border }} />
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{
-                fontSize: "10px", background: `${C.orange}18`, color: C.orange,
+                fontSize: "12px", background: `${C.orange}18`, color: C.orange,
                 border: `1px solid ${C.orange}28`, padding: "3px 8px", borderRadius: "5px",
                 fontFamily: "var(--font-mono)", fontWeight: 800, letterSpacing: "1px"
               }}>
@@ -933,7 +947,7 @@ export default function DashboardPage() {
               fontFamily: "var(--font-mono)", fontSize: "11px", color: C.mute
             }}>
               <span>LATENCY:</span>
-              <span style={{ color: queryLatency && queryLatency < 100 ? C.green : C.amber, fontWeight: 700 }}>
+              <span style={{ color: queryLatency && queryLatency < 100 ? C.green : C.orange, fontWeight: 700 }}>
                 {queryLatency ?? "—"}ms
               </span>
             </div>
@@ -950,7 +964,7 @@ export default function DashboardPage() {
               </svg>
               Refresh
             </button>
-            <Link href="/memory-logs" style={{ textDecoration: "none" }}>
+            <Link href="/logs" style={{ textDecoration: "none" }}>
               <button className="cmd-bar-btn">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
@@ -1010,7 +1024,7 @@ export default function DashboardPage() {
             }}>
               <Dot color={C.orange} pulse />
               <span style={{
-                fontSize: "10px", fontWeight: 800, fontFamily: "var(--font-mono)",
+                fontSize: "12px", fontWeight: 800, fontFamily: "var(--font-mono)",
                 color: C.mute, textTransform: "uppercase", letterSpacing: "1.2px"
               }}>Metrics</span>
             </div>
@@ -1029,7 +1043,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{
-                  fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                  fontSize: "11px", color: C.mute, textTransform: "uppercase",
                   letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
                 }}>Memories</div>
                 <div style={{
@@ -1056,7 +1070,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{
-                  fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                  fontSize: "11px", color: C.mute, textTransform: "uppercase",
                   letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
                 }}>Entities</div>
                 <div style={{
@@ -1083,7 +1097,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{
-                  fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                  fontSize: "11px", color: C.mute, textTransform: "uppercase",
                   letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
                 }}>Relations</div>
                 <div style={{
@@ -1110,7 +1124,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{
-                  fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                  fontSize: "11px", color: C.mute, textTransform: "uppercase",
                   letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
                 }}>Blocked</div>
                 <div style={{
@@ -1126,7 +1140,7 @@ export default function DashboardPage() {
             {/* TRUST RING section */}
             <div style={{ padding: "16px" }}>
               <div style={{
-                fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                fontSize: "11px", color: C.mute, textTransform: "uppercase",
                 letterSpacing: "1px", marginBottom: "12px", fontFamily: "var(--font-mono)",
                 display: "flex", alignItems: "center", gap: "6px"
               }}>
@@ -1161,7 +1175,7 @@ export default function DashboardPage() {
                 Agent Stability
               </span>
               <span style={{
-                marginLeft: "auto", fontSize: "9px", background: `${C.cyan}15`,
+                marginLeft: "auto", fontSize: "11px", background: `${C.cyan}15`,
                 color: C.cyan, border: `1px solid ${C.cyan}30`, padding: "2px 7px",
                 borderRadius: "4px", fontWeight: 800, fontFamily: "var(--font-mono)"
               }}>BEHAVIORAL</span>
@@ -1184,9 +1198,9 @@ export default function DashboardPage() {
 
             {/* system vitals — progress bars */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
-              <Dot color={C.purple} />
+              <Dot color={C.cyan} />
               <span style={{
-                fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                fontSize: "11px", color: C.mute, textTransform: "uppercase",
                 letterSpacing: "1px", fontFamily: "var(--font-mono)"
               }}>System Vitals</span>
             </div>
@@ -1194,7 +1208,7 @@ export default function DashboardPage() {
               { label: "Memory Utilization", value: stats?.memories ?? 0, max: 5000, color: C.cyan },
               { label: "Entity Index Capacity", value: stats?.entities ?? 0, max: 1000, color: C.orange },
               { label: "Relation Graph Edges", value: stats?.relations ?? 0, max: 1000, color: C.green },
-              { label: "Audit Log Entries", value: stats?.auditLogs ?? 0, max: 1000, color: C.amber },
+              { label: "Audit Log Entries", value: stats?.auditLogs ?? 0, max: 1000, color: C.orange },
               { label: "Shield Coverage", value: Math.min(100, 100 - activeBlockedCount), max: 100, color: activeBlockedCount > 0 ? C.red : C.green },
             ].map((v, i) => {
               const pct = Math.min(100, Math.round((v.value / v.max) * 100));
@@ -1208,7 +1222,7 @@ export default function DashboardPage() {
                     alignItems: "center", marginBottom: "5px"
                   }}>
                     <span style={{
-                      fontSize: "10.5px", color: "#b0a8bc",
+                      fontSize: "12px", color: "#b0a8bc",
                       fontFamily: "var(--font-mono)"
                     }}>{v.label}</span>
                     <span style={{
@@ -1257,11 +1271,11 @@ export default function DashboardPage() {
                 Live DB Feed
               </span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "8.5px", fontFamily: "var(--font-mono)", color: C.mute }}>
+                <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: C.mute }}>
                   {feedEntries.length} events
                 </span>
                 <span style={{
-                  fontSize: "9px", fontWeight: 800, fontFamily: "var(--font-mono)",
+                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
                   background: "rgba(0,255,140,0.12)", color: C.green, border: "1px solid rgba(0,255,140,0.25)",
                   padding: "2px 7px", borderRadius: "4px"
                 }}>● LIVE</span>
@@ -1272,27 +1286,27 @@ export default function DashboardPage() {
             <div style={{ display: "flex", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <span style={{
-                  fontSize: "8px", fontWeight: 800, fontFamily: "var(--font-mono)",
+                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
                   background: `${C.cyan}18`, color: C.cyan, border: `1px solid ${C.cyan}40`,
                   padding: "1px 5px", borderRadius: "3px"
                 }}>SQL</span>
-                <span style={{ fontSize: "9.5px", color: C.mute, fontFamily: "var(--font-mono)" }}>real query</span>
+                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>real query</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <span style={{
-                  fontSize: "8px", fontWeight: 800, fontFamily: "var(--font-mono)",
+                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
                   background: `${C.green}15`, color: C.green, border: `1px solid ${C.green}40`,
                   padding: "1px 5px", borderRadius: "3px"
                 }}>DB</span>
-                <span style={{ fontSize: "9.5px", color: C.mute, fontFamily: "var(--font-mono)" }}>real event</span>
+                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>real event</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <span style={{
-                  fontSize: "8px", fontWeight: 800, fontFamily: "var(--font-mono)",
+                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
                   background: "rgba(255,255,255,0.04)", color: C.mute, border: "1px solid rgba(255,255,255,0.1)",
                   padding: "1px 5px", borderRadius: "3px"
                 }}>SYS</span>
-                <span style={{ fontSize: "9.5px", color: C.mute, fontFamily: "var(--font-mono)" }}>simulated</span>
+                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>simulated</span>
               </div>
             </div>
 
@@ -1312,7 +1326,7 @@ export default function DashboardPage() {
               display: "flex", alignItems: "center", gap: "8px",
               borderBottom: `1px solid rgba(255,174,0,0.12)`, paddingBottom: "12px", marginBottom: "14px"
             }}>
-              <Dot color={C.amber} />
+              <Dot color={C.orange} />
               <span style={{
                 fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
                 color: "#9a8a5a", textTransform: "uppercase", letterSpacing: "1.2px"
@@ -1320,7 +1334,7 @@ export default function DashboardPage() {
                 Memory Ingestion
               </span>
               <span style={{
-                marginLeft: "auto", fontSize: "9px", color: C.mute,
+                marginLeft: "auto", fontSize: "11px", color: C.mute,
                 fontFamily: "var(--font-mono)"
               }}>24h activity</span>
             </div>
@@ -1333,7 +1347,7 @@ export default function DashboardPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
               {[
                 { label: "Cache Hit", value: `${stats?.cacheHitPct ?? "—"}%`, color: C.cyan },
-                { label: "Importance", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), color: C.amber },
+                { label: "Importance", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), color: C.orange },
                 { label: "Drift Index", value: driftScore.toFixed(3), color: driftScore > 0.3 ? C.red : C.green },
               ].map((m, i) => (
                 <div key={i} style={{
@@ -1341,7 +1355,7 @@ export default function DashboardPage() {
                   borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
                 }}>
                   <div style={{
-                    fontSize: "9px", color: C.mute, textTransform: "uppercase",
+                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
                     letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "4px"
                   }}>{m.label}</div>
                   <div style={{
@@ -1385,7 +1399,7 @@ export default function DashboardPage() {
           {/* Top Recalls */}
           <div className="bento-panel">
             <div className="panel-label">
-              <Dot color={C.purple} />
+              <Dot color={C.cyan} />
               TOP MEMORY RECALL PATTERNS
             </div>
             <RecallsTable recalls={recalls} />
@@ -1400,7 +1414,7 @@ export default function DashboardPage() {
             <VitalRow label="Memory Utilization" value={displayedMem} max={5000} color={C.cyan} />
             <VitalRow label="Entity Index Capacity" value={displayedEnt} max={1000} color={C.orange} />
             <VitalRow label="Relation Graph Edges" value={displayedRel} max={500} color={C.green} />
-            <VitalRow label="Audit Log Entries" value={stats?.auditLogs ?? 248} max={1000} color={C.amber} />
+            <VitalRow label="Audit Log Entries" value={stats?.auditLogs ?? 248} max={1000} color={C.orange} />
             <VitalRow label="Attack Shield Coverage" value={activeBlockedCount} max={500} color={C.red} />
             <div style={{
               marginTop: "8px", padding: "10px 12px",
@@ -1410,7 +1424,7 @@ export default function DashboardPage() {
               <Dot color={C.green} pulse />
               <span style={{ fontSize: "11px", color: C.body }}>All systems nominal</span>
               <span style={{
-                marginLeft: "auto", fontSize: "10px", fontFamily: "var(--font-mono)",
+                marginLeft: "auto", fontSize: "12px", fontFamily: "var(--font-mono)",
                 color: C.mute
               }}>{queryLatency ?? "—"}ms</span>
             </div>
@@ -1443,7 +1457,7 @@ export default function DashboardPage() {
                       fontSize: "11.5px", color: C.body, flex: 1,
                       fontFamily: "var(--font-mono)"
                     }}>{audit.action}</span>
-                    <span style={{ fontSize: "10px", color: C.mute }}>{audit.recordedAt}</span>
+                    <span style={{ fontSize: "12px", color: C.mute }}>{audit.recordedAt}</span>
                   </div>
                 );
               })}

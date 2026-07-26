@@ -120,8 +120,14 @@ class CognitiveFirewall:
     def check_hash_chain_integrity(
         self,
         agent_id: str,
+        max_memories: int = 10_000,
     ) -> dict[str, Any]:
-        """Verify hash chain integrity for an agent's memories."""
+        """Verify hash chain integrity for an agent's memories.
+
+        Args:
+            agent_id: Agent to check.
+            max_memories: Maximum memories to load (prevents OOM for large agents).
+        """
         if self.memory._mock:
             from bastion.models import MemoryRecord
 

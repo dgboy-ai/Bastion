@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
 
 const PROTECTED_ROUTES = ["/dashboard", "/graph", "/logs", "/health", "/compliance", "/flight-recorder"];
 
 /**
- * Validate auth token against server-side HMAC secret.
+ * Validate auth token using Web Crypto API (works in Edge Runtime).
  * Token format: base64url(session_data).base64url(hmac_signature)
  */
-function isValidToken(token: string | undefined): boolean {
+async function isValidToken(token: string | undefined): Promise<boolean> {
   if (!token) return false;
 
   const secret = process.env.BASTION_SESSION_SECRET;
@@ -19,19 +18,33 @@ function isValidToken(token: string | undefined): boolean {
 
   try {
     const [dataB64, sigB64] = parts;
-    const data = Buffer.from(dataB64, "base64url");
-    const sig = Buffer.from(sigB64, "base64url");
+    const data = Uint8Array.from(atob(dataB64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    const sig = Uint8Array.from(atob(sigB64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
     if (sig.length !== 32) return false;
 
-    const expected = createHmac("sha256", secret).update(data).digest();
-    return timingSafeEqual(sig, expected);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, data));
+
+    if (expected.length !== sig.length) return false;
+    // Constant-time comparison
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) {
+      diff |= expected[i] ^ sig[i];
+    }
+    return diff === 0;
   } catch {
     return false;
   }
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
@@ -41,12 +54,11 @@ export function middleware(request: NextRequest) {
 
   const authToken = request.cookies.get("bastion_auth_token")?.value;
 
-  if (isValidToken(authToken)) {
+  if (await isValidToken(authToken)) {
     return NextResponse.next();
   }
 
   // Explicit mock mode: only bypass auth when BASTION_MOCK is explicitly set
-  // Never bypass in production or when env vars are missing
   if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
     return NextResponse.next();
   }
