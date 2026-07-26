@@ -57,34 +57,60 @@ export async function POST(request: Request) {
     // ─── 3. COMPUTE SIMILARITY SCORES ───────────────────────
     const rows = mems.rows as MemoryRow[];
     const toCompute: { row: MemoryRow; idx: number }[] = [];
-    const vectors: number[][] = new Array(rows.length);
+    const vectors: (number[] | undefined)[] = new Array(rows.length);
 
     for (let i = 0; i < rows.length; i++) {
       if (rows[i].embedding_384) {
-        const raw = rows[i].embedding_384!;
-        const trimmed = raw.startsWith("[") ? raw.slice(1, -1) : raw;
-        vectors[i] = trimmed.split(",").map(Number);
-      } else {
+        try {
+          const raw = rows[i].embedding_384!;
+          const trimmed = raw.startsWith("[") ? raw.slice(1, -1) : raw;
+          const parsed = trimmed.split(",").map(Number);
+          if (parsed.length >= 384 && parsed.every(Number.isFinite)) {
+            vectors[i] = parsed;
+          }
+        } catch { /* skip malformed */ }
+      }
+      if (!vectors[i]) {
         toCompute.push({ row: rows[i], idx: i });
       }
     }
 
-    if (toCompute.length > 0) {
-      const texts = toCompute.map(t => t.row.content || "");
-      const batchArr = await embed(texts);
-      for (let j = 0; j < toCompute.length; j++) {
-        vectors[toCompute[j].idx] = batchArr[j];
-      }
+    // Batch compute embeddings for rows without stored vectors
+    if (toCompute.length > 0 && toCompute.length <= 20) {
+      try {
+        const texts = toCompute.map(t => t.row.content || "");
+        const batchArr = await embed(texts);
+        for (let j = 0; j < toCompute.length; j++) {
+          if (batchArr[j] && batchArr[j].length >= 384) {
+            vectors[toCompute[j].idx] = batchArr[j];
+          }
+        }
+      } catch { /* fall back to keyword scoring */ }
     }
 
-    const scored = rows.map((r, i) => ({
-      memoryId: String(r.memory_id).slice(0, 8) + "...",
-      content: r.content || "",
-      memoryType: r.memory_type || "unknown",
-      trustLevel: r.trust_level,
-      similarity: vectors[i] ? cosineSimilarity(queryVec, vectors[i]) : 0,
-      createdAt: r.created_at,
-    }));
+    // Score: use vector similarity if available, else keyword overlap
+    const queryTokens = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const scored = rows.map((r, i) => {
+      let sim = 0;
+      if (vectors[i] && queryVec) {
+        sim = cosineSimilarity(queryVec, vectors[i]);
+        sim = Number.isFinite(sim) ? sim : 0;
+      }
+      // Fallback: keyword overlap score
+      if (sim === 0 && queryTokens.length > 0) {
+        const contentLower = (r.content || "").toLowerCase();
+        const matches = queryTokens.filter(t => contentLower.includes(t)).length;
+        sim = matches / queryTokens.length * 0.5;
+      }
+      return {
+        memoryId: String(r.memory_id).slice(0, 8) + "...",
+        content: r.content || "",
+        memoryType: r.memory_type || "unknown",
+        trustLevel: Number(r.trust_level) || 0,
+        similarity: sim,
+        createdAt: r.created_at,
+      };
+    });
 
     scored.sort((a, b) => b.similarity - a.similarity);
     const top5 = scored.slice(0, 5);
@@ -104,7 +130,6 @@ export async function POST(request: Request) {
     }));
 
     // ─── 5. EXPLAIN WHY EACH RESULT MATCHED ─────────────────
-    const queryTokens = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const explanation = rankedResults.map(r => {
       const contentLower = r.content.toLowerCase();
       const matchingTerms = queryTokens.filter(t => contentLower.includes(t));
@@ -142,10 +167,10 @@ export async function POST(request: Request) {
       // ── TRUST SUMMARY ──
       trustSummary: {
         totalMemories: rows.length,
-        trustedCount: rows.filter(r => (r.trust_level ?? 0) >= 2).length,
-        untrustedCount: rows.filter(r => (r.trust_level ?? 0) < 2).length,
+        trustedCount: rows.filter(r => (Number(r.trust_level) || 0) >= 2).length,
+        untrustedCount: rows.filter(r => (Number(r.trust_level) || 0) < 2).length,
         avgTrust: rows.length > 0
-          ? (rows.reduce((s, r) => s + (r.trust_level ?? 2), 0) / rows.length).toFixed(1) + "/4"
+          ? (rows.reduce((s, r) => s + (Number(r.trust_level) || 0), 0) / rows.length).toFixed(1) + "/4"
           : "—",
       },
 

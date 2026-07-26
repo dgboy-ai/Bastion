@@ -6,10 +6,10 @@ import { fetchWithTimeout } from "@/lib/fetch";
 
 export default function PlaygroundContent({ initialStats }: { initialStats?: { memories: number; entities: number; relations: number; auditLogs: number; regions: number } }) {
   const [tourStep, setTourStep] = useState(0);
-  const [contextResult, setContextResult] = useState<unknown>(null);
-  const [poisonResult, setPoisonResult] = useState<unknown>(null);
-  const [healResult, setHealResult] = useState<unknown>(null);
-  const [chatResult, setChatResult] = useState<unknown>(null);
+  const [contextResult, setContextResult] = useState<Record<string, unknown> | null>(null);
+  const [poisonResult, setPoisonResult] = useState<Record<string, unknown> | null>(null);
+  const [healResult, setHealResult] = useState<Record<string, unknown> | null>(null);
+  const [chatResult, setChatResult] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
@@ -89,7 +89,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
     return () => { mounted = false; clearInterval(interval); };
   }, []);
 
-  const callApi = useCallback(async (url: string, body: unknown, setter: (d: unknown) => void, tag: string) => {
+  const callApi = useCallback(async (url: string, body: unknown, setter: (d: Record<string, unknown> | null) => void, tag: string) => {
     ctrlRef.current?.abort();
     const ctrl = new AbortController();
     ctrlRef.current = ctrl;
@@ -146,8 +146,16 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
   const pSql = pSqlObj ? Object.values(pSqlObj) : [];
   const hRes = healResult as Record<string, unknown> | null;
   const hd = hRes as Record<string, unknown> | undefined;
+  const hdTimeTravel = (hd?.timeTravel ?? null) as Record<string, unknown> | null;
+  const hdPoisoned = (hd?.poisoned ?? null) as Record<string, unknown> | null;
+  const hdRestored = (hd?.restored ?? null) as Record<string, unknown> | null;
+  const hdTrustRecovery = (hd?.trustRecovery ?? null) as Record<string, unknown> | null;
+  const hdChainBefore = (hd?.chainBefore ?? []) as Record<string, unknown>[];
+  const hdChainAfter = (hd?.chainAfter ?? []) as Record<string, unknown>[];
   const cRes = chatResult as Record<string, unknown> | null;
   const cd = cRes as Record<string, unknown> | undefined;
+  const cdSearch = (cd?.search ?? null) as Record<string, unknown> | null;
+  const cdTrustSummary = (cd?.trustSummary ?? null) as Record<string, unknown> | null;
 
   const isWelcome = tourStep === 0;
 
@@ -469,59 +477,59 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Memory Restored via Time Travel</div>
 
                       {/* Time travel proof */}
-                      {hd.timeTravel && (
+                      {!!hdTimeTravel && (
                         <div style={{ background: "rgba(0,229,255,0.04)", borderRadius: "10px", padding: "14px", marginBottom: "12px", border: "1px solid rgba(0,229,255,0.12)" }}>
                           <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "8px" }}>CockroachDB Time Travel Proof</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Mechanism: {String(hd.timeTravel.mechanism)}</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Query: {String(hd.timeTravel.queryTime)}</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Rows found: {String(hd.timeTravel.rowsFound)}</div>
-                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Source: {String(hd.timeTravel.restoredFrom)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Mechanism: {String(hdTimeTravel.mechanism)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Query: {String(hdTimeTravel.queryTime)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Rows found: {String(hdTimeTravel.rowsFound)}</div>
+                          <div style={{ fontSize: "12px", color: "#a0a0b0" }}>Source: {String(hdTimeTravel.restoredFrom)}</div>
                         </div>
                       )}
 
                       {/* Poisoned vs Restored */}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
-                        {hd.poisoned && (
+                        {!!hdPoisoned && (
                           <div style={{ background: "rgba(255,68,68,0.04)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(255,68,68,0.12)" }}>
                             <div style={{ fontSize: "11px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Poisoned (Deleted)</div>
-                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hd.poisoned.content).slice(0, 80)}...</div>
-                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hd.poisoned.trustLevel)}</div>
+                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hdPoisoned.content).slice(0, 80)}...</div>
+                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hdPoisoned.trustLevel)}</div>
                           </div>
                         )}
-                        {hd.restored && (
+                        {!!hdRestored && (
                           <div style={{ background: "rgba(0,255,136,0.04)", borderRadius: "10px", padding: "14px", border: "1px solid rgba(0,255,136,0.12)" }}>
                             <div style={{ fontSize: "11px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Restored (Healed)</div>
-                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hd.restored.content).slice(0, 80)}...</div>
-                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hd.restored.trustLevel)} — provenance: system</div>
+                            <div style={{ fontSize: "11px", color: "#a0a0b0", fontFamily: "monospace" }}>{String(hdRestored.content).slice(0, 80)}...</div>
+                            <div style={{ fontSize: "10px", color: "#606070", marginTop: "4px" }}>trust_level: {String(hdRestored.trustLevel)} — provenance: system</div>
                           </div>
                         )}
                       </div>
 
                       {/* Trust recovery */}
-                      {hd.trustRecovery && (
+                      {!!hdTrustRecovery && (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "12px" }}>
-                          <Metric label="Before Heal" value={String(hd.trustRecovery.beforeHeal)} color="#ff4444" />
-                          <Metric label="After Heal" value={String(hd.trustRecovery.afterHeal)} color="#00ff88" />
-                          <Metric label="Improvement" value={String(hd.trustRecovery.improvement)} color="#00ff88" />
+                          <Metric label="Before Heal" value={String(hdTrustRecovery.beforeHeal)} color="#ff4444" />
+                          <Metric label="After Heal" value={String(hdTrustRecovery.afterHeal)} color="#00ff88" />
+                          <Metric label="Improvement" value={String(hdTrustRecovery.improvement)} color="#00ff88" />
                         </div>
                       )}
 
                       {/* Hash chain before vs after */}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
-                        {Array.isArray(hd.chainBefore) && hd.chainBefore.length > 0 && (
+                        {hdChainBefore.length > 0 && (
                           <div style={{ background: "#12121a", borderRadius: "10px", padding: "12px", border: "1px solid #2a2a35" }}>
                             <div style={{ fontSize: "10px", color: "#ff4444", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Chain Before Heal</div>
-                            {(hd.chainBefore as Record<string, unknown>[]).slice(0, 3).map((link, i) => (
+                            {hdChainBefore.slice(0, 3).map((link, i) => (
                               <div key={i} style={{ fontSize: "10px", fontFamily: "monospace", padding: "2px 0", color: link.isPoison ? "#ff4444" : "#888" }}>
                                 {String(link.type).slice(0, 8)} — {String(link.hash).slice(0, 12)}...
                               </div>
                             ))}
                           </div>
                         )}
-                        {Array.isArray(hd.chainAfter) && hd.chainAfter.length > 0 && (
+                        {hdChainAfter.length > 0 && (
                           <div style={{ background: "#12121a", borderRadius: "10px", padding: "12px", border: "1px solid #2a2a35" }}>
                             <div style={{ fontSize: "10px", color: "#00ff88", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Chain After Heal</div>
-                            {(hd.chainAfter as Record<string, unknown>[]).slice(0, 3).map((link, i) => (
+                            {hdChainAfter.slice(0, 3).map((link, i) => (
                               <div key={i} style={{ fontSize: "10px", fontFamily: "monospace", padding: "2px 0", color: link.hashVerified ? "#00ff88" : "#ff4444" }}>
                                 {String(link.type).slice(0, 8)} — {String(link.hash).slice(0, 12)}... {link.hashVerified ? "✓" : "✗"}
                               </div>
@@ -530,7 +538,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                         )}
                       </div>
 
-                      <SqlBlock sql={hd.sql ? Object.values(hd.sql as Record<string, string>) : []} />
+                      <SqlBlock sql={hd?.sql ? Object.values(hd.sql as Record<string, string>) : []} />
                       <NavButtons back={() => goStep(5)} next={() => goStep(7)} nextLabel="Next: Semantic Search →" />
                     </div>
                   )}
@@ -574,12 +582,12 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       <div style={{ fontSize: "20px", fontWeight: 700, color: "#fff", marginTop: "10px", marginBottom: "16px" }}>Semantic Vector Search Results</div>
 
                       {/* Search metadata */}
-                      {cd.search && (
+                        {!!cd?.search && (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
-                          <Metric label="Memories Scanned" value={String(cd.search.memoriesScanned)} color="#00e5ff" />
-                          <Metric label="Top K" value={String(cd.search.topK)} color="#00ff88" />
-                          <Metric label="Latency" value={String(cd.search.latency)} color="#00e5ff" />
-                          <Metric label="Model" value={String(cd.search.model).split("/").pop()} color="#b388ff" />
+                          <Metric label="Memories Scanned" value={String(cdSearch?.memoriesScanned)} color="#00e5ff" />
+                          <Metric label="Top K" value={String(cdSearch?.topK)} color="#00ff88" />
+                          <Metric label="Latency" value={String(cdSearch?.latency)} color="#00e5ff" />
+                          <Metric label="Model" value={String(cdSearch?.model ?? "unknown").split("/").pop() ?? "unknown"} color="#b388ff" />
                         </div>
                       )}
 
@@ -617,11 +625,11 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       })}
 
                       {/* Trust summary */}
-                      {cd.trustSummary && (
+                        {!!cd?.trustSummary && (
                         <div style={{ background: "rgba(0,229,255,0.04)", borderRadius: "10px", padding: "14px", marginTop: "12px", border: "1px solid rgba(0,229,255,0.12)" }}>
                           <div style={{ fontSize: "11px", color: "#00e5ff", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "1px", marginBottom: "6px" }}>Trust Summary</div>
                           <div style={{ fontSize: "12px", color: "#a0a0b0" }}>
-                            {String(cd.trustSummary.trustedCount)} trusted, {String(cd.trustSummary.untrustedCount)} untrusted — avg trust: {String(cd.trustSummary.avgTrust)}
+                            {String(cdTrustSummary?.trustedCount)} trusted, {String(cdTrustSummary?.untrustedCount)} untrusted — avg trust: {String(cdTrustSummary?.avgTrust)}
                           </div>
                         </div>
                       )}
