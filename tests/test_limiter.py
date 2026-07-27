@@ -55,6 +55,7 @@ def limiter(mock_env):
     yield inst
     inst.close()
 
+
 # ---------------------------------------------------------------------------
 # Mock-mode tests
 # ---------------------------------------------------------------------------
@@ -111,6 +112,7 @@ class TestMockMode:
             t.start()
             workers.append(t)
         import time as _t
+
         for _ in range(20):
             if limiter._queue_count >= 2:
                 break
@@ -254,7 +256,9 @@ class TestDistributedMode:
     def d_limiter(self):
         # Clean up any leftover slots from previous test runs
         import os
+
         import psycopg
+
         conn_str = os.environ.get("BASTION_CONN", "")
         if conn_str:
             conn = psycopg.connect(conn_str)
@@ -323,8 +327,7 @@ class TestDistributedMode:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE agent_limiter SET acquired_at = NOW() - INTERVAL '2 seconds' "
-                    "WHERE slot_id = %s",
+                    "UPDATE agent_limiter SET acquired_at = NOW() - INTERVAL '2 seconds' WHERE slot_id = %s",
                     (slot_id,),
                 )
             conn.commit()
@@ -383,8 +386,7 @@ class TestDistributedMode:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE agent_limiter SET instance_id = NULL, acquired_at = NULL "
-                    "WHERE slot_id = %s",
+                    "UPDATE agent_limiter SET instance_id = NULL, acquired_at = NULL WHERE slot_id = %s",
                     (slot_id,),
                 )
                 assert cur.rowcount == 1

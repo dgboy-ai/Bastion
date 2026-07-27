@@ -6,9 +6,9 @@ retrieval system achieves high recall. This is the evidence behind our
 
 Run with: pytest tests/test_recall_benchmark.py -v
 """
+
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime
 
 from bastion.retrieval import MultiSignalRetriever
@@ -16,16 +16,20 @@ from bastion.retrieval import MultiSignalRetriever
 
 def _mem(content: str, memory_id: str = "m1", importance: float = 5.0, metadata: dict | None = None):
     """Create a fake memory record for testing."""
-    return type("M", (), {
-        "memory_id": memory_id,
-        "content": content,
-        "importance_score": importance,
-        "is_pinned": False,
-        "memory_type": "fact",
-        "created_at": datetime.now(UTC),
-        "access_count": 0,
-        "metadata": metadata or {},
-    })()
+    return type(
+        "M",
+        (),
+        {
+            "memory_id": memory_id,
+            "content": content,
+            "importance_score": importance,
+            "is_pinned": False,
+            "memory_type": "fact",
+            "created_at": datetime.now(UTC),
+            "access_count": 0,
+            "metadata": metadata or {},
+        },
+    )()
 
 
 class FakeEngine:
@@ -73,16 +77,13 @@ class TestRecallBenchmark:
 
     def setup_method(self):
         self.engine = FakeEngine()
-        self.engine._memories = [
-            _mem(content, memory_id=mid, importance=imp)
-            for mid, content, imp in TEST_MEMORIES
-        ]
+        self.engine._memories = [_mem(content, memory_id=mid, importance=imp) for mid, content, imp in TEST_MEMORIES]
         self.retriever = MultiSignalRetriever(self.engine)
 
     def test_recall_at_5_is_high(self):
         """Multi-signal retrieval should find the correct memory in top-5."""
         correct = 0
-        for query, expected_id, signal_type in TEST_QUERIES:
+        for query, expected_id, _signal_type in TEST_QUERIES:
             results = self.retriever.search(query, k=5)
             retrieved_ids = [r.memory.memory_id for r in results]
             if expected_id in retrieved_ids:
@@ -131,12 +132,10 @@ class TestRecallBenchmark:
 
     def test_all_memories_searchable(self):
         """Every memory in the dataset should be findable with the right query."""
-        for mid, content, imp in TEST_MEMORIES:
+        for mid, content, _imp in TEST_MEMORIES:
             # Use first few words as query
             query = " ".join(content.split()[:4])
             results = self.retriever.search(query, k=10)
             retrieved_ids = [r.memory.memory_id for r in results]
             # The memory should appear somewhere in the results
-            assert mid in retrieved_ids, (
-                f"Memory {mid} ('{content[:50]}...') not found with query '{query}'"
-            )
+            assert mid in retrieved_ids, f"Memory {mid} ('{content[:50]}...') not found with query '{query}'"

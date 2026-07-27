@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bastion.groq_callback import groq_chat, groq_merge, groq_query, _get_client, _client, _client_lock
+from bastion.groq_callback import _get_client, groq_chat, groq_merge, groq_query
 from bastion.models import MemoryRecord
 
 
@@ -15,6 +15,7 @@ class TestGroqChat:
     def test_returns_response(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mod._client = None  # Reset cached client
 
             mock_client = MagicMock()
@@ -29,6 +30,7 @@ class TestGroqChat:
     def test_returns_context_in_prompt(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_resp = MagicMock()
             mock_resp.choices = [MagicMock(message=MagicMock(content="Response"))]
@@ -47,6 +49,7 @@ class TestGroqChat:
     def test_fallback_on_error(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_client.chat.completions.create.side_effect = RuntimeError("API down")
 
@@ -60,6 +63,7 @@ class TestGroqMerge:
     def test_merges_contents(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_resp = MagicMock()
             mock_resp.choices = [MagicMock(message=MagicMock(content="Merged fact"))]
@@ -72,6 +76,7 @@ class TestGroqMerge:
     def test_fallback_returns_first(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_client.chat.completions.create.side_effect = RuntimeError("fail")
 
@@ -82,6 +87,7 @@ class TestGroqMerge:
     def test_fallback_empty_returns_key(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_client.chat.completions.create.side_effect = RuntimeError("fail")
 
@@ -94,6 +100,7 @@ class TestGroqQuery:
     def test_returns_response(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_resp = MagicMock()
             mock_resp.choices = [MagicMock(message=MagicMock(content="Answer"))]
@@ -106,6 +113,7 @@ class TestGroqQuery:
     def test_fallback_on_error(self):
         with patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False):
             import bastion.groq_callback as mod
+
             mock_client = MagicMock()
             mock_client.chat.completions.create.side_effect = RuntimeError("fail")
 
@@ -119,6 +127,7 @@ class TestGetClient:
     def test_raises_without_api_key(self):
         with patch.dict(os.environ, {}, clear=True):
             import bastion.groq_callback as mod
+
             mod._client = None
             with pytest.raises(RuntimeError, match="GROQ_API_KEY"):
                 _get_client()

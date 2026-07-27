@@ -1,19 +1,30 @@
 """Tests for Session Memory, Context Budget, and Agent Schema."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime
 
-from bastion.session_memory import SessionMemory, SessionEntry
 from bastion.context_budget import ContextBudgetManager, PackResult, _estimate_tokens
+from bastion.session_memory import SessionMemory
 
 
-def _mem(content: str, memory_id: str = "m1", importance: float = 5.0, is_pinned: bool = False, memory_type: str = "fact"):
-    return type("M", (), {
-        "memory_id": memory_id, "content": content, "importance_score": importance,
-        "is_pinned": is_pinned, "memory_type": memory_type,
-        "created_at": datetime.now(UTC), "access_count": 0, "metadata": {},
-    })()
+def _mem(
+    content: str, memory_id: str = "m1", importance: float = 5.0, is_pinned: bool = False, memory_type: str = "fact"
+):
+    return type(
+        "M",
+        (),
+        {
+            "memory_id": memory_id,
+            "content": content,
+            "importance_score": importance,
+            "is_pinned": is_pinned,
+            "memory_type": memory_type,
+            "created_at": datetime.now(UTC),
+            "access_count": 0,
+            "metadata": {},
+        },
+    )()
 
 
 class FakeEngine:

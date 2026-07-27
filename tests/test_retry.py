@@ -177,16 +177,19 @@ class TestSerializationRetryEngine:
 
 
 class TestIsSerializationError:
-    @pytest.mark.parametrize("msg,expected", [
-        ("40001: serialization failure", True),
-        ("the query experienced a 40001 error", True),
-        ("Serialization failure occurred", True),
-        ("restart transaction: write conflict", True),
-        ("RESTART TRANSACTION", True),
-        ("something else entirely", False),
-        ("", False),
-        ("42", False),
-    ])
+    @pytest.mark.parametrize(
+        "msg,expected",
+        [
+            ("40001: serialization failure", True),
+            ("the query experienced a 40001 error", True),
+            ("Serialization failure occurred", True),
+            ("restart transaction: write conflict", True),
+            ("RESTART TRANSACTION", True),
+            ("something else entirely", False),
+            ("", False),
+            ("42", False),
+        ],
+    )
     def test_detect_serialization_error(self, msg, expected):
         assert _is_serialization_error(Exception(msg)) is expected
 
@@ -207,7 +210,10 @@ class TestIsSerializationError:
 
     def test_constructor_custom_values(self):
         engine = SerializationRetryEngine(
-            max_retries=3, base_delay_ms=50, max_delay_ms=1000, jitter_factor=0.1,
+            max_retries=3,
+            base_delay_ms=50,
+            max_delay_ms=1000,
+            jitter_factor=0.1,
         )
         assert engine.max_retries == 3
         assert engine.base_delay_ms == 50

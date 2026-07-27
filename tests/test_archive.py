@@ -1,4 +1,5 @@
 """Tests for bastion.archive module."""
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,8 @@ class TestMemoryArchiver:
         from bastion.archive import MemoryArchiver
 
         archiver = MemoryArchiver()
-        with patch.dict("sys.modules", {"boto3": None}):
-            with pytest.raises(ImportError, match="boto3 is required"):
-                archiver._get_client()
+        with patch.dict("sys.modules", {"boto3": None}), pytest.raises(ImportError, match="boto3 is required"):
+            archiver._get_client()
 
     def test_archive_memories(self):
         from bastion.archive import MemoryArchiver
@@ -72,7 +72,11 @@ class TestMemoryArchiver:
         mock_client = MagicMock()
         mock_client.list_objects_v2.return_value = {
             "Contents": [
-                {"Key": "memories/test-agent/archive-1.json", "Size": 1024, "LastModified": MagicMock(isoformat=MagicMock(return_value="2026-01-01T00:00:00"))},
+                {
+                    "Key": "memories/test-agent/archive-1.json",
+                    "Size": 1024,
+                    "LastModified": MagicMock(isoformat=MagicMock(return_value="2026-01-01T00:00:00")),
+                },
             ]
         }
 

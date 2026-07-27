@@ -31,6 +31,7 @@ import uuid
 from typing import Any
 
 import anyio
+from dotenv import load_dotenv
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
@@ -46,11 +47,19 @@ from bastion.pool import ConnectionPool
 from bastion.provenance import compute_provenance
 from bastion.spend_manager import SpendManager
 
+load_dotenv()  # loads .env.local or .env
+
 # Hard caps for production safety
 MAX_K = 100
 MAX_STORE_BYTES = 100_000
 _MAX_CONTENT_LENGTH = 100_000
 
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,
+    force=True,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("bastion-mcp")
 
 
@@ -206,16 +215,33 @@ def create_server(
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
+    # Pre-warm local embedding model in background thread (eliminates 28s cold start)
+    if not is_mock:
+
+        def _prewarm_model() -> None:
+            try:
+                from sentence_transformers import SentenceTransformer
+
+                SentenceTransformer("all-MiniLM-L6-v2")
+                logger.info("Local embedding model pre-warmed (cold start eliminated)")
+            except ImportError:
+                pass
+            except Exception as exc:
+                logger.debug("Embedding pre-warm skipped (non-critical): %s", exc)
+
+        t = threading.Thread(target=_prewarm_model, daemon=True)
+        t.start()
+        logger.info("Background embedding pre-warm started")
+
     # Store shared memory globally for health check routes (thread-safe)
     global _SHARED_MEMORY, _SHARED_POOL
     with _INIT_LOCK:
         _SHARED_MEMORY = _shared
 
-    if (stateless or multi_tenant) and not is_mock:
-        if _SHARED_POOL is None:
-            with _INIT_LOCK:
-                if _SHARED_POOL is None:
-                    _SHARED_POOL = _shared.get_pool()
+    if (stateless or multi_tenant) and not is_mock and _SHARED_POOL is None:
+        with _INIT_LOCK:
+            if _SHARED_POOL is None:
+                _SHARED_POOL = _shared.get_pool()
 
     def _safe_client_id(ctx: Context | None = None) -> str:
         """Get client_id from context, returning 'mcp-agent' if unavailable."""
@@ -243,7 +269,7 @@ def create_server(
                 conn_obj = pool.acquire(timeout=5.0)
                 try:
                     with conn_obj.cursor() as cur:
-                        safe_name = ''.join(c for c in agent_id[:32] if c.isalnum() or c in '-_')
+                        safe_name = "".join(c for c in agent_id[:32] if c.isalnum() or c in "-_")
                         cur.execute("SET application_name = %s", (f"mcp-{safe_name}",))
                 finally:
                     pool.release(conn_obj)
@@ -255,6 +281,7 @@ def create_server(
 
     # Ed25519 signer for Agent Card signing
     from bastion.a2a_signing import AgentCardSigner
+
     _mcp_card_signer = AgentCardSigner.from_env("BASTION_A2A_PRIVATE_KEY")
 
     kwargs: dict[str, Any] = dict(
@@ -266,6 +293,7 @@ def create_server(
         ),
         debug=False,
         log_level="INFO",
+        json_response=True,
         stateless_http=False,
     )
 
@@ -387,6 +415,7 @@ def create_server(
                 "tools_available": [
                     "memory_search",
                     "memory_store",
+                    "memory_store_batch",
                     "memory_timetravel",
                     "memory_audit",
                     "memory_heal",
@@ -517,8 +546,13 @@ def create_server(
         spend = _get_spend_manager()
         check = spend.check_and_increment(agent_id, "search", 1)
         if not check["allowed"]:
-            return json.dumps({"error": f"Search budget exhausted: {check['reason']}",
-                               "remaining": check["remaining"], "suspended": check["suspended"]})
+            return json.dumps(
+                {
+                    "error": f"Search budget exhausted: {check['reason']}",
+                    "remaining": check["remaining"],
+                    "suspended": check["suspended"],
+                }
+            )
         # Use lower default threshold for mock mode (mock embeddings are less discriminative)
         if threshold is None:
             threshold = 0.3 if mem.is_mock else 0.8
@@ -587,10 +621,28 @@ def create_server(
         source_url: str | None = None,
     ) -> str:
         valid_types = {
-            "fact", "task", "preference", "learned", "procedure", "session", "instruction",
-            "episodic", "semantic", "procedural", "system_event", "security",
-            "thought_node", "saga", "conversation", "user_message", "agent_response",
-            "error_log", "checkpoint", "observation", "contradiction", "dream",
+            "fact",
+            "task",
+            "preference",
+            "learned",
+            "procedure",
+            "session",
+            "instruction",
+            "episodic",
+            "semantic",
+            "procedural",
+            "system_event",
+            "security",
+            "thought_node",
+            "saga",
+            "conversation",
+            "user_message",
+            "agent_response",
+            "error_log",
+            "checkpoint",
+            "observation",
+            "contradiction",
+            "dream",
         }
         if memory_type not in valid_types:
             return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {sorted(valid_types)}"})
@@ -603,8 +655,13 @@ def create_server(
         spend = _get_spend_manager()
         check = spend.check_and_increment(agent_id, "store", 1)
         if not check["allowed"]:
-            return json.dumps({"error": f"Store budget exhausted: {check['reason']}",
-                               "remaining": check["remaining"], "suspended": check["suspended"]})
+            return json.dumps(
+                {
+                    "error": f"Store budget exhausted: {check['reason']}",
+                    "remaining": check["remaining"],
+                    "suspended": check["suspended"],
+                }
+            )
 
         mem = _resolve_memory(ctx)
         meta = dict(metadata or {})
@@ -648,6 +705,104 @@ def create_server(
         return json.dumps(record.to_dict(), indent=2, default=str)
 
     @mcp.tool(
+        name="memory_store_batch",
+        title="Batch Store Memories",
+        description=(
+            "Atomically store multiple memories within a single SERIALIZABLE "
+            "transaction. Each memory must have at least 'content' and 'memory_type'. "
+            "Batch size limited to 100. Reduces round-trips vs. calling memory_store "
+            "repeatedly."
+        ),
+        annotations=ToolAnnotations(
+            title="Batch Store Memories",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def memory_store_batch(
+        ctx: Context,
+        memories: list[dict[str, Any]],
+    ) -> str:
+        if not memories:
+            return json.dumps({"error": "memories list is required"})
+        if len(memories) > 100:
+            return json.dumps({"error": "Batch size limited to 100 memories"})
+        for i, entry in enumerate(memories):
+            if not isinstance(entry, dict):
+                return json.dumps({"error": f"memories[{i}] must be a dict"})
+            content = entry.get("content", "")
+            if not content or not content.strip():
+                return json.dumps({"error": f"memories[{i}].content must be a non-empty string"})
+            if len(content.encode("utf-8")) > MAX_STORE_BYTES:
+                return json.dumps({"error": f"memories[{i}] content exceeds maximum size of {MAX_STORE_BYTES} bytes"})
+            memory_type = entry.get("memory_type", "fact")
+            valid_types = {
+                "fact",
+                "task",
+                "preference",
+                "learned",
+                "procedure",
+                "session",
+                "instruction",
+                "episodic",
+                "semantic",
+                "procedural",
+                "system_event",
+                "security",
+                "thought_node",
+                "saga",
+                "conversation",
+                "user_message",
+                "agent_response",
+                "error_log",
+                "checkpoint",
+                "observation",
+                "contradiction",
+                "dream",
+            }
+            if memory_type not in valid_types:
+                return json.dumps({"error": f"memories[{i}] invalid memory_type: {memory_type}"})
+
+        agent_id = _safe_client_id(ctx)
+        spend = _get_spend_manager()
+        check = spend.check_and_increment(agent_id, "store_batch", len(memories))
+        if not check["allowed"]:
+            return json.dumps(
+                {
+                    "error": f"Batch store budget exhausted: {check['reason']}",
+                    "remaining": check["remaining"],
+                    "suspended": check["suspended"],
+                }
+            )
+
+        mem = _resolve_memory(ctx)
+        try:
+            records = await anyio.to_thread.run_sync(mem.store_batch, memories)
+            await _notify_resource_updated(ctx, "bastion://stats")
+            return json.dumps(
+                {"stored": len(records), "records": [r.to_dict() for r in records]},
+                indent=2,
+                default=str,
+            )
+        except SecurityBlockError as exc:
+            logger.warning("Batch store blocked by guard: %s", exc)
+            report = getattr(exc, "report", None)
+            result = {"error": "security_block", "detail": "Content blocked by security guard", "is_safe": False}
+            if report:
+                result["findings"] = [
+                    {"detector": f.detector, "threat_type": f.threat_type, "severity": f.severity, "detail": f.detail}
+                    for f in report.findings
+                ]
+                result["trust_score"] = report.trust_score
+                result["poisoning_risk"] = report.poisoning_risk
+            return json.dumps(result, indent=2)
+        except Exception:
+            logger.exception("memory_store_batch failed")
+            return json.dumps({"error": "Batch store failed — check server logs"})
+
+    @mcp.tool(
         name="memory_timetravel",
         title="Time Travel Query",
         description=("Query agent memory state at any past timestamp using CockroachDB's AS OF SYSTEM TIME."),
@@ -671,13 +826,19 @@ def create_server(
             agent_id = _safe_client_id(ctx)
         # Validate timestamp format (ISO 8601 or relative like "5 minutes ago")
         import re
+
         ts = timestamp.strip()
         if len(ts) > 100:
             return json.dumps({"error": "timestamp too long (max 100 chars)"})
         valid_iso = bool(re.match(r"\d{4}-\d{2}-\d{2}", ts))
         valid_relative = bool(re.match(r"\d+\s+\w+\s+ago|now|just now", ts, re.I))
         if not valid_iso and not valid_relative:
-            return json.dumps({"error": "Invalid timestamp format. Use ISO 8601 (2026-01-01T00:00:00Z) or relative (5 minutes ago, now)"})
+            return json.dumps(
+                {
+                    "error": "Invalid timestamp format. Use ISO 8601 (2026-01-01T00:00:00Z) "
+                    "or relative (5 minutes ago, now)",
+                }
+            )
         mem = _resolve_memory(ctx)
         try:
             results = await anyio.to_thread.run_sync(
@@ -804,7 +965,11 @@ def create_server(
         mem = _resolve_memory(ctx)
         try:
             record = await anyio.to_thread.run_sync(
-                mem.pin, memory_type, content, pin_priority, metadata,
+                mem.pin,
+                memory_type,
+                content,
+                pin_priority,
+                metadata,
             )
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(record.to_dict(), indent=2, default=str)
@@ -844,7 +1009,8 @@ def create_server(
         title="List Agent Memories",
         description=(
             "List all memories for the current agent. Supports filtering by type "
-            "and pagination. User-facing governance tool."
+            "and cursor-based pagination. User-facing governance tool. "
+            "Returns next_cursor for fetching the next page."
         ),
         annotations=ToolAnnotations(
             title="List Agent Memories",
@@ -858,17 +1024,41 @@ def create_server(
         ctx: Context,
         memory_type: str | None = None,
         limit: int = 50,
-        offset: int = 0,
+        cursor: str | None = None,
     ) -> str:
         # Bounds checking — reduced max to prevent large payloads
         if limit < 1 or limit > 200:
             return json.dumps({"error": "limit must be between 1 and 200"})
-        if offset < 0:
-            return json.dumps({"error": "offset must be >= 0"})
+        if cursor is not None:
+            try:
+                import base64
+
+                decoded = base64.b64decode(cursor).decode("ascii")
+                if not decoded or len(decoded) > 64:
+                    return json.dumps({"error": "invalid cursor"})
+            except Exception:
+                return json.dumps({"error": "cursor must be base64-encoded"})
         mem = _resolve_memory(ctx)
         try:
-            results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, limit, offset)
-            return json.dumps([r.to_dict() for r in results], indent=2, default=str)
+            fetch_limit = limit + 1
+            results = await anyio.to_thread.run_sync(mem.list_memories, memory_type, fetch_limit, cursor)
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]
+            next_cursor = None
+            if has_more and results:
+                import base64
+
+                last_created = results[-1].created_at
+                if hasattr(last_created, "isoformat"):
+                    next_cursor = base64.b64encode(last_created.isoformat().encode()).decode()
+                else:
+                    next_cursor = base64.b64encode(str(last_created).encode()).decode()
+            return json.dumps(
+                {"results": [r.to_dict() for r in results], "next_cursor": next_cursor},
+                indent=2,
+                default=str,
+            )
         except Exception:
             logger.exception("memory_list failed")
             return json.dumps({"error": "List failed — check server logs"})
@@ -876,10 +1066,7 @@ def create_server(
     @mcp.tool(
         name="memory_correct",
         title="Correct Memory Content",
-        description=(
-            "Update a memory's content. User-facing governance tool for "
-            "correcting stored information."
-        ),
+        description=("Update a memory's content. User-facing governance tool for correcting stored information."),
         annotations=ToolAnnotations(
             title="Correct Memory Content",
             readOnlyHint=False,
@@ -1057,19 +1244,29 @@ def create_server(
         try:
             gateway = LTMMemoryGateway(mem, reuse_threshold=threshold)
             result = await anyio.to_thread.run_sync(
-                gateway.check_reuse, query, threshold, analysis_type,
+                gateway.check_reuse,
+                query,
+                threshold,
+                analysis_type,
             )
             if result is None:
-                return json.dumps({
-                    "reuse_found": False,
-                    "query": query[:200],
-                    "threshold": threshold,
-                    "recommendation": "run_workflow",
-                }, indent=2)
-            return json.dumps({
-                "reuse_found": True,
-                **result.to_dict(),
-            }, indent=2, default=str)
+                return json.dumps(
+                    {
+                        "reuse_found": False,
+                        "query": query[:200],
+                        "threshold": threshold,
+                        "recommendation": "run_workflow",
+                    },
+                    indent=2,
+                )
+            return json.dumps(
+                {
+                    "reuse_found": True,
+                    **result.to_dict(),
+                },
+                indent=2,
+                default=str,
+            )
         except Exception:
             logger.exception("ltm_check_reuse failed")
             return json.dumps({"error": "LTM check failed — check server logs"})
@@ -1113,7 +1310,12 @@ def create_server(
         try:
             gateway = LTMMemoryGateway(mem)
             store_result = await anyio.to_thread.run_sync(
-                gateway.store_analysis, query, result, analysis_type, metadata, tokens_used,
+                gateway.store_analysis,
+                query,
+                result,
+                analysis_type,
+                metadata,
+                tokens_used,
             )
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(store_result.to_dict(), indent=2, default=str)
@@ -1360,7 +1562,11 @@ def create_server(
             mem = _resolve_memory(ctx)
             retriever = MultiSignalRetriever(mem)
             results = await anyio.to_thread.run_sync(
-                retriever.search, query, k, threshold, memory_type,
+                retriever.search,
+                query,
+                k,
+                threshold,
+                memory_type,
             )
             return json.dumps(
                 {
@@ -1405,7 +1611,9 @@ def create_server(
         try:
             packer = ContextBudgetManager(mem)
             result = await anyio.to_thread.run_sync(
-                packer.pack, budget_tokens, query,
+                packer.pack,
+                budget_tokens,
+                query,
             )
             return json.dumps(result.to_dict(), indent=2, default=str)
         except Exception:
@@ -1483,10 +1691,7 @@ def create_server(
                 else:
                     schema = {"table": table, "columns": table_info["columns"]}
             else:
-                tables_dict = {
-                    name: {"columns": [c["name"] for c in t["columns"]]}
-                    for name, t in mock_tables.items()
-                }
+                tables_dict = {name: {"columns": [c["name"] for c in t["columns"]]} for name, t in mock_tables.items()}
                 schema = {"tables": tables_dict}
         else:
             try:
@@ -1502,10 +1707,10 @@ def create_server(
                                 (table,),
                             )
                             rows = cur.fetchall()
-                            schema = {"table": table, "columns": [
-                                {"name": r[0], "type": r[1], "nullable": r[2] == "YES"}
-                                for r in rows
-                            ]}
+                            schema = {
+                                "table": table,
+                                "columns": [{"name": r[0], "type": r[1], "nullable": r[2] == "YES"} for r in rows],
+                            }
                         else:
                             cur.execute(
                                 "SELECT table_name FROM information_schema.tables "
@@ -1560,6 +1765,7 @@ def create_server(
         from urllib.parse import urlparse
 
         import httpx
+
         try:
             parsed = urlparse(a2a_url)
             if parsed.scheme not in ("http", "https"):
@@ -1572,11 +1778,18 @@ def create_server(
                 return json.dumps({"error": "Internal/private URLs are blocked (SSRF protection)"})
             # Resolve DNS and check resolved IPs (prevents rebinding attacks)
             import socket
+
             try:
                 resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
                 for _, _, _, _, sockaddr in resolved:
                     resolved_ip = ipaddress.ip_address(sockaddr[0])
-                    if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved or resolved_ip.is_multicast:
+                    if (
+                        resolved_ip.is_private
+                        or resolved_ip.is_loopback
+                        or resolved_ip.is_link_local
+                        or resolved_ip.is_reserved
+                        or resolved_ip.is_multicast
+                    ):
                         return json.dumps({"error": "Private/internal IP addresses are blocked (SSRF protection)"})
             except (socket.gaierror, OSError):
                 return json.dumps({"error": "DNS resolution failed — URL blocked"})
@@ -1613,17 +1826,25 @@ def create_server(
                 artifacts = result.get("artifacts", [])
                 if artifacts:
                     text = artifacts[0]["parts"][0]["text"]
-                    return json.dumps({
+                    return json.dumps(
+                        {
+                            "status": status,
+                            "task_id": result.get("id"),
+                            "result": json.loads(text) if text else None,
+                            "bridge": {"from": "mcp", "to": a2a_url, "skill": skill},
+                        },
+                        indent=2,
+                        default=str,
+                    )
+                return json.dumps(
+                    {
                         "status": status,
                         "task_id": result.get("id"),
-                        "result": json.loads(text) if text else None,
                         "bridge": {"from": "mcp", "to": a2a_url, "skill": skill},
-                    }, indent=2, default=str)
-                return json.dumps({
-                    "status": status,
-                    "task_id": result.get("id"),
-                    "bridge": {"from": "mcp", "to": a2a_url, "skill": skill},
-                }, indent=2, default=str)
+                    },
+                    indent=2,
+                    default=str,
+                )
         except httpx.TimeoutException:
             return json.dumps({"error": f"A2A bridge timeout after {timeout_seconds}s", "source": "a2a_bridge"})
         except Exception:
@@ -1645,6 +1866,11 @@ def create_server(
             {
                 "name": "memory_store",
                 "description": "SHA-256 hash-chained memory storage with AWS Bedrock Titan V2 embeddings",
+                "read_only": False,
+            },
+            {
+                "name": "memory_store_batch",
+                "description": "Atomically batch store up to 100 memories in a single SERIALIZABLE transaction",
                 "read_only": False,
             },
             {
@@ -1840,30 +2066,60 @@ def create_server(
 
     # ── Custom HTTP routes (healthz, metrics) ─────────────────────────────
 
+    def _err(code: str, msg: str, status: int = 400) -> dict:
+        return {"jsonrpc": "2.0", "id": "server-error", "error": {"code": code, "message": msg, "http_status": status}}
+
     @mcp.custom_route("/healthz", methods=["GET"])
     async def healthz_route(request: Any) -> Any:
         from starlette.responses import JSONResponse
 
-        # Count registered tools dynamically
         tool_count = len(mcp._tool_manager._tools) if hasattr(mcp, "_tool_manager") else 0
+        db_ok = False
+        db_error = None
+        try:
+            mem = _get_shared_memory()
+            pool = mem.get_pool()
+            conn = pool.acquire(timeout=5.0)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    db_ok = cur.fetchone() is not None
+            finally:
+                pool.release(conn)
+        except Exception as e:
+            db_error = str(e)[:200]
+
         return JSONResponse(
             {
-                "status": "ok",
+                "status": "ok" if db_ok else "degraded",
                 "service": "bastion-mcp",
                 "version": VERSION,
                 "tools": tool_count,
-            }
+                "database": {"connected": db_ok, "error": db_error},
+            },
+            status_code=200 if db_ok else 503,
         )
 
     @mcp.custom_route("/readyz", methods=["GET"])
     async def readyz_route(request: Any) -> Any:
         from starlette.responses import JSONResponse
 
-        mem = _get_shared_memory()
-        connected = await anyio.to_thread.run_sync(lambda: mem.is_connected)
-        if connected:
-            return JSONResponse({"status": "ok"})
-        return JSONResponse({"status": "not ready"}, status_code=503)
+        try:
+            mem = _get_shared_memory()
+            pool = mem.get_pool()
+            conn = pool.acquire(timeout=5.0)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    if cur.fetchone() is None:
+                        return JSONResponse(
+                            {"status": "not ready", "reason": "DB query returned no rows"}, status_code=503
+                        )
+            finally:
+                pool.release(conn)
+            return JSONResponse({"status": "ok", "database": "connected"})
+        except Exception as e:
+            return JSONResponse({"status": "not ready", "reason": str(e)[:200]}, status_code=503)
 
     @mcp.custom_route("/metrics", methods=["GET"])
     async def metrics_route(request: Any) -> Any:
@@ -1882,7 +2138,9 @@ def create_server(
         for (method, path, status), count in sorted(_metrics_requests_total.items()):
             lines.append(f'bastion_mcp_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}')
         lines.append("")
-        lines.append("# HELP bastion_mcp_request_duration_seconds Request duration percentiles (sampled last 500 per path)")
+        lines.append(
+            "# HELP bastion_mcp_request_duration_seconds Request duration percentiles (sampled last 500 per path)"
+        )
         lines.append("# TYPE bastion_mcp_request_duration_seconds summary")
         for (method, path), durations in sorted(_metrics_durations.items()):
             if not durations:
@@ -1891,8 +2149,14 @@ def create_server(
             n = len(dur_sorted)
             for p, label in [(50, "0.5"), (90, "0.9"), (95, "0.95"), (99, "0.99")]:
                 idx = min(int(n * p / 100), n - 1)
-                lines.append(f'bastion_mcp_request_duration_seconds{{method="{method}",path="{path}",quantile="{label}"}} {dur_sorted[idx]:.6f}')
-            lines.append(f'bastion_mcp_request_duration_seconds_sum{{method="{method}",path="{path}"}} {sum(durations):.6f}')
+                _val = dur_sorted[idx]
+                lines.append(
+                    f"bastion_mcp_request_duration_seconds"
+                    f'{{method="{method}",path="{path}",quantile="{label}"}} {_val:.6f}'
+                )
+            lines.append(
+                f'bastion_mcp_request_duration_seconds_sum{{method="{method}",path="{path}"}} {sum(durations):.6f}'
+            )
             lines.append(f'bastion_mcp_request_duration_seconds_count{{method="{method}",path="{path}"}} {n}')
         lines.append("")
         lines.append("# HELP bastion_mcp_rate_limit_hits_total Total rate-limited requests")
@@ -2004,20 +2268,22 @@ def create_server(
             if hasattr(mcp, "_auth_server_provider") and mcp._auth_server_provider:
                 provider = mcp._auth_server_provider
 
-            if provider and hasattr(provider, "is_token_revoked"):
-                if await provider.is_token_revoked(token_value):
-                    return JSONResponse({"active": False})
+            if provider and hasattr(provider, "is_token_revoked") and await provider.is_token_revoked(token_value):
+                return JSONResponse({"active": False})
             if provider and hasattr(provider, "load_access_token"):
                 token_obj = await provider.load_access_token(token_value)
                 if token_obj:
                     from bastion.auth_provider import resolve_role_from_scopes
-                    return JSONResponse({
-                        "active": True,
-                        "scope": " ".join(token_obj.scopes or []),
-                        "client_id": token_obj.client_id,
-                        "role": resolve_role_from_scopes(token_obj.scopes),
-                        "expires_in": (token_obj.expires_at - int(time.time())) if token_obj.expires_at else None,
-                    })
+
+                    return JSONResponse(
+                        {
+                            "active": True,
+                            "scope": " ".join(token_obj.scopes or []),
+                            "client_id": token_obj.client_id,
+                            "role": resolve_role_from_scopes(token_obj.scopes),
+                            "expires_in": (token_obj.expires_at - int(time.time())) if token_obj.expires_at else None,
+                        }
+                    )
 
             return JSONResponse({"active": False})
         except Exception:
@@ -2032,6 +2298,7 @@ def create_server(
         tool_defs = {
             "memory_search": "Search agent memories using C-SPANN vector similarity search",
             "memory_store": "Store a memory with automatic SHA-256 hash chain integrity",
+            "memory_store_batch": "Batch store up to 100 memories atomically",
             "memory_timetravel": "Query agent memory state at any past timestamp",
             "memory_audit": "Retrieve the append-only hash-chain audit log",
             "memory_heal": "CDC-triggered self-healing",
@@ -2088,13 +2355,14 @@ def _make_http_app(mcp: FastMCP) -> Any:
     skip_paths = frozenset(
         {
             "/healthz",
+            "/readyz",
             "/.well-known/mcp-server.json",
             "/.well-known/agent-card.json",
         }
     )
 
-    _MAX_REQUEST_BYTES = 1_048_576  # 1MB limit for MCP requests
-    _REQUEST_TIMEOUT_SECONDS = int(os.environ.get("BASTION_MCP_TIMEOUT", "60"))
+    _max_request_bytes = 1_048_576  # 1MB limit for MCP requests
+    _request_timeout_seconds = int(os.environ.get("BASTION_MCP_TIMEOUT", "60"))
 
     # Brute-force protection state
     _brute_cache: dict[str, tuple[int, float, float | None]] = {}
@@ -2170,7 +2438,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
                         {"error": "Invalid Content-Length header"},
                         status_code=400,
                     )
-                if cl > _MAX_REQUEST_BYTES:
+                if cl > _max_request_bytes:
                     return JSONResponse(
                         {"error": "Request too large — maximum 1MB allowed"},
                         status_code=413,
@@ -2180,6 +2448,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
             if path.rstrip("/") in ("/token", "/mcp/token") and request.method == "POST":
                 try:
                     from bastion.auth_provider import store_pkce_verifier
+
                     form_data = dict(await request.form())
                     code_verifier = str(form_data.get("code_verifier", ""))
                     auth_code = str(form_data.get("code", ""))
@@ -2212,6 +2481,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
                             token_obj = await provider.load_access_token(token_val)
                             if token_obj:
                                 from bastion.auth_provider import resolve_role_from_scopes, role_has_scope
+
                                 role = resolve_role_from_scopes(token_obj.scopes)
                                 # Write operations require memory:write scope
                                 if request.method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -2221,12 +2491,11 @@ def _make_http_app(mcp: FastMCP) -> Any:
                                             status_code=403,
                                         )
                                 # Read operations require memory:read scope
-                                elif request.method == "GET":
-                                    if not role_has_scope(role, "memory:read"):
-                                        return JSONResponse(
-                                            {"error": "Insufficient permissions for read operations"},
-                                            status_code=403,
-                                        )
+                                elif request.method == "GET" and not role_has_scope(role, "memory:read"):
+                                    return JSONResponse(
+                                        {"error": "Insufficient permissions for read operations"},
+                                        status_code=403,
+                                    )
                         except Exception as exc:
                             logger.warning("RBAC token validation failed: %s", exc)
                             return JSONResponse(
@@ -2245,7 +2514,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
                 )
             _start_time = time.monotonic()
             try:
-                response = await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT_SECONDS)
+                response = await asyncio.wait_for(call_next(request), timeout=_request_timeout_seconds)
                 response.headers["X-Request-ID"] = request_id
                 _elapsed = time.monotonic() - _start_time
                 key = (request.method, path, response.status_code)

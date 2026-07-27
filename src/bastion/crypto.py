@@ -31,6 +31,7 @@ _WINDOWS = sys.platform == "win32"
 if _WINDOWS:
     try:
         import win32crypt as _win32crypt
+
         _HAS_DPAPI = True
     except ImportError:
         _HAS_DPAPI = False
@@ -67,7 +68,7 @@ def _unprotect_secret(data: bytes) -> bytes:
         return data
     if data.startswith(_DPAPI_HEADER):
         try:
-            _, plaintext = _win32crypt.CryptUnprotectData(data[len(_DPAPI_HEADER):], None, None, None)
+            _, plaintext = _win32crypt.CryptUnprotectData(data[len(_DPAPI_HEADER) :], None, None, None)
             return plaintext
         except Exception as exc:
             logger.error("DPAPI unprotect failed, reading raw: %s", exc)
@@ -77,7 +78,7 @@ def _unprotect_secret(data: bytes) -> bytes:
 
 def _get_hmac_secret() -> bytes:
     """Get or generate the HMAC secret key.
-    
+
     Persistence strategy:
     1. Use BASTION_HMAC_SECRET env var if set
     2. Load from ~/.bastion/hmac.key if it exists
@@ -110,7 +111,8 @@ def _get_hmac_secret() -> bytes:
                     # Wrong length — regenerate
                     logger.warning(
                         "HMAC secret from %s has wrong length (%d bytes, expected 32). Regenerating.",
-                        _SECRET_FILE, len(_hmac_secret),
+                        _SECRET_FILE,
+                        len(_hmac_secret),
                     )
             except Exception as exc:
                 logger.warning("Failed to load HMAC secret from disk: %s", exc)
@@ -132,14 +134,12 @@ def _get_hmac_secret() -> bytes:
                     logger.info("Generated and persisted HMAC secret to %s (DPAPI-encrypted)", _SECRET_FILE)
                 else:
                     logger.warning(
-                        "Generated and persisted HMAC secret to %s. "
-                        "Set BASTION_HMAC_SECRET env var for production.",
+                        "Generated and persisted HMAC secret to %s. Set BASTION_HMAC_SECRET env var for production.",
                         _SECRET_FILE,
                     )
             except Exception as exc:
                 logger.error(
-                    "Failed to persist HMAC secret to disk. "
-                    "Hash chains will break on restart. Error: %s",
+                    "Failed to persist HMAC secret to disk. Hash chains will break on restart. Error: %s",
                     exc,
                 )
         return _hmac_secret
@@ -147,13 +147,14 @@ def _get_hmac_secret() -> bytes:
 
 def compute_hash(content: str, metadata: dict | None = None, previous_hash: str | None = None) -> str:
     """Compute HMAC-SHA256 hash of content + metadata + previous_hash.
-    
+
     Uses server secret key to prevent forgery by attackers with DB write access.
     Fields are length-prefixed to prevent boundary ambiguity attacks.
     """
-    meta_str = "" if metadata is None else (
-        metadata if isinstance(metadata, str) else
-        __import__("json").dumps(metadata, sort_keys=True)
+    meta_str = (
+        ""
+        if metadata is None
+        else (metadata if isinstance(metadata, str) else __import__("json").dumps(metadata, sort_keys=True))
     )
     prev = previous_hash or ""
     # Length-prefix each field to prevent concatenation collision
@@ -161,9 +162,12 @@ def compute_hash(content: str, metadata: dict | None = None, previous_hash: str 
     meta_bytes = meta_str.encode("utf-8")
     prev_bytes = prev.encode("utf-8")
     payload = (
-        len(content_bytes).to_bytes(4, 'big') + content_bytes
-        + len(meta_bytes).to_bytes(4, 'big') + meta_bytes
-        + len(prev_bytes).to_bytes(4, 'big') + prev_bytes
+        len(content_bytes).to_bytes(4, "big")
+        + content_bytes
+        + len(meta_bytes).to_bytes(4, "big")
+        + meta_bytes
+        + len(prev_bytes).to_bytes(4, "big")
+        + prev_bytes
     )
     secret = _get_hmac_secret()
     return hmac.new(secret, payload, hashlib.sha256).hexdigest()

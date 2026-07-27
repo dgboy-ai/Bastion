@@ -25,6 +25,7 @@ Usage:
     print(f"Promoted {journal.memories_promoted} episodic → semantic")
     print(f"Pruned {journal.memories_pruned} low-value memories")
 """
+
 from __future__ import annotations
 
 import time
@@ -37,14 +38,15 @@ from bastion.log_setup import get_logger
 logger = get_logger(__name__)
 
 # Cognitive memory types
-EPISODIC = "episodic"   # What happened (events, experiences)
-SEMANTIC = "semantic"   # What is true (facts, knowledge)
+EPISODIC = "episodic"  # What happened (events, experiences)
+SEMANTIC = "semantic"  # What is true (facts, knowledge)
 PROCEDURAL = "procedural"  # How to do things (skills, rules)
 
 
 @dataclass
 class DreamJournal:
     """Record of what happened during a dreaming session."""
+
     agent_id: str
     started_at: str = ""
     completed_at: str = str(datetime.now(UTC))
@@ -80,6 +82,7 @@ class DreamJournal:
 @dataclass
 class ConsolidationCandidate:
     """A memory that might be worth consolidating."""
+
     memory_id: str
     content: str
     memory_type: str
@@ -159,30 +162,31 @@ class MemoryDreamer:
                 if candidate.recommendation == "merge":
                     self._merge_memories(candidate, agent_id)
                     journal.memories_consolidated += 1
-                    journal.consolidation_details.append({
-                        "action": "merge",
-                        "memory_id": candidate.memory_id,
-                        "similarity": round(candidate.similarity_to_others, 4),
-                    })
+                    journal.consolidation_details.append(
+                        {
+                            "action": "merge",
+                            "memory_id": candidate.memory_id,
+                            "similarity": round(candidate.similarity_to_others, 4),
+                        }
+                    )
 
             # Step 4: Promote high-value episodic → semantic
             for record in recent:
-                if (
-                    record.memory_type == EPISODIC
-                    and record.importance_score >= self._min_importance_for_promotion
-                ):
+                if record.memory_type == EPISODIC and record.importance_score >= self._min_importance_for_promotion:
                     self._promote_to_semantic(record, agent_id)
                     journal.memories_promoted += 1
                     lesson = self._extract_lesson(record)
                     if lesson:
                         journal.lessons_extracted.append(lesson)
-                    journal.consolidation_details.append({
-                        "action": "promote",
-                        "memory_id": record.memory_id,
-                        "from_type": EPISODIC,
-                        "to_type": SEMANTIC,
-                        "importance": record.importance_score,
-                    })
+                    journal.consolidation_details.append(
+                        {
+                            "action": "promote",
+                            "memory_id": record.memory_id,
+                            "from_type": EPISODIC,
+                            "to_type": SEMANTIC,
+                            "importance": record.importance_score,
+                        }
+                    )
 
             # Step 5: Prune low-value memories
             pruned = self._prune_low_value(agent_id)
@@ -223,7 +227,7 @@ class MemoryDreamer:
 
     def _fetch_recent_memories(self, agent_id: str) -> list[Any]:
         """Fetch memories created in the lookback window."""
-        if hasattr(self._memory, 'list_recent'):
+        if hasattr(self._memory, "list_recent"):
             return self._memory.list_recent(
                 hours=self._lookback_hours,
                 limit=self._max_memories_per_dream,
@@ -243,7 +247,8 @@ class MemoryDreamer:
         return recent
 
     def _find_consolidation_candidates(
-        self, memories: list[Any],
+        self,
+        memories: list[Any],
     ) -> list[ConsolidationCandidate]:
         """Find groups of similar memories that could be consolidated."""
         candidates = []
@@ -253,7 +258,7 @@ class MemoryDreamer:
 
         # Simple O(n^2) similarity check — fine for <200 memories
         for i, mem_a in enumerate(memories):
-            for mem_b in memories[i + 1:]:
+            for mem_b in memories[i + 1 :]:
                 # Quick text similarity check
                 words_a = set((mem_a.content or "").lower().split())
                 words_b = set((mem_b.content or "").lower().split())
@@ -271,16 +276,18 @@ class MemoryDreamer:
                         _primary, secondary = mem_b, mem_a
 
                     # Keep the more important one, mark the other for merge
-                    candidates.append(ConsolidationCandidate(
-                        memory_id=secondary.memory_id,
-                        content=secondary.content,
-                        memory_type=secondary.memory_type,
-                        importance=secondary.importance_score,
-                        access_count=secondary.access_count,
-                        created_at=secondary.created_at.isoformat() if secondary.created_at else "",
-                        similarity_to_others=jaccard,
-                        recommendation="merge",
-                    ))
+                    candidates.append(
+                        ConsolidationCandidate(
+                            memory_id=secondary.memory_id,
+                            content=secondary.content,
+                            memory_type=secondary.memory_type,
+                            importance=secondary.importance_score,
+                            access_count=secondary.access_count,
+                            created_at=secondary.created_at.isoformat() if secondary.created_at else "",
+                            similarity_to_others=jaccard,
+                            recommendation="merge",
+                        )
+                    )
 
         # Deduplicate by memory_id
         seen = set()
@@ -332,7 +339,8 @@ class MemoryDreamer:
                 "analysis_result": True,
                 "analysis_type": "consolidation",
             },
-            _skip_guard=True, _guard_bypass_token=True,  # Derived from already-validated memory
+            _skip_guard=True,
+            _guard_bypass_token=True,  # Derived from already-validated memory
         )
 
     def _extract_lesson(self, record: Any) -> str | None:
@@ -423,11 +431,7 @@ class MemoryDreamer:
             if created.tzinfo is None:
                 created = created.replace(tzinfo=UTC)
             age_days = (now - created).days
-            if (
-                age_days > 7
-                and mem.access_count <= self._prune_access_threshold
-                and mem.importance_score < 3.0
-            ):
+            if age_days > 7 and mem.access_count <= self._prune_access_threshold and mem.importance_score < 3.0:
                 self._memory._delete_by_id(mem.memory_id)
                 pruned += 1
 
@@ -440,9 +444,11 @@ class MemoryDreamer:
         dreams = []
         for entry in audit_entries:
             if entry.action == "dream_consolidation":
-                dreams.append({
-                    "audit_id": entry.audit_id,
-                    "recorded_at": entry.recorded_at.isoformat() if entry.recorded_at else "",
-                    "details": entry.details,
-                })
+                dreams.append(
+                    {
+                        "audit_id": entry.audit_id,
+                        "recorded_at": entry.recorded_at.isoformat() if entry.recorded_at else "",
+                        "details": entry.details,
+                    }
+                )
         return dreams

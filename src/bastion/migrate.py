@@ -49,13 +49,8 @@ def _ensure_migrations_table(conn) -> None:
 def _get_applied(conn) -> dict[str, dict]:
     """Return a dict of version -> {filename, applied_at, checksum} for applied migrations."""
     with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT version, filename, applied_at, checksum FROM {MIGRATIONS_TABLE} ORDER BY version"
-        )
-        return {
-            row[0]: {"filename": row[1], "applied_at": row[2], "checksum": row[3]}
-            for row in cur.fetchall()
-        }
+        cur.execute(f"SELECT version, filename, applied_at, checksum FROM {MIGRATIONS_TABLE} ORDER BY version")
+        return {row[0]: {"filename": row[1], "applied_at": row[2], "checksum": row[3]} for row in cur.fetchall()}
 
 
 def _discover_migrations(schema_dir: str) -> list[tuple[str, str, str]]:
@@ -113,8 +108,7 @@ def _apply_migration(conn, version: str, filepath: str, checksum: str) -> int:
     # Record the migration
     with conn.cursor() as cur:
         cur.execute(
-            f"INSERT INTO {MIGRATIONS_TABLE} (version, filename, checksum, execution_ms) "
-            "VALUES (%s, %s, %s, %s)",
+            f"INSERT INTO {MIGRATIONS_TABLE} (version, filename, checksum, execution_ms) VALUES (%s, %s, %s, %s)",
             (version, os.path.basename(filepath), checksum, elapsed_ms),
         )
     conn.commit()
@@ -127,7 +121,6 @@ def _rollback_migration(conn, version: str, schema_dir: str) -> bool:
     Looks for ``down_{version}_*.sql`` in the schema directory.
     Returns True if rollback succeeded, False if no down file found or error.
     """
-    import hashlib
 
     # Find the down migration file
     down_pattern = os.path.join(schema_dir, f"down_{version}_*.sql")
@@ -212,7 +205,8 @@ def rollback_migration(
         if later_versions:
             logger.warning(
                 "Rolling back %s but later migrations are applied: %s — this may cause errors",
-                version, later_versions,
+                version,
+                later_versions,
             )
 
         success = _rollback_migration(conn, version, schema_dir)
@@ -268,19 +262,18 @@ def rollback_all(
         }
 
         if dry_run:
-            result["would_rollback"] = [
-                {"version": v, "filename": applied[v]["filename"]}
-                for v in versions
-            ]
+            result["would_rollback"] = [{"version": v, "filename": applied[v]["filename"]} for v in versions]
             return result
 
         for version in versions:
             success = _rollback_migration(conn, version, schema_dir)
-            rollback_list.append({
-                "version": version,
-                "filename": applied[version]["filename"],
-                "status": "rolled_back" if success else "no_down_file",
-            })
+            rollback_list.append(
+                {
+                    "version": version,
+                    "filename": applied[version]["filename"],
+                    "status": "rolled_back" if success else "no_down_file",
+                }
+            )
 
         return result
     finally:
@@ -348,11 +341,13 @@ def run_migrations(
         for version, filepath, checksum in pending:
             logger.info("Applying migration %s: %s", version, os.path.basename(filepath))
             elapsed_ms = _apply_migration(conn, version, filepath, checksum)
-            result["applied"].append({
-                "version": version,
-                "filename": os.path.basename(filepath),
-                "execution_ms": elapsed_ms,
-            })
+            result["applied"].append(
+                {
+                    "version": version,
+                    "filename": os.path.basename(filepath),
+                    "execution_ms": elapsed_ms,
+                }
+            )
             logger.info("Applied migration %s in %dms", version, elapsed_ms)
 
         return result

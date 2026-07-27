@@ -48,7 +48,7 @@ def _mock_embed(text: str) -> list[float]:
         digest = hashlib.sha256(word.encode()).digest()
         # Use the hash to determine which dimensions to activate and by how much
         for i in range(0, min(32, len(digest)), 4):
-            idx = int.from_bytes(digest[i:i+4], "big") % 1024
+            idx = int.from_bytes(digest[i : i + 4], "big") % 1024
             # Use hash bytes to determine the activation value (0.5 to 1.5)
             val = 0.5 + (digest[i] / 255.0)
             raw[idx] += val
@@ -60,6 +60,7 @@ def _mock_embed(text: str) -> list[float]:
 
 def _compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
     from bastion.crypto import compute_hash
+
     return compute_hash(content, metadata, previous_hash)
 
 
@@ -109,14 +110,16 @@ def mock_store_memory(
         record_dict = record.to_dict()
         record_dict["region"] = region
         _agent_data[agent_id].append(record_dict)
-    _audit_log.append({
-        "audit_id": str(uuid.uuid4()),
-        "agent_id": agent_id,
-        "workflow_id": str(uuid.uuid4()),
-        "action": "memory_store",
-        "details": {"memory_type": memory_type, "content_preview": content[:100]},
-        "recorded_at": now.isoformat(),
-    })
+    _audit_log.append(
+        {
+            "audit_id": str(uuid.uuid4()),
+            "agent_id": agent_id,
+            "workflow_id": str(uuid.uuid4()),
+            "action": "memory_store",
+            "details": {"memory_type": memory_type, "content_preview": content[:100]},
+            "recorded_at": now.isoformat(),
+        }
+    )
 
     return record
 
@@ -171,7 +174,7 @@ def mock_search_memory(
         query_words = set(query.lower().split()) if query else set()
 
         def _cosine_sim(a: list[float], b: list[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
+            dot = sum(x * y for x, y in zip(a, b, strict=True))
             na = math.sqrt(sum(x * x for x in a)) or 1.0
             nb = math.sqrt(sum(x * x for x in b)) or 1.0
             return dot / (na * nb)
@@ -281,7 +284,47 @@ def mock_get_pinned(agent_id: str, min_priority: int = 1) -> list[MemoryRecord]:
     result = []
     for r in records:
         if r.get("is_pinned") and r.get("pin_priority", 0) >= min_priority:
-            result.append(MemoryRecord(
+            result.append(
+                MemoryRecord(
+                    memory_id=r["memory_id"],
+                    agent_id=r["agent_id"],
+                    memory_type=r["memory_type"],
+                    content=r["content"],
+                    embedding=r.get("embedding") or [],
+                    metadata=r.get("metadata") or {},
+                    previous_hash=r.get("previous_hash"),
+                    cryptographic_hash=r["cryptographic_hash"],
+                    created_at=r["created_at"],
+                    expires_at=r.get("expires_at"),
+                    access_count=r.get("access_count", 0),
+                    importance_score=r.get("importance_score", 5.0),
+                    trust_level=int(r.get("trust_level", 2)),
+                    is_pinned=r.get("is_pinned", False),
+                    pin_priority=r.get("pin_priority", 0),
+                )
+            )
+    result.sort(key=lambda m: m.pin_priority, reverse=True)
+    return result
+
+
+def mock_list_memories(
+    agent_id: str, memory_type: str | None, limit: int, cursor: str | None = None
+) -> list[MemoryRecord]:
+    with _lock:
+        records = _agent_data.get(agent_id, [])
+        filtered = records
+        if memory_type:
+            filtered = [r for r in records if r.get("memory_type") == memory_type]
+        filtered.sort(key=lambda r: r.get("created_at", datetime.min.replace(tzinfo=UTC)), reverse=True)
+        if cursor:
+            try:
+                cursor_dt = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
+                filtered = [r for r in filtered if r.get("created_at", datetime.min.replace(tzinfo=UTC)) < cursor_dt]
+            except Exception:
+                pass
+        page = filtered[:limit]
+        return [
+            MemoryRecord(
                 memory_id=r["memory_id"],
                 agent_id=r["agent_id"],
                 memory_type=r["memory_type"],
@@ -294,40 +337,14 @@ def mock_get_pinned(agent_id: str, min_priority: int = 1) -> list[MemoryRecord]:
                 expires_at=r.get("expires_at"),
                 access_count=r.get("access_count", 0),
                 importance_score=r.get("importance_score", 5.0),
-                trust_level=int(r.get("trust_level", 2)),
                 is_pinned=r.get("is_pinned", False),
                 pin_priority=r.get("pin_priority", 0),
-            ))
-    result.sort(key=lambda m: m.pin_priority, reverse=True)
-    return result
-
-
-def mock_list_memories(
-    agent_id: str, memory_type: str | None, limit: int, offset: int
-) -> list[MemoryRecord]:
-    with _lock:
-        records = _agent_data.get(agent_id, [])
-        filtered = records
-        if memory_type:
-            filtered = [r for r in records if r.get("memory_type") == memory_type]
-        filtered.sort(key=lambda r: r.get("created_at", datetime.min.replace(tzinfo=UTC)), reverse=True)
-        page = filtered[offset:offset + limit]
-        return [
-            MemoryRecord(
-                memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
-                content=r["content"], embedding=r.get("embedding") or [], metadata=r.get("metadata") or {},
-                previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
-                created_at=r["created_at"], expires_at=r.get("expires_at"),
-                access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
-                is_pinned=r.get("is_pinned", False), pin_priority=r.get("pin_priority", 0),
             )
             for r in page
         ]
 
 
-def mock_correct_memory(
-    agent_id: str, memory_id: str, new_content: str, metadata: dict | None
-) -> MemoryRecord | None:
+def mock_correct_memory(agent_id: str, memory_id: str, new_content: str, metadata: dict | None) -> MemoryRecord | None:
     with _lock:
         records = _agent_data.get(agent_id, [])
         for r in records:
@@ -336,12 +353,20 @@ def mock_correct_memory(
                 if metadata:
                     r["metadata"] = {**(r.get("metadata") or {}), **metadata}
                 return MemoryRecord(
-                    memory_id=r["memory_id"], agent_id=r["agent_id"], memory_type=r["memory_type"],
-                    content=r["content"], embedding=r.get("embedding") or [], metadata=r.get("metadata") or {},
-                    previous_hash=r.get("previous_hash"), cryptographic_hash=r["cryptographic_hash"],
-                    created_at=r["created_at"], expires_at=r.get("expires_at"),
-                    access_count=r.get("access_count", 0), importance_score=r.get("importance_score", 5.0),
-                    is_pinned=r.get("is_pinned", False), pin_priority=r.get("pin_priority", 0),
+                    memory_id=r["memory_id"],
+                    agent_id=r["agent_id"],
+                    memory_type=r["memory_type"],
+                    content=r["content"],
+                    embedding=r.get("embedding") or [],
+                    metadata=r.get("metadata") or {},
+                    previous_hash=r.get("previous_hash"),
+                    cryptographic_hash=r["cryptographic_hash"],
+                    created_at=r["created_at"],
+                    expires_at=r.get("expires_at"),
+                    access_count=r.get("access_count", 0),
+                    importance_score=r.get("importance_score", 5.0),
+                    is_pinned=r.get("is_pinned", False),
+                    pin_priority=r.get("pin_priority", 0),
                 )
         return None
 
@@ -354,12 +379,14 @@ def mock_memory_health(agent_id: str) -> dict:
         pinned = sum(1 for r in records if r.get("is_pinned"))
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
+
         def _parse_dt(val: Any) -> datetime:
             if isinstance(val, datetime):
                 return val
             if isinstance(val, str):
                 return datetime.fromisoformat(val)
             return datetime.min.replace(tzinfo=UTC)
+
         week = sum(1 for r in records if _parse_dt(r.get("created_at")) > week_ago)
         month = sum(1 for r in records if _parse_dt(r.get("created_at")) > month_ago)
         avg_access = sum(r.get("access_count", 0) for r in records) / max(total, 1)
@@ -440,14 +467,16 @@ def mock_delete_memory(agent_id: str, memory_id: str) -> bool:
         for i, rec in enumerate(records):
             if rec.get("memory_id") == memory_id:
                 records.pop(i)
-                _audit_log.append({
-                    "audit_id": str(uuid.uuid4()),
-                    "agent_id": agent_id,
-                    "workflow_id": str(uuid.uuid4()),
-                    "action": "memory_delete",
-                    "recorded_at": datetime.now(UTC).isoformat(),
-                    "details": json.dumps({"memory_id": memory_id}),
-                })
+                _audit_log.append(
+                    {
+                        "audit_id": str(uuid.uuid4()),
+                        "agent_id": agent_id,
+                        "workflow_id": str(uuid.uuid4()),
+                        "action": "memory_delete",
+                        "recorded_at": datetime.now(UTC).isoformat(),
+                        "details": json.dumps({"memory_id": memory_id}),
+                    }
+                )
                 return True
         return False
 
@@ -455,6 +484,7 @@ def mock_delete_memory(agent_id: str, memory_id: str) -> bool:
 def _parse_relative_timestamp(timestamp: str) -> datetime:
     """Parse relative timestamps like '5 minutes ago', '2 hours ago', '1 day ago'."""
     import re
+
     ts = timestamp.strip().lower()
     # Handle relative timestamps
     match = re.match(r"(\d+)\s+(second|minute|hour|day|week|month)s?\s+ago", ts)
@@ -500,14 +530,16 @@ def mock_get_memory_at_time(agent_id: str, timestamp: str) -> list[MemoryRecord]
 
 def mock_store_audit(agent_id: str, action: str, details: dict[str, Any] | str) -> None:
     with _lock:
-        _audit_log.append({
-            "audit_id": str(uuid.uuid4()),
-            "agent_id": agent_id,
-            "workflow_id": str(uuid.uuid4()),
-        "action": action,
-        "recorded_at": datetime.now(UTC).isoformat(),
-        "details": details if isinstance(details, str) else json.dumps(details),
-    })
+        _audit_log.append(
+            {
+                "audit_id": str(uuid.uuid4()),
+                "agent_id": agent_id,
+                "workflow_id": str(uuid.uuid4()),
+                "action": action,
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "details": details if isinstance(details, str) else json.dumps(details),
+            }
+        )
 
 
 def mock_get_audit(agent_id: str) -> list[AuditEntry]:
@@ -521,14 +553,16 @@ def mock_get_audit(agent_id: str) -> list[AuditEntry]:
             details = e["details"]
             if isinstance(details, str):
                 details = json.loads(details)
-            result.append(AuditEntry(
-                audit_id=e["audit_id"],
-                agent_id=e["agent_id"],
-                workflow_id=e["workflow_id"],
-                action=e["action"],
-                details=details,
-                recorded_at=recorded_at,
-            ))
+            result.append(
+                AuditEntry(
+                    audit_id=e["audit_id"],
+                    agent_id=e["agent_id"],
+                    workflow_id=e["workflow_id"],
+                    action=e["action"],
+                    details=details,
+                    recorded_at=recorded_at,
+                )
+            )
         return result
 
 
@@ -550,14 +584,16 @@ def mock_heal(agent_id: str) -> dict[str, Any]:
         _agent_data[agent_id] = valid
         after = len(valid)
 
-        _audit_log.append({
-            "audit_id": str(uuid.uuid4()),
-            "agent_id": agent_id,
-            "workflow_id": str(uuid.uuid4()),
-            "action": "heal",
-            "details": {"records_before": before, "records_after": after, "pruned": before - after},
-            "recorded_at": now.isoformat(),
-    })
+        _audit_log.append(
+            {
+                "audit_id": str(uuid.uuid4()),
+                "agent_id": agent_id,
+                "workflow_id": str(uuid.uuid4()),
+                "action": "heal",
+                "details": {"records_before": before, "records_after": after, "pruned": before - after},
+                "recorded_at": now.isoformat(),
+            }
+        )
 
     return {
         "agent_id": agent_id,
@@ -574,8 +610,7 @@ def mock_provision_cluster(name: str, region: str = "us-east1", provider: str = 
     return ClusterInfo(
         cluster_id=f"bastion-{name}-{uuid.uuid4().hex[:8]}",
         connection_string=(
-            f"postgres://mock:{uuid.uuid4().hex}@{name}.cockroachlabs.cloud:26257/defaultdb"
-            "?sslmode=verify-full"
+            f"postgres://mock:{uuid.uuid4().hex}@{name}.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
         ),
         admin_url=f"https://cockroachlabs.cloud/cluster/{name}",
         region=region,
@@ -617,8 +652,7 @@ def mock_release_lock(resource: str, agent_id: str) -> bool:
     global _coordination_locks
     before = len(_coordination_locks)
     _coordination_locks = [
-        lock for lock in _coordination_locks
-        if not (lock["resource"] == resource and lock["agent_id"] == agent_id)
+        lock for lock in _coordination_locks if not (lock["resource"] == resource and lock["agent_id"] == agent_id)
     ]
     return len(_coordination_locks) < before
 
@@ -646,19 +680,23 @@ def mock_detect_anomalies(agent_id: str) -> list[dict]:
         records = _agent_data.get(agent_id, [])
         contents = [r["content"] for r in records]
         if len(contents) != len(set(contents)):
-            alerts.append({
-                "type": "fact_turnover",
-                "severity": "medium",
-                "detail": "Duplicate content detected in recent memory",
-                "agent_id": agent_id,
-            })
+            alerts.append(
+                {
+                    "type": "fact_turnover",
+                    "severity": "medium",
+                    "detail": "Duplicate content detected in recent memory",
+                    "agent_id": agent_id,
+                }
+            )
         if len(records) > 10:
-            alerts.append({
-                "type": "size_spike",
-                "severity": "info",
-                "detail": f"Memory count ({len(records)}) exceeds 10 records",
-                "agent_id": agent_id,
-            })
+            alerts.append(
+                {
+                    "type": "size_spike",
+                    "severity": "info",
+                    "detail": f"Memory count ({len(records)}) exceeds 10 records",
+                    "agent_id": agent_id,
+                }
+            )
         return alerts
 
 
@@ -696,6 +734,7 @@ _relations: list[dict[str, Any]] = []
 
 def _extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
     from bastion.knowledge_graph import extract_triples
+
     return extract_triples(text)
 
 
@@ -707,16 +746,18 @@ def _ensure_entity_unlocked(agent_id: str, name: str, entity_type: str = "concep
         if e["name"] == name:
             return str(e["entity_id"])
     eid = str(uuid.uuid4())
-    _entities[agent_id].append({
-        "entity_id": eid,
-        "agent_id": agent_id,
-        "entity_type": entity_type,
-        "name": name,
-        "attributes": {},
-        "valid_from": datetime.now(UTC).isoformat(),
-        "valid_until": None,
-        "created_at": datetime.now(UTC).isoformat(),
-    })
+    _entities[agent_id].append(
+        {
+            "entity_id": eid,
+            "agent_id": agent_id,
+            "entity_type": entity_type,
+            "name": name,
+            "attributes": {},
+            "valid_from": datetime.now(UTC).isoformat(),
+            "valid_until": None,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
     return eid
 
 
@@ -795,13 +836,15 @@ def mock_graph_query(
                         target = e
                         break
                 if target:
-                    found.append({
-                        "source": start_entity,
-                        "target": target["name"],
-                        "relation": rel["relation_type"],
-                        "confidence": rel["confidence"],
-                        "depth": depth + 1,
-                    })
+                    found.append(
+                        {
+                            "source": start_entity,
+                            "target": target["name"],
+                            "relation": rel["relation_type"],
+                            "confidence": rel["confidence"],
+                            "depth": depth + 1,
+                        }
+                    )
                     queue.append((target["entity_id"], depth + 1))
         return found
 
@@ -822,10 +865,7 @@ def mock_graph_at_time(agent_id: str, timestamp: str, entity: str | None = None)
         "agent_id": agent_id,
         "timestamp": timestamp,
         "entities": valid_entities,
-        "relations": [
-            r for r in _relations
-            if any(e["entity_id"] == r["source_entity_id"] for e in valid_entities)
-        ],
+        "relations": [r for r in _relations if any(e["entity_id"] == r["source_entity_id"] for e in valid_entities)],
     }
 
 
@@ -888,14 +928,14 @@ def mock_ltm_check_reuse(agent_id: str, query: str, threshold: float) -> dict | 
 def mock_dream(agent_id: str) -> dict:
     """Simulate dreaming consolidation in mock mode."""
     from datetime import UTC, datetime, timedelta
+
     memories = mock_list_all(agent_id, memory_type=None, namespace_scope="own")
     cutoff = datetime.now(UTC) - timedelta(hours=24)
     recent = [
-        m for m in memories
-        if m.created_at and (
-            m.created_at.replace(tzinfo=UTC) if m.created_at.tzinfo is None
-            else m.created_at
-        ) >= cutoff
+        m
+        for m in memories
+        if m.created_at
+        and (m.created_at.replace(tzinfo=UTC) if m.created_at.tzinfo is None else m.created_at) >= cutoff
     ]
     return {
         "agent_id": agent_id,

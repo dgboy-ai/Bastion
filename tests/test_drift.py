@@ -92,6 +92,7 @@ def test_hash_gap_counting():
             self.created_at = created_at
 
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
 
     mems = [
@@ -153,9 +154,12 @@ def test_drift_dimensions_all_present():
     report = detector.score_drift("dim-test")
 
     expected_dims = {
-        "memory_access_pattern", "semantic_similarity",
-        "conflict_resolution_rate", "hash_chain_gap_ratio",
-        "retrieval_to_store_ratio", "namespace_isolation",
+        "memory_access_pattern",
+        "semantic_similarity",
+        "conflict_resolution_rate",
+        "hash_chain_gap_ratio",
+        "retrieval_to_store_ratio",
+        "namespace_isolation",
     }
     assert set(report.dimensions.keys()) == expected_dims
 

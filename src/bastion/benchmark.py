@@ -8,6 +8,7 @@ Usage:
     results = benchmark.run(test_cases)
     print(f"Precision@5: {results['precision_at_5']:.3f}")
 """
+
 from __future__ import annotations
 
 import time
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 @dataclass
 class TestCase:
     """A single benchmark test case."""
+
     query: str
     expected_memory_ids: list[str]
     description: str = ""
@@ -30,6 +32,7 @@ class TestCase:
 @dataclass
 class BenchmarkResult:
     """Results from a benchmark run."""
+
     total_cases: int = 0
     precision_at_1: float = 0.0
     precision_at_3: float = 0.0
@@ -108,18 +111,20 @@ class RecallBenchmark:
             # F1: harmonic mean of precision and recall
             f1 = 2 * precision * recall / max(0.001, precision + recall)
 
-            result.per_case.append({
-                "query": tc.query[:100],
-                "expected": list(expected_set),
-                "retrieved": retrieved_ids[:k],
-                "precision": round(precision, 4),
-                "recall": round(recall, 4),
-                "mrr": round(mrr, 4),
-                "latency_ms": round(latency_ms, 2),
-            })
+            result.per_case.append(
+                {
+                    "query": tc.query[:100],
+                    "expected": list(expected_set),
+                    "retrieved": retrieved_ids[:k],
+                    "precision": round(precision, 4),
+                    "recall": round(recall, 4),
+                    "mrr": round(mrr, 4),
+                    "latency_ms": round(latency_ms, 2),
+                }
+            )
 
             # Accumulate for averages
-            result.precision_at_1 += (1.0 if retrieved_ids and retrieved_ids[0] in expected_set else 0.0)
+            result.precision_at_1 += 1.0 if retrieved_ids and retrieved_ids[0] in expected_set else 0.0
             result.precision_at_3 += precision
             result.precision_at_5 += precision
             result.recall_at_5 += recall

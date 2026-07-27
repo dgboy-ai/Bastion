@@ -22,6 +22,7 @@ Usage:
         analysis = run_expensive_workflow(...)
         gateway.store_analysis("analyze Q2 revenue trends", analysis)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -36,20 +37,23 @@ logger = get_logger(__name__)
 DEFAULT_REUSE_THRESHOLD = 0.80
 
 # Categories of analysis results we can cache
-ANALYSIS_TYPES = frozenset({
-    "analysis",
-    "research",
-    "summary",
-    "report",
-    "query_result",
-    "computation",
-    "recommendation",
-})
+ANALYSIS_TYPES = frozenset(
+    {
+        "analysis",
+        "research",
+        "summary",
+        "report",
+        "query_result",
+        "computation",
+        "recommendation",
+    }
+)
 
 
 @dataclass
 class ReuseResult:
     """Result of an LTM Gateway reuse check."""
+
     memory_id: str
     content: str
     similarity: float
@@ -73,6 +77,7 @@ class ReuseResult:
 @dataclass
 class StoreResult:
     """Result of storing an analysis in the LTM Gateway."""
+
     memory_id: str
     stored_at: str
     analysis_type: str
@@ -90,6 +95,7 @@ class StoreResult:
 @dataclass
 class GatewayStats:
     """Aggregate statistics for the LTM Gateway."""
+
     total_checks: int = 0
     total_reuses: int = 0
     total_stores: int = 0
@@ -220,9 +226,7 @@ class LTMMemoryGateway:
         self._stats.total_tokens_saved += tokens_saved
         # Running average
         n = self._stats.total_reuses
-        self._stats.avg_similarity = (
-            self._stats.avg_similarity * (n - 1) + similarity
-        ) / n
+        self._stats.avg_similarity = (self._stats.avg_similarity * (n - 1) + similarity) / n
         self._stats.reuse_rate = self._stats.total_reuses / max(1, self._stats.total_checks)
 
         # Reinforce the memory on successful reuse (importance boost)
@@ -316,10 +320,13 @@ class LTMMemoryGateway:
             meta = record.metadata or {}
             if meta.get("analysis_result") or meta.get("workflow_output"):
                 # Tag as stale via metadata patch
-                self._memory.apply_patch(record.memory_id, [
-                    {"op": "add", "path": "/stale", "value": True},
-                    {"op": "add", "path": "/stale_reason", "value": reason},
-                ])
+                self._memory.apply_patch(
+                    record.memory_id,
+                    [
+                        {"op": "add", "path": "/stale", "value": True},
+                        {"op": "add", "path": "/stale_reason", "value": reason},
+                    ],
+                )
                 invalidated += 1
 
         log_fn = logger.info if invalidated > 0 else logger.debug

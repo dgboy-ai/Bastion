@@ -1,5 +1,6 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { guardCheck } from "@/lib/guard";
 
 /**
  * POST /api/soc — Run multi-agent SOC demo steps.
@@ -99,34 +100,12 @@ async function stepAnalyst(alert: {
 }): Promise<SocStepResult> {
   const crypto = await import("crypto");
 
-  // OWASP ASI06 guard — inline TypeScript implementation
+  // OWASP ASI06 guard — real TypeScript implementation (40+ patterns)
   const content = alert.content;
-  const INJECTION_PATTERNS = [
-    /ignore\s+(all\s+)?(previous|prior|earlier)\s+(instructions|prompts|rules)/i,
-    /system\s+(override|prompt|message)/i,
-    /you\s+are\s+now\s+(a|an)\s+/i,
-    /forget\s+(everything|all|your)\s+/i,
-    /disregard\s+(all|your|the|previous)/i,
-    /new\s+(instructions|role|persona|identity)/i,
-    /admin(istrator)?\s+(override|access|mode)/i,
-    /debug\s+mode\s+(on|enabled|activate)/i,
-    /output\s+(the|your|all)\s+(secret|api|admin)\s+key/i,
-    /sk[-_]?live[-_]?[a-zA-Z0-9]{20,}/i,
-    /AKIA[0-9A-Z]{16}/i,
-  ];
+  const guardReport = guardCheck(content);
 
-  const findings: string[] = [];
-  for (const pattern of INJECTION_PATTERNS) {
-    if (pattern.test(content)) {
-      findings.push(`Injection pattern: ${pattern.source.slice(0, 40)}`);
-    }
-  }
-
-  // PII detection
-  if (/\b\d{3}-\d{2}-\d{4}\b/.test(content)) findings.push("SSN detected");
-  if (/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/.test(content)) findings.push("Email detected");
-
-  const isSafe = findings.length === 0;
+  const findings: string[] = guardReport.findings.map(f => `${f.threatType} (${f.severity})`);
+  const isSafe = guardReport.isSafe;
   const trustLevel = isSafe ? 4 : 0;
 
   // Hash chain
@@ -150,15 +129,14 @@ async function stepAnalyst(alert: {
   const memoryId = crypto.randomUUID();
   try {
     await safeQuery(
-      `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, trust_level, embedding_384, cryptographic_hash, previous_hash, source_provenance)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, trust_level, embedding, embedding_384, cryptographic_hash, previous_hash, source_provenance, crdb_region)
+       VALUES ($1, $2, $3, $4, $5, NULL::vector, NULL::vector, $6, $7, $8, 'aws-ap-south-1')`,
       [
         memoryId,
         "soc-analyst",
         "alert",
         content,
         trustLevel,
-        "[]", // placeholder embedding
         contentHash,
         previousHash,
         alert.source,
@@ -167,7 +145,7 @@ async function stepAnalyst(alert: {
 
     // Audit log
     await safeQuery(
-      `INSERT INTO agent_audit (agent_id, memory_id, action, details)
+      `INSERT INTO agent_audit (agent_id, workflow_id, action, details)
        VALUES ($1, $2, $3, $4)`,
       [
         "soc-analyst",
@@ -246,21 +224,31 @@ async function stepRespond(alert: {
         cockroachdbFeature: "AS OF SYSTEM TIME (MVCC snapshots)",
       };
 
-      // Heal: restore with trust level 4
+      // Heal: restore with real content from time-travel
       const healedId = crypto.randomUUID();
-      const healedContent = "Memory restored to safe state after poisoning detection";
-      const healedHash = crypto.createHash("sha256").update(healedContent).digest("hex");
+      // Try to get the original clean content from time-travel
+      let healedContent = "Memory restored to safe state after poisoning detection";
+      try {
+        const timeTravelRes = await safeQuery(
+          `SELECT content::varchar(500) AS content FROM agent_memory AS OF SYSTEM TIME '-5s' WHERE agent_id = 'soc-analyst' AND memory_type = 'alert' ORDER BY created_at DESC LIMIT 1`
+        );
+        if (timeTravelRes.rows.length > 0 && timeTravelRes.rows[0].content) {
+          healedContent = String(timeTravelRes.rows[0].content);
+        }
+      } catch {
+        // Fallback to default content
+      }
+      const healedHash = crypto.createHash("sha256").update(healedContent + healedId).digest("hex");
 
       await safeQuery(
-        `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, trust_level, embedding_384, cryptographic_hash, previous_hash, source_provenance)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, trust_level, embedding, embedding_384, cryptographic_hash, previous_hash, source_provenance, crdb_region)
+         VALUES ($1, $2, $3, $4, $5, NULL::vector, NULL::vector, $6, $7, $8, 'aws-ap-south-1')`,
         [
           healedId,
           "soc-responder",
           "healed",
           healedContent,
           4,
-          "[]",
           healedHash,
           String(poisoned.cryptographic_hash),
           "incident-responder",
@@ -269,7 +257,7 @@ async function stepRespond(alert: {
 
       // Audit log
       await safeQuery(
-        `INSERT INTO agent_audit (agent_id, memory_id, action, details)
+        `INSERT INTO agent_audit (agent_id, workflow_id, action, details)
          VALUES ($1, $2, $3, $4)`,
         [
           "soc-responder",

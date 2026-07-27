@@ -11,9 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
-import threading
-import time
 from unittest.mock import patch
 
 import pytest
@@ -65,13 +62,30 @@ class TestServerCardEndpoints:
         data = client.get("/.well-known/mcp-server.json").json()
         tool_names = {t["name"] for t in data["tools"]}
         expected = {
-            "memory_search", "memory_store", "memory_timetravel", "memory_audit",
-            "memory_heal", "memory_delete", "memory_pin", "memory_get_pinned",
-            "memory_list", "memory_correct", "resolve_conflict",
-            "ltm_check_reuse", "ltm_store_analysis", "ltm_invalidate",
-            "dream", "dream_history", "detect_contradictions",
-            "scan_all_contradictions", "detect_observations", "multi_signal_search",
-            "context_pack", "agent_schema", "memory_health", "memory_apply_patch",
+            "memory_search",
+            "memory_store",
+            "memory_timetravel",
+            "memory_audit",
+            "memory_heal",
+            "memory_delete",
+            "memory_pin",
+            "memory_get_pinned",
+            "memory_list",
+            "memory_correct",
+            "resolve_conflict",
+            "ltm_check_reuse",
+            "ltm_store_analysis",
+            "ltm_invalidate",
+            "dream",
+            "dream_history",
+            "detect_contradictions",
+            "scan_all_contradictions",
+            "detect_observations",
+            "multi_signal_search",
+            "context_pack",
+            "agent_schema",
+            "memory_health",
+            "memory_apply_patch",
         }
         assert expected.issubset(tool_names)
 
@@ -158,6 +172,7 @@ class TestMCPToolCalls:
     async def test_invalid_tool_returns_error(self, server):
         """Calling a non-existent tool raises ToolError."""
         from mcp.server.fastmcp.exceptions import ToolError
+
         with pytest.raises(ToolError, match="Unknown tool"):
             await server.call_tool("nonexistent_tool", {})
 
@@ -191,6 +206,7 @@ class TestAuthMiddleware:
     def test_check_auth_no_keys_allows_in_mock(self):
         """_check_auth allows access in mock mode when no API keys are set."""
         import bastion.mcp_server as mcp_mod
+
         # Save and clear
         old_keys = mcp_mod._API_KEYS
         mcp_mod._API_KEYS = set()
@@ -204,6 +220,7 @@ class TestAuthMiddleware:
     def test_check_auth_with_valid_key(self):
         """_check_auth accepts a valid Bearer token."""
         import bastion.mcp_server as mcp_mod
+
         old_keys = mcp_mod._API_KEYS
         try:
             mcp_mod._API_KEYS = {"test-api-key-123"}
@@ -214,6 +231,7 @@ class TestAuthMiddleware:
     def test_check_auth_with_invalid_key(self):
         """_check_auth rejects an invalid Bearer token."""
         import bastion.mcp_server as mcp_mod
+
         old_keys = mcp_mod._API_KEYS
         try:
             mcp_mod._API_KEYS = {"correct-key"}
@@ -224,6 +242,7 @@ class TestAuthMiddleware:
     def test_check_auth_no_authorization_header(self):
         """_check_auth rejects requests without Authorization header."""
         import bastion.mcp_server as mcp_mod
+
         old_keys = mcp_mod._API_KEYS
         try:
             mcp_mod._API_KEYS = {"some-key"}
@@ -234,8 +253,10 @@ class TestAuthMiddleware:
 
     def test_check_auth_uses_constant_time_comparison(self):
         """_check_auth uses secrets.compare_digest for timing-safe comparison."""
-        import bastion.mcp_server as mcp_mod
         import inspect
+
+        import bastion.mcp_server as mcp_mod
+
         source = inspect.getsource(mcp_mod._check_auth)
         assert "compare_digest" in source
 
@@ -247,6 +268,7 @@ class TestRateLimiter:
     def test_limiter_acquire_release(self):
         """Basic acquire/release cycle works in mock mode."""
         from bastion.limiter import RequestLimiter
+
         with patch.dict(os.environ, {"BASTION_MOCK": "true"}):
             limiter = RequestLimiter(max_concurrent=3, max_queue=5, timeout_seconds=1)
             assert limiter.acquire(timeout=0.1) is True
@@ -258,6 +280,7 @@ class TestRateLimiter:
     def test_limiter_exhausts_slots(self):
         """Acquiring all slots blocks subsequent acquires."""
         from bastion.limiter import RequestLimiter
+
         with patch.dict(os.environ, {"BASTION_MOCK": "true"}):
             limiter = RequestLimiter(max_concurrent=2, max_queue=10, timeout_seconds=1)
             assert limiter.acquire(timeout=0.1) is True
@@ -272,6 +295,7 @@ class TestRateLimiter:
     def test_limiter_queue_full_rejects(self):
         """When queue is full, new requests are immediately rejected."""
         from bastion.limiter import RequestLimiter
+
         with patch.dict(os.environ, {"BASTION_MOCK": "true"}):
             limiter = RequestLimiter(max_concurrent=1, max_queue=0, timeout_seconds=1)
             # Queue is 0, so acquiring should immediately reject
@@ -281,6 +305,7 @@ class TestRateLimiter:
     def test_limiter_context_manager(self):
         """Context manager acquires and releases automatically."""
         from bastion.limiter import RequestLimiter
+
         with patch.dict(os.environ, {"BASTION_MOCK": "true"}):
             limiter = RequestLimiter(max_concurrent=2, max_queue=5, timeout_seconds=1)
             with limiter:
@@ -292,6 +317,7 @@ class TestRateLimiter:
     def test_limiter_stats_track_requests(self):
         """Stats correctly track total requests and rejections."""
         from bastion.limiter import RequestLimiter
+
         with patch.dict(os.environ, {"BASTION_MOCK": "true"}):
             limiter = RequestLimiter(max_concurrent=1, max_queue=1, timeout_seconds=1)
             limiter.acquire(timeout=0.1)  # Queue slot used
@@ -307,6 +333,7 @@ class TestServerState:
     def test_stateless_server_has_memory(self, server):
         """Server has a BastionMemory instance."""
         from bastion.memory import BastionMemory
+
         assert isinstance(server._bastion_memory, BastionMemory)
 
     def test_server_memory_is_mock(self, server):
@@ -316,6 +343,7 @@ class TestServerState:
     def test_shared_memory_healthcheck(self):
         """_get_shared_memory returns a working memory instance."""
         from bastion.mcp_server import _get_shared_memory
+
         mem = _get_shared_memory()
         assert mem is not None
         assert mem.is_mock is True

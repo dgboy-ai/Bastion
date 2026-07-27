@@ -1,9 +1,9 @@
 """Shared database utilities for Lambda functions."""
 
-import json
 import os
-import psycopg
 from contextlib import contextmanager
+
+import psycopg
 
 
 def get_connection():

@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from bastion.log_setup import get_logger
@@ -31,13 +31,13 @@ class MemoryArchiver:
         """Archive memories to S3. Returns the S3 key."""
         try:
             client = self._get_client()
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             key = f"memories/{agent_id}/archive-{timestamp}.json"
 
             archive = {
                 "agent_id": agent_id,
                 "memory_count": len(memories),
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "hash_chain_intact": self._verify_hash_chain(memories),
                 "memories": memories,
             }
@@ -84,19 +84,22 @@ class MemoryArchiver:
 
             archives = []
             for obj in resp.get("Contents", []):
-                archives.append({
-                    "key": obj["Key"],
-                    "size": obj["Size"],
-                    "last_modified": obj["LastModified"].isoformat(),
-                })
+                archives.append(
+                    {
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].isoformat(),
+                    }
+                )
             return archives
-        except Exception as exc:
+        except Exception:
             logger.exception("S3 list failed", extra={"agent_id": agent_id})
             return []
 
     def _verify_hash_chain(self, memories: list[dict[str, Any]]) -> bool:
         """Verify hash chain integrity of archived memories."""
         from bastion.crypto import verify_hash
+
         prev_hash = None
         for mem in memories:
             content = mem.get("content", "")

@@ -6,10 +6,6 @@ All tests use mock mode (no CockroachDB required) and are fully self-contained.
 
 from __future__ import annotations
 
-import json
-import math
-import uuid
-
 import pytest
 
 from bastion.memory import BastionMemory
@@ -385,6 +381,7 @@ class TestLTMGateway:
     def test_ltm_check_reuse_returns_none_when_empty(self, mem):
         """check_reuse returns None when no similar analysis exists."""
         from bastion.ltm_gateway import LTMMemoryGateway
+
         gw = LTMMemoryGateway(mem)
         result = gw.check_reuse("analyze revenue trends")
         assert result is None
@@ -392,6 +389,7 @@ class TestLTMGateway:
     def test_ltm_store_and_check_reuse(self, mem):
         """Storing an analysis allows check_reuse to find it."""
         from bastion.ltm_gateway import LTMMemoryGateway
+
         gw = LTMMemoryGateway(mem)
         gw.store_analysis(
             query="analyze Q2 revenue",
@@ -406,6 +404,7 @@ class TestLTMGateway:
     def test_ltm_store_analysis_returns_store_result(self, mem):
         """store_analysis returns a StoreResult with memory_id."""
         from bastion.ltm_gateway import LTMMemoryGateway
+
         gw = LTMMemoryGateway(mem)
         result = gw.store_analysis("query", "result", tokens_used=500)
         assert result.memory_id
@@ -415,6 +414,7 @@ class TestLTMGateway:
     def test_ltm_gateway_stats(self, mem):
         """Gateway stats track checks, reuses, and stores."""
         from bastion.ltm_gateway import LTMMemoryGateway
+
         gw = LTMMemoryGateway(mem)
         gw.store_analysis("q1", "r1")
         gw.check_reuse("q1", threshold=0.1)
@@ -430,6 +430,7 @@ class TestContradictionDetection:
     def test_detect_contradictions_returns_result(self, mem):
         """detect_contradictions returns a ContradictionScanResult."""
         from bastion.contradiction import ContradictionDetector
+
         record = mem.store("fact", "The sky is blue")
         detector = ContradictionDetector(mem)
         result = detector.scan_after_store(record)
@@ -440,6 +441,7 @@ class TestContradictionDetection:
     def test_detect_contradictions_scan_all(self, mem):
         """scan_all returns a list of ContradictionScanResult."""
         from bastion.contradiction import ContradictionDetector
+
         mem.store("fact", "Fact one")
         mem.store("fact", "Fact two")
         detector = ContradictionDetector(mem)
@@ -454,6 +456,7 @@ class TestDreaming:
     def test_dream_returns_journal(self, mem):
         """dream() returns a DreamJournal with expected fields."""
         from bastion.dreaming import MemoryDreamer
+
         mem.store("fact", "Dream test fact")
         dreamer = MemoryDreamer(mem)
         journal = dreamer.dream()
@@ -465,6 +468,7 @@ class TestDreaming:
     def test_dream_empty_memories(self, mem):
         """dream() with no memories completes successfully."""
         from bastion.dreaming import MemoryDreamer
+
         dreamer = MemoryDreamer(mem)
         journal = dreamer.dream()
         assert journal.status == "complete"
@@ -473,6 +477,7 @@ class TestDreaming:
     def test_dream_history(self, mem):
         """get_dream_history returns past dream sessions."""
         from bastion.dreaming import MemoryDreamer
+
         dreamer = MemoryDreamer(mem)
         dreamer.dream()
         history = dreamer.get_dream_history()

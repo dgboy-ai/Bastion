@@ -9,8 +9,6 @@ Covers:
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from bastion.a2a_signing import (
@@ -20,7 +18,6 @@ from bastion.a2a_signing import (
     verify_card_signed,
     verify_card_signed_trusted,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

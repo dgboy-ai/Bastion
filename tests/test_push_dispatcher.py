@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import patch, MagicMock
-
-import pytest
 
 from bastion.push_dispatcher import PushNotificationDispatcher, get_dispatcher
-
 
 _VALID_URL = "https://hooks.example.com/push"
 

@@ -7,10 +7,12 @@ from typing import ClassVar
 # Load .env.local before pydantic-settings (higher priority than .env)
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env.local", override=False)
     load_dotenv(".env", override=False)
     # Warn if .env.local contains real credentials (security check)
     import logging
+
     _env_local_conn = os.environ.get("BASTION_CONN", "")
     if _env_local_conn and "localhost" not in _env_local_conn and "127.0.0.1" not in _env_local_conn:
         logging.getLogger("bastion.config").warning(
@@ -56,6 +58,7 @@ class BastionSettings(BaseSettings):
         if v:
             return v
         return os.environ.get("BASTION_CONN", "")
+
     bedrock_model_id: str = "amazon.titan-embed-text-v2:0"
     embed_dim: int = 1024
     aws_region: str = os.environ.get("AWS_REGION", "us-east-1")
@@ -97,6 +100,7 @@ def get_settings() -> BastionSettings:
                 _settings = BastionSettings()
                 if not _api_key_warned and not _settings.api_key.get_secret_value():
                     import logging
+
                     logging.getLogger("bastion.config").warning(
                         "BASTION_API_KEY is not set — authentication is effectively disabled. "
                         "Set BASTION_API_KEY in your environment for production use."

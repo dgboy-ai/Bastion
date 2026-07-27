@@ -1,10 +1,8 @@
 """Tests for bastion.health module."""
+
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 
 class FakeCursor:
@@ -29,7 +27,7 @@ class FakeCursor:
         return None
 
     def fetchall(self):
-        return self._rows[self._row_idx:]
+        return self._rows[self._row_idx :]
 
 
 class FakePool:

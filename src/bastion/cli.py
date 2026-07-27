@@ -7,6 +7,7 @@ Usage:
     python -m bastion.cli verify --agent my-agent
     python -m bastion.cli status --agent my-agent
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,10 +22,12 @@ logger = get_logger(__name__)
 
 def _get_memory(agent_id: str, connection_string: str | None = None, mock: bool = False):
     from bastion.memory import BastionMemory
+
     return BastionMemory(agent_id, connection_string=connection_string, mock=mock)
 
 
 # ── Import ───────────────────────────────────────────────────────────────────
+
 
 def import_jsonl(
     file_path: str,
@@ -66,7 +69,13 @@ def import_jsonl(
                 metadata["import_file"] = str(path.name)
 
                 try:
-                    mem.store(memory_type=memory_type, content=content, metadata=metadata, _skip_guard=True, _guard_bypass_token=True)
+                    mem.store(
+                        memory_type=memory_type,
+                        content=content,
+                        metadata=metadata,
+                        _skip_guard=True,
+                        _guard_bypass_token=True,
+                    )
                     imported += 1
                 except Exception as e:
                     logger.warning("Failed to import line %d: %s", line_num, e)
@@ -77,12 +86,20 @@ def import_jsonl(
     finally:
         mem.close()
 
-    result = {"file": str(path.name), "agent_id": agent_id, "imported": imported, "skipped": skipped, "errors": errors, "total_lines": imported + skipped + errors}
+    result = {
+        "file": str(path.name),
+        "agent_id": agent_id,
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "total_lines": imported + skipped + errors,
+    }
     logger.info("Import complete: %s", result)
     return result
 
 
 # ── Export ───────────────────────────────────────────────────────────────────
+
 
 def export_jsonl(
     agent_id: str,
@@ -111,6 +128,7 @@ def export_jsonl(
 
 
 # ── Search ───────────────────────────────────────────────────────────────────
+
 
 def search_memories(
     query: str,
@@ -144,13 +162,13 @@ def search_memories(
 
 # ── Verify (hash chain integrity) ───────────────────────────────────────────
 
+
 def verify_integrity(
     agent_id: str,
     connection_string: str | None = None,
     mock: bool = False,
 ) -> dict:
     """Verify hash chain integrity for an agent's memories."""
-    from bastion.crypto import verify_hash
 
     mem = _get_memory(agent_id, connection_string, mock)
     try:
@@ -163,7 +181,6 @@ def verify_integrity(
         sorted_mems = sorted(memories, key=lambda m: m.created_at or "")
 
         for i, mem_rec in enumerate(sorted_mems):
-            expected = mem_rec.previous_hash or ""
             if i == 0:
                 # First memory has no previous hash to verify against
                 verified += 1
@@ -190,6 +207,7 @@ def verify_integrity(
 
 
 # ── Status ───────────────────────────────────────────────────────────────────
+
 
 def get_status(
     agent_id: str,
@@ -224,6 +242,7 @@ def get_status(
 
 
 # ── CLI Entry Point ──────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Bastion CLI")

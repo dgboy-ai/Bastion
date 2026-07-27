@@ -19,10 +19,6 @@ export default function HashChainVisualizer() {
   const [selectedEntry, setSelectedEntry] = useState<HashChainEntry | null>(null);
   const [chainValid, setChainValid] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    fetchChain();
-  }, []);
-
   const fetchChain = async () => {
     try {
       const res = await fetchWithTimeout("/api/memories?limit=10");
@@ -50,6 +46,10 @@ export default function HashChainVisualizer() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchChain();
+  }, []);
 
   const truncateHash = (hash: string | null | undefined) => {
     if (!hash) return "genesis";

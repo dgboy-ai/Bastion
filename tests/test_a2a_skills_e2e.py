@@ -2,9 +2,6 @@
 
 import json
 
-import httpx
-import pytest
-
 from bastion.a2a_server import create_a2a_server
 from bastion.mock import reset
 
@@ -53,13 +50,31 @@ class TestA2ASkillsE2E:
                 assert len(card["skills"]) == 25
                 skill_ids = {s["id"] for s in card["skills"]}
                 expected = {
-                    "memory_store", "memory_search", "memory_timetravel", "memory_audit",
-                    "memory_heal", "memory_delete", "memory_pin", "memory_get_pinned",
-                    "memory_list", "memory_correct", "memory_health", "memory_apply_patch",
-                    "resolve_conflict", "ltm_check_reuse", "ltm_store_analysis", "ltm_invalidate",
-                    "detect_contradictions", "scan_all_contradictions", "dream", "dream_history",
-                    "detect_observations", "multi_signal_search", "context_pack",
-                    "agent_schema", "a2a_bridge",
+                    "memory_store",
+                    "memory_search",
+                    "memory_timetravel",
+                    "memory_audit",
+                    "memory_heal",
+                    "memory_delete",
+                    "memory_pin",
+                    "memory_get_pinned",
+                    "memory_list",
+                    "memory_correct",
+                    "memory_health",
+                    "memory_apply_patch",
+                    "resolve_conflict",
+                    "ltm_check_reuse",
+                    "ltm_store_analysis",
+                    "ltm_invalidate",
+                    "detect_contradictions",
+                    "scan_all_contradictions",
+                    "dream",
+                    "dream_history",
+                    "detect_observations",
+                    "multi_signal_search",
+                    "context_pack",
+                    "agent_schema",
+                    "a2a_bridge",
                 }
                 assert expected == skill_ids
 
@@ -185,10 +200,15 @@ class TestA2ASkillsE2E:
             async with client:
                 r = await self._send(client, "memory_store", {"content": "Patchable"}, "1")
                 mid = json.loads(r.json()["result"]["artifacts"][0]["parts"][0]["text"])["memory_id"]
-                r = await self._send(client, "memory_apply_patch", {
-                    "memory_id": mid,
-                    "patch_ops": [{"op": "add", "path": "/verified", "value": True}],
-                }, "2")
+                r = await self._send(
+                    client,
+                    "memory_apply_patch",
+                    {
+                        "memory_id": mid,
+                        "patch_ops": [{"op": "add", "path": "/verified", "value": True}],
+                    },
+                    "2",
+                )
                 assert r.json()["result"]["status"]["state"] == "COMPLETED"
 
         anyio.run(run)
@@ -199,9 +219,9 @@ class TestA2ASkillsE2E:
 
         async def run():
             async with client:
-                r = await self._send(client, "resolve_conflict", {
-                    "fact_a": "Python is best", "fact_b": "Rust is best"
-                }, "1")
+                r = await self._send(
+                    client, "resolve_conflict", {"fact_a": "Python is best", "fact_b": "Rust is best"}, "1"
+                )
                 assert r.json()["result"]["status"]["state"] == "COMPLETED"
 
         anyio.run(run)
@@ -296,9 +316,12 @@ class TestA2ASkillsE2E:
 
         async def run():
             async with client:
-                r = await self._send(client, "ltm_store_analysis", {
-                    "query": "market trends", "result": "Q3 was strong", "analysis_type": "research"
-                }, "1")
+                r = await self._send(
+                    client,
+                    "ltm_store_analysis",
+                    {"query": "market trends", "result": "Q3 was strong", "analysis_type": "research"},
+                    "1",
+                )
                 assert r.status_code == 200
                 assert r.json()["result"]["status"]["state"] == "COMPLETED"
 

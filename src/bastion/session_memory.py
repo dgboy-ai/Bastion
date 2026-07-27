@@ -13,6 +13,7 @@ Usage:
     session.store("preference", "User prefers dark mode", promote=True)
     session.consolidate()  # Promote high-value session memories
 """
+
 from __future__ import annotations
 
 import math
@@ -30,6 +31,7 @@ logger = get_logger(__name__)
 @dataclass
 class SessionEntry:
     """A single entry in session memory."""
+
     content: str
     memory_type: str
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -122,7 +124,7 @@ class SessionMemory:
 
         # Enforce session size limit — drop oldest unpinned
         if len(self._entries) > self._max_session_size:
-            self._entries = self._entries[-self._max_session_size:]
+            self._entries = self._entries[-self._max_session_size :]
 
         if promote or importance >= self._promotion_threshold:
             self._promote_entry(entry)
@@ -205,9 +207,7 @@ class SessionMemory:
             "age_seconds": round(self.age_seconds, 1),
             "is_expired": self.is_expired,
             "promoted_count": sum(1 for e in self._entries if e.promoted),
-            "avg_importance": (
-                sum(e.importance for e in self._entries) / max(1, len(self._entries))
-            ),
+            "avg_importance": (sum(e.importance for e in self._entries) / max(1, len(self._entries))),
         }
 
     def _promote_entry(self, entry: SessionEntry) -> None:

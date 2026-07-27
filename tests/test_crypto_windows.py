@@ -8,16 +8,12 @@ Covers:
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import sys
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bastion import crypto
-
 
 # ── _get_hmac_secret ──────────────────────────────────────────────────────────
 
@@ -136,7 +132,7 @@ class TestVerifyHash:
 
     def test_tampered_hash_fails(self, monkeypatch):
         monkeypatch.setenv("BASTION_HMAC_SECRET", "test-secret-key-32bytes!!!!!")
-        h = crypto.compute_hash("content")
+        crypto.compute_hash("content")
         assert crypto.verify_hash("content", None, None, "0" * 64) is False
 
 
@@ -164,6 +160,7 @@ class TestWindowsWarning:
         key_file = tmp_path / "hmac.key"
         # Write a DPAPI-encrypted key so the decrypt path is exercised
         import win32crypt
+
         encrypted = win32crypt.CryptProtectData(os.urandom(32), "bastion-hmac", None, None, None)
         key_file.write_bytes(crypto._DPAPI_HEADER + encrypted)
         monkeypatch.setattr(crypto, "_SECRET_DIR", str(tmp_path))

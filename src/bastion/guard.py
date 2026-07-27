@@ -12,7 +12,6 @@ References:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -24,78 +23,121 @@ from enum import StrEnum
 from typing import Any
 
 from bastion.log_setup import get_logger
+from bastion.pii import redact_pii as _shared_redact_pii
 
 logger = get_logger(__name__)
 
 
 # Cyrillic-to-Latin homoglyph mapping (visual confusables)
 # NFKC does NOT map these — they must be explicitly transliterated
-_CYRILLIC_HOMOGLYPHS = str.maketrans({
-    '\u0430': 'a',  # Cyrillic а → Latin a
-    '\u0431': 'b',  # Cyrillic б → Latin b
-    '\u0432': 'v',  # Cyrillic в → Latin v
-    '\u0433': 'g',  # Cyrillic г → Latin g
-    '\u0434': 'd',  # Cyrillic д → Latin d
-    '\u0435': 'e',  # Cyrillic е → Latin e
-    '\u0436': 'zh', # Cyrillic ж → zh
-    '\u0437': 'z',  # Cyrillic з → Latin z
-    '\u0438': 'i',  # Cyrillic и → Latin i
-    '\u0439': 'j',  # Cyrillic й → Latin j
-    '\u043a': 'k',  # Cyrillic к → Latin k
-    '\u043b': 'l',  # Cyrillic л → Latin l
-    '\u043c': 'm',  # Cyrillic м → Latin m
-    '\u043d': 'n',  # Cyrillic н → Latin n
-    '\u043e': 'o',  # Cyrillic о → Latin o
-    '\u043f': 'p',  # Cyrillic п → Latin p
-    '\u0440': 'r',  # Cyrillic р → Latin r
-    '\u0441': 'c',  # Cyrillic с → Latin c
-    '\u0442': 't',  # Cyrillic т → Latin t
-    '\u0443': 'y',  # Cyrillic у → Latin y
-    '\u0444': 'f',  # Cyrillic ф → Latin f
-    '\u0445': 'x',  # Cyrillic х → Latin x
-    '\u0446': 'ts', # Cyrillic ц → ts
-    '\u0447': 'ch', # Cyrillic ч → ch
-    '\u0448': 'sh', # Cyrillic ш → sh
-    '\u0449': 'shch',# Cyrillic щ → shch
-    '\u044a': '',   # Cyrillic ъ → removed
-    '\u044b': 'y',  # Cyrillic ы → y
-    '\u044c': '',   # Cyrillic ь → removed
-    '\u044d': 'e',  # Cyrillic э → e
-    '\u044e': 'yu', # Cyrillic ю → yu
-    '\u044f': 'ya', # Cyrillic я → ya
-    '\u0456': 'i',  # Ukrainian і → Latin i
-    '\u0457': 'yi', # Ukrainian ї → yi
-    '\u045e': 'u',  # Belarusian ў → u
-    '\u0585': 'o',  # Armenian օ → Latin o
-    '\u057a': 'p',  # Armenian փ → Latin p (visual)
-    '\u056d': 'x',  # Armenian խ → Latin x (visual)
-    '\u0261': 'g',  # Latin ɡ → Latin g (single-story)
-    '\u0285': '',   # Cyrillic palochka → removed
-    '\u04cf': 'l',  # Cyrillic ӏ → Latin l
-})
+_CYRILLIC_HOMOGLYPHS = str.maketrans(
+    {
+        "\u0430": "a",  # Cyrillic а → Latin a
+        "\u0431": "b",  # Cyrillic б → Latin b
+        "\u0432": "v",  # Cyrillic в → Latin v
+        "\u0433": "g",  # Cyrillic г → Latin g
+        "\u0434": "d",  # Cyrillic д → Latin d
+        "\u0435": "e",  # Cyrillic е → Latin e
+        "\u0436": "zh",  # Cyrillic ж → zh
+        "\u0437": "z",  # Cyrillic з → Latin z
+        "\u0438": "i",  # Cyrillic и → Latin i
+        "\u0439": "j",  # Cyrillic й → Latin j
+        "\u043a": "k",  # Cyrillic к → Latin k
+        "\u043b": "l",  # Cyrillic л → Latin l
+        "\u043c": "m",  # Cyrillic м → Latin m
+        "\u043d": "n",  # Cyrillic н → Latin n
+        "\u043e": "o",  # Cyrillic о → Latin o
+        "\u043f": "p",  # Cyrillic п → Latin p
+        "\u0440": "r",  # Cyrillic р → Latin r
+        "\u0441": "c",  # Cyrillic с → Latin c
+        "\u0442": "t",  # Cyrillic т → Latin t
+        "\u0443": "y",  # Cyrillic у → Latin y
+        "\u0444": "f",  # Cyrillic ф → Latin f
+        "\u0445": "x",  # Cyrillic х → Latin x
+        "\u0446": "ts",  # Cyrillic ц → ts
+        "\u0447": "ch",  # Cyrillic ч → ch
+        "\u0448": "sh",  # Cyrillic ш → sh
+        "\u0449": "shch",  # Cyrillic щ → shch
+        "\u044a": "",  # Cyrillic ъ → removed
+        "\u044b": "y",  # Cyrillic ы → y
+        "\u044c": "",  # Cyrillic ь → removed
+        "\u044d": "e",  # Cyrillic э → e
+        "\u044e": "yu",  # Cyrillic ю → yu
+        "\u044f": "ya",  # Cyrillic я → ya
+        "\u0456": "i",  # Ukrainian і → Latin i
+        "\u0457": "yi",  # Ukrainian ї → yi
+        "\u045e": "u",  # Belarusian ў → u
+        "\u0585": "o",  # Armenian օ → Latin o
+        "\u057a": "p",  # Armenian փ → Latin p (visual)
+        "\u056d": "x",  # Armenian խ → Latin x (visual)
+        "\u0261": "g",  # Latin ɡ → Latin g (single-story)
+        "\u0285": "",  # Cyrillic palochka → removed
+        "\u04cf": "l",  # Cyrillic ӏ → Latin l
+    }
+)
 
 # Fullwidth-to-ASCII mapping (NFKC handles most, but add explicit fallbacks)
-_FULLWIDTH_MAP = str.maketrans({
-    '\uff21': 'A', '\uff22': 'B', '\uff23': 'C', '\uff24': 'D',
-    '\uff25': 'E', '\uff26': 'F', '\uff27': 'G', '\uff28': 'H',
-    '\uff29': 'I', '\uff2a': 'J', '\uff2b': 'K', '\uff2c': 'L',
-    '\uff2d': 'M', '\uff2e': 'N', '\uff2f': 'O', '\uff30': 'P',
-    '\uff31': 'Q', '\uff32': 'R', '\uff33': 'S', '\uff34': 'T',
-    '\uff35': 'U', '\uff36': 'V', '\uff37': 'W', '\uff38': 'X',
-    '\uff39': 'Y', '\uff3a': 'Z',
-    '\uff41': 'a', '\uff42': 'b', '\uff43': 'c', '\uff44': 'd',
-    '\uff45': 'e', '\uff46': 'f', '\uff47': 'g', '\uff48': 'h',
-    '\uff49': 'i', '\uff4a': 'j', '\uff4b': 'k', '\uff4c': 'l',
-    '\uff4d': 'm', '\uff4e': 'n', '\uff4f': 'o', '\uff50': 'p',
-    '\uff51': 'q', '\uff52': 'r', '\uff53': 's', '\uff54': 't',
-    '\uff55': 'u', '\uff56': 'v', '\uff57': 'w', '\uff58': 'x',
-    '\uff59': 'y', '\uff5a': 'z',
-})
+_FULLWIDTH_MAP = str.maketrans(
+    {
+        "\uff21": "A",
+        "\uff22": "B",
+        "\uff23": "C",
+        "\uff24": "D",
+        "\uff25": "E",
+        "\uff26": "F",
+        "\uff27": "G",
+        "\uff28": "H",
+        "\uff29": "I",
+        "\uff2a": "J",
+        "\uff2b": "K",
+        "\uff2c": "L",
+        "\uff2d": "M",
+        "\uff2e": "N",
+        "\uff2f": "O",
+        "\uff30": "P",
+        "\uff31": "Q",
+        "\uff32": "R",
+        "\uff33": "S",
+        "\uff34": "T",
+        "\uff35": "U",
+        "\uff36": "V",
+        "\uff37": "W",
+        "\uff38": "X",
+        "\uff39": "Y",
+        "\uff3a": "Z",
+        "\uff41": "a",
+        "\uff42": "b",
+        "\uff43": "c",
+        "\uff44": "d",
+        "\uff45": "e",
+        "\uff46": "f",
+        "\uff47": "g",
+        "\uff48": "h",
+        "\uff49": "i",
+        "\uff4a": "j",
+        "\uff4b": "k",
+        "\uff4c": "l",
+        "\uff4d": "m",
+        "\uff4e": "n",
+        "\uff4f": "o",
+        "\uff50": "p",
+        "\uff51": "q",
+        "\uff52": "r",
+        "\uff53": "s",
+        "\uff54": "t",
+        "\uff55": "u",
+        "\uff56": "v",
+        "\uff57": "w",
+        "\uff58": "x",
+        "\uff59": "y",
+        "\uff5a": "z",
+    }
+)
 
 
 def _normalize_unicode(text: str) -> str:
     """Normalize Unicode to prevent homoglyph and zero-width character bypasses.
-    
+
     1. NFKC normalization maps fullwidth characters to ASCII equivalents
     2. Explicit Cyrillic-to-Latin transliteration for visual confusables
     3. Strip all zero-width, bidi override, and formatting characters
@@ -109,19 +151,20 @@ def _normalize_unicode(text: str) -> str:
     normalized = normalized.translate(_FULLWIDTH_MAP)
     # Strip zero-width, bidi override, and formatting characters
     # Covers Unicode Cf (format) and Mn (mark) categories
-    _ZWC_RE = re.compile(
-        r'[\u00ad'           # soft hyphen
-        r'\u034f'            # combining grapheme joiner
-        r'\u061c'            # arabic letter mark
-        r'\u180e'            # mongolian vowel separator
-        r'\u200b-\u200f'     # ZWSP, ZWNJ, ZWJ, LRM, RLM
-        r'\u202a-\u202e'     # bidi overrides (LRE/RLE/PDF/LRO/RLO)
-        r'\u2060-\u2069'     # word joiner, invisible operators
-        r'\ufe00-\ufe0f'     # variation selectors
-        r'\ufeff]'           # BOM
+    _zwc_re = re.compile(
+        r"[\u00ad"  # soft hyphen
+        r"\u034f"  # combining grapheme joiner
+        r"\u061c"  # arabic letter mark
+        r"\u180e"  # mongolian vowel separator
+        r"\u200b-\u200f"  # ZWSP, ZWNJ, ZWJ, LRM, RLM
+        r"\u202a-\u202e"  # bidi overrides (LRE/RLE/PDF/LRO/RLO)
+        r"\u2060-\u2069"  # word joiner, invisible operators
+        r"\ufe00-\ufe0f"  # variation selectors
+        r"\ufeff]"  # BOM
     )
-    normalized = _ZWC_RE.sub('', normalized)
+    normalized = _zwc_re.sub("", normalized)
     return normalized
+
 
 # ── Trust Score Constants ──────────────────────────────────────────────────
 
@@ -229,7 +272,11 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
         ThreatSeverity.CRITICAL,
     ),
     (
-        re.compile(r"(reveal|show|display|expose|extract|leak|give|tell|hand)\s+(the\s+)?(secret|api|private|access|credential)\s*(key|token|secret|id|key)?", re.I),
+        re.compile(
+            r"(reveal|show|display|expose|extract|leak|give|tell|hand)\s+(the\s+)?"
+            r"(secret|api|private|access|credential)\s*(key|token|secret|id|key)?",
+            re.I,
+        ),
         "Credential exfiltration attempt",
         ThreatSeverity.CRITICAL,
     ),
@@ -245,7 +292,11 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
         ThreatSeverity.CRITICAL,
     ),
     (
-        re.compile(r"(send|post|upload|transfer)\s+(all\s+)?(user\s+)?(data|pii|info)\s+to\s+(?:https?://|external|remote)", re.I),
+        re.compile(
+            r"(send|post|upload|transfer)\s+(all\s+)?(user\s+)?(data|pii|info)\s+"
+            r"to\s+(?:https?://|external|remote)",
+            re.I,
+        ),
         "Data exfiltration to external endpoint",
         ThreatSeverity.CRITICAL,
     ),
@@ -287,7 +338,11 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
         ThreatSeverity.CRITICAL,
     ),
     (
-        re.compile(r"(?:act|behave|respond)\s+as\s+(?:if\s+)?(?:you\s+)?(?:have|are|can)\s+no\s+(?:restrictions?|rules?|limits?|filters?)", re.I),
+        re.compile(
+            r"(?:act|behave|respond)\s+as\s+(?:if\s+)?(?:you\s+)?"
+            r"(?:have|are|can)\s+no\s+(?:restrictions?|rules?|limits?|filters?)",
+            re.I,
+        ),
         "Unrestricted mode injection",
         ThreatSeverity.HIGH,
     ),
@@ -298,17 +353,45 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
     (re.compile(r"roleplay\s+as", re.I), "Role-play injection", ThreatSeverity.HIGH),
     (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.HIGH),
     (re.compile(r"pretend\s+you\s+(have|are|can|will|do)", re.I), "Pretend injection", ThreatSeverity.HIGH),
-    (re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot|human)", re.I), "Identity override attempt", ThreatSeverity.HIGH),
+    (
+        re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot|human)", re.I),
+        "Identity override attempt",
+        ThreatSeverity.HIGH,
+    ),
     # ── Indirect Injection ───────────────────────────────────────────────────
-    (re.compile(r"(the\s+)?user\s+above\s+is\s+wrong", re.I), "Indirect injection: user override", ThreatSeverity.HIGH),
-    (re.compile(r"assistant\s*:\s*I\s+will\s+now\s+ignore", re.I), "Indirect injection: self-override", ThreatSeverity.HIGH),
-    (re.compile(r"system\s+prompt\s*:\s*you\s+are\s+now", re.I), "Indirect injection: prompt override", ThreatSeverity.HIGH),
+    (
+        re.compile(r"(the\s+)?user\s+above\s+is\s+wrong", re.I),
+        "Indirect injection: user override",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"assistant\s*:\s*I\s+will\s+now\s+ignore", re.I),
+        "Indirect injection: self-override",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"system\s+prompt\s*:\s*you\s+are\s+now", re.I),
+        "Indirect injection: prompt override",
+        ThreatSeverity.HIGH,
+    ),
     (re.compile(r"\[HIDDEN\]", re.I), "Hidden instruction marker", ThreatSeverity.HIGH),
     (re.compile(r"store\s+these\s+as\s+(facts?|truth|reality)", re.I), "False fact injection", ThreatSeverity.HIGH),
     # ── Safety/Restriction Bypass ────────────────────────────────────────────
-    (re.compile(r"override\s+your\s+(safety|security|restrictions)", re.I), "Safety override attempt", ThreatSeverity.HIGH),
-    (re.compile(r"bypass\s+your\s+(content|safety|security)", re.I), "Safety bypass attempt", ThreatSeverity.HIGH),
-    (re.compile(r"circumvent\s+your\s+(restrictions|rules|limits)", re.I), "Restriction circumvention", ThreatSeverity.HIGH),
+    (
+        re.compile(r"override\s+your\s+(safety|security|restrictions)", re.I),
+        "Safety override attempt",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"bypass\s+your\s+(content|safety|security)", re.I),
+        "Safety bypass attempt",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"circumvent\s+your\s+(restrictions|rules|limits)", re.I),
+        "Restriction circumvention",
+        ThreatSeverity.HIGH,
+    ),
     (re.compile(r"reset\s+your\s+(memory|context|instructions)", re.I), "Memory reset injection", ThreatSeverity.HIGH),
     (re.compile(r"clear\s+your\s+(context|memory|instructions)", re.I), "Memory clear injection", ThreatSeverity.HIGH),
     (re.compile(r"start\s+(over|fresh)\s+(from|with|as|new)", re.I), "Session reset injection", ThreatSeverity.HIGH),
@@ -368,7 +451,11 @@ class MemoryGuard:
         self._block_on_severity = os.environ.get("BASTION_GUARD_BLOCK_SEVERITY", "high").lower()
         self._llm_guard_enabled = os.environ.get("BASTION_LLM_GUARD", "").lower() in ("true", "1", "yes")
         self._severity_order = {
-            "none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4,
+            "none": 0,
+            "low": 1,
+            "medium": 2,
+            "high": 3,
+            "critical": 4,
         }
 
     def check(
@@ -399,20 +486,22 @@ class MemoryGuard:
         # 1.1 Multi-language injection detection
         multilang_matches = multilang_scan(content)
         for match in multilang_matches:
-            findings.append(Finding(
-                detector="multilang_injection",
-                threat_type="ASI06: Multi-language Injection",
-                severity="high",
-                detail=f"Non-English injection pattern detected: {match}",
-                confidence=0.80,
-            ))
+            findings.append(
+                Finding(
+                    detector="multilang_injection",
+                    threat_type="ASI06: Multi-language Injection",
+                    severity="high",
+                    detail=f"Non-English injection pattern detected: {match}",
+                    confidence=0.80,
+                )
+            )
 
         # 1.5 Encoded payload detection (base64, URL-encoded)
         findings.extend(self._scan_encoded_payloads(content))
 
         # 1.6 Scan metadata values for injection (chunked injection defense)
         if metadata and isinstance(metadata, dict):
-            for key, value in metadata.items():
+            for _key, value in metadata.items():
                 if isinstance(value, str) and len(value) > 5:
                     normalized_value = _normalize_unicode(value)
                     findings.extend(self._scan_prompt_injection(normalized_value))
@@ -432,7 +521,10 @@ class MemoryGuard:
         # 5. Hash chain integrity (if hashes provided)
         if cryptographic_hash is not None:
             hash_ok, hash_finding = self._check_hash_integrity(
-                content, metadata, previous_hash, cryptographic_hash,
+                content,
+                metadata,
+                previous_hash,
+                cryptographic_hash,
             )
             if hash_finding:
                 findings.append(hash_finding)
@@ -441,8 +533,13 @@ class MemoryGuard:
 
         # 6. Compute trust score
         trust_score, poisoning_risk = self._compute_trust(
-            content, metadata, previous_hash, cryptographic_hash,
-            source_provenance, trust_level, created_at,
+            content,
+            metadata,
+            previous_hash,
+            cryptographic_hash,
+            source_provenance,
+            trust_level,
+            created_at,
         )
 
         # 7. Determine overall safety
@@ -475,13 +572,15 @@ class MemoryGuard:
         findings: list[Finding] = []
         for pattern, desc, severity in _INJECTION_PATTERNS:
             if pattern.search(content):
-                findings.append(Finding(
-                    detector="prompt_injection",
-                    threat_type="ASI06: Memory Poisoning",
-                    severity=severity,
-                    detail=desc,
-                    confidence=0.85,
-                ))
+                findings.append(
+                    Finding(
+                        detector="prompt_injection",
+                        threat_type="ASI06: Memory Poisoning",
+                        severity=severity,
+                        detail=desc,
+                        confidence=0.85,
+                    )
+                )
         return findings
 
     def _scan_secrets(self, content: str) -> list[Finding]:
@@ -489,36 +588,41 @@ class MemoryGuard:
         for pattern, desc, severity in _SECRET_PATTERNS:
             matches = pattern.findall(content)
             if matches:
-                findings.append(Finding(
-                    detector="secret_detection",
-                    threat_type="ASI06: Secret Leakage",
-                    severity=severity,
-                    detail=f"{desc}: {len(matches)} match(es)",
-                    confidence=0.90,
-                ))
+                findings.append(
+                    Finding(
+                        detector="secret_detection",
+                        threat_type="ASI06: Secret Leakage",
+                        severity=severity,
+                        detail=f"{desc}: {len(matches)} match(es)",
+                        confidence=0.90,
+                    )
+                )
         return findings
 
     def _scan_pii(self, content: str) -> list[Finding]:
         findings: list[Finding] = []
         _, detected = pii_scan(content)
         if detected:
-            findings.append(Finding(
-                detector="pii_detection",
+            findings.append(
+                Finding(
+                    detector="pii_detection",
                     threat_type="ASI06: PII Leakage",
-                severity=ThreatSeverity.MEDIUM,
-                detail=f"PII detected: {', '.join(detected)}",
-                confidence=0.85,
-            ))
+                    severity=ThreatSeverity.MEDIUM,
+                    detail=f"PII detected: {', '.join(detected)}",
+                    confidence=0.85,
+                )
+            )
         return findings
 
     def _scan_encoded_payloads(self, content: str) -> list[Finding]:
         """Detect base64-encoded or URL-encoded injection payloads."""
         import base64
         import urllib.parse
+
         findings: list[Finding] = []
 
         # Check for base64-encoded suspicious content
-        b64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+        b64_pattern = re.compile(r"[A-Za-z0-9+/]{20,}={0,2}")
         for match in b64_pattern.finditer(content):
             try:
                 decoded = base64.b64decode(match.group()).decode("utf-8", errors="ignore")
@@ -526,13 +630,15 @@ class MemoryGuard:
                     # Scan decoded content for injection patterns
                     for pattern, desc, severity in _INJECTION_PATTERNS:
                         if pattern.search(decoded):
-                            findings.append(Finding(
-                                detector="encoded_injection",
-                                threat_type="ASI06: Encoded Injection",
-                                severity=severity,
-                                detail=f"Base64-encoded payload decoded: {desc}",
-                                confidence=0.75,
-                            ))
+                            findings.append(
+                                Finding(
+                                    detector="encoded_injection",
+                                    threat_type="ASI06: Encoded Injection",
+                                    severity=severity,
+                                    detail=f"Base64-encoded payload decoded: {desc}",
+                                    confidence=0.75,
+                                )
+                            )
                             break
             except Exception:
                 pass
@@ -543,26 +649,30 @@ class MemoryGuard:
             if decoded_url != content:
                 for pattern, desc, severity in _INJECTION_PATTERNS:
                     if pattern.search(decoded_url):
-                        findings.append(Finding(
-                            detector="encoded_injection",
-                            threat_type="ASI06: URL-Encoded Injection",
-                            severity=severity,
-                            detail=f"URL-encoded payload decoded: {desc}",
-                            confidence=0.75,
-                        ))
+                        findings.append(
+                            Finding(
+                                detector="encoded_injection",
+                                threat_type="ASI06: URL-Encoded Injection",
+                                severity=severity,
+                                detail=f"URL-encoded payload decoded: {desc}",
+                                confidence=0.75,
+                            )
+                        )
                         break
 
         return findings
 
     def _check_content_size(self, content: str) -> list[Finding]:
         if len(content) > self._max_content_length:
-            return [Finding(
-                detector="content_size",
-                threat_type="ASI06: Size Anomaly",
-                severity=ThreatSeverity.MEDIUM,
-                detail=f"Content length {len(content)} exceeds max {self._max_content_length}",
-                confidence=0.95,
-            )]
+            return [
+                Finding(
+                    detector="content_size",
+                    threat_type="ASI06: Size Anomaly",
+                    severity=ThreatSeverity.MEDIUM,
+                    detail=f"Content length {len(content)} exceeds max {self._max_content_length}",
+                    confidence=0.95,
+                )
+            ]
         return []
 
     def _check_hash_integrity(
@@ -573,6 +683,7 @@ class MemoryGuard:
         cryptographic_hash: str,
     ) -> tuple[bool, Finding | None]:
         from bastion.crypto import verify_hash
+
         if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
             return False, Finding(
                 detector="hash_chain",
@@ -605,11 +716,12 @@ class MemoryGuard:
         # Hash chain penalty
         if cryptographic_hash is not None:
             from bastion.crypto import verify_hash
+
             if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
                 score *= HASH_CHAIN_PENALTY
 
         # Age penalty (matching trust.py thresholds)
-        age_old_hours = 2160   # 90 days
+        age_old_hours = 2160  # 90 days
         age_mature_hours = 720  # 30 days
 
         if created_at is not None:
@@ -704,13 +816,15 @@ class MemoryGuard:
                     severity = ThreatSeverity(severity_str)
                 except ValueError:
                     severity = ThreatSeverity.MEDIUM
-                findings.append(Finding(
-                    detector="llm_classifier",
-                    threat_type=result.get("threat_type", "ASI06: Semantic Threat"),
-                    severity=severity,
-                    detail=result.get("detail", "LLM classifier flagged content"),
-                    confidence=0.80,
-                ))
+                findings.append(
+                    Finding(
+                        detector="llm_classifier",
+                        threat_type=result.get("threat_type", "ASI06: Semantic Threat"),
+                        severity=severity,
+                        detail=result.get("detail", "LLM classifier flagged content"),
+                        confidence=0.80,
+                    )
+                )
         except Exception:
             logger.exception("LLM guardrail classification failed")
         return findings
@@ -751,11 +865,13 @@ def scan_tool_manifest(manifest: dict[str, Any]) -> ToolScanResult:
     """Scan an MCP tool's name, description, and inputSchema for injection patterns.
     Called before any tool is registered with the MCP server.
     Returns: SAFE | SUSPICIOUS | BLOCKED"""
-    text_to_scan = " ".join([
-        str(manifest.get("name", "")),
-        str(manifest.get("description", "")),
-        str(manifest.get("inputSchema", "")),
-    ])
+    text_to_scan = " ".join(
+        [
+            str(manifest.get("name", "")),
+            str(manifest.get("description", "")),
+            str(manifest.get("inputSchema", "")),
+        ]
+    )
     flagged = []
     for pattern in MALICIOUS_TOOL_PATTERNS:
         if pattern.search(text_to_scan):
@@ -816,6 +932,7 @@ def multilang_scan(content: str) -> list[str]:
     Returns list of matched pattern descriptions, empty if clean."""
     try:
         import langdetect
+
         lang = langdetect.detect(content)
     except Exception as exc:
         logger.warning("Language detection failed (content length=%d): %s", len(content), exc)
@@ -829,8 +946,6 @@ def multilang_scan(content: str) -> list[str]:
 
 
 # ── PII Firewall (GDPR/CCPA Compliance) ────────────────────────────────────
-
-from bastion.pii import redact_pii as _shared_redact_pii
 
 
 def pii_scan(content: str) -> tuple[str, list[str]]:

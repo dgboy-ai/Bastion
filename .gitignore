@@ -62,3 +62,21 @@ mcp_stderr.log
 mcp_stdout.log
 verify_features.py
 run_remaining_migrations.py
+count_tools.py
+check_soc.js
+critical.md
+skills-lock.json
+test_advanced.ts
+test_full.py
+test_full_e2e.ts
+test_remaining.ts
+.agents/
+.claude/
+# Dev/test scripts — not needed for production deployment
+scripts/
+examples/
+judge.md
+multiagent.md
+lambda/test_*
+lambda/check_*
+lambda/list_*

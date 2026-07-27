@@ -33,71 +33,28 @@ ALTER TABLE agent_region_mapping ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_region_mapping FORCE ROW LEVEL SECURITY;
 """
 
-RLS_POLICY_SQL = """
+_POLICY_TEMPLATE = """
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_isolation_policy' AND tablename = 'agent_memory') THEN
-        CREATE POLICY agent_isolation_policy ON agent_memory
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_audit_isolation' AND tablename = 'agent_audit') THEN
-        CREATE POLICY agent_audit_isolation ON agent_audit
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_checkpoint_isolation' AND tablename = 'agent_checkpoints') THEN
-        CREATE POLICY agent_checkpoint_isolation ON agent_checkpoints
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_entities_isolation' AND tablename = 'agent_entities') THEN
-        CREATE POLICY agent_entities_isolation ON agent_entities
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_relations_isolation' AND tablename = 'agent_relations') THEN
-        CREATE POLICY agent_relations_isolation ON agent_relations
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_keys_isolation' AND tablename = 'agent_keys') THEN
-        CREATE POLICY agent_keys_isolation ON agent_keys
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_budgets_isolation' AND tablename = 'agent_budgets') THEN
-        CREATE POLICY agent_budgets_isolation ON agent_budgets
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
-
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_region_mapping_isolation' AND tablename = 'agent_region_mapping') THEN
-        CREATE POLICY agent_region_mapping_isolation ON agent_region_mapping
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = '{name}' AND tablename = '{table}') THEN
+        CREATE POLICY {name} ON {table}
             USING (agent_id = current_setting('app.current_agent_id', true))
             WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
     END IF;
 END $$;
 """
+
+RLS_POLICY_TABLES = [
+    ("agent_isolation_policy", "agent_memory"),
+    ("agent_audit_isolation", "agent_audit"),
+    ("agent_checkpoint_isolation", "agent_checkpoints"),
+    ("agent_entities_isolation", "agent_entities"),
+    ("agent_relations_isolation", "agent_relations"),
+    ("agent_keys_isolation", "agent_keys"),
+    ("agent_budgets_isolation", "agent_budgets"),
+    ("agent_region_mapping_isolation", "agent_region_mapping"),
+]
+
+RLS_POLICY_SQL = "\n\n".join(_POLICY_TEMPLATE.format(name=name, table=table) for name, table in RLS_POLICY_TABLES)
 
 
 class RowLevelSecurity:
@@ -125,7 +82,19 @@ class RowLevelSecurity:
                                 logger.warning("RLS policy creation: %s", e)
 
             self.conn.commit()
-            return {"status": "enabled", "tables": ["agent_memory", "agent_audit", "agent_checkpoints", "agent_entities", "agent_relations", "agent_keys", "agent_budgets", "agent_region_mapping"]}
+            return {
+                "status": "enabled",
+                "tables": [
+                    "agent_memory",
+                    "agent_audit",
+                    "agent_checkpoints",
+                    "agent_entities",
+                    "agent_relations",
+                    "agent_keys",
+                    "agent_budgets",
+                    "agent_region_mapping",
+                ],
+            }
         except Exception as e:
             logger.error("Failed to enable RLS: %s", e)
             return {"status": "error", "error": "RLS enablement failed — check server logs"}
@@ -149,7 +118,8 @@ class RowLevelSecurity:
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
         import threading
-        if not hasattr(self, '_verify_lock'):
+
+        if not hasattr(self, "_verify_lock"):
             self._verify_lock = threading.Lock()
         with self._verify_lock:
             prev_autocommit = self.conn.autocommit

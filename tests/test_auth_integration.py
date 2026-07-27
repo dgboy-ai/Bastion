@@ -12,18 +12,16 @@ import hashlib
 import os
 import secrets
 import time
-import threading
 
 import pytest
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import OAuthClientInformationFull
 
 from bastion.auth_provider import (
     BastionOAuthProvider,
     is_oauth_enabled,
     store_pkce_verifier,
 )
-from mcp.server.auth.provider import AuthorizationParams
-from mcp.shared.auth import OAuthClientInformationFull
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,11 +30,7 @@ def _make_pkce_pair():
     """Generate a PKCE code_verifier and code_challenge (S256)."""
     code_verifier = secrets.token_urlsafe(32)
     code_challenge = (
-        base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode("ascii")).digest()
-        )
-        .rstrip(b"=")
-        .decode("ascii")
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
     )
     return code_verifier, code_challenge
 
@@ -76,6 +70,7 @@ async def _authorize_and_exchange(provider, params, code_verifier):
     client = await provider.get_client("test-client")
     redirect = await provider.authorize(client, params)
     from urllib.parse import parse_qs, urlparse
+
     code = parse_qs(urlparse(redirect).query)["code"][0]
     store_pkce_verifier(code, code_verifier)
     auth_code = await provider.load_authorization_code(client, code)
@@ -93,6 +88,7 @@ def _manage_env():
     os.environ.pop("BASTION_MCP_OAUTH_ENABLED", None)
     # Reset the provider cache
     from bastion import auth_provider as ap
+
     ap._PRE_REGISTERED_CLIENT_ID = None
     ap._PRE_REGISTERED_CLIENT_SECRET = None
     ap._PRE_REGISTERED_REDIRECT_URI = None
@@ -119,6 +115,7 @@ class TestOAuthProviderInit:
     def test_provider_works_without_db(self):
         """Provider falls back to in-memory when no connection_string."""
         import os
+
         conn = os.environ.pop("BASTION_CONN", None)
         try:
             p = BastionOAuthProvider(client_id="no-db-client")
@@ -174,6 +171,7 @@ class TestPKCEVerification:
         """store_pkce_verifier stores the hashed verifier for later retrieval."""
         store_pkce_verifier("auth-code-123", "verifier-abc")
         from bastion.auth_provider import _pkce_verifiers
+
         entry = _pkce_verifiers.get("auth-code-123")
         assert entry is not None
         # Verifier is hashed before storage — should not be the raw value
@@ -182,7 +180,8 @@ class TestPKCEVerification:
 
     def test_pkce_verifier_cleanup_expired(self):
         """Expired PKCE verifiers are cleaned up."""
-        from bastion.auth_provider import _pkce_verifiers, _cleanup_pkce_verifiers, _PKCE_TTL
+        from bastion.auth_provider import _PKCE_TTL, _cleanup_pkce_verifiers, _pkce_verifiers
+
         # Manually insert an expired entry
         _pkce_verifiers["expired-code"] = ("verifier", time.time() - _PKCE_TTL - 100)
         _cleanup_pkce_verifiers()
@@ -268,6 +267,7 @@ class TestTokenExchange:
         client = await p.get_client("test-client")
         redirect = await p.authorize(client, params)
         from urllib.parse import parse_qs, urlparse
+
         code = parse_qs(urlparse(redirect).query)["code"][0]
         store_pkce_verifier(code, "wrong-verifier-abc")
         auth_code = await p.load_authorization_code(client, code)
@@ -282,6 +282,7 @@ class TestTokenExchange:
         client = await p.get_client("test-client")
         redirect = await p.authorize(client, params)
         from urllib.parse import parse_qs, urlparse
+
         code = parse_qs(urlparse(redirect).query)["code"][0]
         store_pkce_verifier(code, verifier)
         auth_code = await p.load_authorization_code(client, code)
@@ -316,9 +317,7 @@ class TestTokenLifecycle:
         p = _make_provider()
         params, verifier = _make_auth_params(scopes=["memory:read"])
         token, _ = await _authorize_and_exchange(p, params, verifier)
-        refresh = await p.load_refresh_token(
-            await p.get_client("test-client"), token.refresh_token
-        )
+        refresh = await p.load_refresh_token(await p.get_client("test-client"), token.refresh_token)
         assert refresh is not None
 
     @pytest.mark.asyncio
@@ -384,9 +383,7 @@ class TestScopeEscalation:
         token, _ = await _authorize_and_exchange(p, params, verifier)
         client = await p.get_client("test-client")
         refresh = await p.load_refresh_token(client, token.refresh_token)
-        new_token = await p.exchange_refresh_token(
-            client, refresh, ["memory:read", "admin:write"]
-        )
+        new_token = await p.exchange_refresh_token(client, refresh, ["memory:read", "admin:write"])
         assert "memory:read" in new_token.scope
         assert "admin:write" not in new_token.scope
 
@@ -405,8 +402,10 @@ class TestTimingSafeComparison:
 
     def test_check_auth_uses_timing_safe(self):
         """_check_auth uses secrets.compare_digest for API key comparison."""
-        from bastion.mcp_server import _check_auth
         import inspect
+
+        from bastion.mcp_server import _check_auth
+
         source = inspect.getsource(_check_auth)
         assert "compare_digest" in source
 
@@ -448,6 +447,7 @@ class TestBruteForceProtection:
         )
         redirect = await p.authorize(client, params)
         from urllib.parse import parse_qs, urlparse
+
         code = parse_qs(urlparse(redirect).query)["code"][0]
         store_pkce_verifier(code, "wrong-verifier-123")
         auth_code = await p.load_authorization_code(client, code)

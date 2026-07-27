@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
-
+from bastion import BastionMemory
 from bastion.rules import (
     CognitiveRule,
     CognitiveRulesEngine,
     ExecutionLog,
     RuleCategory,
     RuleRecommendation,
-    RuleStatus,
 )
-from bastion import BastionMemory
 
 
 class TestRuleCategory:
@@ -129,7 +126,7 @@ class TestCognitiveRulesEngine:
 
     def test_get_active_rules_filter(self):
         engine = self._make_engine()
-        for outcome in ["failure", "failure", "failure"]:
+        for _outcome in ["failure", "failure", "failure"]:
             engine.ingest_execution_log(
                 ExecutionLog(agent_id="a1", action="timeout_op", outcome="failure", error_message="timeout")
             )
@@ -143,9 +140,7 @@ class TestCognitiveRulesEngine:
 
     def test_get_stats(self):
         engine = self._make_engine()
-        engine.ingest_execution_log(
-            ExecutionLog(agent_id="a1", action="x", outcome="failure", error_message="timeout")
-        )
+        engine.ingest_execution_log(ExecutionLog(agent_id="a1", action="x", outcome="failure", error_message="timeout"))
         stats = engine.get_stats()
         assert stats["total_rules"] == 1
         assert stats["active_rules"] == 1

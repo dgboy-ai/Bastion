@@ -8,21 +8,20 @@ Run with: BASTION_CONN="postgresql://..." pytest tests/test_crdb_integration.py 
 These tests are excluded from CI mock runs and only execute when BASTION_CONN
 is set to a real connection string.
 """
+
 from __future__ import annotations
 
-import json
 import os
-import sys
 import time
 
 import pytest
+
+from bastion.memory import BastionMemory
 
 # Skip all tests if no real CRDB connection
 CONN = os.environ.get("BASTION_CONN", "")
 if not CONN:
     pytestmark = pytest.mark.skip(reason="Set BASTION_CONN to a real CockroachDB connection string")
-
-from bastion.memory import BastionMemory
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +35,7 @@ def real_mem():
 
 
 # ── 1. Basic Store + Retrieve ───────────────────────────────────────────────
+
 
 class TestCRDBStoreRetrieve:
     def test_store_creates_memory(self, real_mem):
@@ -57,6 +57,7 @@ class TestCRDBStoreRetrieve:
 
 
 # ── 2. Hash Chain Integrity ────────────────────────────────────────────────
+
 
 class TestCRDBHashChain:
     def test_hash_chain_links(self, real_mem):
@@ -80,6 +81,7 @@ class TestCRDBHashChain:
 
 # ── 3. Vector Search (C-SPANN) ─────────────────────────────────────────────
 
+
 class TestCRDBVectorSearch:
     def test_vector_search_returns_results(self, real_mem):
         real_mem.store("fact", "Python is a programming language", {"search_test": True})
@@ -101,6 +103,7 @@ class TestCRDBVectorSearch:
 
 
 # ── 4. Time-Travel (AS OF SYSTEM TIME) ─────────────────────────────────────
+
 
 class TestCRDBTimeTravel:
     def test_time_travel_returns_past_state(self, real_mem):
@@ -124,12 +127,11 @@ class TestCRDBTimeTravel:
 
 # ── 5. Conflict Resolution ─────────────────────────────────────────────────
 
+
 class TestCRDBConflictResolution:
     def test_resolve_conflict(self, real_mem):
         result = real_mem.resolve_conflict(
-            "The API is enabled by default",
-            "The API is not enabled by default",
-            "configuration_conflict"
+            "The API is enabled by default", "The API is not enabled by default", "configuration_conflict"
         )
         assert result is not None
         assert len(result) > 0
@@ -139,6 +141,7 @@ class TestCRDBConflictResolution:
 
 
 # ── 6. Memory Operations ────────────────────────────────────────────────────
+
 
 class TestCRDBMemoryOps:
     def test_reinforce(self, real_mem):
@@ -162,6 +165,7 @@ class TestCRDBMemoryOps:
 
 # ── 7. CDC Changefeed (Schema Verification) ─────────────────────────────────
 
+
 class TestCRDBCDC:
     def test_cdc_table_exists(self, real_mem):
         """Verify the CDC changefeed table exists in the schema."""
@@ -181,6 +185,7 @@ class TestCRDBCDC:
 
 
 # ── 8. Multi-Region (Schema Verification) ───────────────────────────────────
+
 
 class TestCRDBMultiRegion:
     def test_crdb_region_column_exists(self, real_mem):
@@ -203,6 +208,7 @@ class TestCRDBMultiRegion:
 
 
 # ── 9. Connection Pool ──────────────────────────────────────────────────────
+
 
 class TestCRDBPool:
     def test_pool_connects(self, real_mem):

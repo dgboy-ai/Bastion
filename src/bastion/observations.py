@@ -11,6 +11,7 @@ Usage:
     for obs in observations:
         print(f"[{obs.pattern_type}] {obs.description} (confidence: {obs.confidence})")
 """
+
 from __future__ import annotations
 
 import re
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 @dataclass
 class Observation:
     """A detected pattern or meta-observation across agent memories."""
+
     observation_id: str = ""
     pattern_type: str = ""  # "recurring_theme", "co_occurrence", "temporal_trend", "entity_cluster"
     description: str = ""
@@ -52,6 +54,7 @@ class Observation:
 @dataclass
 class ObservationReport:
     """Full report of detected observations."""
+
     agent_id: str = ""
     total_memories_scanned: int = 0
     observations: list[Observation] = field(default_factory=list)
@@ -67,18 +70,99 @@ class ObservationReport:
 
 
 # Common stop words to exclude from theme extraction
-_STOP_WORDS = frozenset({
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "dare", "ought",
-    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-    "as", "into", "through", "during", "before", "after", "above", "below",
-    "between", "out", "off", "over", "under", "again", "further", "then",
-    "once", "here", "there", "when", "where", "why", "how", "all", "each",
-    "every", "both", "few", "more", "most", "other", "some", "such", "no",
-    "not", "only", "own", "same", "so", "than", "too", "very", "just",
-    "and", "but", "or", "if", "while", "that", "this", "it", "its",
-})
+_STOP_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "dare",
+        "ought",
+        "used",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "out",
+        "off",
+        "over",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "and",
+        "but",
+        "or",
+        "if",
+        "while",
+        "that",
+        "this",
+        "it",
+        "its",
+    }
+)
 
 
 def _extract_ngrams(text: str, n: int = 2) -> list[str]:
@@ -86,7 +170,7 @@ def _extract_ngrams(text: str, n: int = 2) -> list[str]:
     words = [w.lower() for w in re.findall(r"\w+", text) if w.lower() not in _STOP_WORDS and len(w) > 2]
     if len(words) < n:
         return [" ".join(words)] if words else []
-    return [" ".join(words[i:i + n]) for i in range(len(words) - n + 1)]
+    return [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
 
 
 def _extract_entities(text: str) -> list[str]:
@@ -155,7 +239,7 @@ class ObservationDetector:
 
         # Sort by confidence and limit
         report.observations.sort(key=lambda o: o.confidence, reverse=True)
-        report.observations = report.observations[:self._max_observations]
+        report.observations = report.observations[: self._max_observations]
 
         logger.info(
             "Observation detection complete",
@@ -186,15 +270,17 @@ class ObservationDetector:
             confidence = min(0.95, 0.5 + (count / max(1, len(memories))) * 2)
             if confidence < self._min_confidence:
                 continue
-            observations.append(Observation(
-                observation_id=f"theme-{hash(theme) & 0xFFFFFF:06x}",
-                pattern_type="recurring_theme",
-                description=f"Recurring theme: \"{theme}\" appears in {count} memories",
-                confidence=confidence,
-                supporting_memories=bigram_memories[theme][:5],
-                frequency=count,
-                metadata={"theme": theme},
-            ))
+            observations.append(
+                Observation(
+                    observation_id=f"theme-{hash(theme) & 0xFFFFFF:06x}",
+                    pattern_type="recurring_theme",
+                    description=f'Recurring theme: "{theme}" appears in {count} memories',
+                    confidence=confidence,
+                    supporting_memories=bigram_memories[theme][:5],
+                    frequency=count,
+                    metadata={"theme": theme},
+                )
+            )
 
         return observations
 
@@ -209,7 +295,7 @@ class ObservationDetector:
                 continue
             # Generate pairs
             for i, e1 in enumerate(entities):
-                for e2 in entities[i + 1:]:
+                for e2 in entities[i + 1 :]:
                     pair = tuple(sorted([e1, e2]))
                     entity_pairs[pair] += 1
                     if mem.memory_id not in pair_memories[pair]:
@@ -222,15 +308,17 @@ class ObservationDetector:
             confidence = min(0.9, 0.5 + count * 0.1)
             if confidence < self._min_confidence:
                 continue
-            observations.append(Observation(
-                observation_id=f"cooc-{hash(pair) & 0xFFFFFF:06x}",
-                pattern_type="co_occurrence",
-                description=f"\"{pair[0]}\" and \"{pair[1]}\" co-occur in {count} memories",
-                confidence=confidence,
-                supporting_memories=pair_memories[pair][:5],
-                frequency=count,
-                metadata={"entity_a": pair[0], "entity_b": pair[1]},
-            ))
+            observations.append(
+                Observation(
+                    observation_id=f"cooc-{hash(pair) & 0xFFFFFF:06x}",
+                    pattern_type="co_occurrence",
+                    description=f'"{pair[0]}" and "{pair[1]}" co-occur in {count} memories',
+                    confidence=confidence,
+                    supporting_memories=pair_memories[pair][:5],
+                    frequency=count,
+                    metadata={"entity_a": pair[0], "entity_b": pair[1]},
+                )
+            )
 
         return observations
 
@@ -260,17 +348,18 @@ class ObservationDetector:
             if recent_count >= self._min_frequency and recent_count > old_count * 2:
                 confidence = min(0.85, 0.5 + (recent_count - old_count) * 0.05)
                 if confidence >= self._min_confidence:
-                    observations.append(Observation(
-                        observation_id=f"trend-{hash(theme) & 0xFFFFFF:06x}",
-                        pattern_type="temporal_trend",
-                        description=(
-                            f"Emerging trend: \"{theme}\" increased from "
-                            f"{old_count} to {recent_count} occurrences"
-                        ),
-                        confidence=confidence,
-                        frequency=recent_count,
-                        metadata={"theme": theme, "recent_count": recent_count, "old_count": old_count},
-                    ))
+                    observations.append(
+                        Observation(
+                            observation_id=f"trend-{hash(theme) & 0xFFFFFF:06x}",
+                            pattern_type="temporal_trend",
+                            description=(
+                                f'Emerging trend: "{theme}" increased from {old_count} to {recent_count} occurrences'
+                            ),
+                            confidence=confidence,
+                            frequency=recent_count,
+                            metadata={"theme": theme, "recent_count": recent_count, "old_count": old_count},
+                        )
+                    )
 
         return observations
 
@@ -285,23 +374,22 @@ class ObservationDetector:
                     entity_memories[e].append(mem.memory_id)
 
         # Find entities that appear in multiple memories
-        frequent_entities = {
-            e: mems for e, mems in entity_memories.items()
-            if len(mems) >= self._min_frequency
-        }
+        frequent_entities = {e: mems for e, mems in entity_memories.items() if len(mems) >= self._min_frequency}
 
         observations = []
         for entity, mems in sorted(frequent_entities.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
             confidence = min(0.9, 0.5 + len(mems) * 0.05)
             if confidence >= self._min_confidence:
-                observations.append(Observation(
-                    observation_id=f"entity-{hash(entity) & 0xFFFFFF:06x}",
-                    pattern_type="entity_cluster",
-                    description=f"Entity \"{entity}\" appears across {len(mems)} memories",
-                    confidence=confidence,
-                    supporting_memories=mems[:5],
-                    frequency=len(mems),
-                    metadata={"entity": entity},
-                ))
+                observations.append(
+                    Observation(
+                        observation_id=f"entity-{hash(entity) & 0xFFFFFF:06x}",
+                        pattern_type="entity_cluster",
+                        description=f'Entity "{entity}" appears across {len(mems)} memories',
+                        confidence=confidence,
+                        supporting_memories=mems[:5],
+                        frequency=len(mems),
+                        metadata={"entity": entity},
+                    )
+                )
 
         return observations

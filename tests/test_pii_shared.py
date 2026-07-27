@@ -3,11 +3,10 @@
 Covers: scan_pii, redact_pii, PII_PATTERNS, REDACTION_MAP, PII_DETECTION_PATTERNS.
 Edge cases: Unicode, mixed PII, empty input, overlapping patterns, boundary conditions.
 """
+
 from __future__ import annotations
 
 import re
-
-import pytest
 
 from bastion.pii import (
     PII_DETECTION_PATTERNS,
@@ -17,8 +16,8 @@ from bastion.pii import (
     scan_pii,
 )
 
-
 # ── scan_pii tests ────────────────────────────────────────────────────────────
+
 
 class TestScanPii:
     def test_no_pii(self):
@@ -83,6 +82,7 @@ class TestScanPii:
 
 
 # ── redact_pii tests ──────────────────────────────────────────────────────────
+
 
 class TestRedactPii:
     def test_no_pii_unchanged(self):
@@ -150,6 +150,7 @@ class TestRedactPii:
 
 # ── PII pattern compilation ───────────────────────────────────────────────────
 
+
 class TestPiiPatterns:
     def test_all_patterns_are_compiled(self):
         for name, pattern in PII_PATTERNS.items():
@@ -181,6 +182,7 @@ class TestPiiPatterns:
 
 
 # ── Edge cases ────────────────────────────────────────────────────────────────
+
 
 class TestPiiEdgeCases:
     def test_unicode_email(self):

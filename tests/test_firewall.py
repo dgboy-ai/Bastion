@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
-from bastion.firewall import CognitiveFirewall
 from bastion import BastionMemory
+from bastion.firewall import CognitiveFirewall
 
 
 class TestValidateMemoryWrite:

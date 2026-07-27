@@ -1,11 +1,11 @@
 """Tests for Auto-Routing Recall and expanded Capture Hooks."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime
 
-from bastion.router import RecallRouter, QueryClassification, RecallResult
-from bastion.capture_hooks import CaptureHooks, CaptureEvent
+from bastion.capture_hooks import CaptureHooks
+from bastion.router import RecallRouter
 
 
 class FakeEngine:
@@ -116,35 +116,45 @@ class TestExpandedCaptureHooks:
 
 class TestMemoryTTL:
     def test_store_with_expires_in(self):
-        engine = FakeEngine()
-        mem = type("M", (), {
-            "agent_id": "test",
-            "namespace": "test",
-            "_mock": True,
-            "_bedrock_cb": None,
-            "_retry_engine": None,
-            "_guard": type("G", (), {"check": lambda self, c: type("R", (), {"is_safe": True})()})(),
-            "_pool": None,
-            "_pool_lock": None,
-            "_rls_enabled": False,
-            "compliance_mode": None,
-            "_conn_str": None,
-        })()
+        FakeEngine()
+        type(
+            "M",
+            (),
+            {
+                "agent_id": "test",
+                "namespace": "test",
+                "_mock": True,
+                "_bedrock_cb": None,
+                "_retry_engine": None,
+                "_guard": type("G", (), {"check": lambda self, c: type("R", (), {"is_safe": True})()})(),
+                "_pool": None,
+                "_pool_lock": None,
+                "_rls_enabled": False,
+                "compliance_mode": None,
+                "_conn_str": None,
+            },
+        )()
         # Just verify the parameter exists in the signature
         import inspect
+
         from bastion.memory import BastionMemory
+
         sig = inspect.signature(BastionMemory.store)
         assert "expires_in_seconds" in sig.parameters
 
 
 def _mem(content, memory_id="m1", importance=5.0, metadata=None):
-    return type("M", (), {
-        "memory_id": memory_id,
-        "content": content,
-        "importance_score": importance,
-        "is_pinned": False,
-        "memory_type": "fact",
-        "created_at": datetime.now(UTC),
-        "access_count": 0,
-        "metadata": metadata or {},
-    })()
+    return type(
+        "M",
+        (),
+        {
+            "memory_id": memory_id,
+            "content": content,
+            "importance_score": importance,
+            "is_pinned": False,
+            "memory_type": "fact",
+            "created_at": datetime.now(UTC),
+            "access_count": 0,
+            "metadata": metadata or {},
+        },
+    )()

@@ -35,13 +35,15 @@ class SagaBoundary:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        self.operations.append({
-            "op_type": op_type,
-            "memory_id": memory_id,
-            "content": content,
-            "metadata": metadata or {},
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        self.operations.append(
+            {
+                "op_type": op_type,
+                "memory_id": memory_id,
+                "content": content,
+                "metadata": metadata or {},
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,8 +153,7 @@ class SagaMemoryManager:
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "UPDATE saga_states SET operations = operations || %s::JSONB "
-                        "WHERE saga_id = %s",
+                        "UPDATE saga_states SET operations = operations || %s::JSONB WHERE saga_id = %s",
                         (json.dumps([op]), saga_id),
                     )
                     if cur.rowcount == 0:
@@ -198,7 +199,8 @@ class SagaMemoryManager:
                     memory_type="system_event",
                     content=f"SAGA_COMMIT: {saga_id}",
                     metadata={
-                        "saga_id": saga_id, "event": "commit",
+                        "saga_id": saga_id,
+                        "event": "commit",
                         "operations": len(result.get("operations", [])),
                     },
                 )
@@ -219,7 +221,8 @@ class SagaMemoryManager:
                 memory_type="system_event",
                 content=f"SAGA_COMMIT: {saga_id}",
                 metadata={
-                    "saga_id": saga_id, "event": "commit",
+                    "saga_id": saga_id,
+                    "event": "commit",
                     "operations": len(result.get("operations", [])),
                 },
             )
@@ -239,15 +242,14 @@ class SagaMemoryManager:
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT operations FROM saga_states "
-                        "WHERE saga_id = %s AND status = 'active' FOR UPDATE",
+                        "SELECT operations FROM saga_states WHERE saga_id = %s AND status = 'active' FOR UPDATE",
                         (saga_id,),
                     )
                     row = cur.fetchone()
                     if not row:
                         raise ValueError(f"Saga {saga_id} not found or already completed")
 
-                    raw_ops = row[0] if hasattr(row, '_mapping') else row[0]
+                    raw_ops = row[0] if hasattr(row, "_mapping") else row[0]
                     if isinstance(raw_ops, str):
                         operations = json.loads(raw_ops)
                     else:
@@ -352,10 +354,18 @@ class SagaMemoryManager:
 
     @staticmethod
     def _row_to_dict(row: Any) -> dict[str, Any]:
-        rm = row._mapping if hasattr(row, '_mapping') else {
-            "saga_id": row[0], "agent_id": row[1], "status": row[2],
-            "operations": row[3], "created_at": row[4], "completed_at": row[5],
-        }
+        rm = (
+            row._mapping
+            if hasattr(row, "_mapping")
+            else {
+                "saga_id": row[0],
+                "agent_id": row[1],
+                "status": row[2],
+                "operations": row[3],
+                "created_at": row[4],
+                "completed_at": row[5],
+            }
+        )
         raw_ops = rm["operations"]
         if isinstance(raw_ops, str):
             operations = json.loads(raw_ops)
@@ -367,8 +377,9 @@ class SagaMemoryManager:
             "status": str(rm["status"]),
             "operations": operations,
             "created_at": rm["created_at"].isoformat()
-                if hasattr(rm["created_at"], "isoformat") else str(rm["created_at"]),
+            if hasattr(rm["created_at"], "isoformat")
+            else str(rm["created_at"]),
             "completed_at": rm["completed_at"].isoformat()
-                if hasattr(rm["completed_at"], "isoformat") and rm["completed_at"] is not None
-                else None,
+            if hasattr(rm["completed_at"], "isoformat") and rm["completed_at"] is not None
+            else None,
         }

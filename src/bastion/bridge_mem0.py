@@ -91,26 +91,23 @@ class BastionMem0Bridge:
                 content = fact.get("content", fact.get("memory", str(fact)))
                 mtype = fact.get("memory_type", memory_type or "fact")
                 record = self._memory.store(mtype, content, metadata)
-                results.append({
-                    "id": record.memory_id,
-                    "memory": record.content,
-                    "event": "ADD",
-                })
+                results.append(
+                    {
+                        "id": record.memory_id,
+                        "memory": record.content,
+                        "event": "ADD",
+                    }
+                )
             return {"results": results}
 
         if infer and self._infer_fn is None:
-            raise NotImplementedError(
-                "infer=True requires an infer_fn to be provided at bridge construction"
-            )
+            raise NotImplementedError("infer=True requires an infer_fn to be provided at bridge construction")
 
         # infer=False — store verbatim
         if isinstance(messages, str):
             items = [messages]
         else:
-            items = [
-                m.get("content", str(m))
-                for m in messages
-            ]
+            items = [m.get("content", str(m)) for m in messages]
 
         results = []
         for item in items:
@@ -119,11 +116,13 @@ class BastionMem0Bridge:
                 item,
                 metadata,
             )
-            results.append({
-                "id": record.memory_id,
-                "memory": record.content,
-                "event": "ADD",
-            })
+            results.append(
+                {
+                    "id": record.memory_id,
+                    "memory": record.content,
+                    "event": "ADD",
+                }
+            )
 
         return {"results": results}
 
@@ -189,13 +188,15 @@ class BastionMem0Bridge:
         **kwargs: Any,
     ) -> dict:
         """List all memories matching filters."""
-        target_id: str = str(
-            filters.get("agent_id") or filters.get("user_id") or
-            filters.get("run_id") or self._agent_id
-        ) if filters else self._agent_id
+        target_id: str = (
+            str(filters.get("agent_id") or filters.get("user_id") or filters.get("run_id") or self._agent_id)
+            if filters
+            else self._agent_id
+        )
 
         if self._memory.is_mock:
             from bastion.mock import _agent_data, _lock
+
             with _lock:
                 records = _agent_data.get(target_id, [])
         else:
@@ -257,6 +258,7 @@ class BastionMem0Bridge:
             finally:
                 pool.release(conn)
         from bastion.mock import _agent_data
+
         records = _agent_data.pop(eid, [])
         return {"message": f"{len(records)} memories deleted successfully!"}
 
@@ -277,6 +279,7 @@ class BastionMem0Bridge:
             finally:
                 pool.release(conn)
         from bastion.mock import _agent_data
+
         _agent_data.clear()
 
     # ------------------------------------------------------------------
@@ -290,6 +293,7 @@ class BastionMem0Bridge:
             if hasattr(val, "isoformat"):
                 return val.isoformat()
             return str(val)
+
         if isinstance(rec, dict):
             return {
                 "id": rec.get("memory_id", ""),

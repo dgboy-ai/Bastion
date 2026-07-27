@@ -15,6 +15,7 @@ Usage:
     if result.contradictions_found > 0:
         print(f"Auto-invalidated {result.contradictions_found} stale memories")
 """
+
 from __future__ import annotations
 
 import re
@@ -46,16 +47,32 @@ _NEGATION_PATTERNS = [
 ]
 
 # Temporal signals that indicate recency
-_TEMPORAL_KEYWORDS = frozenset({
-    "now", "currently", "today", "yesterday", "this week", "this month",
-    "recently", "latest", "updated", "changed", "switched to", "migrated to",
-    "upgraded to", "deprecated", "removed", "replaced",
-})
+_TEMPORAL_KEYWORDS = frozenset(
+    {
+        "now",
+        "currently",
+        "today",
+        "yesterday",
+        "this week",
+        "this month",
+        "recently",
+        "latest",
+        "updated",
+        "changed",
+        "switched to",
+        "migrated to",
+        "upgraded to",
+        "deprecated",
+        "removed",
+        "replaced",
+    }
+)
 
 
 @dataclass
 class Contradiction:
     """A detected contradiction between two memories."""
+
     new_memory_id: str
     old_memory_id: str
     new_content: str
@@ -83,6 +100,7 @@ class Contradiction:
 @dataclass
 class ContradictionScanResult:
     """Result of a contradiction scan."""
+
     new_memory_id: str
     scanned_count: int = 0
     contradictions_found: int = 0
@@ -204,6 +222,7 @@ class ContradictionDetector:
         This is the main entry point. Call it after memory.store().
         """
         import time
+
         start = time.monotonic()
 
         result = ContradictionScanResult(new_memory_id=new_record.memory_id)
@@ -217,7 +236,8 @@ class ContradictionDetector:
 
         # Filter out the new memory itself, superseded memories, and pinned memories
         similar = [
-            m for m in similar
+            m
+            for m in similar
             if m.memory_id != new_record.memory_id
             and not (getattr(m, "metadata", {}) or {}).get("superseded")
             and not getattr(m, "is_pinned", False)
@@ -343,12 +363,15 @@ class ContradictionDetector:
 
         try:
             # Use individual field patches (applied TO the metadata dict)
-            self._memory.apply_patch(old_memory.memory_id, [
-                {"op": "add", "path": "/superseded", "value": True},
-                {"op": "add", "path": "/superseded_by", "value": new_memory_id},
-                {"op": "add", "path": "/superseded_at", "value": now_iso},
-                {"op": "add", "path": "/superseded_reason", "value": reason},
-            ])
+            self._memory.apply_patch(
+                old_memory.memory_id,
+                [
+                    {"op": "add", "path": "/superseded", "value": True},
+                    {"op": "add", "path": "/superseded_by", "value": new_memory_id},
+                    {"op": "add", "path": "/superseded_at", "value": now_iso},
+                    {"op": "add", "path": "/superseded_reason", "value": reason},
+                ],
+            )
             # Lower importance so it sinks in search results
             self._memory.reinforce(old_memory.memory_id, success=False)
         except Exception as exc:
@@ -364,7 +387,10 @@ class ContradictionDetector:
             # Basic redaction: mask likely secrets
             secret_pattern = r"(api[_-]?key|secret|password|token)\s*[=:]\s*\S+"
             content_preview = re.sub(
-                secret_pattern, r"\1=***", content_preview, flags=re.IGNORECASE,
+                secret_pattern,
+                r"\1=***",
+                content_preview,
+                flags=re.IGNORECASE,
             )
             self._memory.store_audit(
                 action="contradiction_auto_supersede",
@@ -396,16 +422,16 @@ class ContradictionDetector:
 
         # Filter to scannable memories
         scannable = [
-            m for m in all_memories
-            if not (getattr(m, "metadata", {}) or {}).get("superseded")
-            and not getattr(m, "is_pinned", False)
+            m
+            for m in all_memories
+            if not (getattr(m, "metadata", {}) or {}).get("superseded") and not getattr(m, "is_pinned", False)
         ]
 
         results = []
         seen_pairs: set[tuple[str, str]] = set()
 
         for i, mem_a in enumerate(scannable):
-            for mem_b in scannable[i + 1:]:
+            for mem_b in scannable[i + 1 :]:
                 pair_key = tuple(sorted([mem_a.memory_id, mem_b.memory_id]))
                 if pair_key in seen_pairs:
                     continue
@@ -413,20 +439,24 @@ class ContradictionDetector:
 
                 contradiction = self._check_contradiction(mem_a, mem_b)
                 if contradiction is not None:
-                    results.append(ContradictionScanResult(
-                        new_memory_id=mem_a.memory_id,
-                        contradictions_found=1,
-                        contradictions=[contradiction],
-                        scanned_count=1,
-                    ))
+                    results.append(
+                        ContradictionScanResult(
+                            new_memory_id=mem_a.memory_id,
+                            contradictions_found=1,
+                            contradictions=[contradiction],
+                            scanned_count=1,
+                        )
+                    )
                     # Check reverse direction
                     contradiction_rev = self._check_contradiction(mem_b, mem_a)
                     if contradiction_rev is not None and contradiction_rev.old_memory_id != mem_a.memory_id:
-                        results.append(ContradictionScanResult(
-                            new_memory_id=mem_b.memory_id,
-                            contradictions_found=1,
-                            contradictions=[contradiction_rev],
-                            scanned_count=1,
-                        ))
+                        results.append(
+                            ContradictionScanResult(
+                                new_memory_id=mem_b.memory_id,
+                                contradictions_found=1,
+                                contradictions=[contradiction_rev],
+                                scanned_count=1,
+                            )
+                        )
 
         return results

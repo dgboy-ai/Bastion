@@ -108,6 +108,7 @@ async def test_full_authorization_code_flow(provider):
 
     # Simulate middleware capturing the code_verifier (in production, the middleware does this)
     from bastion.auth_provider import store_pkce_verifier
+
     store_pkce_verifier(auth_code_str, code_verifier)
 
     token = await provider.exchange_authorization_code(client, auth_code)
@@ -181,7 +182,8 @@ async def test_provider_with_explicit_client():
     assert client is not None
     # Client secret is now hashed before storage (security hardening)
     import hashlib
-    expected_hash = hashlib.sha256("secret-123".encode()).hexdigest()
+
+    expected_hash = hashlib.sha256(b"secret-123").hexdigest()
     assert client.client_secret == expected_hash
     assert str(client.redirect_uris[0]) == "http://localhost:9999/cb"
     assert client.token_endpoint_auth_method == "client_secret_post"

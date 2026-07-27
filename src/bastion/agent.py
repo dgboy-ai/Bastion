@@ -36,13 +36,10 @@ import anyio
 from bastion.log_setup import get_logger
 from bastion.memory import BastionMemory
 from bastion.models import AuditEntry, MemoryRecord
+from bastion.pii import PII_PATTERNS as _SHARED_PII_PATTERNS
+from bastion.pii import REDACTION_MAP as _REDACTION_MAP
 
 logger = get_logger("bastion.agent")
-
-# ── PII Patterns (shared module) ────────────────────────────────────────────
-
-from bastion.pii import PII_PATTERNS as _SHARED_PII_PATTERNS, REDACTION_MAP as _REDACTION_MAP
-from bastion.pii import scan_pii as _scan_pii, redact_pii as _shared_redact_pii
 
 # API key patterns (not in shared module — agent-specific)
 API_KEY_PATTERNS: list[tuple[str, str, str]] = [
@@ -63,28 +60,33 @@ def redact_pii(text: str) -> tuple[str, list[dict]]:
         matches = list(pattern.finditer(redacted))
         replacement = _REDACTION_MAP.get(pii_type, f"[REDACTED_{pii_type.upper()}]")
         for match in matches:
-            redactions.append({
-                "type": pii_type,
-                "original": match.group(),
-                "position": match.span(),
-            })
+            redactions.append(
+                {
+                    "type": pii_type,
+                    "original": match.group(),
+                    "position": match.span(),
+                }
+            )
         redacted = pattern.sub(replacement, redacted)
 
     # Also check agent-specific API key patterns
     for pii_type, pattern, replacement in API_KEY_PATTERNS:
         matches = list(re.finditer(pattern, redacted))
         for match in matches:
-            redactions.append({
-                "type": pii_type,
-                "original": match.group(),
-                "position": match.span(),
-            })
+            redactions.append(
+                {
+                    "type": pii_type,
+                    "original": match.group(),
+                    "position": match.span(),
+                }
+            )
         redacted = re.sub(pattern, replacement, redacted)
 
     return redacted, redactions
 
 
 # ── Memory Consolidation ─────────────────────────────────────────────────────
+
 
 class MemoryConsolidator:
     """
@@ -191,6 +193,7 @@ class MemoryConsolidator:
 
 # ── Agent Checkpoint ─────────────────────────────────────────────────────────
 
+
 class AgentCheckpoint:
     """Represents a checkpoint of agent state."""
 
@@ -222,6 +225,7 @@ class AgentCheckpoint:
 
 
 # ── BastionAgent ─────────────────────────────────────────────────────────────
+
 
 class BastionAgent:
     """
@@ -274,9 +278,7 @@ class BastionAgent:
         # Initialize consolidation
         self._consolidator: MemoryConsolidator | None = None
         if enable_consolidation:
-            self._consolidator = MemoryConsolidator(
-                self.memory, consolidation_interval
-            )
+            self._consolidator = MemoryConsolidator(self.memory, consolidation_interval)
 
         # Conversation history for context (thread-safe)
         self._conversation_history: list[dict[str, str]] = []
@@ -326,9 +328,7 @@ class BastionAgent:
         # 4. Generate response (offloaded to thread for sync LLM callback)
         if self._llm_callback is not None:
             cb = self._llm_callback
-            response = await anyio.to_thread.run_sync(
-                lambda: cb(user_message, context)
-            )
+            response = await anyio.to_thread.run_sync(lambda: cb(user_message, context))
         else:
             response = self._mock_response(user_message, context)
 
@@ -354,8 +354,10 @@ class BastionAgent:
         memory_ref = self.memory
         for mem in context:
             mid = mem.memory_id
+
             def _reinforce(mid: str = mid) -> dict:
                 return memory_ref.reinforce(mid, success=True)
+
             await anyio.to_thread.run_sync(_reinforce)
 
         return response
@@ -364,10 +366,7 @@ class BastionAgent:
         """Generate a mock response when no LLM callback is provided."""
         if context:
             context_summary = "; ".join([m.content[:100] for m in context[:3]])
-            return (
-                f"Based on my memory, I recall: {context_summary}. "
-                f"Regarding your message: {user_message}"
-            )
+            return f"Based on my memory, I recall: {context_summary}. Regarding your message: {user_message}"
         return f"I received your message: {user_message}. I'm building my memory..."
 
     def search_memory(
@@ -602,12 +601,14 @@ class BastionAgent:
         for r in results:
             try:
                 data = json.loads(r.content)
-                pages.append({
-                    "page_id": data.get("page_id"),
-                    "dehydrated_at": data.get("dehydrated_at"),
-                    "conversation_turns": data.get("conversation_turns", 0),
-                    "memory_count": data.get("memory_count", 0),
-                })
+                pages.append(
+                    {
+                        "page_id": data.get("page_id"),
+                        "dehydrated_at": data.get("dehydrated_at"),
+                        "conversation_turns": data.get("conversation_turns", 0),
+                        "memory_count": data.get("memory_count", 0),
+                    }
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
         return pages

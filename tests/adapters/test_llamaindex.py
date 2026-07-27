@@ -3,10 +3,12 @@ from bastion.adapters.llamaindex import BastionVectorStore
 
 def test_add():
     store = BastionVectorStore("li-test", mock=True)
-    results = store.add([
-        {"text": "Document about Python", "source": "docs"},
-        {"text": "Document about Rust", "source": "tutorial"},
-    ])
+    results = store.add(
+        [
+            {"text": "Document about Python", "source": "docs"},
+            {"text": "Document about Rust", "source": "tutorial"},
+        ]
+    )
     assert len(results) == 2
     assert results[0].memory_type == "llama_index"
 

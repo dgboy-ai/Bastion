@@ -1,7 +1,6 @@
 """Tests for bastion.knowledge_graph module."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 
 class TestExtractTriples:

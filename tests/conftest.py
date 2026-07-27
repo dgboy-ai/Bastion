@@ -14,6 +14,7 @@ def _clean_mock_state():
 @pytest.fixture(autouse=True)
 def _disable_strict_a2a():
     import os
+
     orig = os.environ.get("BASTION_A2A_STRICT")
     orig_mock = os.environ.get("BASTION_MOCK")
     os.environ["BASTION_A2A_STRICT"] = "false"

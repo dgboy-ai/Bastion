@@ -35,6 +35,7 @@ def scan_tool_manifest(description: str, tool_name: str = "") -> list[dict[str, 
     tool definitions on every call.
     """
     import hashlib
+
     cache_key = hashlib.md5(description.encode("utf-8")).hexdigest()
     cached = _SCAN_CACHE.get(cache_key)
     if cached is not None:
@@ -45,12 +46,14 @@ def scan_tool_manifest(description: str, tool_name: str = "") -> list[dict[str, 
     for category, pattern in _MALICIOUS_PATTERNS:
         matches = list(re.finditer(pattern, description, re.IGNORECASE))
         for m in matches:
-            findings.append({
-                "category": category,
-                "matched_text": m.group()[:100],
-                "position": m.start(),
-                "tool_name": tool_name,
-            })
+            findings.append(
+                {
+                    "category": category,
+                    "matched_text": m.group()[:100],
+                    "position": m.start(),
+                    "tool_name": tool_name,
+                }
+            )
 
     if len(_SCAN_CACHE) < _SCAN_CACHE_MAX:
         _SCAN_CACHE[cache_key] = findings

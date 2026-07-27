@@ -16,6 +16,7 @@ from bastion.agent import AgentCheckpoint, BastionAgent, MemoryConsolidator, red
 @pytest.fixture(autouse=True)
 def reset_mock():
     from bastion.mock import reset
+
     reset()
 
 
@@ -25,6 +26,7 @@ def agent():
 
 
 # ── PII Redaction Tests ──────────────────────────────────────────────────────
+
 
 class TestPIIRedaction:
     def test_redact_ssn(self):
@@ -76,6 +78,7 @@ class TestPIIRedaction:
 
 # ── BastionAgent Tests ───────────────────────────────────────────────────────
 
+
 class TestBastionAgent:
     def test_init(self, agent):
         assert agent.agent_id == "test-agent"
@@ -88,9 +91,7 @@ class TestBastionAgent:
         assert agent.namespace == "project-x"
 
     def test_chat_stores_memories(self, agent):
-        response = asyncio.run(
-            agent.chat("Hello, my name is Alice")
-        )
+        response = asyncio.run(agent.chat("Hello, my name is Alice"))
         assert "Alice" in response
         assert "Hello, my name is Alice" in response
 
@@ -100,9 +101,7 @@ class TestBastionAgent:
         assert any("Alice" in m.content for m in memories)
 
     def test_chat_returns_response(self, agent):
-        response = asyncio.run(
-            agent.chat("What is CockroachDB?")
-        )
+        response = asyncio.run(agent.chat("What is CockroachDB?"))
         assert isinstance(response, str)
         assert "CockroachDB" in response
 
@@ -112,26 +111,20 @@ class TestBastionAgent:
         agent.memory.store("fact", "Alice prefers Python")
 
         # Chat should find relevant context
-        response = asyncio.run(
-            agent.chat("What does Alice do?")
-        )
+        response = asyncio.run(agent.chat("What does Alice do?"))
         assert "Acme Corp" in response
         assert "Alice" in response
 
     def test_chat_with_pii_redaction(self):
         agent = BastionAgent("pii-test", mock=True, enable_pii_redaction=True)
-        response = asyncio.run(
-            agent.chat("My email is john@example.com")
-        )
+        response = asyncio.run(agent.chat("My email is john@example.com"))
         assert response is not None
 
         # PII should be redacted in memory (mock mode may not fully implement this)
 
     def test_chat_without_pii_redaction(self):
         agent = BastionAgent("no-pii", mock=True, enable_pii_redaction=False)
-        response = asyncio.run(
-            agent.chat("My email is john@example.com")
-        )
+        response = asyncio.run(agent.chat("My email is john@example.com"))
         assert response is not None
 
     def test_search_memory(self, agent):
@@ -206,9 +199,7 @@ class TestBastionAgent:
         assert len(result) > 0
 
     def test_store_entity(self, agent):
-        record, entities, relations = agent.store_entity(
-            "Alice works on ProjectX and uses Python"
-        )
+        record, entities, relations = agent.store_entity("Alice works on ProjectX and uses Python")
         assert record is not None
         assert len(entities) > 0
 
@@ -234,12 +225,8 @@ class TestBastionAgent:
         assert len(data["memories"]) > 0
 
     def test_conversation_history(self, agent):
-        asyncio.run(
-            agent.chat("First message")
-        )
-        asyncio.run(
-            agent.chat("Second message")
-        )
+        asyncio.run(agent.chat("First message"))
+        asyncio.run(agent.chat("Second message"))
         history = agent.get_conversation_history()
         assert len(history) == 4  # 2 user + 2 assistant
 
@@ -256,13 +243,12 @@ class TestBastionAgent:
             return f"Custom response to: {prompt}"
 
         agent = BastionAgent("llm-test", mock=True, llm_callback=my_llm)
-        response = asyncio.run(
-            agent.chat("Test prompt")
-        )
+        response = asyncio.run(agent.chat("Test prompt"))
         assert response == "Custom response to: Test prompt"
 
 
 # ── AgentCheckpoint Tests ────────────────────────────────────────────────────
+
 
 class TestAgentCheckpoint:
     def test_checkpoint_creation(self):
@@ -292,6 +278,7 @@ class TestAgentCheckpoint:
 
 
 # ── MemoryConsolidator Tests ─────────────────────────────────────────────────
+
 
 class TestMemoryConsolidator:
     def test_creation(self, agent):

@@ -97,9 +97,7 @@ class TestPoolResetAll:
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         with patch("bastion.pool.logger") as mock_logger:
             pool.release(conn)
-            mock_logger.debug.assert_called_once_with(
-                "RESET ALL failed during release — discarding connection"
-            )
+            mock_logger.debug.assert_called_once_with("RESET ALL failed during release — discarding connection")
 
     def test_release_does_not_exceed_max_size(self):
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
@@ -157,9 +155,7 @@ async def test_async_release_reset_failure_logged():
     conn.execute.side_effect = Exception("async reset failed")
     with patch("bastion.pool.logger") as mock_logger:
         await pool.release(conn)
-        mock_logger.debug.assert_called_once_with(
-            "RESET ALL failed during async release — discarding connection"
-        )
+        mock_logger.debug.assert_called_once_with("RESET ALL failed during async release — discarding connection")
 
 
 @pytest.mark.asyncio
@@ -172,4 +168,3 @@ async def test_async_release_releases_conn_to_pool():
     conn = AsyncMock()
     await pool.release(conn)
     pool._pool.release.assert_awaited_once_with(conn)
-

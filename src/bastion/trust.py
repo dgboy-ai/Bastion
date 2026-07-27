@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum
@@ -69,14 +67,21 @@ def compute_trust_score(
     score = 1.0
 
     from bastion.crypto import verify_hash
+
     if cryptographic_hash is not None:
         hash_ok = verify_hash(content, metadata, previous_hash, cryptographic_hash)
         if not hash_ok:
             flags.append("HASH_CHAIN_BREAK")
             return TrustReport(
-                memory_id=memory_id, trust_score=0.0, trust_level=TrustLevel(trust_level),
-                hash_chain_intact=False, conflict_rate=0.0, age_penalty=0.0,
-                source_provenance=source_provenance, poisoning_risk="CRITICAL", flags=flags,
+                memory_id=memory_id,
+                trust_score=0.0,
+                trust_level=TrustLevel(trust_level),
+                hash_chain_intact=False,
+                conflict_rate=0.0,
+                age_penalty=0.0,
+                source_provenance=source_provenance,
+                poisoning_risk="CRITICAL",
+                flags=flags,
             )
     else:
         # No hash chain available — trust based on other factors
@@ -99,7 +104,7 @@ def compute_trust_score(
         score *= OVERWRITE_PENALTY_MODERATE
 
     # Age-based decay thresholds (in hours)
-    age_old_hours = 2160   # 90 days
+    age_old_hours = 2160  # 90 days
     age_mature_hours = 720  # 30 days
 
     age_penalty = 0.0
@@ -107,10 +112,10 @@ def compute_trust_score(
         age_hours = (datetime.now(UTC) - created_at).total_seconds() / 3600
         if age_hours > age_old_hours:
             age_penalty = 0.5
-            score *= (1.0 - age_penalty)
+            score *= 1.0 - age_penalty
         elif age_hours > age_mature_hours:
             age_penalty = 0.3
-            score *= (1.0 - age_penalty)
+            score *= 1.0 - age_penalty
 
     if score >= 0.8:
         poisoning_risk = "NONE"

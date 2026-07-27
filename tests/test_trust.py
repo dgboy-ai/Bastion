@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
-from bastion.trust import TrustLevel, compute_trust_score
+from bastion.trust import compute_trust_score
 
 
 class TestTrustScore:

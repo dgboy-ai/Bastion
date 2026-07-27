@@ -202,18 +202,112 @@ class MemoryAnalytics:
         # Simple keyword extraction
         word_counts: Counter = Counter()
         stop_words = {
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-            "have", "has", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "shall", "can", "need", "dare", "ought",
-            "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-            "as", "into", "through", "during", "before", "after", "above", "below",
-            "between", "out", "off", "over", "under", "again", "further", "then",
-            "once", "here", "there", "when", "where", "why", "how", "all", "each",
-            "every", "both", "few", "more", "most", "other", "some", "such", "no",
-            "not", "only", "own", "same", "so", "than", "too", "very", "just",
-            "don't", "now", "and", "but", "or", "if", "while", "that", "this",
-            "it", "its", "i", "my", "me", "we", "our", "you", "your", "he", "she",
-            "they", "them", "what", "which", "who", "whom",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "may",
+            "might",
+            "shall",
+            "can",
+            "need",
+            "dare",
+            "ought",
+            "used",
+            "to",
+            "of",
+            "in",
+            "for",
+            "on",
+            "with",
+            "at",
+            "by",
+            "from",
+            "as",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "out",
+            "off",
+            "over",
+            "under",
+            "again",
+            "further",
+            "then",
+            "once",
+            "here",
+            "there",
+            "when",
+            "where",
+            "why",
+            "how",
+            "all",
+            "each",
+            "every",
+            "both",
+            "few",
+            "more",
+            "most",
+            "other",
+            "some",
+            "such",
+            "no",
+            "not",
+            "only",
+            "own",
+            "same",
+            "so",
+            "than",
+            "too",
+            "very",
+            "just",
+            "don't",
+            "now",
+            "and",
+            "but",
+            "or",
+            "if",
+            "while",
+            "that",
+            "this",
+            "it",
+            "its",
+            "i",
+            "my",
+            "me",
+            "we",
+            "our",
+            "you",
+            "your",
+            "he",
+            "she",
+            "they",
+            "them",
+            "what",
+            "which",
+            "who",
+            "whom",
         }
 
         for mem in all_memories:
@@ -247,13 +341,15 @@ class MemoryAnalytics:
                 age_hours = (now - mem.created_at).total_seconds() / 3600
                 # Decay formula: importance / (1 + 0.01 * hours)
                 decayed_score = mem.importance_score / (1 + 0.01 * age_hours)
-                decay_data.append({
-                    "memory_id": mem.memory_id,
-                    "original_score": mem.importance_score,
-                    "decayed_score": round(decayed_score, 2),
-                    "age_hours": round(age_hours, 1),
-                    "at_risk": decayed_score < 2.0,
-                })
+                decay_data.append(
+                    {
+                        "memory_id": mem.memory_id,
+                        "original_score": mem.importance_score,
+                        "decayed_score": round(decayed_score, 2),
+                        "age_hours": round(age_hours, 1),
+                        "at_risk": decayed_score < 2.0,
+                    }
+                )
 
         scores: list[float] = [cast(float, d["decayed_score"]) for d in decay_data]
         avg_decay = sum(scores) / len(scores) if scores else 0.0
@@ -306,11 +402,11 @@ class MemoryAnalytics:
         if len(memories) > 10_000:
             # Too many memories to check in-memory — sample recent 10K
             from bastion.log_setup import get_logger
-            get_logger(__name__).warning(
-                "Hash chain check: sampling 10K of %d memories to prevent OOM", len(memories)
-            )
+
+            get_logger(__name__).warning("Hash chain check: sampling 10K of %d memories to prevent OOM", len(memories))
             memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))[-10_000:]
         from bastion.crypto import verify_hash
+
         sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
         prev_hash = None
         for mem in sorted_memories:

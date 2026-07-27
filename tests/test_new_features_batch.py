@@ -1,13 +1,10 @@
 """Tests for Capture Hooks, Tags, CLI, and Benchmark."""
+
 from __future__ import annotations
 
-import json
-import pytest
-from pathlib import Path
-
-from bastion.capture_hooks import CaptureHooks, CaptureEvent
-from bastion.tags import TagPreprocessor, TagExtraction
-from bastion.benchmark import RecallBenchmark, TestCase, BenchmarkResult
+from bastion.benchmark import BenchmarkResult, RecallBenchmark, TestCase
+from bastion.capture_hooks import CaptureHooks
+from bastion.tags import TagPreprocessor
 
 
 class FakeEngine:

@@ -450,8 +450,10 @@ function BlockchainTimeline({ live }: { live: boolean }) {
 
 /* ── Memory Heatmap bars ─────────────────────────────────────── */
 function MemoryHeatmap({ hourly }: { hourly: number[] }) {
-  const data = hourly.length > 0 ? hourly : Array.from({ length: 24 }, (_, i) =>
-    Math.floor(30 + Math.sin(i * 0.5) * 20 + Math.random() * 25));
+  const data = useMemo(() =>
+    hourly.length > 0 ? hourly : Array.from({ length: 24 }, (_, i) =>
+      Math.floor(30 + Math.sin(i * 0.5) * 20 + Math.random() * 25)),
+  [hourly]);
   const max = Math.max(...data, 1);
   const hours = ["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"];
 

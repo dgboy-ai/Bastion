@@ -60,7 +60,7 @@ def groq_merge(contents: list[str], fact_key: str) -> str:
     """LLM merge callback for ``CRDTMemory(strategy='semantic', llm_merge_callback=groq_merge)``."""
     try:
         client = _get_client()
-        facts = "\n".join(f"{i+1}. {c}" for i, c in enumerate(contents))
+        facts = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(contents))
         prompt = f"Merge these conflicting facts into a single coherent statement:\n\n{facts}\n\nMerged:"
         resp = client.chat.completions.create(
             model=_GROQ_MODEL,

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SOCPage() {
   // Fetch initial stats — separate from playground
-  let stats = { memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 0 };
+  const stats = { memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 0 };
   try {
     const [memRes, auditRes] = await Promise.all([
       safeQuery(`SELECT COUNT(*)::int AS cnt FROM agent_memory WHERE agent_id IN ('soc-analyst', 'soc-responder')`),

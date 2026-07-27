@@ -1,7 +1,6 @@
 """Tests for Tag Preprocessor."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from bastion.tags import TagExtraction, TagPreprocessor
 

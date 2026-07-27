@@ -36,7 +36,10 @@ def _run_ccloud(args: list[str], timeout: int = _DEFAULT_TIMEOUT) -> dict[str, A
     logger.debug("ccloud exec: %s", cmd_str)
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         if result.returncode == 0:
             if result.stdout.strip():
@@ -52,7 +55,9 @@ def _run_ccloud(args: list[str], timeout: int = _DEFAULT_TIMEOUT) -> dict[str, A
         return {"error": "ccloud CLI returned invalid JSON"}
     except FileNotFoundError:
         logger.error("ccloud CLI not found in PATH")
-        return {"error": "ccloud CLI not installed — install from https://www.cockroachlabs.com/docs/stable/cockroach-cloud-cli"}
+        return {
+            "error": "ccloud CLI not installed — install from https://www.cockroachlabs.com/docs/stable/cockroach-cloud-cli"
+        }
     except Exception as exc:
         logger.exception("Unexpected ccloud error")
         return {"error": f"ccloud operation failed: {exc}"}
@@ -83,7 +88,7 @@ class AutonomousDBA:
             return {"error": "No cluster_id configured", "slow_queries": []}
 
         # Security: Validate cluster_id to prevent argument injection
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$", self.cluster_id):
             return {"error": "Invalid cluster_id format", "slow_queries": []}
 
         limit = int(DBA_SLOW_QUERY_LIMIT)
@@ -97,10 +102,7 @@ class AutonomousDBA:
         if "error" in data:
             return {"error": data["error"], "slow_queries": []}
 
-        slow_queries = [
-            q for q in data
-            if q.get("max_service_latency", 0) > self.threshold_ms
-        ]
+        slow_queries = [q for q in data if q.get("max_service_latency", 0) > self.threshold_ms]
         return {
             "slow_count": len(slow_queries),
             "threshold_ms": self.threshold_ms,
@@ -112,7 +114,7 @@ class AutonomousDBA:
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$", self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
         return _run_ccloud(["cluster", "describe", self.cluster_id, "-o", "json"])
@@ -122,7 +124,7 @@ class AutonomousDBA:
         if not self.cluster_id:
             return {"error": "No cluster_id configured"}
 
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$', self.cluster_id):
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$", self.cluster_id):
             return {"error": "Invalid cluster_id format"}
 
         now = datetime.now(UTC)
@@ -176,14 +178,10 @@ class AutonomousDBA:
             )
 
         if latency.get("slow_count", 0) > 10 and self.auto_scale:
-            recommendations.append(
-                "High slow query count detected. Auto-scaling recommended."
-            )
+            recommendations.append("High slow query count detected. Auto-scaling recommended.")
 
         if "error" in status:
-            recommendations.append(
-                f"Cluster status check failed: {status['error']}. Verify ccloud CLI configuration."
-            )
+            recommendations.append(f"Cluster status check failed: {status['error']}. Verify ccloud CLI configuration.")
 
         return recommendations
 
@@ -192,25 +190,54 @@ class AutonomousDBA:
 
 
 # Allowed column types for semantic data contracts
-ALLOWED_COLUMN_TYPES = frozenset({
-    "TEXT", "STRING", "VARCHAR", "CHAR",
-    "INT", "INTEGER", "INT8", "INT16", "INT32", "INT64",
-    "FLOAT", "FLOAT4", "FLOAT8", "DECIMAL", "NUMERIC",
-    "BOOL", "BOOLEAN",
-    "JSONB", "JSON",
-    "UUID",
-    "TIMESTAMPTZ", "TIMESTAMP", "DATE", "TIME",
-    "BYTES", "VARBYTES",
-    "INET", "CIDR",
-    "ARRAY",
-})
+ALLOWED_COLUMN_TYPES = frozenset(
+    {
+        "TEXT",
+        "STRING",
+        "VARCHAR",
+        "CHAR",
+        "INT",
+        "INTEGER",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "FLOAT",
+        "FLOAT4",
+        "FLOAT8",
+        "DECIMAL",
+        "NUMERIC",
+        "BOOL",
+        "BOOLEAN",
+        "JSONB",
+        "JSON",
+        "UUID",
+        "TIMESTAMPTZ",
+        "TIMESTAMP",
+        "DATE",
+        "TIME",
+        "BYTES",
+        "VARBYTES",
+        "INET",
+        "CIDR",
+        "ARRAY",
+    }
+)
 
 # Patterns that are unsafe for DDL execution
-_UNSAFE_DDL_PATTERNS = frozenset({
-    "DROP TABLE", "DROP DATABASE", "TRUNCATE",
-    "ALTER TABLE ... DROP COLUMN", "DELETE FROM",
-    "GRANT", "REVOKE", "CREATE USER", "DROP USER",
-})
+_UNSAFE_DDL_PATTERNS = frozenset(
+    {
+        "DROP TABLE",
+        "DROP DATABASE",
+        "TRUNCATE",
+        "ALTER TABLE ... DROP COLUMN",
+        "DELETE FROM",
+        "GRANT",
+        "REVOKE",
+        "CREATE USER",
+        "DROP USER",
+    }
+)
 
 
 class SchemaEvolution:
@@ -259,8 +286,7 @@ class SchemaEvolution:
             errors.append("column_type must be a non-empty string")
         elif column_type.upper() not in ALLOWED_COLUMN_TYPES:
             errors.append(
-                f"Column type '{column_type}' not in allowed types. "
-                f"Allowed: {', '.join(sorted(ALLOWED_COLUMN_TYPES))}"
+                f"Column type '{column_type}' not in allowed types. Allowed: {', '.join(sorted(ALLOWED_COLUMN_TYPES))}"
             )
 
         # Check for unsafe DDL patterns

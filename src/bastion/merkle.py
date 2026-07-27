@@ -64,7 +64,7 @@ class MerkleTree:
         Raises ``IndexError`` if *index* is out of range.
         """
         if index < 0 or index >= self._original_count:
-            raise IndexError(f"Leaf index {index} out of range (0-{self._original_count-1})")
+            raise IndexError(f"Leaf index {index} out of range (0-{self._original_count - 1})")
         proof: list[tuple[str, int]] = []
         for level in self._levels:
             sibling_index = index ^ 1
@@ -161,12 +161,12 @@ class MerkleTree:
     @staticmethod
     def _hash(data: str) -> str:
         """Leaf node hash with domain separation prefix 0x00."""
-        return hashlib.sha256(b'\x00' + data.encode("utf-8")).hexdigest()
+        return hashlib.sha256(b"\x00" + data.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _hash_prehashed(data: str) -> str:
         """Hash for pre-hashed leaf nodes — distinct domain separator."""
-        return hashlib.sha256(b'\x02' + data.encode("utf-8")).hexdigest()
+        return hashlib.sha256(b"\x02" + data.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _pair_hash(left: str, right: str) -> str:
@@ -174,10 +174,10 @@ class MerkleTree:
         left_bytes = left.encode("utf-8")
         right_bytes = right.encode("utf-8")
         return hashlib.sha256(
-            b'\x01'
-            + len(left_bytes).to_bytes(4, 'big')
+            b"\x01"
+            + len(left_bytes).to_bytes(4, "big")
             + left_bytes
-            + len(right_bytes).to_bytes(4, 'big')
+            + len(right_bytes).to_bytes(4, "big")
             + right_bytes
         ).hexdigest()
 
@@ -242,7 +242,7 @@ class AppendMerkleTree:
     def proof(self, index: int) -> list[tuple[str, int]]:
         """Generate an inclusion proof (O(n) — rebuilds tree)."""
         if index < 0 or index >= len(self._leaf_hashes):
-            raise IndexError(f"Leaf index {index} out of range (0-{len(self._leaf_hashes)-1})")
+            raise IndexError(f"Leaf index {index} out of range (0-{len(self._leaf_hashes) - 1})")
         return self._get_tree().proof(index)
 
     def _get_tree(self) -> MerkleTree:
@@ -320,7 +320,7 @@ class MerkleHashChain:
         Raises ``IndexError`` if out of range.
         """
         if index < 0 or index >= len(self.blocks):
-            raise IndexError(f"Block index {index} out of range (0-{len(self.blocks)-1})")
+            raise IndexError(f"Block index {index} out of range (0-{len(self.blocks) - 1})")
         tree = MerkleTree.from_prehashed(self.blocks)
         return tree.proof(index)
 

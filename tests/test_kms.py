@@ -36,8 +36,6 @@ class TestKMSFactory:
             assert "boto3" in err or "arn:aws:kms" in err or "credentials" in err
 
 
-
-
 class TestLocalKMS:
     def setup_method(self):
         self.kms = LocalKMS(generate=True)
@@ -55,6 +53,7 @@ class TestLocalKMS:
     def test_wrong_context_fails(self):
         import pytest
         from cryptography.exceptions import InvalidTag
+
         ct = self.kms.encrypt("data", {"scope": "a"})
         with pytest.raises(InvalidTag):
             self.kms.decrypt(ct, {"scope": "b"})
@@ -72,6 +71,7 @@ class TestLocalKMS:
 
     def test_invalid_key_length(self):
         import pytest
+
         with pytest.raises(ValueError):
             LocalKMS(key=b"short")
 

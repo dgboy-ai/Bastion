@@ -104,8 +104,7 @@ def detect_anomalies_real(mem: BastionMemory, agent_id: str) -> list[dict]:
             total = total_row[0]
 
             cur.execute(
-                "SELECT content, created_at FROM agent_memory "
-                "WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s",
+                "SELECT content, created_at FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT %s",
                 (agent_id, ANOMALY_LIMIT),
             )
             rows = cur.fetchall()

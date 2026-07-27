@@ -4,6 +4,7 @@ Covers: list_recent, list_pinned, list_by_importance, keyword_search, count_by_a
 Also covers: time-travel pool fix, hash chain invalidation on correction.
 All tests use mock mode (no real DB required).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,12 +28,15 @@ def mem_with_data(mem):
     mem.store("fact", "The sun rises in the east", {"topic": "nature", "importance_score": 5.0})
     mem.store("session", "User asked about weather", {"context": "chat"})
     mem.store("task", "Deploy the application to production", {"status": "done"})
-    mem.store("fact", "Bastion provides cryptographic memory integrity", {"topic": "security", "importance_score": 10.0})
+    mem.store(
+        "fact", "Bastion provides cryptographic memory integrity", {"topic": "security", "importance_score": 10.0}
+    )
     mem.pin("fact", "Critical: Always backup before migration", pin_priority=2)
     return mem
 
 
 # ── list_recent tests ─────────────────────────────────────────────────────────
+
 
 class TestListRecent:
     def test_returns_empty_for_no_data(self, mem):
@@ -71,6 +75,7 @@ class TestListRecent:
 
 # ── list_pinned tests ─────────────────────────────────────────────────────────
 
+
 class TestListPinned:
     def test_returns_empty_when_no_pins(self, mem):
         result = mem.list_pinned()
@@ -103,6 +108,7 @@ class TestListPinned:
 
 # ── list_by_importance tests ──────────────────────────────────────────────────
 
+
 class TestListByImportance:
     def test_returns_all_above_threshold(self, mem_with_data):
         result = mem_with_data.list_by_importance(min_importance=0)
@@ -126,9 +132,7 @@ class TestListByImportance:
         all_mems = mem_with_data.list_all()
         if all_mems:
             exclude_id = all_mems[0].memory_id
-            result = mem_with_data.list_by_importance(
-                min_importance=0, exclude_ids={exclude_id}
-            )
+            result = mem_with_data.list_by_importance(min_importance=0, exclude_ids={exclude_id})
             result_ids = {r.memory_id for r in result}
             assert exclude_id not in result_ids
 
@@ -139,6 +143,7 @@ class TestListByImportance:
 
 
 # ── keyword_search tests ──────────────────────────────────────────────────────
+
 
 class TestKeywordSearch:
     def test_finds_keyword(self, mem_with_data):
@@ -171,6 +176,7 @@ class TestKeywordSearch:
 
 # ── count_by_agent tests ──────────────────────────────────────────────────────
 
+
 class TestCountByAgent:
     def test_empty_agent(self, mem):
         assert mem.count_by_agent() == 0
@@ -193,6 +199,7 @@ class TestCountByAgent:
 
 # ── Time-travel pool fix ──────────────────────────────────────────────────────
 
+
 class TestTimeTravelPoolFix:
     """Verify time-travel uses pool (not raw psycopg.connect)."""
 
@@ -212,6 +219,7 @@ class TestTimeTravelPoolFix:
 
 # ── Hash chain invalidation on correction ─────────────────────────────────────
 
+
 class TestHashChainInvalidation:
     def test_correction_invalidates_hash(self, mem):
         """After correction, cryptographic_hash should be NULL (invalidated)."""
@@ -228,6 +236,7 @@ class TestHashChainInvalidation:
 
 
 # ── Cross-module integration ──────────────────────────────────────────────────
+
 
 class TestCrossModuleIntegration:
     def test_list_pinned_plus_list_by_importance(self, mem_with_data):

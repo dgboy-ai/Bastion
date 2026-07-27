@@ -52,7 +52,7 @@ class TestHashChainIntegrity:
         records = _store_and_collect("chaos-agent", 5)
         for i in range(1, len(records)):
             assert records[i].previous_hash == records[i - 1].cryptographic_hash, (
-                f"Record {i} previous_hash must match record {i-1} cryptographic_hash"
+                f"Record {i} previous_hash must match record {i - 1} cryptographic_hash"
             )
 
     def test_tampered_content_breaks_chain(self):
@@ -62,18 +62,14 @@ class TestHashChainIntegrity:
 
         # Simulate tampering: recompute hash with different content
         tampered_hash = hashlib.sha256(b"tampered content").hexdigest()
-        assert tampered_hash != original.cryptographic_hash, (
-            "Tampered content must produce a different hash"
-        )
+        assert tampered_hash != original.cryptographic_hash, "Tampered content must produce a different hash"
 
     def test_chain_detection_via_recomputation(self):
         """Verify we can detect corruption by recomputing hashes."""
         records = _store_and_collect("chaos-agent", 4)
         for i, rec in enumerate(records):
             # Recompute: SHA256(content + metadata + previous_hash)
-            hashlib.sha256(
-                (rec.content + str(rec.metadata or {}) + str(rec.previous_hash or "")).encode()
-            ).hexdigest()
+            hashlib.sha256((rec.content + str(rec.metadata or {}) + str(rec.previous_hash or "")).encode()).hexdigest()
             # In mock mode the hash is pre-computed differently, but the
             # structural guarantee is that each record stores its hash.
             assert rec.cryptographic_hash, f"Record {i} must have a cryptographic_hash"
@@ -100,7 +96,7 @@ class TestCrashRecovery:
 
         # Chain links are intact
         for i in range(1, len(all_records)):
-            assert all_records[i].previous_hash in [all_records[i-1].cryptographic_hash, None]
+            assert all_records[i].previous_hash in [all_records[i - 1].cryptographic_hash, None]
 
     def test_agent_restarts_with_intact_memory(self):
         """Agent stores context, crashes, restarts — all context still accessible."""
@@ -154,9 +150,7 @@ class TestMemoryPoisoning:
 
         # A poisoned memory would have a different previous_hash
         poisoned = mem.store("fact", "Poisoned memory injected by attacker")
-        assert poisoned.previous_hash == r3.cryptographic_hash, (
-            "New memory must link to the last legitimate hash"
-        )
+        assert poisoned.previous_hash == r3.cryptographic_hash, "New memory must link to the last legitimate hash"
 
     def test_hash_chain_is_deterministic(self):
         """Same content + same previous_hash = same cryptographic_hash."""

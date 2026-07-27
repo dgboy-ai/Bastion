@@ -168,7 +168,7 @@ def create_a2a_server(
     # reader: can read/search/list
     # writer: can read + write/store/delete/correct
     # admin: can do everything including dream, heal, schema
-    _SKILL_ROLES: dict[str, str] = {
+    _skill_roles: dict[str, str] = {
         "memory_search": "reader",
         "memory_list": "reader",
         "memory_health": "reader",
@@ -197,13 +197,14 @@ def create_a2a_server(
         "memory_heal": "admin",
         "dream": "admin",
     }
-    _ROLE_HIERARCHY = {"reader": 0, "writer": 1, "admin": 2}
+    _role_hierarchy = {"reader": 0, "writer": 1, "admin": 2}
 
     def _resolve_role(api_key_value: str) -> str:
         """Resolve role from API key. Supports per-key role mapping via BASTION_A2A_ROLES env var.
         Format: BASTION_A2A_ROLES=key1:writer,key2:reader,default:admin
         Falls back to BASTION_A2A_ROLE env var, then 'admin' for single-key mode."""
         import secrets as _secrets
+
         role_env = os.environ.get("BASTION_A2A_ROLE", "")
         roles_map = os.environ.get("BASTION_A2A_ROLES", "")
         if roles_map:
@@ -275,7 +276,9 @@ def create_a2a_server(
             {
                 "id": "memory_heal",
                 "name": "Self-Heal Memory",
-                "description": "CDC-triggered self-healing: remove expired memories, detect anomalies, compact storage.",
+                "description": (
+                    "CDC-triggered self-healing: remove expired memories, detect anomalies, compact storage."
+                ),
                 "tags": ["memory", "healing", "integrity"],
                 "examples": ["Heal any broken hash chain links in my memories"],
             },
@@ -289,7 +292,10 @@ def create_a2a_server(
             {
                 "id": "memory_pin",
                 "name": "Pin Safety-Critical Memory",
-                "description": "Pin safety-critical memories that survive context compaction. Priority: 0=normal, 1=important, 2=CRITICAL.",
+                "description": (
+                    "Pin safety-critical memories that survive context compaction. "
+                    "Priority: 0=normal, 1=important, 2=CRITICAL."
+                ),
                 "tags": ["memory", "pin", "safety"],
                 "examples": ["Pin the memory about never sharing API keys"],
             },
@@ -338,7 +344,9 @@ def create_a2a_server(
             {
                 "id": "ltm_check_reuse",
                 "name": "LTM Gateway - Check Reuse",
-                "description": "Check if a similar analysis already exists in long-term memory before running expensive workflows.",
+                "description": (
+                    "Check if a similar analysis already exists in long-term memory before running expensive workflows."
+                ),
                 "tags": ["ltm", "cache", "reuse"],
                 "examples": ["Check if we already analyzed Q3 market trends"],
             },
@@ -373,7 +381,10 @@ def create_a2a_server(
             {
                 "id": "dream",
                 "name": "Dream / Consolidate",
-                "description": "Sleep-time memory consolidation: review episodic memories, extract patterns, promote high-value, prune low-value.",
+                "description": (
+                    "Sleep-time memory consolidation: review episodic memories, "
+                    "extract patterns, promote high-value, prune low-value."
+                ),
                 "tags": ["memory", "consolidation", "dream"],
                 "examples": ["Dream about my project memories and summarize key patterns"],
             },
@@ -408,7 +419,9 @@ def create_a2a_server(
             {
                 "id": "agent_schema",
                 "name": "Agent Schema Query",
-                "description": "Query the agent's own database schema. Returns table structures, indexes, and column definitions.",
+                "description": (
+                    "Query the agent's own database schema. Returns table structures, indexes, and column definitions."
+                ),
                 "tags": ["schema", "database", "introspection"],
                 "examples": ["Show me the memory_records table schema"],
             },
@@ -454,8 +467,7 @@ def create_a2a_server(
                 now = time.time()
                 mono = time.monotonic()
                 with _tasks_lock:
-                    stale = [k for k, v in list(_tasks.items())
-                             if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
+                    stale = [k for k, v in list(_tasks.items()) if v.get("_dm") and v["_dm"] + _TASK_TTL_SECONDS < mono]
                     for k in stale:
                         _tasks.pop(k, None)
                     if len(_tasks) > _MAX_TASKS:
@@ -463,16 +475,20 @@ def create_a2a_server(
                         _tasks.pop(oldest, None)
                 # Clean up expired brute-force cache entries
                 with _brute_cache_lock:
-                    expired = [ip for ip, (_, ws, lu) in _brute_cache.items()
-                               if (lu and now > lu) or (not lu and now - ws > _auth_window_seconds)]
+                    expired = [
+                        ip
+                        for ip, (_, ws, lu) in _brute_cache.items()
+                        if (lu and now > lu) or (not lu and now - ws > _auth_window_seconds)
+                    ]
                     for ip in expired:
                         _brute_cache.pop(ip, None)
                     if expired:
                         logger.debug("Cleaned %d expired brute-force entries", extra={"count": len(expired)})
                 # Clean up expired idempotency store entries
                 with _idempotency_lock:
-                    expired_keys = [k for k, v in _idempotency_store.items()
-                                    if now - v.get("_ts", 0) >= _idempotency_ttl]
+                    expired_keys = [
+                        k for k, v in _idempotency_store.items() if now - v.get("_ts", 0) >= _idempotency_ttl
+                    ]
                     for k in expired_keys:
                         _idempotency_store.pop(k, None)
                     if expired_keys:
@@ -496,7 +512,12 @@ def create_a2a_server(
         if not memory._mock:
             try:
                 task_record = await anyio.to_thread.run_sync(
-                    memory.store_a2a_task, tid, agent_id, "unknown", status, callback_url,
+                    memory.store_a2a_task,
+                    tid,
+                    agent_id,
+                    "unknown",
+                    status,
+                    callback_url,
                 )
                 return {
                     "id": task_record["task_id"],
@@ -515,8 +536,7 @@ def create_a2a_server(
         if not _tasks_warned:
             _tasks_warned = True
             logger.warning(
-                "A2A tasks are stored in-memory only — lost on restart. "
-                "Set BASTION_CONN for persistent task storage."
+                "A2A tasks are stored in-memory only — lost on restart. Set BASTION_CONN for persistent task storage."
             )
         task = {
             "id": tid,
@@ -555,7 +575,9 @@ def create_a2a_server(
             return _tasks.get(tid)
 
     async def _update_task(
-        tid: str, status: str, artifacts: list[dict[str, Any]] | None = None,
+        tid: str,
+        status: str,
+        artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         existing_task = await _get_task(tid)
         if existing_task:
@@ -639,9 +661,8 @@ def create_a2a_server(
             # Evict expired entries and enforce max size
             if len(_idempotency_store) >= _idempotency_max_size:
                 now = time.time()
-                expired = [k for k, v in _idempotency_store.items()
-                           if now - v.get("_ts", 0) >= _idempotency_ttl]
-                for k in expired[:len(expired) // 2 or 1]:
+                expired = [k for k, v in _idempotency_store.items() if now - v.get("_ts", 0) >= _idempotency_ttl]
+                for k in expired[: len(expired) // 2 or 1]:
                     _idempotency_store.pop(k, None)
                 # If still over limit, drop oldest
                 if len(_idempotency_store) >= _idempotency_max_size:
@@ -677,8 +698,7 @@ def create_a2a_server(
                     with db_conn.cursor() as cur:
                         # Count requests in the window using TTL-expired data
                         cur.execute(
-                            "SELECT count(*) FROM a2a_rate_limits "
-                            "WHERE ip_address = %s AND request_time > %s",
+                            "SELECT count(*) FROM a2a_rate_limits WHERE ip_address = %s AND request_time > %s",
                             (client_ip, datetime.datetime.fromtimestamp(window_start, tz=datetime.UTC)),
                         )
                         row = cur.fetchone()
@@ -718,7 +738,7 @@ def create_a2a_server(
                         _rate_buckets.keys(),
                         key=lambda ip: max(_rate_buckets[ip]) if _rate_buckets[ip] else 0,
                     )
-                    for ip in sorted_ips[:len(sorted_ips) - _rate_max_ips // 2]:
+                    for ip in sorted_ips[: len(sorted_ips) - _rate_max_ips // 2]:
                         _rate_buckets.pop(ip, None)
             return True
 
@@ -728,7 +748,7 @@ def create_a2a_server(
 
     # -- Signature verification -------------------------------------------
 
-    from bastion.a2a_signing import verify_card_signed, verify_card_signed_trusted, TrustedKeyRegistry
+    from bastion.a2a_signing import TrustedKeyRegistry, verify_card_signed_trusted
 
     _sender_key_cache: dict[str, tuple[str, float]] = {}  # url -> (pem, expiry)
     _sender_key_cache_lock = threading.Lock()
@@ -745,9 +765,10 @@ def create_a2a_server(
         Resolves DNS to prevent rebinding attacks where a hostname initially
         resolves to a public IP but later resolves to an internal IP.
         """
-        from urllib.parse import urlparse
         import ipaddress
         import socket
+        from urllib.parse import urlparse
+
         try:
             parsed = urlparse(url)
             if parsed.scheme not in ("https",):
@@ -782,9 +803,7 @@ def create_a2a_server(
         # Require BOTH signature headers or NEITHER — partial headers are rejected
         if not sender_url and not signature_b64:
             # No signature headers — reject in strict mode, allow in legacy mode
-            if _strict_auth:
-                return False
-            return True  # backwards compatible only when strict_auth is off
+            return not _strict_auth  # backwards compatible only when strict_auth is off
         if not sender_url or not signature_b64:
             return False  # partial headers — reject (prevents signature bypass)
 
@@ -874,6 +893,7 @@ def create_a2a_server(
             return None
         try:
             from bastion.pool import ConnectionPool
+
             return ConnectionPool(
                 connection_string=conn,
                 min_size=1,
@@ -964,9 +984,8 @@ def create_a2a_server(
                 pool_conn = _brute_pool.acquire(timeout=2)
                 try:
                     with pool_conn.cursor() as cur:
-                        locked_until_ts = None
                         if _auth_max_failures <= 1:
-                            locked_until_ts = datetime.datetime.fromtimestamp(now + _auth_lockout_seconds, tz=datetime.UTC)
+                            datetime.datetime.fromtimestamp(now + _auth_lockout_seconds, tz=datetime.UTC)
                         cur.execute(
                             "INSERT INTO auth_brute_force (ip_address, failure_count, window_start, last_failure) "
                             "VALUES (%s, 1, %s, %s) "
@@ -980,9 +999,13 @@ def create_a2a_server(
                             "  WHEN auth_brute_force.failure_count + 1 >= %s "
                             "  THEN now() + make_interval(secs => %s) "
                             "  ELSE auth_brute_force.locked_until END",
-                            (client_ip, datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
-                             datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
-                             _auth_max_failures, _auth_lockout_seconds),
+                            (
+                                client_ip,
+                                datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
+                                datetime.datetime.fromtimestamp(now, tz=datetime.UTC),
+                                _auth_max_failures,
+                                _auth_lockout_seconds,
+                            ),
                         )
                     pool_conn.commit()
                 finally:
@@ -1007,6 +1030,7 @@ def create_a2a_server(
 
     def _verify_api_key(provided: str) -> bool:
         import secrets as _secrets
+
         if not _api_key:
             # No API key configured — deny all requests
             return False
@@ -1031,9 +1055,15 @@ def create_a2a_server(
     # -- Push Notification Delivery Worker --------------------------------
 
     from bastion.push_dispatcher import get_dispatcher
+
     _push_dispatch = get_dispatcher()
 
-    def _maybe_notify_push(task_id: str, status: str, artifacts: list | None = None, callback_url: str | None = None) -> None:
+    def _maybe_notify_push(
+        task_id: str,
+        status: str,
+        artifacts: list | None = None,
+        callback_url: str | None = None,
+    ) -> None:
         """Deliver push notification if a callback is registered or provided."""
         if callback_url:
             _push_dispatch.register(task_id, callback_url)
@@ -1045,6 +1075,7 @@ def create_a2a_server(
     try:
         from opentelemetry import context as _otel_context
         from opentelemetry import propagate as _otel_propagate
+
         _has_otel_api = True
     except ImportError:
         logger.debug("OpenTelemetry not installed, tracing disabled")
@@ -1060,7 +1091,9 @@ def create_a2a_server(
             if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
             else (request.client.host if request.client else "unknown")
         )
-        if request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith("/.well-known/"):
+        if request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith(
+            "/.well-known/"
+        ):
             if _check_brute_force(client_ip):
                 logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
                 return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
@@ -1341,6 +1374,7 @@ def create_a2a_server(
                 # ── OWASP ASI06 Guard: screen streaming message content ──
                 try:
                     from bastion.guard import MemoryGuard
+
                     _guard = MemoryGuard()
                     for part in parts:
                         part_text = part.get("text", "")
@@ -1350,14 +1384,27 @@ def create_a2a_server(
                                 threat_details = [f.finding.threat_type for f in guard_result.findings]
                                 threat_msg = ", ".join(threat_details) or "injection detected"
                                 await _update_task(task_id, "FAILED")
-                                error_data = json.dumps({"task_id": task_id, "status": "FAILED", "error": f"Blocked by security guard: {threat_msg}"})
+                                error_data = json.dumps(
+                                    {
+                                        "task_id": task_id,
+                                        "status": "FAILED",
+                                        "error": f"Blocked by security guard: {threat_msg}",
+                                    }
+                                )
                                 yield f"event: TaskStatusUpdate\ndata: {error_data}\n\n"
                                 yield "event: TaskComplete\ndata: {}\n\n"
                                 return
                 except Exception:
                     logger.warning("OWASP guard check failed in streaming (blocking)", exc_info=True)
                     await _update_task(task_id, "FAILED")
-                    yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Blocked by security guard: check failed'})}\n\n"
+                    _err_data = json.dumps(
+                        {
+                            "task_id": task_id,
+                            "status": "FAILED",
+                            "error": "Blocked by security guard: check failed",
+                        }
+                    )
+                    yield f"event: TaskStatusUpdate\ndata: {_err_data}\n\n"
                     yield "event: TaskComplete\ndata: {}\n\n"
                     return
                 skill_params = dict(metadata.get("params", {})) if metadata.get("params") else {}
@@ -1368,11 +1415,19 @@ def create_a2a_server(
 
                 if not method:
                     await _update_task(task_id, "FAILED")
-                    yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Unknown skill'})}\n\n"
+                    yield (
+                        f"event: TaskStatusUpdate\ndata: "
+                        f"{json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Unknown skill'})}"
+                        f"\n\n"
+                    )
                     yield "event: TaskComplete\ndata: {}\n\n"
                     return
 
-                yield f"event: TaskArtifactUpdate\ndata: {json.dumps({'task_id': task_id, 'artifact': {'parts': [{'text': f'Executing {skill_id}...'}]}})}\n\n"
+                yield (
+                    f"event: TaskArtifactUpdate\ndata: "
+                    f"{json.dumps({'task_id': task_id, 'artifact': {'parts': [{'text': f'Executing {skill_id}...'}]}})}"
+                    f"\n\n"
+                )
 
                 result = await asyncio.wait_for(
                     anyio.to_thread.run_sync(_execute_skill, memory, method, skill_params),
@@ -1380,13 +1435,24 @@ def create_a2a_server(
                 )
                 parts_out = [{"text": json.dumps(result, default=str)}]
                 await _update_task(task_id, "COMPLETED", [{"parts": parts_out}])
-                yield f"event: TaskArtifactUpdate\ndata: {json.dumps({'task_id': task_id, 'artifact': {'parts': parts_out}})}\n\n"
-                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'COMPLETED'})}\n\n"
+                yield (
+                    f"event: TaskArtifactUpdate\ndata: "
+                    f"{json.dumps({'task_id': task_id, 'artifact': {'parts': parts_out}})}"
+                    f"\n\n"
+                )
+                yield (f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'COMPLETED'})}\n\n")
 
             except Exception:
                 logger.exception("Streaming skill execution failed", extra={"request_id": rid, "skill": skill_id})
                 await _update_task(task_id, "FAILED")
-                yield f"event: TaskStatusUpdate\ndata: {json.dumps({'task_id': task_id, 'status': 'FAILED', 'error': 'Skill execution failed (see server logs)'})}\n\n"
+                _err_msg = json.dumps(
+                    {
+                        "task_id": task_id,
+                        "status": "FAILED",
+                        "error": "Skill execution failed (see server logs)",
+                    }
+                )
+                yield f"event: TaskStatusUpdate\ndata: {_err_msg}\n\n"
 
             yield "event: TaskComplete\ndata: {}\n\n"
 
@@ -1409,7 +1475,7 @@ def create_a2a_server(
         return JSONResponse({"status": "ok"})
 
     # -- Task cleanup: mark orphaned non-terminal tasks as failed --------
-    _TASK_STALE_TIMEOUT = 3600  # 1 hour
+    _task_stale_timeout = 3600  # 1 hour
 
     async def _cleanup_orphaned_tasks() -> None:
         """Periodically mark stale non-terminal tasks as failed."""
@@ -1422,7 +1488,7 @@ def create_a2a_server(
                     None,  # agent_id — not needed for this query
                     None,  # status
                     cleanup_stale=True,
-                    stale_timeout=_TASK_STALE_TIMEOUT,
+                    stale_timeout=_task_stale_timeout,
                 )
             )
         except Exception:
@@ -1595,7 +1661,7 @@ def create_a2a_server(
             return _rpc_result(_strip_internal(task), req_id)
 
         # -- RBAC: check role permission for this skill --
-        required_role = _SKILL_ROLES.get(skill_id, "reader")
+        required_role = _skill_roles.get(skill_id, "reader")
         # Resolve role from CALLER's token, not the server's key
         caller_token = ""
         if request:
@@ -1605,14 +1671,15 @@ def create_a2a_server(
         # Warn when running without API key (dev mode only — not for production)
         if not _api_key and not caller_token:
             logger.debug("No API key configured — unauthenticated requests treated as admin (dev mode)")
-        required_level = _ROLE_HIERARCHY.get(required_role, 0)
-        caller_level = _ROLE_HIERARCHY.get(caller_role, 0)
+        required_level = _role_hierarchy.get(required_role, 0)
+        caller_level = _role_hierarchy.get(caller_role, 0)
         if caller_level < required_level:
             task_id = uuid.uuid4().hex
             await _store_task(task_id, "FAILED")
             return _rpc_error(
                 _JSONRPC_INVALID_PARAMS,
-                f"Insufficient permissions: skill '{skill_id}' requires '{required_role}' role, caller has '{caller_role}'",
+                f"Insufficient permissions: skill '{skill_id}' requires "
+                f"'{required_role}' role, caller has '{caller_role}'",
                 req_id,
             )
 
@@ -1636,6 +1703,7 @@ def create_a2a_server(
         # ── OWASP ASI06 Guard: screen incoming message before execution ──
         try:
             from bastion.guard import MemoryGuard
+
             _guard = MemoryGuard()
             for part in parts:
                 part_text = part.get("text", "")
@@ -1790,6 +1858,7 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         if _content_to_check:
             try:
                 from bastion.guard import MemoryGuard as BastionGuard
+
                 _guard = BastionGuard()
                 _guard_result = _guard.check(_content_to_check)
                 if not _guard_result.is_safe:
@@ -1856,8 +1925,8 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
     elif method == "memory_list":
         memory_type = params.get("memory_type")
         limit = max(1, min(int(params.get("limit", 50)), 500))
-        offset = max(0, int(params.get("offset", 0)))
-        results = mem.list_memories(memory_type, limit, offset)
+        cursor = params.get("cursor")
+        results = mem.list_memories(memory_type, limit, cursor)
         return [r.to_dict() for r in results]
     elif method == "memory_correct":
         memory_id = params.get("memory_id", "")
@@ -1886,6 +1955,7 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return result
     elif method == "resolve_conflict":
         from bastion.groq_callback import groq_merge
+
         fact_a = params.get("fact_a", "")
         fact_b = params.get("fact_b", "")
         context = params.get("context")
@@ -1896,6 +1966,7 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return {"merged": merged, "facts": contents}
     elif method == "ltm_check_reuse":
         from bastion.ltm_gateway import LTMMemoryGateway
+
         query = params.get("query", "")
         if not query:
             return {"error": "Missing required parameter: query"}
@@ -1904,10 +1975,16 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         gateway = LTMMemoryGateway(mem, reuse_threshold=threshold)
         result = gateway.check_reuse(query, threshold, analysis_type)
         if result is None:
-            return {"reuse_found": False, "query": query[:200], "threshold": threshold, "recommendation": "run_workflow"}
+            return {
+                "reuse_found": False,
+                "query": query[:200],
+                "threshold": threshold,
+                "recommendation": "run_workflow",
+            }
         return {"reuse_found": True, **result.to_dict()}
     elif method == "ltm_store_analysis":
         from bastion.ltm_gateway import LTMMemoryGateway
+
         query = params.get("query", "")
         result_text = params.get("result", "")
         if not query:
@@ -1922,6 +1999,7 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return store_result.to_dict()
     elif method == "ltm_invalidate":
         from bastion.ltm_gateway import LTMMemoryGateway
+
         query = params.get("query", "")
         if not query:
             return {"error": "Missing required parameter: query"}
@@ -1930,6 +2008,7 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return gateway.invalidate(query, reason)
     elif method == "detect_contradictions":
         from bastion.contradiction import ContradictionDetector
+
         memory_id = params.get("memory_id", "")
         if not memory_id:
             return {"error": "Missing required parameter: memory_id"}
@@ -1941,26 +2020,31 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return result.to_dict()
     elif method == "scan_all_contradictions":
         from bastion.contradiction import ContradictionDetector
+
         detector = ContradictionDetector(mem)
         results = detector.scan_all()
         return [r.to_dict() for r in results]
     elif method == "dream":
         from bastion.dreaming import MemoryDreamer
+
         lookback_hours = max(1, min(int(params.get("lookback_hours", 24)), 168))
         dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
         journal = dreamer.dream()
         return journal.to_dict()
     elif method == "dream_history":
         from bastion.dreaming import MemoryDreamer
+
         dreamer = MemoryDreamer(mem)
         return dreamer.get_dream_history()
     elif method == "detect_observations":
         from bastion.observations import ObservationDetector
+
         detector = ObservationDetector(mem)
         report = detector.detect()
         return report.to_dict()
     elif method == "multi_signal_search":
         from bastion.retrieval import MultiSignalRetriever
+
         query = params.get("query", "")
         if not query:
             return {"error": "Missing required parameter: query"}
@@ -1969,9 +2053,14 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         mtype = params.get("memory_type")
         retriever = MultiSignalRetriever(mem)
         results = retriever.search(query, k, threshold, mtype)
-        return {"results": [r.to_dict() for r in results], "total": len(results), "signals": ["vector", "keyword", "entity", "temporal"]}
+        return {
+            "results": [r.to_dict() for r in results],
+            "total": len(results),
+            "signals": ["vector", "keyword", "entity", "temporal"],
+        }
     elif method == "context_pack":
         from bastion.context_budget import ContextBudgetManager
+
         budget_tokens = max(1, int(params.get("budget_tokens", 4000)))
         query = params.get("query")
         packer = ContextBudgetManager(mem)
@@ -1996,10 +2085,24 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         table = params.get("table")
         if mem._mock:
             mock_tables = {
-                "agent_memory": {"columns": ["memory_id", "agent_id", "memory_type", "content", "embedding", "metadata", "created_at", "importance_score", "trust_level"]},
+                "agent_memory": {
+                    "columns": [
+                        "memory_id",
+                        "agent_id",
+                        "memory_type",
+                        "content",
+                        "embedding",
+                        "metadata",
+                        "created_at",
+                        "importance_score",
+                        "trust_level",
+                    ],
+                },
                 "agent_audit": {"columns": ["audit_id", "agent_id", "action", "details", "recorded_at"]},
                 "agent_entities": {"columns": ["entity_id", "agent_id", "entity_type", "name", "attributes"]},
-                "agent_relations": {"columns": ["relation_id", "source_entity_id", "target_entity_id", "relation_type"]},
+                "agent_relations": {
+                    "columns": ["relation_id", "source_entity_id", "target_entity_id", "relation_type"]
+                },
             }
             if table:
                 return {"table": table, "columns": mock_tables.get(table, {}).get("columns", [])}
@@ -2016,23 +2119,35 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
                             (table,),
                         )
                         rows = cur.fetchall()
-                        return {"table": table, "columns": [{"name": r[0], "type": r[1], "nullable": r[2] == "YES"} for r in rows]}
+                        return {
+                            "table": table,
+                            "columns": [{"name": r[0], "type": r[1], "nullable": r[2] == "YES"} for r in rows],
+                        }
                     else:
-                        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")
+                        cur.execute(
+                            "SELECT table_name FROM information_schema.tables "
+                            "WHERE table_schema = 'public' ORDER BY table_name"
+                        )
                         return {"tables": [r[0] for r in cur.fetchall()]}
             finally:
                 pool.release(conn)
     elif method == "a2a_bridge":
         agent_id = params.get("agent_id", "bastion-agent")
         from bastion.config import VERSION
+
         return {
             "name": f"Bastion/{agent_id}",
             "version": VERSION,
             "agent_id": agent_id,
             "capabilities": {
-                "memory_store": True, "memory_search": True, "memory_audit": True,
-                "time_travel": True, "knowledge_graph": True, "conflict_resolution": True,
-                "streaming": True, "push_notifications": True,
+                "memory_store": True,
+                "memory_search": True,
+                "memory_audit": True,
+                "time_travel": True,
+                "knowledge_graph": True,
+                "conflict_resolution": True,
+                "streaming": True,
+                "push_notifications": True,
             },
             "protocol": "a2a",
             "provider": {"organization": "Bastion", "url": "https://github.com/dgboy-ai/Bastion"},

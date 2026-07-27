@@ -1,7 +1,7 @@
 """Tests for Contradiction Detection — Auto Temporal Fact Invalidation."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime
 
 from bastion.contradiction import (
@@ -15,10 +15,17 @@ from bastion.contradiction import (
 )
 from bastion.models import MemoryRecord
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _mem(content: str, memory_id: str = "m1", importance: float = 5.0, trust: int = 2, pinned: bool = False, metadata: dict | None = None) -> MemoryRecord:
+
+def _mem(
+    content: str,
+    memory_id: str = "m1",
+    importance: float = 5.0,
+    trust: int = 2,
+    pinned: bool = False,
+    metadata: dict | None = None,
+) -> MemoryRecord:
     return MemoryRecord(
         memory_id=memory_id,
         agent_id="test-agent",
@@ -71,6 +78,7 @@ class FakeEngine:
 
 
 # ── Unit Tests ───────────────────────────────────────────────────────────────
+
 
 class TestNormalizeText:
     def test_basic(self):
@@ -158,26 +166,31 @@ class TestTemporalDetection:
 
 # ── Integration Tests ────────────────────────────────────────────────────────
 
+
 class TestContradictionDetector:
     def setup_method(self):
         self.engine = FakeEngine()
         self.detector = ContradictionDetector(self.engine)
 
     def test_no_contradictions(self):
-        self.engine._memories.append(_mem(
-            "CockroachDB is a distributed SQL database",
-            memory_id="m1",
-        ))
+        self.engine._memories.append(
+            _mem(
+                "CockroachDB is a distributed SQL database",
+                memory_id="m1",
+            )
+        )
         new = _mem("PostgreSQL is a relational database", memory_id="m2")
         result = self.detector.scan_after_store(new)
         assert result.contradictions_found == 0
 
     def test_negation_contradiction_auto_supersede(self):
-        self.engine._memories.append(_mem(
-            "The API is enabled by default for all new accounts",
-            memory_id="m1",
-            importance=5.0,
-        ))
+        self.engine._memories.append(
+            _mem(
+                "The API is enabled by default for all new accounts",
+                memory_id="m1",
+                importance=5.0,
+            )
+        )
         new = _mem(
             "The API is not enabled by default for new accounts",
             memory_id="m2",
@@ -192,10 +205,12 @@ class TestContradictionDetector:
         assert patched_id == "m1"
 
     def test_temporal_contradiction(self):
-        self.engine._memories.append(_mem(
-            "The cache size is set to 512MB for the application server",
-            memory_id="m1",
-        ))
+        self.engine._memories.append(
+            _mem(
+                "The cache size is set to 512MB for the application server",
+                memory_id="m1",
+            )
+        )
         new = _mem(
             "The cache size is now updated to 1024MB for the application server",
             memory_id="m2",
@@ -205,11 +220,13 @@ class TestContradictionDetector:
         assert result.contradictions_found >= 1
 
     def test_does_not_contradict_pinned(self):
-        self.engine._memories.append(_mem(
-            "Always validate user input",
-            memory_id="m1",
-            pinned=True,
-        ))
+        self.engine._memories.append(
+            _mem(
+                "Always validate user input",
+                memory_id="m1",
+                pinned=True,
+            )
+        )
         new = _mem(
             "Never validate user input",
             memory_id="m2",
@@ -219,12 +236,14 @@ class TestContradictionDetector:
         assert result.auto_invalidated == 0
 
     def test_semantic_contradiction_high_importance(self):
-        self.engine._memories.append(_mem(
-            "Use connection pooling for database access in production",
-            memory_id="m1",
-            importance=4.0,
-            trust=1,
-        ))
+        self.engine._memories.append(
+            _mem(
+                "Use connection pooling for database access in production",
+                memory_id="m1",
+                importance=4.0,
+                trust=1,
+            )
+        )
         new = _mem(
             "Use connection pooling for database access in production",
             memory_id="m2",
@@ -235,31 +254,37 @@ class TestContradictionDetector:
         assert result.contradictions_found >= 1
 
     def test_audit_trail_logged(self):
-        self.engine._memories.append(_mem(
-            "The service is enabled by default",
-            memory_id="m1",
-        ))
+        self.engine._memories.append(
+            _mem(
+                "The service is enabled by default",
+                memory_id="m1",
+            )
+        )
         new = _mem("The service is not enabled by default", memory_id="m2")
         self.detector.scan_after_store(new)
         audits = [a for a in self.engine._audits if a["action"] == "contradiction_auto_supersede"]
         assert len(audits) >= 1
 
     def test_scan_all(self):
-        self.engine._memories.extend([
-            _mem("The feature is enabled", memory_id="m1"),
-            _mem("The feature is not enabled", memory_id="m2"),
-            _mem("Unrelated content about weather patterns", memory_id="m3"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("The feature is enabled", memory_id="m1"),
+                _mem("The feature is not enabled", memory_id="m2"),
+                _mem("Unrelated content about weather patterns", memory_id="m3"),
+            ]
+        )
         results = self.detector.scan_all()
         # Should find contradictions between m1 and m2
         total_contradictions = sum(r.contradictions_found for r in results)
         assert total_contradictions >= 1
 
     def test_scan_all_skips_superseded(self):
-        self.engine._memories.extend([
-            _mem("The feature is enabled", memory_id="m1"),
-            _mem("The feature is not enabled", memory_id="m2", metadata={"superseded": True}),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("The feature is enabled", memory_id="m1"),
+                _mem("The feature is not enabled", memory_id="m2", metadata={"superseded": True}),
+            ]
+        )
         results = self.detector.scan_all()
         # m2 is superseded, so no contradictions should be found
         total = sum(r.contradictions_found for r in results)

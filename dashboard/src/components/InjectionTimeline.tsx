@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type LiveEvent = {
   type: string;
@@ -54,10 +54,11 @@ export default function InjectionTimeline() {
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [tooltip, setTooltip] = useState<{ ev: LiveEvent; x: number; y: number } | null>(null);
   const [connected, setConnected] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(800);
   const esRef = useRef<EventSource | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(function connectImpl() {
     const es = new EventSource("/api/events");
     esRef.current = es;
 
@@ -65,7 +66,7 @@ export default function InjectionTimeline() {
     es.onerror = () => {
       setConnected(false);
       es.close();
-      setTimeout(connect, 3000);
+      setTimeout(connectImpl, 3000);
     };
 
     es.onmessage = (e) => {
@@ -105,7 +106,7 @@ export default function InjectionTimeline() {
     return () => { esRef.current?.close(); setConnected(false); };
   }, [connect]);
 
-  const now = Date.now();
+  const now = useMemo(() => Date.now(), []);
   const windowMs = 60 * 60 * 1000; // 60 minutes
 
   const handleDotEnter = (ev: LiveEvent, e: React.MouseEvent) => {
@@ -113,6 +114,7 @@ export default function InjectionTimeline() {
     if (!rect) return;
     const x = (e.clientX - rect.left);
     const y = (e.clientY - rect.top);
+    setContainerWidth(rect.width);
     setTooltip({ ev, x, y });
   };
 
@@ -229,7 +231,7 @@ export default function InjectionTimeline() {
       {tooltip && (
         <div style={{
           position: "absolute",
-          left: Math.min(tooltip.x, (containerRef.current?.offsetWidth ?? 800) - 260),
+          left: Math.min(tooltip.x, containerWidth - 260),
           top: tooltip.y - 100,
           background: "#1a1018",
           border: `1px solid ${EVENT_COLORS[tooltip.ev.type] ?? "#9e8486"}40`,
