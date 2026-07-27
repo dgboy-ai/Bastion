@@ -6,25 +6,19 @@
 ALTER TABLE agent_memory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_memory FORCE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_memory_isolation' AND tablename = 'agent_memory') THEN
-        CREATE POLICY agent_memory_isolation ON agent_memory
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
+DROP POLICY IF EXISTS agent_memory_isolation ON agent_memory;
+CREATE POLICY agent_memory_isolation ON agent_memory
+    USING (agent_id = current_setting('app.current_agent_id', true))
+    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
 
 -- 2. agent_keys — encryption key material (encrypted DEKs, KMS key IDs)
 ALTER TABLE agent_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_keys FORCE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'agent_keys_isolation' AND tablename = 'agent_keys') THEN
-        CREATE POLICY agent_keys_isolation ON agent_keys
-            USING (agent_id = current_setting('app.current_agent_id', true))
-            WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
-    END IF;
-END $$;
+DROP POLICY IF EXISTS agent_keys_isolation ON agent_keys;
+CREATE POLICY agent_keys_isolation ON agent_keys
+    USING (agent_id = current_setting('app.current_agent_id', true))
+    WITH CHECK (agent_id = current_setting('app.current_agent_id', true));
 
 -- 3. Fix existing policies in 017 that lack WITH CHECK clause
 -- Drop and recreate with both USING + WITH CHECK

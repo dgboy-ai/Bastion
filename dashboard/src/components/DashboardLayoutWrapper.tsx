@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense, createContext, useContext } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import BackgroundParticles from "@/components/BackgroundParticles";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -25,6 +25,7 @@ export function useConnection() {
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const [isMock, setIsMock] = useState(true);
   const [dbName, setDbName] = useState("Simulated Mock");
@@ -159,22 +160,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="dashboard-layout">
         <NavBar />
         <div className="main-viewport">
-          <header className="viewport-header" style={{ position: "sticky", top: 0, zIndex: 40 }}>
-            <div className="header-search">
-              <span>🔍</span>
-              <input
-                type="text"
-                placeholder="Search cognitive memory context..."
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const q = (e.target as HTMLInputElement).value.trim();
-                    if (q) window.location.href = `/logs?q=${encodeURIComponent(q)}`;
-                  }
-                }}
-                aria-label="Search memories"
-              />
-            </div>
-            
+          <header className="viewport-header" style={{ 
+            position: "sticky", 
+            top: 0, 
+            zIndex: 40,
+            background: pathname === "/playground" ? "transparent" : "rgba(10, 6, 14, 0.85)",
+            backdropFilter: pathname === "/playground" ? "none" : "blur(20px)",
+            borderBottom: pathname === "/playground" ? "none" : "1px solid rgba(255, 94, 0, 0.12)",
+            display: "flex",
+            justifyContent: "flex-end",
+            padding: pathname === "/playground" ? "20px 32px 0 32px" : "14px 32px"
+          }}>
             <div className="header-actions">
               <button 
                 onClick={() => setIsModalOpen(true)}
@@ -182,17 +178,33 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   display: "flex", 
                   alignItems: "center", 
                   gap: "10px", 
-                  fontSize: "12px", 
-                  fontWeight: 600,
-                  padding: "7px 16px", 
-                  background: isMock ? "rgba(255, 94, 0, 0.1)" : "rgba(0, 255, 136, 0.1)",
+                  fontSize: "12.5px", 
+                  fontWeight: 700,
+                  padding: "8px 20px", 
+                  background: isMock ? "rgba(255, 94, 0, 0.08)" : "rgba(0, 255, 136, 0.08)",
                   border: isMock ? "1px solid rgba(255, 94, 0, 0.35)" : "1px solid rgba(0, 255, 136, 0.35)", 
                   borderRadius: "9999px",
                   cursor: "pointer",
                   color: isMock ? "#ff9100" : "#00ff88",
-                  fontFamily: "var(--font-mono)",
-                  boxShadow: isMock ? "0 0 15px rgba(255, 94, 0, 0.15)" : "0 0 15px rgba(0, 255, 136, 0.15)",
-                  transition: "all 0.2s ease"
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  boxShadow: isMock ? "0 0 20px rgba(255, 94, 0, 0.2)" : "0 0 20px rgba(0, 255, 136, 0.2)",
+                  transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = "translateY(-2px) scale(1.02)";
+                  e.currentTarget.style.boxShadow = isMock 
+                    ? "0 0 35px rgba(255, 94, 0, 0.45)" 
+                    : "0 0 35px rgba(0, 255, 136, 0.45)";
+                  e.currentTarget.style.borderColor = isMock ? "#ff5e00" : "#00ff88";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = "none";
+                  e.currentTarget.style.boxShadow = isMock 
+                    ? "0 0 20px rgba(255, 94, 0, 0.2)" 
+                    : "0 0 20px rgba(0, 255, 136, 0.2)";
+                  e.currentTarget.style.borderColor = isMock 
+                    ? "rgba(255, 94, 0, 0.35)" 
+                    : "rgba(0, 255, 136, 0.35)";
                 }}
               >
                 <span style={{ 
@@ -201,24 +213,36 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   background: isMock ? "#ff5e00" : "#00ff88", 
                   borderRadius: "50%", 
                   boxShadow: isMock ? "0 0 10px #ff5e00" : "0 0 10px #00ff88",
-                  animation: "pulse 2s infinite"
+                  animation: "pulse 1.5s infinite"
                 }} />
-                <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <img src="/cockroachdb-icon.png" alt="" style={{ width: "22px", height: "22px", flexShrink: 0, mixBlendMode: "screen" }} />
-                  {isMock ? "CockroachDB (Demo Mode)" : `CockroachDB: ${dbName}`}
+                <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center", 
+                    width: "20px", 
+                    height: "20px", 
+                    borderRadius: "50%", 
+                    background: "#ffffff", 
+                    padding: "2px", 
+                    flexShrink: 0 
+                  }}>
+                    <img src="/cockroachdb-icon.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain", filter: isMock ? "grayscale(0.5)" : "none" }} />
+                  </span>
+                  {isMock ? "CockroachDB (Demo)" : dbName}
                 </span>
                 {isMock && (
                   <span style={{
                     background: "linear-gradient(135deg, #ff5e00, #ff8800)",
                     color: "#ffffff",
-                    fontSize: "9.5px",
+                    fontSize: "9px",
                     fontWeight: 800,
                     padding: "3px 8px",
                     borderRadius: "4px",
-                    letterSpacing: "0.8px",
-                    marginLeft: "4px"
+                    letterSpacing: "1px",
+                    marginLeft: "6px"
                   }}>
-                    CONNECT LIVE DB
+                    CONNECT LIVE
                   </span>
                 )}
               </button>

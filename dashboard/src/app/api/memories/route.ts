@@ -32,10 +32,10 @@ export async function GET(request: Request) {
 
   try {
     const dataParams: unknown[] = [];
-    const whereClause = search ? ` WHERE content ILIKE $${dataParams.length + 1} OR memory_type ILIKE $${dataParams.length + 1}` : "";
+    const whereClause = search ? ` WHERE content ILIKE $${dataParams.length + 1}::text OR memory_type ILIKE $${dataParams.length + 1}::text` : "";
     if (search) dataParams.push(`%${search}%`);
 
-    const countSql = `SELECT COUNT(*) as cnt FROM agent_memory${search ? " WHERE content ILIKE $1 OR memory_type ILIKE $1" : ""}`;
+    const countSql = `SELECT COUNT(*) as cnt FROM agent_memory${search ? " WHERE content ILIKE $1::text OR memory_type ILIKE $1::text" : ""}`;
     const countParams = search ? [`%${search}%`] : [];
 
     dataParams.push(limit, offset);

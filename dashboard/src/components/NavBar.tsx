@@ -18,38 +18,119 @@ const NavBar = memo(function NavBar() {
   const { isMock, dbName } = useConnection();
 
   const links = [
-    { href: "/playground", label: "Live Demo", icon: "▶️" },
-    { href: "/dashboard", label: "Dashboard", icon: "📊" },
-    { href: "/flight-recorder", label: "Audit Trail", icon: "📋" },
-    { href: "/graph", label: "Knowledge Graph", icon: "🕸️" },
-    { href: "/logs", label: "Memory Logs", icon: "📜" },
-    { href: "/health", label: "Health", icon: "💓" },
-    { href: "/compliance", label: "Compliance", icon: "⚖️" },
+    {
+      href: "/playground",
+      label: "Live Demo",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      )
+    },
+    {
+      href: "/dashboard",
+      label: "Dashboard",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="9" />
+          <rect x="14" y="3" width="7" height="5" />
+          <rect x="14" y="12" width="7" height="9" />
+          <rect x="3" y="16" width="7" height="5" />
+        </svg>
+      )
+    },
+    {
+      href: "/flight-recorder",
+      label: "Audit Trail",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      )
+    },
+    {
+      href: "/graph",
+      label: "Knowledge Graph",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="5" r="3" />
+          <circle cx="6" cy="12" r="3" />
+          <circle cx="18" cy="19" r="3" />
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+      )
+    },
+    {
+      href: "/logs",
+      label: "Memory Logs",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <ellipse cx="12" cy="5" rx="9" ry="3" />
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+          <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+        </svg>
+      )
+    },
+    {
+      href: "/health",
+      label: "Health",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+      )
+    },
+    {
+      href: "/compliance",
+      label: "Compliance",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          <polyline points="9 11 11 13 15 9" />
+        </svg>
+      )
+    },
   ];
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ 
+      background: "rgba(8, 4, 12, 0.96)", 
+      backdropFilter: "blur(20px)",
+      borderRight: "1px solid rgba(255, 94, 0, 0.12)",
+      boxShadow: "10px 0 35px rgba(0,0,0,0.6)",
+      transition: "all 0.3s ease"
+    }}>
       <div className="sidebar-top">
         {/* Brand Header */}
-        <Link href="/" style={{ textDecoration: "none", display: "block", paddingBottom: "16px", borderBottom: "1px solid var(--glass-border)" }}>
+        <Link href="/" style={{ textDecoration: "none", display: "block", paddingBottom: "10px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{
-              width: "36px", height: "36px", borderRadius: "10px",
-              background: "linear-gradient(135deg, #ff5e00 0%, #ff9100 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 20px rgba(255, 94, 0, 0.35)", flexShrink: 0
+              width: "40px",
+              height: "40px",
+              borderRadius: "12px",
+              background: "linear-gradient(135deg, rgba(255, 94, 0, 0.18) 0%, rgba(22, 12, 28, 0.8) 100%)",
+              border: "1.5px solid #ff5e00",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 0 25px rgba(255, 94, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.1)",
+              flexShrink: 0,
+              animation: "pulse 2s infinite"
             }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff5e00" strokeWidth="2.5">
+                <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/>
+              </svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 900, fontSize: "17px", letterSpacing: "2px", color: "var(--ink)", fontFamily: "var(--font-sg)", lineHeight: 1.2 }}>BASTION</div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "8.5px", color: "#ff9100", letterSpacing: "1.2px", marginTop: "2px", whiteSpace: "nowrap", fontWeight: 700 }}>MEMORY FACTORY</div>
+              <div style={{ fontWeight: 900, fontSize: "19px", letterSpacing: "2.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1.2, textShadow: "0 0 15px rgba(255,94,0,0.2)" }}>BASTION</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "8.5px", color: "#ff9100", letterSpacing: "1.5px", marginTop: "2px", whiteSpace: "nowrap", fontWeight: 800 }}>MEMORY FACTORY</div>
             </div>
           </div>
         </Link>
 
         {/* Navigation Links */}
-        <nav className="sidebar-nav" style={{ marginTop: "12px" }}>
+        <nav className="sidebar-nav" style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {links.map((link) => {
             const isActive = pathname === link.href;
             return (
@@ -57,9 +138,48 @@ const NavBar = memo(function NavBar() {
                 key={link.href} 
                 href={link.href} 
                 className={`sidebar-link ${isActive ? "active" : ""}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? "#fff" : "#a0a0b0",
+                  background: isActive ? "linear-gradient(90deg, rgba(255, 94, 0, 0.12), rgba(255, 94, 0, 0.02))" : "transparent",
+                  borderLeft: isActive ? "3px solid #ff5e00" : "3px solid transparent",
+                  transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                  textDecoration: "none",
+                  boxShadow: isActive ? "0 4px 12px rgba(255,94,0,0.05)" : "none"
+                }}
+                onMouseEnter={e => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "rgba(255, 94, 0, 0.05)";
+                    e.currentTarget.style.color = "#fff";
+                    e.currentTarget.style.transform = "translateX(5px)";
+                    e.currentTarget.style.borderLeft = "3px solid rgba(255, 94, 0, 0.3)";
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "#a0a0b0";
+                    e.currentTarget.style.transform = "none";
+                    e.currentTarget.style.borderLeft = "3px solid transparent";
+                  }
+                }}
               >
-                <span style={{ fontSize: "16px", filter: isActive ? "drop-shadow(0 0 6px rgba(255, 94, 0, 0.6))" : "none" }}>{link.icon}</span>
-                <span style={{ flex: 1 }}>{link.label}</span>
+                <span style={{ 
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px", 
+                  color: isActive ? "#ff5e00" : "inherit",
+                  filter: isActive ? "drop-shadow(0 0 8px rgba(255, 94, 0, 0.6))" : "none",
+                  transition: "all 0.2s"
+                }}>{link.icon}</span>
+                <span style={{ flex: 1, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "0.2px" }}>{link.label}</span>
               </Link>
             );
           })}
@@ -67,18 +187,29 @@ const NavBar = memo(function NavBar() {
       </div>
 
       {/* Sidebar Footer */}
-      <div className="sidebar-footer">
-        <div className="profile-avatar" style={{ background: "linear-gradient(135deg, #ff5e00, #ff9100)" }}>BA</div>
+      <div className="sidebar-footer" style={{ 
+        padding: "16px 20px", 
+        borderTop: "1px solid rgba(255, 94, 0, 0.12)",
+        background: "rgba(8, 4, 12, 0.7)",
+        backdropFilter: "blur(10px)"
+      }}>
+        <div className="profile-avatar" style={{ 
+          background: "linear-gradient(135deg, #ff5e00, #ff9100)",
+          boxShadow: "0 0 15px rgba(255, 94, 0, 0.35)",
+          fontWeight: 800,
+          color: "#fff"
+        }}>BA</div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Bastion Agent</div>
+          <div style={{ fontSize: "12.5px", fontWeight: 800, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Space Grotesk', sans-serif" }}>Bastion Agent</div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "2px" }}>
             <CockroachIcon size={11} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "9.5px", fontFamily: "'JetBrains Mono', monospace", color: "#a0a0b0" }}>
               <span style={{
                 width: "6px", height: "6px", borderRadius: "50%",
-                background: isMock ? "#71717a" : "#22c55e",
-                boxShadow: isMock ? "none" : "0 0 6px rgba(34, 197, 94, 0.6)",
-                display: "inline-block"
+                background: isMock ? "#71717a" : "#00ff88",
+                boxShadow: isMock ? "none" : "0 0 8px #00ff88",
+                display: "inline-block",
+                animation: isMock ? "none" : "pulse 1.5s infinite"
               }} />
               {isMock ? "Mock" : "Live"} &middot; {dbName}
             </span>

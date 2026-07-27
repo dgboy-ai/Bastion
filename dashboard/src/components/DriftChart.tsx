@@ -17,12 +17,12 @@ interface DriftChartProps {
   loading?: boolean;
 }
 
-const WIDTH = 260;
-const HEIGHT = 100;
-const PAD_LEFT = 20;
-const PAD_RIGHT = 10;
-const PAD_TOP = 8;
-const PAD_BOTTOM = 18;
+const WIDTH = 540;
+const HEIGHT = 110;
+const PAD_LEFT = 24;
+const PAD_RIGHT = 16;
+const PAD_TOP = 10;
+const PAD_BOTTOM = 20;
 const PLOT_W = WIDTH - PAD_LEFT - PAD_RIGHT;
 const PLOT_H = HEIGHT - PAD_TOP - PAD_BOTTOM;
 
@@ -37,7 +37,6 @@ function formatTime(ts: string): string {
 
 export default function DriftChart({ timeSeries, overallScore, status, topSignals, recommendation, loading }: DriftChartProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; score: number; time: string } | null>(null);
 
   useEffect(() => {
     if (!svgRef.current || timeSeries.length < 2) return;
@@ -157,7 +156,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       const healthyPath = document.createElementNS(ns, "path");
       healthyPath.setAttribute("d", healthyD);
       healthyPath.setAttribute("fill", "none");
-      healthyPath.setAttribute("stroke", "var(--accent-emerald)");
+      healthyPath.setAttribute("stroke", "#10b981");
       healthyPath.setAttribute("stroke-width", "2");
       healthyPath.setAttribute("stroke-linecap", "round");
       healthyPath.setAttribute("stroke-linejoin", "round");
@@ -169,7 +168,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       const driftingPath = document.createElementNS(ns, "path");
       driftingPath.setAttribute("d", driftingD);
       driftingPath.setAttribute("fill", "none");
-      driftingPath.setAttribute("stroke", "var(--accent-sunset)");
+      driftingPath.setAttribute("stroke", "#f97316");
       driftingPath.setAttribute("stroke-width", "2");
       driftingPath.setAttribute("stroke-linecap", "round");
       driftingPath.setAttribute("stroke-linejoin", "round");
@@ -182,7 +181,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       const criticalPath = document.createElementNS(ns, "path");
       criticalPath.setAttribute("d", criticalD);
       criticalPath.setAttribute("fill", "none");
-      criticalPath.setAttribute("stroke", "#ff3333");
+      criticalPath.setAttribute("stroke", "#ef4444");
       criticalPath.setAttribute("stroke-width", "2.5");
       criticalPath.setAttribute("stroke-linecap", "round");
       criticalPath.setAttribute("stroke-linejoin", "round");
@@ -197,14 +196,58 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       const dot = document.createElementNS(ns, "circle");
       dot.setAttribute("cx", String(cx));
       dot.setAttribute("cy", String(cy));
-      dot.setAttribute("r", "3");
-      dot.setAttribute("fill", pt.score >= criticalThreshold ? "#ff3333" : pt.score >= threshold ? "var(--accent-sunset)" : "var(--accent-emerald)");
-      dot.setAttribute("opacity", "0.8");
+      dot.setAttribute("r", "3.5");
+      dot.setAttribute("fill", pt.score >= criticalThreshold ? "#ef4444" : pt.score >= threshold ? "#f97316" : "#10b981");
+      dot.setAttribute("opacity", "0.85");
       dot.setAttribute("style", "cursor: pointer");
+
       dot.addEventListener("mouseenter", () => {
-        setHoveredPoint({ x: cx, y: cy, score: pt.score, time: formatTime(pt.timestamp) });
+        const existing = svg.querySelector("#drift-tooltip");
+        if (existing) existing.remove();
+
+        const tooltipGroup = document.createElementNS(ns, "g");
+        tooltipGroup.setAttribute("id", "drift-tooltip");
+        tooltipGroup.setAttribute("style", "pointer-events: none;");
+
+        const tooltipRect = document.createElementNS(ns, "rect");
+        const tx = Math.min(cx + 8, WIDTH - 95);
+        const ty = Math.max(cy - 32, 5);
+        tooltipRect.setAttribute("x", String(tx));
+        tooltipRect.setAttribute("y", String(ty));
+        tooltipRect.setAttribute("width", "85");
+        tooltipRect.setAttribute("height", "26");
+        tooltipRect.setAttribute("fill", "rgba(6, 3, 10, 0.95)");
+        tooltipRect.setAttribute("stroke", pt.score >= criticalThreshold ? "#ef4444" : pt.score >= threshold ? "#f97316" : "#10b981");
+        tooltipRect.setAttribute("stroke-width", "1");
+        tooltipRect.setAttribute("rx", "4");
+        tooltipGroup.appendChild(tooltipRect);
+
+        const text1 = document.createElementNS(ns, "text");
+        text1.setAttribute("x", String(tx + 6));
+        text1.setAttribute("y", String(ty + 10));
+        text1.setAttribute("fill", "#fff");
+        text1.setAttribute("font-size", "7.5");
+        text1.setAttribute("font-family", "var(--font-mono)");
+        text1.textContent = `Score: ${(pt.score * 100).toFixed(0)}`;
+        tooltipGroup.appendChild(text1);
+
+        const text2 = document.createElementNS(ns, "text");
+        text2.setAttribute("x", String(tx + 6));
+        text2.setAttribute("y", String(ty + 18));
+        text2.setAttribute("fill", "rgba(255,255,255,0.6)");
+        text2.setAttribute("font-size", "6.5");
+        text2.setAttribute("font-family", "var(--font-mono)");
+        text2.textContent = formatTime(pt.timestamp);
+        tooltipGroup.appendChild(text2);
+
+        svg.appendChild(tooltipGroup);
       });
-      dot.addEventListener("mouseleave", () => setHoveredPoint(null));
+
+      dot.addEventListener("mouseleave", () => {
+        const tooltip = svg.querySelector("#drift-tooltip");
+        if (tooltip) tooltip.remove();
+      });
+
       svg.appendChild(dot);
     }
 
@@ -227,54 +270,33 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
     );
   }
 
-  const statusColor = status === "CRITICAL" ? "#ff3333" : status === "DRIFTING" ? "var(--accent-sunset)" : "var(--accent-emerald)";
-  const hoverBorderColor = hoveredPoint && hoveredPoint.score >= 0.6 ? "#ff3333" : hoveredPoint && hoveredPoint.score >= 0.3 ? "var(--accent-sunset)" : "var(--accent-emerald)";
+  const statusColor = status === "CRITICAL" ? "#ef4444" : status === "DRIFTING" ? "#f97316" : "#10b981";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "18px", fontFamily: "var(--font-mono)", fontWeight: 700, color: statusColor }}>
+          <span style={{ fontSize: "18px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: statusColor }}>
             {(overallScore * 100).toFixed(0)}
           </span>
-          <span style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: statusColor, fontWeight: 600 }}>
+          <span style={{ fontSize: "9px", fontFamily: "'JetBrains Mono', monospace", color: statusColor, fontWeight: 600 }}>
             {status}
           </span>
         </div>
-        <span style={{ fontSize: "9px", color: "var(--mute)", fontFamily: "var(--font-mono)" }}>
+        <span style={{ fontSize: "9.5px", color: "var(--mute)", fontFamily: "'JetBrains Mono', monospace" }}>
           {timeSeries.length} samples
         </span>
       </div>
 
-      <div style={{ position: "relative", width: `${WIDTH}px`, height: `${HEIGHT}px` }}>
-        <svg ref={svgRef} width={WIDTH} height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ overflow: "visible" }} />
-        {hoveredPoint && (
-          <div style={{
-            position: "absolute",
-            left: `${Math.min(hoveredPoint.x, WIDTH - 80)}px`,
-            top: `${Math.max(hoveredPoint.y - 36, 0)}px`,
-            background: "rgba(2, 3, 8, 0.92)",
-            border: `1px solid ${hoverBorderColor}`,
-            borderRadius: "4px",
-            padding: "4px 8px",
-            zIndex: 10,
-            pointerEvents: "none",
-            whiteSpace: "nowrap",
-            fontFamily: "var(--font-mono)",
-            fontSize: "9px",
-            color: "#fff",
-          }}>
-            <div>Score: {(hoveredPoint.score * 100).toFixed(0)}</div>
-            <div style={{ color: "var(--mute)", fontSize: "8px" }}>{hoveredPoint.time}</div>
-          </div>
-        )}
+      <div style={{ position: "relative", width: "100%", height: `${HEIGHT}px` }}>
+        <svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ overflow: "visible" }} />
       </div>
 
       {topSignals.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-          <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--accent-sunset)", fontWeight: 600 }}>Top Signals:</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: "4px" }}>
+          <div style={{ fontSize: "9.5px", fontFamily: "'JetBrains Mono', monospace", color: "#f97316", fontWeight: 700 }}>Top Signals:</div>
           {topSignals.map((signal, i) => (
-            <div key={i} style={{ fontSize: "8px", fontFamily: "var(--font-mono)", color: "var(--mute)" }}>
+            <div key={i} style={{ fontSize: "9px", fontFamily: "'JetBrains Mono', monospace", color: "var(--mute)" }}>
               {signal.replace(/_/g, " ")}
             </div>
           ))}
@@ -282,7 +304,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       )}
 
       {recommendation && recommendation !== "No action needed. Agent behavior is stable." && (
-        <div style={{ fontSize: "9px", color: "var(--accent-breeze)", fontFamily: "var(--font-mono)", padding: "6px 8px", background: "rgba(0, 229, 255, 0.04)", borderRadius: "4px", border: "1px solid rgba(0, 229, 255, 0.1)" }}>
+        <div style={{ fontSize: "9.5px", color: "#00e5ff", fontFamily: "'JetBrains Mono', monospace", padding: "6px 10px", background: "rgba(0, 229, 255, 0.04)", borderRadius: "6px", border: "1px solid rgba(0, 229, 255, 0.15)", marginTop: "4px" }}>
           {recommendation}
         </div>
       )}

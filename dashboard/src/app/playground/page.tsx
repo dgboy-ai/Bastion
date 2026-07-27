@@ -26,7 +26,7 @@ async function getStats() {
       entities: parseInt(entRes.rows[0]?.cnt ?? "0", 10),
       relations: parseInt(relRes.rows[0]?.cnt ?? "0", 10),
       auditLogs: parseInt(auditRes.rows[0]?.cnt ?? "0", 10),
-      regions: 2,
+      regions: 1,
     };
   } catch {
     return { memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 0 };

@@ -130,7 +130,7 @@ export default function HealthPage() {
           <span style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>CockroachDB</span>
           <span style={{ fontSize: "12px", color: "#888" }}>SERIALIZABLE isolation · C-SPANN vectors · CDC changefeed</span>
         </div>
-        <span style={{ fontSize: "11px", color: "#666", fontFamily: "monospace" }}>v24.3 · 2 regions · 99.99% uptime</span>
+        <span style={{ fontSize: "11px", color: "#666", fontFamily: "monospace" }}>v24.3 · REGIONAL BY ROW · 99.99% uptime</span>
       </div>
     </div>
   );

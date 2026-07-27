@@ -39,12 +39,12 @@ export default function IntroductionPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", margin: "20px 0" }}>
           {[
             { n: "965+", l: "Memories stored in live CockroachDB", c: C.gold },
-            { n: "25", l: "MCP tools for AI agent integration", c: C.cyan },
+            { n: "26", l: "MCP tools for AI agent integration", c: C.cyan },
             { n: "7", l: "OWASP ASI06 guard stages", c: C.lava },
             { n: "6", l: "Consolidation pipeline stages", c: C.magma },
           ].map((s, i) => (
             <div key={i} style={{ padding: "16px", background: "rgba(255,170,0,.04)", border: "1px solid rgba(255,170,0,.15)", borderRadius: "8px" }}>
-              <div style={{ fontSize: "28px", fontWeight: 900, color: s.c, fontFamily: "var(--font-sg)" }}>{s.n}</div>
+               <div style={{ fontSize: "28px", fontWeight: 900, color: s.c, fontFamily: "var(--font-sg)" }}>{s.n}</div>
               <div style={{ fontSize: "13px", color: C.mute, marginTop: "4px" }}>{s.l}</div>
             </div>
           ))}

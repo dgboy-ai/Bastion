@@ -8,12 +8,12 @@
 -- Enable native TTL on agent_memory for long-term memories
 -- Rows with expires_at set will be auto-deleted by CockroachDB
 ALTER TABLE agent_memory
-  SET (ttl_expiration_expression = 'expires_at', ttl_delete_rate = 100);
+  SET (ttl_expiration_expression = 'expires_at');
 
 -- Enable native TTL on agent_messages for short-term conversational memory
 -- Messages auto-expire after their expires_at timestamp (default: 1 hour)
 ALTER TABLE agent_messages
-  SET (ttl_expiration_expression = 'expires_at', ttl_delete_rate = 100);
+  SET (ttl_expiration_expression = 'expires_at');
 
 -- Note: agent_audit, agent_checkpoints, and thought_graph do NOT have TTL
 -- These are forensic records that must persist indefinitely for compliance
