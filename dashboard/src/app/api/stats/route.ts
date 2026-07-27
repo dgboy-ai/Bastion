@@ -28,13 +28,13 @@ export async function GET(request: Request) {
       FROM agent_memory
     `);
 
-    // Fetch actual hourly writes for the last 8 hours
+    // Fetch actual hourly writes for the last 24 hours
     const hourlyGrowthRes = await safeQuery(`
       SELECT 
         EXTRACT(HOUR FROM created_at) as hr_val,
         COUNT(*) as count
       FROM agent_memory
-      WHERE created_at >= NOW() - INTERVAL '8 hours'
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
       GROUP BY hr_val
       ORDER BY hr_val ASC
     `);
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     `);
 
     const recentAuditRes = await safeQuery(
-      "SELECT audit_id, action, recorded_at, details FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
+      "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
     );
     const anomalyCountRes = await safeQuery(`
       SELECT COUNT(*) as count FROM (
@@ -73,15 +73,20 @@ export async function GET(request: Request) {
     const val6 = parseFloat(curveRes.rows[0]?.val_6 || "7.5");
     const valNow = parseFloat(avgImportanceRes.rows[0]?.avg || "5.0");
 
-    // Format hourly growth blocks
-    const hourlyCounts = Array(8).fill(0);
+    // Format hourly growth blocks (24 hours sliding window)
+    const hourlyCounts = Array(24).fill(0);
+    const currentHour = new Date().getHours();
     
-    // Map database counts into our 8 hour slots
+    // Map database counts into correct index of our 24 hours list
     const rows = hourlyGrowthRes.rows;
-    if (rows.length > 0) {
-      for (let i = 0; i < 8; i++) {
-        const rowVal = rows[rows.length - 1 - i];
-        hourlyCounts[7 - i] = rowVal ? parseInt(rowVal.count, 10) : 0;
+    for (const rowVal of rows) {
+      if (rowVal && rowVal.hr_val !== undefined) {
+        const hr = parseInt(rowVal.hr_val, 10);
+        // Calculate dynamic relative index from 23 hours ago to current hour
+        const index = (hr - (currentHour - 23) + 24) % 24;
+        if (index >= 0 && index < 24) {
+          hourlyCounts[index] = parseInt(rowVal.count, 10);
+        }
       }
     }
 
@@ -129,8 +134,9 @@ export async function GET(request: Request) {
       recentAudits: recentAuditRes.rows.map((row) => ({
         id: row.audit_id,
         action: row.action,
+        agent: row.agent_id,
         recordedAt: row.recorded_at,
-        details: row.details || {},
+        details: row.details,
       })),
     }, "short");
   } catch (error) {

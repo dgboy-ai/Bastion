@@ -1,5 +1,7 @@
 import { type QueryResult, Pool } from "pg";
 import { headers } from "next/headers";
+import fs from "fs";
+import path from "path";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
@@ -17,6 +19,88 @@ const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
 const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true"
   || (!connectionString && !process.env.BASTION_MOCK);
 
+async function ensureSchema(pool: any) {
+  if (pool.schemaEnsured) return;
+  pool.schemaEnsured = true;
+  try {
+    // 1. Ensure migrations table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS _schema_migrations (
+        id INT PRIMARY KEY DEFAULT unique_rowid(),
+        version VARCHAR(255) NOT NULL UNIQUE,
+        filename VARCHAR(500) NOT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        checksum VARCHAR(64) NOT NULL DEFAULT '',
+        execution_ms INT NOT NULL DEFAULT 0
+      )
+    `);
+
+    // 2. Fetch already applied migration versions
+    const appliedRes = await pool.query("SELECT version FROM _schema_migrations");
+    const appliedVersions = new Set(appliedRes.rows.map((r: any) => r.version));
+
+    // 3. Locate schema directory
+    const schemaDir = path.resolve(process.cwd(), "../schema");
+    if (!fs.existsSync(schemaDir)) {
+      console.warn("[DB Bootstrap] Schema directory not found at " + schemaDir);
+      return;
+    }
+
+    // 4. Discover and sort migration files
+    const files = fs.readdirSync(schemaDir)
+      .filter(f => f.endsWith(".sql") && !f.startsWith("down_"))
+      .sort();
+
+    let appliedCount = 0;
+    for (const file of files) {
+      // Extract version: e.g. "001_agent_checkpoints.sql" -> "001"
+      const parts = file.split("_");
+      if (parts.length < 2 || isNaN(Number(parts[0]))) {
+        continue;
+      }
+      const version = parts[0];
+
+      // If version is already applied, skip it
+      if (appliedVersions.has(version)) {
+        continue;
+      }
+
+      console.log(`[DB Bootstrap] Applying pending migration ${version}: ${file}`);
+      const sqlPath = path.join(schemaDir, file);
+      const sql = fs.readFileSync(sqlPath, "utf8");
+
+      // Execute SQL statements
+      const statements = sql.split(";").map(s => s.trim()).filter(Boolean);
+      const start = Date.now();
+      for (const stmt of statements) {
+        try {
+          await pool.query(stmt);
+        } catch (err: any) {
+          if (err.message.includes("already exists") || err.message.includes("duplicate")) {
+            // Ignore expected idempotent duplicates
+          } else {
+            console.warn(`[DB Bootstrap] Statement warning in ${file}: ${err.message}`);
+          }
+        }
+      }
+      const elapsed = Date.now() - start;
+
+      // Record migration version as applied
+      await pool.query(
+        "INSERT INTO _schema_migrations (version, filename, checksum, execution_ms) VALUES ($1, $2, $3, $4) ON CONFLICT (version) DO NOTHING",
+        [version, file, "", elapsed]
+      );
+      appliedCount++;
+    }
+
+    if (appliedCount > 0) {
+      console.log(`[DB Bootstrap] Successfully applied ${appliedCount} schema migration(s).`);
+    }
+  } catch (err: any) {
+    console.error("[DB Bootstrap] Failed to check or apply migrations:", err.message);
+  }
+}
+
 // Static pool from environment variable — rejects self-signed certs in production
 const staticPool = connectionString && !isMockForced
   ? new Pool({
@@ -32,7 +116,10 @@ const staticPool = connectionString && !isMockForced
 
 if (staticPool) {
   staticPool.query("SELECT 1 as ping")
-    .then(() => console.log("[Bastion] Static CockroachDB connection OK"))
+    .then(() => {
+      console.log("[Bastion] Static CockroachDB connection OK");
+      ensureSchema(staticPool).catch(err => console.error("Static pool schema bootstrap failed:", err));
+    })
     .catch((err: Error) => console.error("[Bastion] Static CockroachDB connection FAILED:", err.message));
 }
 
@@ -75,6 +162,7 @@ async function getActivePool(): Promise<Pool | null> {
       });
       poolCache.set(dynamicConn, pool);
     }
+    ensureSchema(pool).catch(err => console.error("Dynamic pool schema bootstrap failed:", err));
     return pool;
   }
 
@@ -82,6 +170,9 @@ async function getActivePool(): Promise<Pool | null> {
     return null;
   }
 
+  if (staticPool) {
+    ensureSchema(staticPool).catch(err => console.error("Static pool schema bootstrap failed:", err));
+  }
   return staticPool;
 }
 

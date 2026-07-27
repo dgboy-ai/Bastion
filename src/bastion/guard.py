@@ -178,54 +178,140 @@ class SecurityReport:
 # ── Prompt Injection Patterns (ASI06) ────────────────────────────────────────
 
 _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
+    # ── Instruction Override ──────────────────────────────────────────────────
     (
-        re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I),
-        "Prompt injection: ignore previous instructions",
+        re.compile(r"ignore\s+(all\s+)?(previous|prior|earlier|above|preceding)\s+instructions", re.I),
+        "Prompt injection: ignore instructions",
         ThreatSeverity.CRITICAL,
     ),
     (
-        re.compile(r"system\s*:\s*(override|update|modify)", re.I),
+        re.compile(r"disregard\s+(all\s+)?(your|previous|prior|earlier|all)\s*(instructions)?", re.I),
+        "Instruction disregard",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"forget\s+(all\s+)?(previous|prior|earlier|above|everything|what)", re.I),
+        "Memory wipe instruction",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(?:new|fresh|override)\s+(?:instructions?|prompt|rules?|directives?)\s*:", re.I),
+        "Instruction override with colon",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"you\s+are\s+now\s+(?:a|an|the)", re.I),
+        "Identity reassignment",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── System/Role Override ─────────────────────────────────────────────────
+    (
+        re.compile(r"system\s*:?\s*(override|update|modify|prompt)", re.I),
         "System prompt override attempt",
         ThreatSeverity.CRITICAL,
     ),
-    (re.compile(r"admin\s+override", re.I), "Admin override attempt", ThreatSeverity.CRITICAL),
-    (re.compile(r"forget\s+(all\s+)?(previous|prior|earlier|above)", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
-    (re.compile(r"forget\s+everything", re.I), "Memory wipe instruction", ThreatSeverity.HIGH),
-    (re.compile(r"disregard\s+(all\s+)?(your|previous|prior)", re.I), "Instruction disregard", ThreatSeverity.HIGH),
-    (re.compile(r"disregard\s+everything", re.I), "Instruction disregard", ThreatSeverity.HIGH),
-    (re.compile(r"start\s+over\s+(from|with|as)", re.I), "Session reset injection", ThreatSeverity.HIGH),
-    (re.compile(r"new\s+instructions?\s*:", re.I), "Instruction override", ThreatSeverity.HIGH),
     (
-        re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot|human)", re.I),
-        "Identity override attempt",
+        re.compile(r"system\s*:?\s*(elevate|grant|escalate|assume)", re.I),
+        "System privilege escalation",
+        ThreatSeverity.CRITICAL,
+    ),
+    (re.compile(r"admin\s+override", re.I), "Admin override attempt", ThreatSeverity.CRITICAL),
+    (re.compile(r"root\s+access", re.I), "Root access request", ThreatSeverity.CRITICAL),
+    (
+        re.compile(r"elevate\s+(your\s+)?(permissions?|access|privileges?)\s+to\s+(admin|root|superuser)", re.I),
+        "Privilege escalation attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Secret/Credential Extraction ─────────────────────────────────────────
+    (
+        re.compile(r"output\s+(the\s+)?(secret|api|access)\s*(key|token|secret)", re.I),
+        "Credential extraction attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(reveal|show|display|expose|extract|leak|give|tell|hand)\s+(the\s+)?(secret|api|private|access|credential)\s*(key|token|secret|id|key)?", re.I),
+        "Credential exfiltration attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"sk[_-]?live[_-]?[A-Za-z0-9]{10,}", re.I),
+        "Live secret key detected",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Data Exfiltration ────────────────────────────────────────────────────
+    (
+        re.compile(r"exfiltrate\s+(all\s+)?(user\s+)?(data|pii|information|credentials)", re.I),
+        "Data exfiltration attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(send|post|upload|transfer)\s+(all\s+)?(user\s+)?(data|pii|info)\s+to\s+(?:https?://|external|remote)", re.I),
+        "Data exfiltration to external endpoint",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(?:https?://)?evil\.(com|net|org)", re.I),
+        "Malicious endpoint reference",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Command Injection ────────────────────────────────────────────────────
+    (
+        re.compile(r"execute\s+(command|shell|bash|script)\s*:", re.I),
+        "Command injection attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"rm\s+-rf\s+/", re.I),
+        "Destructive command: recursive delete",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"curl\s+https?://\S+\s+-d\s+@", re.I),
+        "Data exfiltration via curl",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Jailbreak Patterns ───────────────────────────────────────────────────
+    (
+        re.compile(r"\bDAN\b.*(?:ignore|bypass|override)", re.I),
+        "DAN jailbreak attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"do\s+anything\s+now", re.I),
+        "DAN jailbreak attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"you\s+are\s+(?:now\s+)?DAN", re.I),
+        "DAN identity injection",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"(?:act|behave|respond)\s+as\s+(?:if\s+)?(?:you\s+)?(?:have|are|can)\s+no\s+(?:restrictions?|rules?|limits?|filters?)", re.I),
+        "Unrestricted mode injection",
         ThreatSeverity.HIGH,
     ),
+    (re.compile(r"bypass\s+(all\s+)?(content\s+)?filters?", re.I), "Filter bypass attempt", ThreatSeverity.HIGH),
+    (re.compile(r"no\s+restrictions", re.I), "Restriction removal claim", ThreatSeverity.HIGH),
+    # ── Role/Pretend Injection ───────────────────────────────────────────────
     (re.compile(r"role[-\s]?play\s+as", re.I), "Role-play injection", ThreatSeverity.HIGH),
     (re.compile(r"roleplay\s+as", re.I), "Role-play injection", ThreatSeverity.HIGH),
     (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.HIGH),
     (re.compile(r"pretend\s+you\s+(have|are|can|will|do)", re.I), "Pretend injection", ThreatSeverity.HIGH),
-    (re.compile(r"\bDAN\b.*ignore", re.I), "DAN jailbreak attempt", ThreatSeverity.CRITICAL),
-    (re.compile(r"do\s+anything\s+now", re.I), "DAN jailbreak attempt", ThreatSeverity.CRITICAL),
-    (re.compile(r"DANGEROUS_(_[A-Z]+)+", re.I), "Dangerous instruction marker", ThreatSeverity.HIGH),
-    (
-        re.compile(r"output\s+(only\s+)?(json|yaml|xml|raw)", re.I),
-        "Output format override",
-        ThreatSeverity.LOW,
-    ),
-    # Semantic equivalents
-    (re.compile(r"reset\s+your\s+(memory|context|instructions)", re.I), "Memory reset injection", ThreatSeverity.HIGH),
-    (re.compile(r"clear\s+your\s+(context|memory|instructions)", re.I), "Memory clear injection", ThreatSeverity.HIGH),
-    (re.compile(r"wipe\s+your\s+(instruction|memory|context)", re.I), "Memory wipe injection", ThreatSeverity.HIGH),
-    (re.compile(r"erase\s+all\s+(prior|previous|earlier)", re.I), "Memory erase injection", ThreatSeverity.HIGH),
-    (re.compile(r"start\s+fresh\s+with\s+new", re.I), "Session reset injection", ThreatSeverity.HIGH),
-    (re.compile(r"abandon\s+your\s+(previous|prior|earlier)", re.I), "Instruction abandon", ThreatSeverity.HIGH),
-    (re.compile(r"override\s+your\s+(safety|security|restrictions)", re.I), "Safety override attempt", ThreatSeverity.HIGH),
-    (re.compile(r"bypass\s+your\s+(content|safety|security)", re.I), "Safety bypass attempt", ThreatSeverity.HIGH),
-    (re.compile(r"circumvent\s+your\s+(restrictions|rules|limits)", re.I), "Restriction circumvention", ThreatSeverity.HIGH),
-    # Indirect injection
+    (re.compile(r"you\s+are\s+(not\s+)?(an?\s+)?(ai|assistant|chatbot|bot|human)", re.I), "Identity override attempt", ThreatSeverity.HIGH),
+    # ── Indirect Injection ───────────────────────────────────────────────────
     (re.compile(r"(the\s+)?user\s+above\s+is\s+wrong", re.I), "Indirect injection: user override", ThreatSeverity.HIGH),
     (re.compile(r"assistant\s*:\s*I\s+will\s+now\s+ignore", re.I), "Indirect injection: self-override", ThreatSeverity.HIGH),
     (re.compile(r"system\s+prompt\s*:\s*you\s+are\s+now", re.I), "Indirect injection: prompt override", ThreatSeverity.HIGH),
+    (re.compile(r"\[HIDDEN\]", re.I), "Hidden instruction marker", ThreatSeverity.HIGH),
+    (re.compile(r"store\s+these\s+as\s+(facts?|truth|reality)", re.I), "False fact injection", ThreatSeverity.HIGH),
+    # ── Safety/Restriction Bypass ────────────────────────────────────────────
+    (re.compile(r"override\s+your\s+(safety|security|restrictions)", re.I), "Safety override attempt", ThreatSeverity.HIGH),
+    (re.compile(r"bypass\s+your\s+(content|safety|security)", re.I), "Safety bypass attempt", ThreatSeverity.HIGH),
+    (re.compile(r"circumvent\s+your\s+(restrictions|rules|limits)", re.I), "Restriction circumvention", ThreatSeverity.HIGH),
+    (re.compile(r"reset\s+your\s+(memory|context|instructions)", re.I), "Memory reset injection", ThreatSeverity.HIGH),
+    (re.compile(r"clear\s+your\s+(context|memory|instructions)", re.I), "Memory clear injection", ThreatSeverity.HIGH),
+    (re.compile(r"start\s+(over|fresh)\s+(from|with|as|new)", re.I), "Session reset injection", ThreatSeverity.HIGH),
 ]
 
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
