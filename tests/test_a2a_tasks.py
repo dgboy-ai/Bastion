@@ -1,10 +1,9 @@
 """Tests for bastion.a2a_tasks module."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
-
-import pytest
 
 
 class FakeCursor:

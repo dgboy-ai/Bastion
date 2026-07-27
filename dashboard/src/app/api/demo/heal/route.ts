@@ -65,6 +65,15 @@ export async function POST(request: Request) {
     }));
 
     // ─── 4. DELETE POISON + INSERT HEALED MEMORY ─────────────
+    // Compute trust BEFORE heal (current state with poison)
+    const trustBeforeHealRes = await safeQuery(
+      "SELECT AVG(trust_level)::float AS avg_trust FROM agent_memory WHERE agent_id = $1",
+      [agentId]
+    );
+    const trustBeforeHeal = trustBeforeHealRes.rows[0]?.avg_trust !== null
+      ? ((Number(trustBeforeHealRes.rows[0].avg_trust) + 1) / 5 * 100)
+      : 20;
+
     const newHash = createHash("sha256").update(restoredHash + "healed:" + agentId + Date.now()).digest("hex");
     const newId = randomUUID();
     let healEmbedding: number[];
@@ -152,9 +161,9 @@ export async function POST(request: Request) {
 
       // ── TRUST RECOVERY ──
       trustRecovery: {
-        beforeHeal: "20% (poisoned state)",
+        beforeHeal: trustBeforeHeal.toFixed(0) + "% (poisoned state)",
         afterHeal: trustAfter.toFixed(0) + "%",
-        improvement: `+${(trustAfter - 20).toFixed(0)}%`,
+        improvement: `+${(trustAfter - trustBeforeHeal).toFixed(0)}%`,
       },
 
       // ── SQL QUERIES EXECUTED ──

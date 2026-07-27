@@ -52,7 +52,15 @@ _TRIPLE_PATTERNS = [
     (re.compile(r"(\w+)\s+replaces\s+(\w+)", re.IGNORECASE), "replaces", "relation"),
     # Multi-word entity patterns (capitalized words)
     (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+is\s+a\s+(\w+)", re.IGNORECASE), "is_a", "entity_type"),
-    (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+works\s+with\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE), "works_with", "relation"),
+    (
+        re.compile(
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+works\s+with\s+"
+            r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
+            re.IGNORECASE,
+        ),
+        "works_with",
+        "relation",
+    ),
     (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+uses\s+(\w+)", re.IGNORECASE), "uses", "relation"),
     (re.compile(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+manages\s+(\w+)", re.IGNORECASE), "manages", "relation"),
     # Prepositional phrase patterns
@@ -75,14 +83,64 @@ _TRIPLE_PATTERNS = [
 ]
 
 
-_STOP_WORDS = frozenset({
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "through", "during",
-    "before", "after", "above", "below", "between", "this", "that",
-    "these", "those", "it", "its", "i", "you", "he", "she", "we", "they",
-})
+_STOP_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "i",
+        "you",
+        "he",
+        "she",
+        "we",
+        "they",
+    }
+)
 
 
 def extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
@@ -413,6 +471,7 @@ class KnowledgeGraph:
         if not api_key:
             return None
         from groq import Groq
+
         self._groq_client = Groq(api_key=api_key)
         return self._groq_client
 
@@ -435,16 +494,19 @@ class KnowledgeGraph:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": (
-                        "Extract and verify entity-relation triples from text. "
-                        "Return ONLY a JSON array. No explanation, no markdown, no text. "
-                        'Format: [["subject","relation","object","kind",confidence],...] '
-                        "kind is 'relation' or 'entity_type'. confidence is 0.0-1.0."
-                    )},
-                    {"role": "user", "content": (
-                        f"Text: {content}\nExisting triples: {triples_text}\n"
-                        "Return JSON array only:"
-                    )},
+                    {
+                        "role": "system",
+                        "content": (
+                            "Extract and verify entity-relation triples from text. "
+                            "Return ONLY a JSON array. No explanation, no markdown, no text. "
+                            'Format: [["subject","relation","object","kind",confidence],...] '
+                            "kind is 'relation' or 'entity_type'. confidence is 0.0-1.0."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (f"Text: {content}\nExisting triples: {triples_text}\nReturn JSON array only:"),
+                    },
                 ],
                 temperature=0.0,
                 max_tokens=256,

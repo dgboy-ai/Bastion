@@ -16,6 +16,7 @@ from typing import Any
 
 try:
     import structlog
+
     structlog_logger = structlog.get_logger("bastion.pool")
 except ImportError:
     structlog = None  # type: ignore[assignment]
@@ -46,6 +47,8 @@ class ConnectionPool:
         self._max_per_consumer = max_per_consumer
         self._consumer_counts: dict[str, int] = {}
         self._consumer_lock = threading.Lock()
+        self._conn_to_consumer: dict[int, str] = {}
+        self._conn_to_consumer_lock = threading.Lock()
 
         self.connection_string = connection_string
         self.min_size = min_size
@@ -65,6 +68,7 @@ class ConnectionPool:
 
     def _start_reaper(self) -> None:
         """Start background reaper for idle connections."""
+
         def reaper():
             while not self._stop_reaper.is_set():
                 self._stop_reaper.wait(timeout=self.max_idle_seconds / 2)
@@ -91,6 +95,7 @@ class ConnectionPool:
     def _create_connection(self) -> Any:
         """Create a new database connection with statement timeout."""
         import psycopg
+
         # Add connect_timeout if not already in the connection string
         conn_str = self.connection_string
         if "connect_timeout" not in conn_str:
@@ -115,18 +120,30 @@ class ConnectionPool:
             logger.warning("Connection health check failed: %s", exc)
             return False
 
-    def acquire(self, timeout: float = 30.0) -> Any:
+    def acquire(self, timeout: float = 30.0, consumer_id: str = "default") -> Any:
         """Acquire a connection from the pool.
 
         Args:
             timeout: Maximum seconds to wait for a connection.
+            consumer_id: Identifies the caller for per-consumer quota enforcement.
 
         Returns:
             A database connection.
 
         Raises:
-            BastionPoolExhaustedError: If no connection available within timeout.
+            BastionPoolExhaustedError: If no connection available within timeout or
+                consumer quota exceeded.
         """
+        # Check consumer quota before attempting to acquire
+        if self._max_per_consumer > 0:
+            with self._consumer_lock:
+                count = self._consumer_counts.get(consumer_id, 0)
+                if count >= self._max_per_consumer:
+                    self._total_rejected += 1
+                    raise BastionPoolExhaustedError(
+                        f"Consumer '{consumer_id}' exceeded max_per_consumer={self._max_per_consumer}"
+                    )
+
         deadline = time.time() + timeout
 
         while True:
@@ -145,6 +162,7 @@ class ConnectionPool:
                 if idle_seconds < idle_threshold or self._is_healthy(conn_to_check):
                     with self._lock:
                         self._total_reused += 1
+                    self._increment_consumer(consumer_id, conn_to_check)
                     return conn_to_check
                 else:
                     with contextlib.suppress(Exception):
@@ -165,6 +183,7 @@ class ConnectionPool:
             if create_conn:
                 try:
                     conn = self._create_connection()
+                    self._increment_consumer(consumer_id, conn)
                     return conn
                 except Exception:
                     with self._lock:
@@ -175,21 +194,44 @@ class ConnectionPool:
             if time.time() >= deadline:
                 with self._lock:
                     self._total_rejected += 1
-                raise BastionPoolExhaustedError(
-                    f"Connection pool exhausted after {timeout}s"
-                )
+                raise BastionPoolExhaustedError(f"Connection pool exhausted after {timeout}s")
 
             time.sleep(0.01)
 
+    def _increment_consumer(self, consumer_id: str, conn: Any) -> None:
+        """Track connection ownership for per-consumer quota."""
+        if self._max_per_consumer > 0:
+            with self._consumer_lock:
+                self._consumer_counts[consumer_id] = self._consumer_counts.get(consumer_id, 0) + 1
+            with self._conn_to_consumer_lock:
+                self._conn_to_consumer[id(conn)] = consumer_id
+
+    def _decrement_consumer(self, conn: Any) -> None:
+        """Release consumer quota tracking for a connection."""
+        if self._max_per_consumer <= 0:
+            return
+        with self._conn_to_consumer_lock:
+            consumer_id = self._conn_to_consumer.pop(id(conn), None)
+        if consumer_id is not None:
+            with self._consumer_lock:
+                current = self._consumer_counts.get(consumer_id, 0)
+                if current > 0:
+                    self._consumer_counts[consumer_id] = current - 1
+                if current <= 1:
+                    self._consumer_counts.pop(consumer_id, None)
+
     def release(self, conn: Any) -> None:
         """Release a connection back to the pool.
-        
+
         If RESET ALL fails or the connection is in an error state,
         the connection is closed instead of returned to the pool
         to prevent leaking stale session state.
-        
+
         Tracks released connections to prevent double-release corruption.
+        Also decrements the consumer counter for per-consumer quota tracking.
         """
+        self._decrement_consumer(conn)
+
         # Guard against double-release — track which connections are in the pool
         with self._lock:
             if conn in [c for c, _ in self._pool]:
@@ -200,10 +242,8 @@ class ConnectionPool:
         try:
             with conn.cursor() as cur:
                 # Rollback any open transaction before resetting session state
-                try:
+                with contextlib.suppress(Exception):
                     cur.execute("ROLLBACK")
-                except Exception:
-                    pass  # No transaction open, that's fine
                 cur.execute("RESET ALL")
             reset_ok = True
         except Exception:
@@ -213,10 +253,10 @@ class ConnectionPool:
         is_healthy = True
         try:
             # Use public API where available; fall back to attribute check
-            if hasattr(conn, 'is_closed') and callable(conn.is_closed):
+            if hasattr(conn, "is_closed") and callable(conn.is_closed):
                 is_healthy = not conn.is_closed()
-            elif hasattr(conn, 'closed'):
-                is_healthy = not getattr(conn, 'closed', False)
+            elif hasattr(conn, "closed"):
+                is_healthy = not getattr(conn, "closed", False)
             # If neither method available, assume healthy (will be caught on next use)
         except Exception:
             pass
@@ -247,9 +287,9 @@ class ConnectionPool:
                 "total_created": self._total_created,
                 "total_reused": self._total_reused,
                 "total_expired": self._total_expired,
-                "reuse_rate": round(
-                    self._total_reused / max(self._total_created + self._total_reused, 1) * 100, 2
-                ),
+                "reuse_rate": round(self._total_reused / max(self._total_created + self._total_reused, 1) * 100, 2),
+                "max_per_consumer": self._max_per_consumer,
+                "active_consumers": len(self._consumer_counts),
             }
 
     def close_all(self) -> None:
@@ -287,6 +327,7 @@ class AsyncConnectionPool:
 
     async def start(self) -> None:
         import asyncpg
+
         self._pool = await asyncpg.create_pool(
             dsn=self.dsn,
             min_size=self.min_size,
@@ -317,8 +358,8 @@ class AsyncConnectionPool:
         # Check if connection is closed
         is_healthy = True
         try:
-            is_closed_val = getattr(conn, 'is_closed', None)
-            closed_val = getattr(conn, 'closed', None)
+            is_closed_val = getattr(conn, "is_closed", None)
+            closed_val = getattr(conn, "closed", None)
             if is_closed_val is True or closed_val is True:
                 is_healthy = False
         except Exception:
@@ -326,10 +367,8 @@ class AsyncConnectionPool:
 
         if not reset_ok or not is_healthy:
             # Discard connection
-            try:
+            with contextlib.suppress(Exception):
                 await conn.close()
-            except Exception:
-                pass
             return
 
         await self._pool.release(conn)

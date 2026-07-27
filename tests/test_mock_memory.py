@@ -96,9 +96,7 @@ def test_smart_merge_identical_facts():
     """When facts are very similar (overlap > 0.7), keep the longer one."""
     memory = BastionMemory(agent_id="merge-test", mock=True)
     result = memory._smart_merge(
-        "The API is enabled by default for all users",
-        "The API is enabled by default for all users",
-        "configuration"
+        "The API is enabled by default for all users", "The API is enabled by default for all users", "configuration"
     )
     assert "API" in result
 
@@ -106,11 +104,7 @@ def test_smart_merge_identical_facts():
 def test_smart_merge_partial_overlap():
     """When facts partially overlap (0.3 < overlap < 0.7), combine them."""
     memory = BastionMemory(agent_id="merge-test", mock=True)
-    result = memory._smart_merge(
-        "User prefers Python",
-        "User prefers dark mode",
-        "preferences"
-    )
+    result = memory._smart_merge("User prefers Python", "User prefers dark mode", "preferences")
     assert "Python" in result
     assert "dark" in result and "mode" in result
 
@@ -118,11 +112,7 @@ def test_smart_merge_partial_overlap():
 def test_smart_merge_different_facts():
     """When facts are very different (overlap < 0.3), keep both."""
     memory = BastionMemory(agent_id="merge-test", mock=True)
-    result = memory._smart_merge(
-        "The server runs on port 8080",
-        "The database uses PostgreSQL",
-        "configuration"
-    )
+    result = memory._smart_merge("The server runs on port 8080", "The database uses PostgreSQL", "configuration")
     assert "8080" in result
     assert "PostgreSQL" in result
 
@@ -155,8 +145,7 @@ def test_memory_record_to_dict():
 
 
 def test_cluster_info_to_dict():
-    info = ClusterInfo(cluster_id="c1", connection_string="postgres://...",
-                        admin_url="https://...", region="eu-west1")
+    info = ClusterInfo(cluster_id="c1", connection_string="postgres://...", admin_url="https://...", region="eu-west1")
     d = info.to_dict()
     assert d["cluster_id"] == "c1"
     assert d["region"] == "eu-west1"
@@ -303,13 +292,28 @@ def test_detect_anomalies_size_spike():
 
 def test_from_row_parses_embedding_string():
     from datetime import datetime
-    record = MemoryRecord.from_row((
-        "test-id", "agent-1", "fact", "content",
-        "[0.1, 0.2, 0.3]",  # VECTOR returned as JSON string
-        {"source": "test"}, "prev-hash", "crypto-hash",
-        datetime.now(UTC), None, 5, 5.0,
-        2, "agent_direct", 0, False, 0,
-    ))
+
+    record = MemoryRecord.from_row(
+        (
+            "test-id",
+            "agent-1",
+            "fact",
+            "content",
+            "[0.1, 0.2, 0.3]",  # VECTOR returned as JSON string
+            {"source": "test"},
+            "prev-hash",
+            "crypto-hash",
+            datetime.now(UTC),
+            None,
+            5,
+            5.0,
+            2,
+            "agent_direct",
+            0,
+            False,
+            0,
+        )
+    )
     assert record.memory_id == "test-id"
     assert record.embedding == [0.1, 0.2, 0.3]
     assert record.metadata == {"source": "test"}
@@ -318,18 +322,34 @@ def test_from_row_parses_embedding_string():
 
 def test_from_row_parses_embedding_list():
     from datetime import datetime
-    record = MemoryRecord.from_row((
-        "test-id", "agent-1", "fact", "content",
-        [0.1, 0.2, 0.3],
-        {"source": "test"}, "prev-hash", "crypto-hash",
-        datetime.now(UTC), None, 0, 5.0,
-        2, "agent_direct", 0, False, 0,
-    ))
+
+    record = MemoryRecord.from_row(
+        (
+            "test-id",
+            "agent-1",
+            "fact",
+            "content",
+            [0.1, 0.2, 0.3],
+            {"source": "test"},
+            "prev-hash",
+            "crypto-hash",
+            datetime.now(UTC),
+            None,
+            0,
+            5.0,
+            2,
+            "agent_direct",
+            0,
+            False,
+            0,
+        )
+    )
     assert record.embedding == [0.1, 0.2, 0.3]
     assert record.access_count == 0
 
 
 # -- list_all tests ----------------------------------------------------------
+
 
 def test_list_all_returns_all_non_expired():
     memory = BastionMemory(agent_id="list-all-test", mock=True)
@@ -392,12 +412,27 @@ def test_list_all_own_scope_isolated():
 
 
 def test_from_row_null_values():
-    record = MemoryRecord.from_row((
-        "test-id", "agent-1", "fact", "content",
-        None, None, None, "crypto-hash",
-        None, None, None, None,
-        None, None, None, None, None,
-    ))
+    record = MemoryRecord.from_row(
+        (
+            "test-id",
+            "agent-1",
+            "fact",
+            "content",
+            None,
+            None,
+            None,
+            "crypto-hash",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
     assert record.embedding == []
     assert record.metadata == {}
     assert record.previous_hash is None

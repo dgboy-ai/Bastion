@@ -89,9 +89,7 @@ class TestA2AServerE2E:
         assert res.status_code in (200, 503)
 
     def test_agent_card(self):
-        res = requests.get(
-            urljoin(BASE_URL, "/.well-known/agent-card.json"), headers=_headers()
-        )
+        res = requests.get(urljoin(BASE_URL, "/.well-known/agent-card.json"), headers=_headers())
         assert res.status_code == 200
         card = res.json()
         assert card["name"] == "Bastion Memory Agent"
@@ -110,9 +108,7 @@ class TestA2AServerE2E:
                 }
             },
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=payload, headers=_headers())
         assert res.status_code == 200
         result = res.json()
         assert "result" in result
@@ -130,9 +126,7 @@ class TestA2AServerE2E:
                 }
             },
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=payload, headers=_headers())
         assert res.status_code == 200
         result = res.json()
         assert "result" in result
@@ -144,9 +138,7 @@ class TestA2AServerE2E:
             "method": "InvalidMethod",
             "params": {},
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=payload, headers=_headers())
         assert res.status_code == 200
         result = res.json()
         assert "error" in result
@@ -154,9 +146,7 @@ class TestA2AServerE2E:
 
     def test_jsonrpc_missing_version(self):
         payload = {"id": "test-4", "method": "SendMessage", "params": {}}
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=payload, headers=_headers())
         assert res.status_code == 200
         result = res.json()
         assert "error" in result
@@ -165,6 +155,7 @@ class TestA2AServerE2E:
         # When no API key is configured, server allows unauthenticated access
         # When API key IS configured, /metrics requires auth
         import os
+
         if os.environ.get("BASTION_API_KEY"):
             res = requests.get(urljoin(BASE_URL, "/metrics"))
             assert res.status_code == 401
@@ -174,6 +165,7 @@ class TestA2AServerE2E:
 
     def test_auth_wrong_key(self):
         import os
+
         if os.environ.get("BASTION_API_KEY"):
             res = requests.get(
                 urljoin(BASE_URL, "/metrics"),
@@ -209,9 +201,7 @@ class TestA2AServerE2E:
         assert "bastion_up" in body
 
     def test_rest_get_task_nonexistent(self):
-        res = requests.get(
-            urljoin(BASE_URL, "/tasks/nonexistent-task"), headers=_headers()
-        )
+        res = requests.get(urljoin(BASE_URL, "/tasks/nonexistent-task"), headers=_headers())
         assert res.status_code == 404
 
 
@@ -232,9 +222,7 @@ class TestFullWorkflow:
                 }
             },
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=store_payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=store_payload, headers=_headers())
         assert res.status_code == 200
 
         # 2. Search for the stored memory
@@ -249,9 +237,7 @@ class TestFullWorkflow:
                 }
             },
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=search_payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=search_payload, headers=_headers())
         assert res.status_code == 200
 
         # 3. Get task status
@@ -262,7 +248,5 @@ class TestFullWorkflow:
             "method": "GetTask",
             "params": {"id": task_id},
         }
-        res = requests.post(
-            urljoin(BASE_URL, "/"), json=task_payload, headers=_headers()
-        )
+        res = requests.post(urljoin(BASE_URL, "/"), json=task_payload, headers=_headers())
         assert res.status_code == 200

@@ -30,7 +30,6 @@ from bastion.guard import ToolScanResult, multilang_scan, pii_scan, scan_tool_ma
 from bastion.limiter import RequestLimiter
 from bastion.locality import DataRegion, MemoryLocality
 from bastion.ltm_gateway import GatewayStats, LTMMemoryGateway, ReuseResult, StoreResult
-from bastion.mcp_server import create_server
 from bastion.memory import BastionMemory, MemoryRouter
 from bastion.merkle import MerkleHashChain, MerkleTree
 from bastion.models import (

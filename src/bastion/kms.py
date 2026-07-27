@@ -303,12 +303,7 @@ class AwsKMS(KMSInterface):
         aad = self._encode_aad(context)
         ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad)
         # Format: iv(12) + len(DEK_CT)(4) + DEK_CT(var) + ciphertext+tag(var)
-        payload = (
-            nonce
-            + len(self._dek_ciphertext).to_bytes(4, "big")
-            + self._dek_ciphertext
-            + ct
-        )
+        payload = nonce + len(self._dek_ciphertext).to_bytes(4, "big") + self._dek_ciphertext + ct
         return base64.b64encode(payload).decode("ascii")
 
     def decrypt(self, ciphertext_b64: str, context: dict[str, str] | None = None) -> str:
@@ -321,11 +316,9 @@ class AwsKMS(KMSInterface):
         nonce = payload[:12]
         dek_ct_len = int.from_bytes(payload[12:16], "big")
         if dek_ct_len < 1 or 16 + dek_ct_len > len(payload):
-            raise ValueError(
-                f"Invalid DEK ciphertext length ({dek_ct_len}) for payload of {len(payload)} bytes"
-            )
-        dek_ct = payload[16:16 + dek_ct_len]
-        ct = payload[16 + dek_ct_len:]
+            raise ValueError(f"Invalid DEK ciphertext length ({dek_ct_len}) for payload of {len(payload)} bytes")
+        dek_ct = payload[16 : 16 + dek_ct_len]
+        ct = payload[16 + dek_ct_len :]
 
         dek = self._dek_cache.get(dek_ct.hex())
         if dek is None:
@@ -514,7 +507,8 @@ class TenantKMS:
                             extra={"agent_id": agent_id, "expected": self._master.key_id(), "got": kms_key_id},
                         )
                         raise RuntimeError(
-                            f"KMS key mismatch for agent {agent_id}: expected {self._master.key_id()}, got {kms_key_id}. "
+                            f"KMS key mismatch for agent {agent_id}: "
+                            f"expected {self._master.key_id()}, got {kms_key_id}. "
                             "Re-encrypt memories with the current key before using a new key."
                         )
                     dek = self._master.decrypt(encrypted_dek.hex(), {"agent_id": agent_id})
@@ -698,7 +692,15 @@ class EncryptedMemoryWrapper:
         }
         if embedding is not None:
             meta["_precomputed_embedding"] = embedding
-        return self._memory.store(memory_type, encrypted, meta, expires_in_seconds, region, _skip_guard=True, _guard_bypass_token=True)
+        return self._memory.store(
+            memory_type,
+            encrypted,
+            meta,
+            expires_in_seconds,
+            region,
+            _skip_guard=True,
+            _guard_bypass_token=True,
+        )
 
     def search(self, query: str, **kwargs: Any) -> list:
         ctx = {"agent_id": self._memory.agent_id}
@@ -740,9 +742,7 @@ class EncryptedMemoryWrapper:
             try:
                 r.content = self._kms.decrypt(r.content, ctx)
             except Exception:
-                logger.exception(
-                    "KMS decrypt failed on get_memory result", extra={"memory_id": memory_id}
-                )
+                logger.exception("KMS decrypt failed on get_memory result", extra={"memory_id": memory_id})
                 r.content = "<encrypted:decryption_failed>"
         return r
 

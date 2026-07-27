@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -51,6 +52,7 @@ def _hash_token(token: str) -> str:
     """SHA-256 hash of a token for the revocation table lookup."""
     return hashlib.sha256(token.encode()).hexdigest()
 
+
 _PRE_REGISTERED_CLIENT_ID: str | None = None
 _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
@@ -78,9 +80,7 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
     """
     # Hash verifier before storage — never persist plaintext verifiers
     verifier_hash = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest())
-        .rstrip(b"=")
-        .decode("ascii")
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
     )
 
     conn_str = os.environ.get("BASTION_CONN")
@@ -88,15 +88,19 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
         # DB is primary — always write through
         try:
             import psycopg
+
             with psycopg.connect(conn_str) as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT INTO oauth_pkce_verifiers (code, code_verifier, expires_at)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (code) DO UPDATE SET
                         code_verifier = EXCLUDED.code_verifier,
                         expires_at = EXCLUDED.expires_at
-                    """, (authorization_code, verifier_hash, time.time() + _PKCE_TTL))
+                    """,
+                        (authorization_code, verifier_hash, time.time() + _PKCE_TTL),
+                    )
                 conn.commit()
             # Also cache in memory for fast single-instance lookup
             with _pkce_lock:
@@ -116,7 +120,7 @@ def store_pkce_verifier(authorization_code: str, code_verifier: str) -> None:
         # Hard cap: evict oldest entries if still over limit
         if len(_pkce_verifiers) > _PKCE_MAX_SIZE:
             sorted_keys = sorted(_pkce_verifiers, key=lambda k: _pkce_verifiers[k][1])
-            for k in sorted_keys[:len(sorted_keys) - _PKCE_MAX_SIZE + 100]:
+            for k in sorted_keys[: len(sorted_keys) - _PKCE_MAX_SIZE + 100]:
                 _pkce_verifiers.pop(k, None)
 
 
@@ -132,6 +136,7 @@ def _cleanup_pkce_verifiers() -> None:
     if conn_str:
         try:
             import psycopg
+
             with psycopg.connect(conn_str) as conn:
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM oauth_pkce_verifiers WHERE expires_at <= %s", (now,))
@@ -147,18 +152,18 @@ def _load_pkce_verifier_from_db(authorization_code: str) -> str | None:
         return None
     try:
         import psycopg
-        with psycopg.connect(conn_str) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT code_verifier FROM oauth_pkce_verifiers WHERE code = %s AND expires_at > %s",
-                    (authorization_code, time.time()),
-                )
-                row = cur.fetchone()
-                if row:
-                    # Delete after retrieval (one-time use)
-                    cur.execute("DELETE FROM oauth_pkce_verifiers WHERE code = %s", (authorization_code,))
-                    conn.commit()
-                    return row[0]
+
+        with psycopg.connect(conn_str) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT code_verifier FROM oauth_pkce_verifiers WHERE code = %s AND expires_at > %s",
+                (authorization_code, time.time()),
+            )
+            row = cur.fetchone()
+            if row:
+                # Delete after retrieval (one-time use)
+                cur.execute("DELETE FROM oauth_pkce_verifiers WHERE code = %s", (authorization_code,))
+                conn.commit()
+                return row[0]
     except Exception as exc:
         logger.warning("Failed to load PKCE verifier from DB: %s", exc)
     return None
@@ -216,11 +221,13 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         if client_id:
             raw_uri = redirect_uri or os.environ.get("BASTION_OAUTH_REDIRECT_URI", "http://localhost:3000/callback")
             from pydantic import AnyUrl
+
             redirect_uris = [AnyUrl(raw_uri)]
             # Hash client secret before storing in memory (prevent plaintext exposure)
             hashed_secret = None
             if client_secret:
                 import hashlib
+
                 hashed_secret = hashlib.sha256(client_secret.encode()).hexdigest()
             self._clients[client_id] = OAuthClientInformationFull(
                 client_id=client_id,
@@ -240,6 +247,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             except Exception:
                 pass  # Fall through to raw connection
         import psycopg
+
         return psycopg.connect(self._conn_str)
 
     def _release_conn(self, conn):
@@ -251,10 +259,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             except Exception:
                 pass
         # If not using pool, just close
-        try:
+        with contextlib.suppress(Exception):
             conn.close()
-        except Exception:
-            pass
 
     def _init_pool(self):
         """Initialize connection pool for OAuth operations."""
@@ -262,6 +268,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             return
         try:
             from bastion.pool import ConnectionPool
+
             self._pool = ConnectionPool(
                 connection_string=self._conn_str,
                 min_size=2,
@@ -390,6 +397,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         row = cur.fetchone()
                         if row:
                             from pydantic import AnyUrl
+
                             return OAuthClientInformationFull(
                                 client_id=row[0],
                                 client_secret=row[1],
@@ -503,9 +511,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT * FROM oauth_auth_codes WHERE code = %s", (authorization_code,)
-                        )
+                        cur.execute("SELECT * FROM oauth_auth_codes WHERE code = %s", (authorization_code,))
                         row = cur.fetchone()
                         if row and row[3] > time.time():
                             return AuthorizationCode(
@@ -558,9 +564,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     "PKCE verification FAILED for client %s — code_verifier does not match code_challenge",
                     client.client_id,
                 )
-                raise ValueError(
-                    "PKCE verification failed: code_verifier does not match code_challenge"
-                )
+                raise ValueError("PKCE verification failed: code_verifier does not match code_challenge")
             logger.info("PKCE S256 verification passed for client %s", client.client_id)
         else:
             # PKCE is mandatory in this server — reject requests without a code_challenge
@@ -568,9 +572,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 "PKCE code_challenge missing from token request — rejecting for client %s",
                 client.client_id,
             )
-            raise ValueError(
-                "PKCE code_challenge is required — token requests without PKCE are not allowed"
-            )
+            raise ValueError("PKCE code_challenge is required — token requests without PKCE are not allowed")
 
         access_token_str = secrets.token_urlsafe(48)
         refresh_token_str = secrets.token_urlsafe(48)
@@ -604,16 +606,25 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         cur.execute(
                             """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, resource, role)
                                VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (access_token_str, client.client_id, json.dumps(authorization_code.scopes),
-                             int(now) + 3600,
-                             json.dumps(authorization_code.resource) if authorization_code.resource else None,
-                             token_role),
+                            (
+                                access_token_str,
+                                client.client_id,
+                                json.dumps(authorization_code.scopes),
+                                int(now) + 3600,
+                                json.dumps(authorization_code.resource) if authorization_code.resource else None,
+                                token_role,
+                            ),
                         )
                         cur.execute(
                             """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
                                VALUES (%s, %s, %s, %s, %s)""",
-                            (refresh_token_str, client.client_id, json.dumps(authorization_code.scopes),
-                             int(now) + 86400 * 7, token_role),
+                            (
+                                refresh_token_str,
+                                client.client_id,
+                                json.dumps(authorization_code.scopes),
+                                int(now) + 86400 * 7,
+                                token_role,
+                            ),
                         )
                         cur.execute("DELETE FROM oauth_auth_codes WHERE code = %s", (authorization_code.code,))
                     conn.commit()
@@ -638,9 +649,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT * FROM oauth_refresh_tokens WHERE token = %s", (refresh_token,)
-                        )
+                        cur.execute("SELECT * FROM oauth_refresh_tokens WHERE token = %s", (refresh_token,))
                         row = cur.fetchone()
                         if row and (row[3] is None or row[3] > time.time()):
                             return RefreshToken(
@@ -706,7 +715,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         with conn.cursor() as cur:
                             # Delete old tokens first (atomic with inserts)
                             cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
-                            # Delete old access tokens for this client (the old access token value is not available here)
+                            # Delete old access tokens for this client
+                            # (the old access token value is not available here)
                             cur.execute(
                                 "DELETE FROM oauth_access_tokens WHERE client_id = %s AND expires_at < %s",
                                 (client.client_id, int(now)),
@@ -715,14 +725,24 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             cur.execute(
                                 """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, role)
                                    VALUES (%s, %s, %s, %s, %s)""",
-                                (access_token_str, client.client_id, json.dumps(list(final_scopes)),
-                                 int(now) + 3600, token_role),
+                                (
+                                    access_token_str,
+                                    client.client_id,
+                                    json.dumps(list(final_scopes)),
+                                    int(now) + 3600,
+                                    token_role,
+                                ),
                             )
                             cur.execute(
                                 """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
                                    VALUES (%s, %s, %s, %s, %s)""",
-                                (refresh_token_str, client.client_id, json.dumps(list(final_scopes)),
-                                 int(now) + 86400 * 7, token_role),
+                                (
+                                    refresh_token_str,
+                                    client.client_id,
+                                    json.dumps(list(final_scopes)),
+                                    int(now) + 86400 * 7,
+                                    token_role,
+                                ),
                             )
                         conn.commit()
                     finally:
@@ -764,9 +784,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT * FROM oauth_access_tokens WHERE token = %s", (token,)
-                        )
+                        cur.execute("SELECT * FROM oauth_access_tokens WHERE token = %s", (token,))
                         row = cur.fetchone()
                         if row and (row[3] is None or row[3] > time.time()):
                             return AccessToken(
@@ -803,8 +821,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             "INSERT INTO oauth_revoked_tokens (token_hash, token_type, expires_at) "
                             "VALUES (%s, %s, %s) "
                             "ON CONFLICT (token_hash) DO NOTHING",
-                            (token_hash, token_type,
-                             int(token.expires_at) if token.expires_at else None),
+                            (token_hash, token_type, int(token.expires_at) if token.expires_at else None),
                         )
                         # Also delete the token row
                         cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (token.token,))

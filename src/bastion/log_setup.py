@@ -7,6 +7,7 @@ from typing import Any
 
 try:
     import structlog
+
     HAS_STRUCTLOG = True
 except ImportError:
     HAS_STRUCTLOG = False
@@ -21,10 +22,19 @@ _LOG_LEVELS = {
 }
 
 
-_SENSITIVE_KEYS = frozenset({
-    "api_key", "secret", "password", "token", "connection_string",
-    "bastion_conn", "authorization", "credentials", "private_key",
-})
+_SENSITIVE_KEYS = frozenset(
+    {
+        "api_key",
+        "secret",
+        "password",
+        "token",
+        "connection_string",
+        "bastion_conn",
+        "authorization",
+        "credentials",
+        "private_key",
+    }
+)
 
 
 def _redact_secrets(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:

@@ -6,6 +6,7 @@ Falls back to local ``threading.Semaphore`` in BASTION_MOCK mode.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import random
 import threading
@@ -71,6 +72,7 @@ class RequestLimiter:
             conn_str = os.environ.get("BASTION_CONN", "")
             if not conn_str:
                 from bastion.config import get_settings
+
                 conn_str = get_settings().connection_string
             self._pool = ConnectionPool(
                 connection_string=conn_str,
@@ -210,8 +212,7 @@ class RequestLimiter:
                         slot_id = row[0]
                         # Step 2: Update the locked slot
                         cur.execute(
-                            "UPDATE agent_limiter SET instance_id = %s, acquired_at = NOW() "
-                            "WHERE slot_id = %s",
+                            "UPDATE agent_limiter SET instance_id = %s, acquired_at = NOW() WHERE slot_id = %s",
                             (self._instance_id, slot_id),
                         )
                         conn.commit()
@@ -271,10 +272,8 @@ class RequestLimiter:
             conn.commit()
         except Exception:
             logger.warning("DB error during release", exc_info=True)
-            try:
+            with contextlib.suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
             with self._lock:
                 self._held_slots.append(slot_id)
                 self._active_count += 1
@@ -289,10 +288,7 @@ class RequestLimiter:
         conn = self._pool.acquire(timeout=5)
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM agent_limiter "
-                    "WHERE instance_id IS NOT NULL"
-                )
+                cur.execute("SELECT COUNT(*) FROM agent_limiter WHERE instance_id IS NOT NULL")
                 row = cur.fetchone()
                 return int(row[0]) if row else 0
         except Exception as exc:
@@ -320,13 +316,9 @@ class RequestLimiter:
         if not self._mock_mode:
             occupied = self._count_occupied_slots()
             stats["occupied_slots"] = occupied
-            stats["utilization"] = round(
-                occupied / max(self.max_concurrent, 1) * 100, 2
-            )
+            stats["utilization"] = round(occupied / max(self.max_concurrent, 1) * 100, 2)
         else:
-            stats["utilization"] = round(
-                self._active_count / max(self.max_concurrent, 1) * 100, 2
-            )
+            stats["utilization"] = round(self._active_count / max(self.max_concurrent, 1) * 100, 2)
         return stats
 
     # ------------------------------------------------------------------

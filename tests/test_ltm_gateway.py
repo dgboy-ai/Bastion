@@ -1,13 +1,10 @@
 """Tests for LTM Gateway — Long-Term Memory Reuse."""
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, patch
 from datetime import UTC, datetime
 
 from bastion.ltm_gateway import (
-    DEFAULT_REUSE_THRESHOLD,
-    ANALYSIS_TYPES,
     GatewayStats,
     LTMMemoryGateway,
     ReuseResult,
@@ -16,8 +13,8 @@ from bastion.ltm_gateway import (
 )
 from bastion.models import MemoryRecord
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 def _make_memory(
     content: str = "test content",
@@ -100,6 +97,7 @@ class FakeMemoryEngine:
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
+
 class TestEstimateTokens:
     def test_basic(self):
         assert _estimate_tokens("hello world") == 2
@@ -175,14 +173,16 @@ class TestLTMMemoryGateway:
 
     def test_check_reuse_with_match(self):
         # Store an analysis result
-        self.engine._memories.append(_make_memory(
-            content="Q2 revenue analysis shows 15% growth across all regions",
-            memory_type="analysis",
-            importance=8.0,
-            access_count=2,
-            metadata={"analysis_result": True, "analysis_type": "analysis"},
-            memory_id="mem-analysis-1",
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="Q2 revenue analysis shows 15% growth across all regions",
+                memory_type="analysis",
+                importance=8.0,
+                access_count=2,
+                metadata={"analysis_result": True, "analysis_type": "analysis"},
+                memory_id="mem-analysis-1",
+            )
+        )
 
         result = self.gateway.check_reuse("Q2 revenue analysis growth regions")
         assert result is not None
@@ -193,13 +193,15 @@ class TestLTMMemoryGateway:
         assert self.gateway.stats.total_tokens_saved > 0
 
     def test_check_reuse_reinforces_memory(self):
-        self.engine._memories.append(_make_memory(
-            content="comprehensive analysis of Python decorators and their usage patterns",
-            memory_type="analysis",
-            importance=9.0,
-            metadata={"analysis_result": True},
-            memory_id="mem-reinforce-1",
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="comprehensive analysis of Python decorators and their usage patterns",
+                memory_type="analysis",
+                importance=9.0,
+                metadata={"analysis_result": True},
+                memory_id="mem-reinforce-1",
+            )
+        )
 
         self.gateway.check_reuse("comprehensive analysis of Python decorators and their usage patterns")
         assert "mem-reinforce-1" in self.engine._reinforced
@@ -229,13 +231,15 @@ class TestLTMMemoryGateway:
         assert result.analysis_type == "analysis"
 
     def test_invalidate(self):
-        self.engine._memories.append(_make_memory(
-            content="old analysis about weather",
-            memory_type="analysis",
-            importance=5.0,
-            metadata={"analysis_result": True},
-            memory_id="mem-stale-1",
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="old analysis about weather",
+                memory_type="analysis",
+                importance=5.0,
+                metadata={"analysis_result": True},
+                memory_id="mem-stale-1",
+            )
+        )
 
         result = self.gateway.invalidate("weather analysis", reason="new data")
         assert result["invalidated"] >= 1
@@ -247,34 +251,40 @@ class TestLTMMemoryGateway:
         assert "reuse_rate" in stats
 
     def test_threshold_override(self):
-        self.engine._memories.append(_make_memory(
-            content="test content",
-            importance=7.0,
-            metadata={"analysis_result": True},
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="test content",
+                importance=7.0,
+                metadata={"analysis_result": True},
+            )
+        )
 
         # Very high threshold — should not match
-        result = self.gateway.check_reuse("test content", threshold=0.99)
+        self.gateway.check_reuse("test content", threshold=0.99)
         # May or may not match depending on similarity calc
 
     def test_analysis_type_filter(self):
-        self.engine._memories.append(_make_memory(
-            content="research findings on AI",
-            memory_type="research",
-            importance=8.0,
-            metadata={"analysis_result": True, "analysis_type": "research"},
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="research findings on AI",
+                memory_type="research",
+                importance=8.0,
+                metadata={"analysis_result": True, "analysis_type": "research"},
+            )
+        )
 
-        result = self.gateway.check_reuse("AI research findings", analysis_type="research")
+        self.gateway.check_reuse("AI research findings", analysis_type="research")
         # Should find it when filtering to research type
 
     def test_stats_update_correctly(self):
         # Do 3 checks, 1 reuse
-        self.engine._memories.append(_make_memory(
-            content="quantum computing analysis results summary report",
-            importance=8.0,
-            metadata={"analysis_result": True},
-        ))
+        self.engine._memories.append(
+            _make_memory(
+                content="quantum computing analysis results summary report",
+                importance=8.0,
+                metadata={"analysis_result": True},
+            )
+        )
 
         self.gateway.check_reuse("quantum computing analysis results summary report")  # check 1 → reuse
         # Use completely unique single-char queries that share zero words

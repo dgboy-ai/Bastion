@@ -36,49 +36,58 @@ class TestErrorInstantiation:
         exc = error_cls()
         assert isinstance(exc, Exception)
 
-    @pytest.mark.parametrize("error_cls,msg", [
-        (BastionConnectionError, "connection refused"),
-        (BastionTimeoutError, "operation timed out after 30s"),
-        (BastionSerializationError, "serialization conflict 40001"),
-        (BastionRetryExhaustedError, "all 5 retries exhausted"),
-        (BastionPoolExhaustedError, "no connections available"),
-        (BastionValidationError, "invalid input: memory_id is required"),
-        (BastionConfigError, "BASTION_CONN is not set"),
-        (BastionNotFoundError, "memory not found"),
-        (BastionAuthError, "invalid API key"),
-    ])
+    @pytest.mark.parametrize(
+        "error_cls,msg",
+        [
+            (BastionConnectionError, "connection refused"),
+            (BastionTimeoutError, "operation timed out after 30s"),
+            (BastionSerializationError, "serialization conflict 40001"),
+            (BastionRetryExhaustedError, "all 5 retries exhausted"),
+            (BastionPoolExhaustedError, "no connections available"),
+            (BastionValidationError, "invalid input: memory_id is required"),
+            (BastionConfigError, "BASTION_CONN is not set"),
+            (BastionNotFoundError, "memory not found"),
+            (BastionAuthError, "invalid API key"),
+        ],
+    )
     def test_can_instantiate_with_message(self, error_cls, msg):
         exc = error_cls(msg)
         assert str(exc) == msg
 
 
 class TestIsInstanceChecks:
-    @pytest.mark.parametrize("error_cls", [
-        BastionConnectionError,
-        BastionTimeoutError,
-        BastionSerializationError,
-        BastionRetryExhaustedError,
-        BastionPoolExhaustedError,
-        BastionValidationError,
-        BastionConfigError,
-        BastionNotFoundError,
-        BastionAuthError,
-    ])
+    @pytest.mark.parametrize(
+        "error_cls",
+        [
+            BastionConnectionError,
+            BastionTimeoutError,
+            BastionSerializationError,
+            BastionRetryExhaustedError,
+            BastionPoolExhaustedError,
+            BastionValidationError,
+            BastionConfigError,
+            BastionNotFoundError,
+            BastionAuthError,
+        ],
+    )
     def test_all_errors_are_bastion_error(self, error_cls):
         exc = error_cls()
         assert isinstance(exc, BastionError)
 
-    @pytest.mark.parametrize("error_cls", [
-        BastionConnectionError,
-        BastionTimeoutError,
-        BastionSerializationError,
-        BastionRetryExhaustedError,
-        BastionPoolExhaustedError,
-        BastionValidationError,
-        BastionConfigError,
-        BastionNotFoundError,
-        BastionAuthError,
-    ])
+    @pytest.mark.parametrize(
+        "error_cls",
+        [
+            BastionConnectionError,
+            BastionTimeoutError,
+            BastionSerializationError,
+            BastionRetryExhaustedError,
+            BastionPoolExhaustedError,
+            BastionValidationError,
+            BastionConfigError,
+            BastionNotFoundError,
+            BastionAuthError,
+        ],
+    )
     def test_all_errors_are_exception(self, error_cls):
         exc = error_cls()
         assert isinstance(exc, Exception)
@@ -90,6 +99,7 @@ class TestIsInstanceChecks:
     def test_custom_subclass_of_bastion_error(self):
         class CustomError(BastionError):
             pass
+
         assert issubclass(CustomError, BastionError)
 
     def test_bastion_error_is_base(self):

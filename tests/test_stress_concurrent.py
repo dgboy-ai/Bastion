@@ -222,6 +222,7 @@ class TestEdgeCaseBoundaries:
     def test_max_content_length(self):
         """Storing content at max length must succeed, beyond must fail."""
         from bastion.memory import _MAX_CONTENT_LENGTH
+
         agent = BastionMemory("stress-boundary", mock=True)
 
         # At boundary — use _skip_guard to avoid false positive from OWASP guard

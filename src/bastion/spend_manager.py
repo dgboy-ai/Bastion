@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 import os
 import threading
@@ -120,8 +121,11 @@ class SpendManager:
                 if suspended:
                     conn.rollback()
                     return {
-                        "allowed": False, "remaining": 0, "limit": hard_limit,
-                        "suspended": True, "reason": suspension_reason or "Agent suspended",
+                        "allowed": False,
+                        "remaining": 0,
+                        "limit": hard_limit,
+                        "suspended": True,
+                        "reason": suspension_reason or "Agent suspended",
                     }
 
                 if current + count > hard_limit:
@@ -133,8 +137,11 @@ class SpendManager:
                     )
                     conn.commit()
                     return {
-                        "allowed": False, "remaining": 0, "limit": hard_limit,
-                        "suspended": True, "reason": f"Hard limit of {hard_limit} {category}s exceeded",
+                        "allowed": False,
+                        "remaining": 0,
+                        "limit": hard_limit,
+                        "suspended": True,
+                        "reason": f"Hard limit of {hard_limit} {category}s exceeded",
                     }
 
                 # Increment atomically — only if still under limit
@@ -146,8 +153,11 @@ class SpendManager:
                 if cur.rowcount == 0:
                     conn.rollback()
                     return {
-                        "allowed": False, "remaining": 0, "limit": hard_limit,
-                        "suspended": False, "reason": "Concurrent spend exceeded limit",
+                        "allowed": False,
+                        "remaining": 0,
+                        "limit": hard_limit,
+                        "suspended": False,
+                        "reason": "Concurrent spend exceeded limit",
                     }
                 conn.commit()
 
@@ -161,20 +171,23 @@ class SpendManager:
                 # Update cache
                 with self._cache_lock:
                     self._cache[cache_key] = {
-                        daily_col: current + count, limit_col: hard_limit,
-                        "is_suspended": False, "_ts": time.time(),
+                        daily_col: current + count,
+                        limit_col: hard_limit,
+                        "is_suspended": False,
+                        "_ts": time.time(),
                     }
 
                 return {
-                    "allowed": True, "remaining": new_remaining, "limit": hard_limit,
-                    "suspended": False, "reason": None,
+                    "allowed": True,
+                    "remaining": new_remaining,
+                    "limit": hard_limit,
+                    "suspended": False,
+                    "reason": None,
                 }
         except Exception as exc:
             logger.error("check_and_increment failed", extra={"agent": agent_id[:32], "cat": category, "err": str(exc)})
-            try:
+            with contextlib.suppress(Exception):
                 conn.rollback()
-            except Exception:
-                pass
             # Fail open: allow the request but log the failure
             return {"allowed": True, "remaining": 999999, "limit": 999999, "suspended": False, "reason": None}
         finally:
@@ -232,14 +245,14 @@ class SpendManager:
         """
         if self._mock:
             return True
-        _VALID_CATEGORIES = frozenset({"search", "store", "embed", "heal"})
+        _valid_categories = frozenset({"search", "store", "embed", "heal"})
         pool = self._get_pool()
         conn = pool.acquire(timeout=10.0)
         try:
             set_clauses = []
             params: list[Any] = []
             for cat, limit in limits.items():
-                if cat not in _VALID_CATEGORIES:
+                if cat not in _valid_categories:
                     raise ValueError(f"Invalid category: {cat}")
                 col = f"hard_limit_{cat}s"
                 set_clauses.append(f"{col} = %s")
@@ -249,16 +262,15 @@ class SpendManager:
             params.append(agent_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE agent_budgets SET {', '.join(set_clauses)}, updated_at = now() "
-                    f"WHERE agent_id = %s",
+                    f"UPDATE agent_budgets SET {', '.join(set_clauses)}, updated_at = now() WHERE agent_id = %s",
                     params,
                 )
                 if cur.rowcount == 0:
                     cur.execute(
                         "INSERT INTO agent_budgets (agent_id, daily_searches, daily_stores, daily_embeds, daily_heals, "
-                        + ", ".join(f"{cat.replace('_', '_')}" for cat in limits) + ") "
-                        "VALUES (%s, 0, 0, 0, 0, "
-                        + ", ".join("%s" for _ in limits) + ") "
+                        + ", ".join(f"{cat.replace('_', '_')}" for cat in limits)
+                        + ") "
+                        "VALUES (%s, 0, 0, 0, 0, " + ", ".join("%s" for _ in limits) + ") "
                         "ON CONFLICT (agent_id) DO UPDATE SET "
                         + ", ".join(f"{col} = EXCLUDED.{col}" for col in set_clauses),
                         [agent_id] + list(limits.values()),
@@ -366,8 +378,8 @@ class SpendManager:
         }
 
     def _increment_budget(self, agent_id: str, category: str, count: int) -> None:
-        _VALID_CATEGORIES = frozenset({"search", "store", "embed", "heal"})
-        if category not in _VALID_CATEGORIES:
+        _valid_categories = frozenset({"search", "store", "embed", "heal"})
+        if category not in _valid_categories:
             raise ValueError(f"Invalid category: {category}")
         col = f"daily_{category}s"
         pool = self._get_pool()
@@ -375,8 +387,7 @@ class SpendManager:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE agent_budgets SET {col} = {col} + %s, updated_at = now() "
-                    f"WHERE agent_id = %s",
+                    f"UPDATE agent_budgets SET {col} = {col} + %s, updated_at = now() WHERE agent_id = %s",
                     (count, agent_id),
                 )
                 if cur.rowcount == 0:

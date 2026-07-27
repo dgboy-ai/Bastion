@@ -31,6 +31,7 @@ logger = get_logger(__name__)
 
 class RuleCategory(StrEnum):
     """Categories of cognitive rules."""
+
     SAFETY = "safety"
     EFFICIENCY = "efficiency"
     CORRECTNESS = "correctness"
@@ -41,6 +42,7 @@ class RuleCategory(StrEnum):
 
 class RuleStatus(StrEnum):
     """Rule lifecycle status."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     DEPRECATED = "deprecated"
@@ -49,11 +51,12 @@ class RuleStatus(StrEnum):
 @dataclass
 class CognitiveRule:
     """A learned rule extracted from agent execution patterns."""
+
     rule_id: str
     category: RuleCategory
     pattern: str  # Natural language description of the rule
     trigger: str  # When this rule should fire
-    action: str   # What the agent should do
+    action: str  # What the agent should do
     weight: float = 1.0  # Dynamic weight (0.0-10.0)
     confidence: float = 0.5  # How confident we are in this rule
     status: RuleStatus = RuleStatus.ACTIVE
@@ -86,6 +89,7 @@ class CognitiveRule:
 @dataclass
 class ExecutionLog:
     """A single agent execution event for rule extraction."""
+
     agent_id: str
     action: str
     outcome: str  # "success" | "failure" | "timeout" | "error"
@@ -170,10 +174,7 @@ class CognitiveRulesEngine:
         min_weight: float = 0.5,
     ) -> list[CognitiveRule]:
         """Get active rules, optionally filtered by category and minimum weight."""
-        rules = [
-            r for r in self._rules.values()
-            if r.status == RuleStatus.ACTIVE and r.weight >= min_weight
-        ]
+        rules = [r for r in self._rules.values() if r.status == RuleStatus.ACTIVE and r.weight >= min_weight]
         if category:
             rules = [r for r in rules if r.category == category]
         return sorted(rules, key=lambda r: r.weight, reverse=True)
@@ -189,14 +190,14 @@ class CognitiveRulesEngine:
 
         for rule in self.get_active_rules():
             if self._rule_matches_context(rule, context) and rule.weight > best_weight:
-                    best = RuleRecommendation(
-                        rule_id=rule.rule_id,
-                        category=rule.category,
-                        action=rule.action,
-                        confidence=rule.confidence,
-                        reason=rule.pattern,
-                    )
-                    best_weight = rule.weight
+                best = RuleRecommendation(
+                    rule_id=rule.rule_id,
+                    category=rule.category,
+                    action=rule.action,
+                    confidence=rule.confidence,
+                    reason=rule.pattern,
+                )
+                best_weight = rule.weight
 
         return best
 
@@ -206,13 +207,8 @@ class CognitiveRulesEngine:
         return {
             "total_rules": len(self._rules),
             "active_rules": len(active),
-            "by_category": {
-                cat.value: len([r for r in active if r.category == cat])
-                for cat in RuleCategory
-            },
-            "avg_weight": round(
-                sum(r.weight for r in active) / len(active), 2
-            ) if active else 0.0,
+            "by_category": {cat.value: len([r for r in active if r.category == cat]) for cat in RuleCategory},
+            "avg_weight": round(sum(r.weight for r in active) / len(active), 2) if active else 0.0,
             "total_fire_count": sum(r.fire_count for r in self._rules.values()),
         }
 

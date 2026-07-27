@@ -8,6 +8,7 @@ Usage:
     tags = preprocessor.extract("Remember to #deploy to #production @aws #urgent")
     # Returns: {"hashtags": ["deploy", "production", "urgent"], "entities": ["aws"]}
 """
+
 from __future__ import annotations
 
 import re
@@ -30,6 +31,7 @@ _PRIVATE_PATTERN = re.compile(r"<private>(.*?)</private>", re.DOTALL)
 @dataclass
 class TagExtraction:
     """Result of tag extraction from content."""
+
     hashtags: list[str] = field(default_factory=list)
     mentions: list[str] = field(default_factory=list)
     priorities: list[str] = field(default_factory=list)

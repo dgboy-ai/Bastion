@@ -198,9 +198,7 @@ async def test_memory_correct_updates_content(mcp):
     stored = await _store(mcp, "original content")
     mid = stored["memory_id"]
 
-    result = await mcp.call_tool(
-        "memory_correct", {"memory_id": mid, "new_content": "corrected content"}
-    )
+    result = await mcp.call_tool("memory_correct", {"memory_id": mid, "new_content": "corrected content"})
     data = json.loads(result[0][0].text)
     assert data["content"] == "corrected content"
     assert data["memory_id"] == mid
@@ -309,9 +307,7 @@ async def test_memory_apply_patch_not_found(mcp):
 
 @pytest.mark.asyncio
 async def test_ltm_check_reuse_no_match(mcp):
-    result = await mcp.call_tool(
-        "ltm_check_reuse", {"query": "analyze Q2 revenue trends"}
-    )
+    result = await mcp.call_tool("ltm_check_reuse", {"query": "analyze Q2 revenue trends"})
     data = json.loads(result[0][0].text)
     assert data["reuse_found"] is False
     assert data["recommendation"] == "run_workflow"
@@ -339,9 +335,7 @@ async def test_ltm_check_reuse_finds_cached_result(mcp):
         {"query": "analyze revenue", "result": "Revenue is up 20%", "analysis_type": "analysis"},
     )
     # Now check for reuse
-    result = await mcp.call_tool(
-        "ltm_check_reuse", {"query": "analyze revenue", "threshold": 0.5}
-    )
+    result = await mcp.call_tool("ltm_check_reuse", {"query": "analyze revenue", "threshold": 0.5})
     data = json.loads(result[0][0].text)
     assert data["reuse_found"] is True
     assert "memory_id" in data
@@ -394,9 +388,7 @@ async def test_ltm_invalidate_stale_analyses(mcp):
         {"query": "old analysis", "result": "outdated result", "analysis_type": "analysis"},
     )
     # Invalidate
-    result = await mcp.call_tool(
-        "ltm_invalidate", {"query": "old analysis", "reason": "data changed"}
-    )
+    result = await mcp.call_tool("ltm_invalidate", {"query": "old analysis", "reason": "data changed"})
     data = json.loads(result[0][0].text)
     assert "invalidated" in data or "count" in data or "status" in data
 
@@ -579,9 +571,7 @@ async def test_multi_signal_search_with_type_filter(mcp):
     await _store(mcp, "Python fact", memory_type="fact")
     await _store(mcp, "Python pref", memory_type="preference")
 
-    result = await mcp.call_tool(
-        "multi_signal_search", {"query": "Python", "memory_type": "preference"}
-    )
+    result = await mcp.call_tool("multi_signal_search", {"query": "Python", "memory_type": "preference"})
     data = json.loads(result[0][0].text)
     assert all(r["memory_type"] == "preference" for r in data["results"])
 
@@ -699,9 +689,7 @@ async def test_workflow_store_search_correct_delete(mcp):
     assert any(r["memory_id"] == mid for r in search["results"])
 
     # Correct
-    corrected = await mcp.call_tool(
-        "memory_correct", {"memory_id": mid, "new_content": "Updated fact about Python"}
-    )
+    corrected = await mcp.call_tool("memory_correct", {"memory_id": mid, "new_content": "Updated fact about Python"})
     cdata = json.loads(corrected[0][0].text)
     assert cdata["content"] == "Updated fact about Python"
 
@@ -714,9 +702,7 @@ async def test_workflow_store_search_correct_delete(mcp):
 @pytest.mark.asyncio
 async def test_workflow_pin_get_pinned_list(mcp):
     """Pin memories and verify they appear in get_pinned and list."""
-    pinned = await mcp.call_tool(
-        "memory_pin", {"content": "Critical safety rule", "pin_priority": 2}
-    )
+    pinned = await mcp.call_tool("memory_pin", {"content": "Critical safety rule", "pin_priority": 2})
     pdata = json.loads(pinned[0][0].text)
     assert pdata["is_pinned"] is True
 
@@ -749,7 +735,7 @@ async def test_workflow_store_ltm_check_invalidate(mcp):
 
     # Check again - should not find it (or find it tagged stale)
     check2 = await mcp.call_tool("ltm_check_reuse", {"query": "revenue analysis", "threshold": 0.9})
-    d2 = json.loads(check2[0][0].text)
+    json.loads(check2[0][0].text)
     # After invalidation, the stale tag means it shouldn't be reused
     # (behavior depends on LTM gateway implementation)
 

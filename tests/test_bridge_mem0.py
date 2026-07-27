@@ -18,20 +18,25 @@ class TestBastionMem0Bridge:
         assert result["results"][0]["memory"] == "hello world"
 
     def test_add_list_infer_false(self):
-        result = self.bridge.add([
-            {"role": "user", "content": "msg1"},
-            {"role": "assistant", "content": "msg2"},
-        ], infer=False)
+        result = self.bridge.add(
+            [
+                {"role": "user", "content": "msg1"},
+                {"role": "assistant", "content": "msg2"},
+            ],
+            infer=False,
+        )
         assert len(result["results"]) == 2
 
     def test_add_infer_true_no_infer_fn(self):
         import pytest
+
         with pytest.raises(NotImplementedError):
             self.bridge.add("test", infer=True)
 
     def test_add_with_infer_fn(self):
         def fake_infer(text):
             return [{"content": f"fact: {text}"}]
+
         bridge = BastionMem0Bridge("test-agent", mock=True, infer_fn=fake_infer)
         result = bridge.add("the user likes python", infer=True)
         assert len(result["results"]) == 1
@@ -74,6 +79,7 @@ class TestBastionMem0Bridge:
 
     def test_delete_missing(self):
         import pytest
+
         with pytest.raises(ValueError):
             self.bridge.delete("nonexistent")
 
@@ -134,6 +140,7 @@ class TestBastionMem0BridgeDB:
         memory.delete_memory.return_value = False
 
         import pytest
+
         with pytest.raises(ValueError, match="not found"):
             bridge.delete("nonexistent")
 
@@ -154,9 +161,12 @@ class TestBastionMem0BridgeDB:
 
         # Simulate get() returning an existing memory
         from bastion.models import MemoryRecord
+
         memory.get_memory.return_value = MemoryRecord(
-            memory_id="mem-1", agent_id="db-test",
-            content="original", memory_type="fact",
+            memory_id="mem-1",
+            agent_id="db-test",
+            content="original",
+            memory_type="fact",
         )
         memory.delete_memory.return_value = True
         new_rec = MemoryRecord(memory_id="new-id", agent_id="db-test", content="updated")
@@ -176,6 +186,7 @@ class TestBastionMem0BridgeDB:
         memory.get_memory.return_value = None
 
         import pytest
+
         with pytest.raises(ValueError, match="not found"):
             bridge.update("mem-1", data="updated")
 
@@ -192,6 +203,7 @@ class TestBastionMem0BridgeDB:
 
     def test_delete_all_mock_cross_agent(self):
         from bastion.mock import _agent_data, reset
+
         reset()
         _agent_data["other-agent"] = [
             {"memory_id": "m1", "agent_id": "other-agent", "content": "a"},

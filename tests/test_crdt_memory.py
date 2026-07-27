@@ -178,6 +178,7 @@ class TestLWWRegister:
         reg = LWWRegister(crdt, "mode")
         reg.set("auto")
         from bastion.models import MemoryRecord
+
         r1 = MemoryRecord(
             content='{"value": "manual"}',
             metadata={"_vector_clock": {"alice": 2, "bob": 1}, "_crdt_key": "mode"},

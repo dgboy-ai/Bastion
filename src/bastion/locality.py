@@ -106,14 +106,8 @@ class MemoryLocality:
                             "ADD COLUMN IF NOT EXISTS crdb_region STRING "
                             "NOT NULL DEFAULT 'us-east-1'"
                         )
-                        cur.execute(
-                            "ALTER TABLE agent_memory "
-                            "SET LOCALITY REGIONAL BY ROW AS crdb_region"
-                        )
-                        cur.execute(
-                            "CREATE INDEX IF NOT EXISTS idx_memory_region "
-                            "ON agent_memory (crdb_region)"
-                        )
+                        cur.execute("ALTER TABLE agent_memory SET LOCALITY REGIONAL BY ROW AS crdb_region")
+                        cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_region ON agent_memory (crdb_region)")
                         cur.execute(
                             "CREATE TABLE IF NOT EXISTS agent_region_mapping ("
                             "agent_id   STRING PRIMARY KEY, "
@@ -127,7 +121,7 @@ class MemoryLocality:
                         "total_regions": len(self._region_configs),
                         "mode": "crdb",
                     }
-                except Exception as exc:
+                except Exception:
                     conn.rollback()
                     logger.exception("Failed to enable regional routing")
                     return {"status": "error", "error": "Operation failed — check server logs"}
@@ -142,9 +136,7 @@ class MemoryLocality:
             self._routing_enabled = False
             return {"status": "disabled"}
 
-    def set_agent_region(
-        self, agent_id: str, region: str
-    ) -> dict[str, Any]:
+    def set_agent_region(self, agent_id: str, region: str) -> dict[str, Any]:
         """Persist an agent's data-residency region.
 
         In real mode the mapping is written to ``agent_region_mapping``.
@@ -153,8 +145,7 @@ class MemoryLocality:
         with self._lock:
             if region not in self._region_configs:
                 return {
-                    "error": f"Unknown region: {region}. "
-                    f"Available: {list(self._region_configs.keys())}",
+                    "error": f"Unknown region: {region}. Available: {list(self._region_configs.keys())}",
                 }
             self._agent_regions[agent_id] = region
             if not self._memory._mock:
@@ -170,7 +161,7 @@ class MemoryLocality:
                                 (agent_id, region),
                             )
                         conn.commit()
-                    except Exception as exc:
+                    except Exception:
                         conn.rollback()
                         logger.exception(
                             "Failed to persist agent region",
@@ -224,9 +215,7 @@ class MemoryLocality:
         config = self._region_configs.get(region)
         return config.compliance_frameworks if config else []
 
-    def validate_compliance(
-        self, agent_id: str, required_framework: str
-    ) -> dict[str, Any]:
+    def validate_compliance(self, agent_id: str, required_framework: str) -> dict[str, Any]:
         region = self.get_agent_region(agent_id)
         if not region:
             return {
@@ -294,7 +283,7 @@ class MemoryLocality:
                 "region": region,
                 "agent_id": agent_id,
             }
-        except Exception as exc:
+        except Exception:
             logger.exception("Region-aware store failed")
             return {"status": "error", "error": "Region-aware store failed — check server logs"}
 
@@ -329,7 +318,7 @@ class MemoryLocality:
                 "region": region,
                 "agent_id": agent_id,
             }
-        except Exception as exc:
+        except Exception:
             logger.exception("Region-aware search failed")
             return {"status": "error", "error": "Region-aware search failed — check server logs"}
 
@@ -372,13 +361,11 @@ class MemoryLocality:
                 }
             finally:
                 pool.release(conn)
-        except Exception as exc:
+        except Exception:
             logger.exception("Row region verification failed")
             return {"memory_id": memory_id, "error": "Verification failed — check server logs", "verified": False}
 
-    def verify_compliance(
-        self, agent_id: str
-    ) -> dict[str, Any]:
+    def verify_compliance(self, agent_id: str) -> dict[str, Any]:
         """End-to-end compliance check: fetch region from DB, verify rows."""
         if not self._routing_enabled:
             return {"compliant": False, "error": "Regional routing not enabled", "agent_id": agent_id}
@@ -404,8 +391,7 @@ class MemoryLocality:
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT DISTINCT crdb_region "
-                        "FROM agent_memory WHERE agent_id = %s LIMIT %s",
+                        "SELECT DISTINCT crdb_region FROM agent_memory WHERE agent_id = %s LIMIT %s",
                         (agent_id, LOCALITY_LIMIT),
                     )
                     actual_regions = {str(r[0]) for r in cur.fetchall()}
@@ -434,7 +420,7 @@ class MemoryLocality:
                 }
             finally:
                 pool.release(conn)
-        except Exception as exc:
+        except Exception:
             logger.exception("Compliance verification failed")
             return {"compliant": False, "error": "Compliance check failed — check server logs"}
 

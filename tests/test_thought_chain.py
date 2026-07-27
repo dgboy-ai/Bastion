@@ -181,6 +181,7 @@ class TestThoughtChain:
         step2 = chain.think("Step 2", parent_id=step1)
         # Create cycle: set Step 1's parent to Step 2 → root→Step1→Step2→Step1→...
         from bastion import mock as _mock
+
         agent_data = _mock._agent_data.get("test-agent", [])
         for rec in agent_data:
             try:
@@ -200,6 +201,7 @@ class TestThoughtChain:
         step2 = chain.think("Step 2", parent_id=step1)
         # Create cycle: set Step 1's parent to Step 2
         from bastion import mock as _mock
+
         agent_data = _mock._agent_data.get("test-agent", [])
         for rec in agent_data:
             try:
@@ -335,6 +337,7 @@ class TestThoughtChain:
         root = chain.begin("Root")
         child = chain.think("Step", parent_id=root)
         from bastion import mock as _mock
+
         agent_data = _mock._agent_data.get("test-agent", [])
         # Set root's parent to child — creates cycle root → child → root
         for rec in agent_data:

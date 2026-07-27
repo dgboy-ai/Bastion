@@ -6,9 +6,10 @@ Three states: CLOSED (normal), OPEN (failing fast), HALF_OPEN (testing recovery)
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any
 
@@ -50,6 +51,7 @@ class CircuitBreaker:
         self._total_failures = 0
         self._total_rejected = 0
         self._half_open_semaphore = threading.Semaphore(1)  # Limit concurrent HALF_OPEN probes
+        self._async_lock = asyncio.Lock()  # For async_call() serialization
 
     @property
     def state(self) -> CircuitState:
@@ -86,20 +88,40 @@ class CircuitBreaker:
             if current_state == CircuitState.OPEN:
                 self._total_rejected += 1
                 raise CircuitBreakerOpenError(
-                    f"Circuit breaker '{self.name}' is OPEN. "
-                    f"Retry after {self.recovery_timeout}s."
+                    f"Circuit breaker '{self.name}' is OPEN. Retry after {self.recovery_timeout}s."
                 )
 
             # In HALF_OPEN, limit concurrent probe calls (check under lock to prevent TOCTOU)
-            if current_state == CircuitState.HALF_OPEN:
-                if not self._half_open_semaphore.acquire(blocking=False):
-                    self._total_rejected += 1
-                    raise CircuitBreakerOpenError(
-                        f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress."
-                    )
+            if current_state == CircuitState.HALF_OPEN and not self._half_open_semaphore.acquire(blocking=False):
+                self._total_rejected += 1
+                raise CircuitBreakerOpenError(f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress.")
 
         try:
             result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception:
+            self._on_failure()
+            raise
+
+    async def async_call(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
+        """Execute async function through circuit breaker."""
+        async with self._async_lock:
+            self._total_calls += 1
+            current_state = self.state
+
+            if current_state == CircuitState.OPEN:
+                self._total_rejected += 1
+                raise CircuitBreakerOpenError(
+                    f"Circuit breaker '{self.name}' is OPEN. Retry after {self.recovery_timeout}s."
+                )
+
+            if current_state == CircuitState.HALF_OPEN and not self._half_open_semaphore.acquire(blocking=False):
+                self._total_rejected += 1
+                raise CircuitBreakerOpenError(f"Circuit breaker '{self.name}' is HALF_OPEN. Probe already in progress.")
+
+        try:
+            result = await func(*args, **kwargs)
             self._on_success()
             return result
         except Exception:
@@ -168,4 +190,5 @@ class CircuitBreaker:
 
 class CircuitBreakerOpenError(Exception):
     """Raised when circuit breaker is open."""
+
     pass

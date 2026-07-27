@@ -14,6 +14,7 @@ Usage:
     result = router.recall("What did the user say about Python last week?")
     print(f"Strategy: {result.strategy}, Results: {len(result.results)}")
 """
+
 from __future__ import annotations
 
 import re
@@ -55,6 +56,7 @@ _SUMMARY_PATTERNS = [
 @dataclass
 class QueryClassification:
     """Classification result for a query."""
+
     query_type: str  # "keyword", "relationship", "temporal", "summary", "entity", "unknown"
     confidence: float
     signals: list[str] = field(default_factory=list)
@@ -70,6 +72,7 @@ class QueryClassification:
 @dataclass
 class RecallResult:
     """Result from auto-routing recall."""
+
     strategy: str
     results: list[Any]
     classification: QueryClassification
@@ -184,6 +187,7 @@ class RecallRouter:
             RecallResult with strategy used, results, and classification.
         """
         import time
+
         start = time.monotonic()
 
         if not query or not query.strip():
@@ -233,7 +237,7 @@ class RecallRouter:
     ) -> list[Any]:
         """Simple keyword-based search for quick lookups."""
         # Use SQL ILIKE when available for O(1) vs O(n) performance
-        if hasattr(self._memory, 'keyword_search'):
+        if hasattr(self._memory, "keyword_search"):
             return self._memory.keyword_search(query, limit=k)
 
         # Fallback: in-memory word overlap

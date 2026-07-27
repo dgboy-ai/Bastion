@@ -95,9 +95,7 @@ class ThoughtChain:
 
     # ── Node creation ──────────────────────────────────────────────────────
 
-    def begin(
-        self, content: str, metadata: dict[str, Any] | None = None
-    ) -> str:
+    def begin(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         thought_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
         node = ThoughtNode(
@@ -169,16 +167,12 @@ class ThoughtChain:
     ) -> str:
         return self._add_thought(ThoughtType.RESULT, content, parent_id, confidence)
 
-    def complete(
-        self, content: str, parent_id: str | None = None
-    ) -> str:
+    def complete(self, content: str, parent_id: str | None = None) -> str:
         return self._add_thought(ThoughtType.COMPLETE, content, parent_id, 1.0)
 
     # ── Graph queries ──────────────────────────────────────────────────────
 
-    def get_graph(
-        self, root_id: str | None = None, max_depth: int = 50
-    ) -> dict[str, Any]:
+    def get_graph(self, root_id: str | None = None, max_depth: int = 50) -> dict[str, Any]:
         """BFS traversal from ``root_id`` returning nodes, edges, and metadata.
 
         Raises ``GraphCycleError`` if a cycle is detected during traversal.
@@ -192,8 +186,12 @@ class ThoughtChain:
 
         if root not in node_map:
             return {
-                "nodes": [], "edges": [], "root": root, "error": "root_not_found",
-                "total_nodes": 0, "total_edges": 0,
+                "nodes": [],
+                "edges": [],
+                "root": root,
+                "error": "root_not_found",
+                "total_nodes": 0,
+                "total_edges": 0,
             }
 
         visited: set[str] = set()
@@ -205,10 +203,7 @@ class ThoughtChain:
         while queue:
             nid, depth = queue.popleft()
             if nid in visited:
-                raise GraphCycleError(
-                    f"Cycle detected: node {nid} visited twice during BFS "
-                    f"from root {root}"
-                )
+                raise GraphCycleError(f"Cycle detected: node {nid} visited twice during BFS from root {root}")
             if depth > max_depth:
                 logger.warning("Max depth %s reached during graph traversal", max_depth)
                 break
@@ -226,11 +221,13 @@ class ThoughtChain:
                             f"but also a child of {nid} (root {root})"
                         )
                     queue.append((other.thought_id, depth + 1))
-                    edges.append({
-                        "source": nid,
-                        "target": other.thought_id,
-                        "type": "derives_from",
-                    })
+                    edges.append(
+                        {
+                            "source": nid,
+                            "target": other.thought_id,
+                            "type": "derives_from",
+                        }
+                    )
 
         collected.sort(key=lambda n: n.created_at)
         return {
@@ -287,11 +284,13 @@ class ThoughtChain:
             for child in children_map.get(nid, []):
                 if child.thought_id not in visited:
                     queue.append(child.thought_id)
-                    edges.append({
-                        "source": nid,
-                        "target": child.thought_id,
-                        "type": "derives_from",
-                    })
+                    edges.append(
+                        {
+                            "source": nid,
+                            "target": child.thought_id,
+                            "type": "derives_from",
+                        }
+                    )
 
         descendants.sort(key=lambda n: n.created_at)
         return {
@@ -356,9 +355,7 @@ class ThoughtChain:
 
         return {"has_cycle": False, "cycle": []}
 
-    def extract_patterns(
-        self, root_id: str | None = None
-    ) -> dict[str, Any]:
+    def extract_patterns(self, root_id: str | None = None) -> dict[str, Any]:
         """Analyse the thought graph for reasoning patterns.
 
         Detects:
@@ -389,66 +386,71 @@ class ThoughtChain:
                 if child["thought_type"] == "rejection":
                     for grandchild in children_map.get(child["thought_id"], []):
                         if grandchild["thought_type"] == "decision":
-                            patterns.append({
-                                "type": "backtrack",
-                                "description": "Decision was reconsidered after rejection",
-                                "path": [n["thought_id"], child["thought_id"], grandchild["thought_id"]],
-                                "severity": "info",
-                            })
+                            patterns.append(
+                                {
+                                    "type": "backtrack",
+                                    "description": "Decision was reconsidered after rejection",
+                                    "path": [n["thought_id"], child["thought_id"], grandchild["thought_id"]],
+                                    "severity": "info",
+                                }
+                            )
 
         # 2. Abandoned branches
         for n in nodes:
             if n.get("status") == "rejected" or n["thought_type"] == "rejection":
                 nid = n["thought_id"]
                 if nid not in children_map:
-                    patterns.append({
-                        "type": "abandoned_branch",
-                        "description": f"Rejected/abandoned node with no follow-up: {n.get('content', '')[:80]}",
-                        "node_id": nid,
-                        "severity": "warning",
-                    })
+                    patterns.append(
+                        {
+                            "type": "abandoned_branch",
+                            "description": f"Rejected/abandoned node with no follow-up: {n.get('content', '')[:80]}",
+                            "node_id": nid,
+                            "severity": "warning",
+                        }
+                    )
 
         # 3. Deep reasoning chains
         depths = self._compute_depths(nodes)
         if depths:
             median_depth = sorted(depths.values())[len(depths) // 2]
-            deep_chains = [
-                {"node_id": nid, "depth": d}
-                for nid, d in depths.items()
-                if d > median_depth and d >= 3
-            ]
+            deep_chains = [{"node_id": nid, "depth": d} for nid, d in depths.items() if d > median_depth and d >= 3]
             if deep_chains:
-                patterns.append({
-                    "type": "deep_reasoning",
-                    "description": f"Found {len(deep_chains)} nodes with depth > median ({median_depth})",
-                    "nodes": deep_chains,
-                    "severity": "info",
-                })
+                patterns.append(
+                    {
+                        "type": "deep_reasoning",
+                        "description": f"Found {len(deep_chains)} nodes with depth > median ({median_depth})",
+                        "nodes": deep_chains,
+                        "severity": "info",
+                    }
+                )
 
         # 4. Question frequency
         questions = [n for n in nodes if n["thought_type"] == "question"]
         if questions:
-            patterns.append({
-                "type": "question_frequency",
-                "description": f"Agent asked {len(questions)} questions in this chain",
-                "count": len(questions),
-                "severity": "info",
-            })
+            patterns.append(
+                {
+                    "type": "question_frequency",
+                    "description": f"Agent asked {len(questions)} questions in this chain",
+                    "count": len(questions),
+                    "severity": "info",
+                }
+            )
 
         # 5. Decision efficiency ratio
         decisions = [n for n in nodes if n["thought_type"] == "decision"]
         rejections = [n for n in nodes if n["thought_type"] == "rejection"]
         total = len(nodes) or 1
-        patterns.append({
-            "type": "decision_efficiency",
-            "description": (
-                f"{len(decisions)} decisions, {len(rejections)} rejections "
-                f"out of {len(nodes)} total nodes"
-            ),
-            "decision_ratio": round(len(decisions) / total, 3),
-            "rejection_ratio": round(len(rejections) / total, 3),
-            "severity": "info",
-        })
+        patterns.append(
+            {
+                "type": "decision_efficiency",
+                "description": (
+                    f"{len(decisions)} decisions, {len(rejections)} rejections out of {len(nodes)} total nodes"
+                ),
+                "decision_ratio": round(len(decisions) / total, 3),
+                "rejection_ratio": round(len(rejections) / total, 3),
+                "severity": "info",
+            }
+        )
 
         return {
             "patterns": patterns,
@@ -486,13 +488,10 @@ class ThoughtChain:
             sid = n.session_id or "default"
             sessions[sid] = sessions.get(sid, 0) + 1
         return [
-            {"session_id": sid, "node_count": count}
-            for sid, count in sorted(sessions.items(), key=lambda x: -x[1])
+            {"session_id": sid, "node_count": count} for sid, count in sorted(sessions.items(), key=lambda x: -x[1])
         ]
 
-    def get_session(
-        self, session_id: str
-    ) -> dict[str, Any]:
+    def get_session(self, session_id: str) -> dict[str, Any]:
         """Return the graph for a specific session."""
         all_nodes = self._load_nodes()
         session_nodes = [n for n in all_nodes if n.session_id == session_id]
@@ -537,7 +536,8 @@ class ThoughtChain:
                 "agent_id": node.agent_id,
                 "session_id": node.session_id,
             },
-            _skip_guard=True, _guard_bypass_token=True,  # Thought nodes are internally generated, not user content
+            _skip_guard=True,
+            _guard_bypass_token=True,  # Thought nodes are internally generated, not user content
         )
 
     def _load_nodes(self) -> list[ThoughtNode]:

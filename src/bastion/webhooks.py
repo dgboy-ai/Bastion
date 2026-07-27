@@ -98,30 +98,35 @@ class WebhookNotifier:
                 "blocks": [
                     {"type": "header", "text": {"type": "plain_text", "text": event.title}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": event.message}},
-                    {"type": "context", "elements": [
-                        {"type": "mrkdwn", "text": f"*Type:* {event.event_type} | *Severity:* {event.severity}"},
-                    ]},
+                    {
+                        "type": "context",
+                        "elements": [
+                            {"type": "mrkdwn", "text": f"*Type:* {event.event_type} | *Severity:* {event.severity}"},
+                        ],
+                    },
                     {"type": "section", "text": {"type": "mrkdwn", "text": f"`{json.dumps(event.details, indent=2)}`"}},
                 ],
             }
         if "discord.com" in url:
             color_map = {"info": 5814783, "warning": 16766720, "error": 15548997, "critical": 15548997}
             return {
-                "embeds": [{
-                    "title": event.title,
-                    "description": event.message,
-                    "color": color_map.get(event.severity, 5814783),
-                    "fields": [
-                        {"name": "Event Type", "value": event.event_type, "inline": True},
-                        {"name": "Severity", "value": event.severity, "inline": True},
-                        {
-                            "name": "Details",
-                            "value": f"```json\n{json.dumps(event.details, indent=2)}\n```",
-                            "inline": False,
-                        },
-                    ],
-                    "timestamp": event.timestamp,
-                }],
+                "embeds": [
+                    {
+                        "title": event.title,
+                        "description": event.message,
+                        "color": color_map.get(event.severity, 5814783),
+                        "fields": [
+                            {"name": "Event Type", "value": event.event_type, "inline": True},
+                            {"name": "Severity", "value": event.severity, "inline": True},
+                            {
+                                "name": "Details",
+                                "value": f"```json\n{json.dumps(event.details, indent=2)}\n```",
+                                "inline": False,
+                            },
+                        ],
+                        "timestamp": event.timestamp,
+                    }
+                ],
             }
         return {
             "event_type": event.event_type,
@@ -137,6 +142,7 @@ class WebhookNotifier:
         """Validate URL to prevent SSRF — block private/internal IPs."""
         import ipaddress
         import urllib.parse
+
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
@@ -165,6 +171,7 @@ class WebhookNotifier:
     def _http_post(self, url: str, payload: dict[str, Any]) -> None:
         self._validate_url(url)
         import httpx
+
         data = json.dumps(payload).encode()
         with httpx.Client(timeout=10, follow_redirects=False) as client:
             client.post(

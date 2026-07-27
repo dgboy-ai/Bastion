@@ -153,8 +153,7 @@ def test_begin_saga_db():
     assert saga.status == "active"
     # Find the INSERT call among all execute calls
     insert_found = any(
-        "INSERT INTO saga_states" in (call[0][0] if call[0] else "")
-        for call in cur.execute.call_args_list
+        "INSERT INTO saga_states" in (call[0][0] if call[0] else "") for call in cur.execute.call_args_list
     )
     assert insert_found, "No INSERT INTO saga_states found in execute calls"
     cur.execute.assert_any_call(
@@ -189,17 +188,23 @@ def test_commit_saga_db():
     memory, conn, cur = _make_db_memory()
     cur.rowcount = 1
     cur.fetchone.return_value = (
-        "saga-1", "agent-1", "committed",
+        "saga-1",
+        "agent-1",
+        "committed",
         [{"op_type": "store", "memory_id": "mem-1"}],
-        "2025-01-01T00:00:00+00:00", "2025-01-01T01:00:00+00:00",
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-01T01:00:00+00:00",
     )
     mgr = SagaMemoryManager(memory)
     saga = mgr.begin_saga("agent-1")
     cur.reset_mock()
     cur.fetchone.return_value = (
-        "saga-1", "agent-1", "committed",
+        "saga-1",
+        "agent-1",
+        "committed",
         [{"op_type": "store", "memory_id": "mem-1"}],
-        "2025-01-01T00:00:00+00:00", "2025-01-01T01:00:00+00:00",
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-01T01:00:00+00:00",
     )
 
     result = mgr.commit_saga(saga.saga_id)
@@ -223,9 +228,7 @@ def test_rollback_saga_db():
     mgr.record_operation(saga.saga_id, "store", "mem-1", "hello")
 
     # Mock fetchone to return operations for rollback
-    cur.fetchone.return_value = (
-        [{"op_type": "store", "memory_id": "mem-1"}],
-    )
+    cur.fetchone.return_value = ([{"op_type": "store", "memory_id": "mem-1"}],)
     cur.rowcount = 1
 
     result = mgr.rollback_saga(saga.saga_id)
@@ -244,9 +247,12 @@ def test_rollback_saga_not_found_db():
 def test_get_saga_db():
     memory, conn, cur = _make_db_memory()
     cur.fetchone.return_value = (
-        "saga-1", "agent-1", "active",
+        "saga-1",
+        "agent-1",
+        "active",
         [{"op_type": "store", "memory_id": "mem-1"}],
-        "2025-01-01T00:00:00+00:00", None,
+        "2025-01-01T00:00:00+00:00",
+        None,
     )
     mgr = SagaMemoryManager(memory)
     result = mgr.get_saga("saga-1")
@@ -266,8 +272,9 @@ def test_saga_table_auto_created():
     memory, conn, cur = _make_db_memory()
     mgr = SagaMemoryManager(memory)
     mgr.begin_saga("agent-1")
-    create_calls = [args[0][0] for args in cur.execute.call_args_list
-                    if "CREATE TABLE IF NOT EXISTS saga_states" in str(args[0][0])]
+    create_calls = [
+        args[0][0] for args in cur.execute.call_args_list if "CREATE TABLE IF NOT EXISTS saga_states" in str(args[0][0])
+    ]
     assert len(create_calls) == 1
 
 
@@ -279,8 +286,7 @@ def test_saga_table_created_once():
     mgr.begin_saga("agent-1")
     cur.reset_mock()
     mgr.begin_saga("agent-2")
-    create_calls = [args for args in cur.execute.call_args_list
-                    if "CREATE TABLE" in str(args)]
+    create_calls = [args for args in cur.execute.call_args_list if "CREATE TABLE" in str(args)]
     assert len(create_calls) == 0
 
 

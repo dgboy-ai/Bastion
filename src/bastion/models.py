@@ -223,8 +223,14 @@ class MessageRecord(BaseModel):
 _MEMORY_FIELDS = list(MemoryRecord.model_fields.keys())
 
 _ENTITY_FIELDS = [
-    "entity_id", "agent_id", "entity_type", "name",
-    "attributes", "valid_from", "valid_until", "created_at",
+    "entity_id",
+    "agent_id",
+    "entity_type",
+    "name",
+    "attributes",
+    "valid_from",
+    "valid_until",
+    "created_at",
 ]
 
 
@@ -233,6 +239,7 @@ def _parse_embedding(raw: Any) -> list[float]:
         return []
     if isinstance(raw, str):
         import json
+
         result: list[float] = json.loads(raw)
         return result
     return list(raw)

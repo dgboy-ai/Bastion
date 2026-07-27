@@ -59,11 +59,13 @@ def redact_pii(content: str) -> tuple[str, list[dict]]:
         for m in pattern.finditer(redacted):
             original = m.group(0)
             if original:
-                redactions.append({
-                    "type": pii_type,
-                    "original": original,
-                    "redacted": replacement,
-                })
+                redactions.append(
+                    {
+                        "type": pii_type,
+                        "original": original,
+                        "redacted": replacement,
+                    }
+                )
         redacted = pattern.sub(replacement, redacted)
 
     return redacted, redactions

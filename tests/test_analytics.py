@@ -13,6 +13,7 @@ from bastion.memory import BastionMemory
 @pytest.fixture(autouse=True)
 def reset_mock():
     from bastion.mock import reset
+
     reset()
 
 

@@ -6,9 +6,8 @@ Tests standalone CRDT primitives (VectorClock) and CRDTMemory-based types.
 import pytest
 
 try:
-    from hypothesis import given, settings
+    from hypothesis import HealthCheck, given, settings
     from hypothesis import strategies as st
-    from hypothesis import HealthCheck
 except ImportError:
     pytest.skip("hypothesis not installed", allow_module_level=True)
 
@@ -17,14 +16,19 @@ from bastion.memory import BastionMemory
 
 # ---- Vector Clock Property Tests ----
 
+
 @st.composite
 def vector_clocks(draw):
     """Generate arbitrary VectorClocks."""
     n_agents = draw(st.integers(min_value=0, max_value=5))
-    agents = draw(st.lists(
-        st.text(min_size=1, max_size=5, alphabet="abc"),
-        min_size=n_agents, max_size=n_agents, unique=True,
-    ))
+    agents = draw(
+        st.lists(
+            st.text(min_size=1, max_size=5, alphabet="abc"),
+            min_size=n_agents,
+            max_size=n_agents,
+            unique=True,
+        )
+    )
     clock = {}
     for agent in agents:
         clock[agent] = draw(st.integers(min_value=0, max_value=10))
@@ -75,13 +79,16 @@ def test_vector_clock_happens_before_consistent(vc1, vc2):
     hb = vc1.happens_before(vc2)
     hb_rev = vc2.happens_before(vc1)
     concurrent = vc1.is_concurrent_with(vc2)
-    assert (hb and not hb_rev and not concurrent) or \
-           (hb_rev and not hb and not concurrent) or \
-           (concurrent and not hb and not hb_rev) or \
-           (not hb and not hb_rev and not concurrent)  # equal case
+    assert (
+        (hb and not hb_rev and not concurrent)
+        or (hb_rev and not hb and not concurrent)
+        or (concurrent and not hb and not hb_rev)
+        or (not hb and not hb_rev and not concurrent)
+    )  # equal case
 
 
 # ---- CRDT Convergence via CRDTMemory (mock mode) ----
+
 
 class TestCRDTMemoryConvergence:
     """Tests that CRDTMemory converges under concurrent operations."""

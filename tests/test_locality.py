@@ -133,9 +133,7 @@ class TestMemoryLocality:
     def test_store_memory_with_force_region(self, locality):
         locality.enable_regional_routing()
         locality.set_agent_region("agent-1", "eu-west-1")
-        result = locality.store_memory(
-            "agent-1", "test", "content", force_region="ap-south-1"
-        )
+        result = locality.store_memory("agent-1", "test", "content", force_region="ap-south-1")
         assert result["status"] == "stored"
         assert result["region"] == "ap-south-1"
 

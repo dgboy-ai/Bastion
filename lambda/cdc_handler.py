@@ -81,6 +81,7 @@ def _get_hmac_secret() -> bytes:
         "Hash chain verification cannot proceed without a valid HMAC secret."
     )
 
+
 # ── Circuit Breaker State ────────────────────────────────────────────────────
 
 _failure_count = 0
@@ -118,15 +119,21 @@ def _record_success():
 
 # ── Hash Chain Verification ─────────────────────────────────────────────────
 
+
 def _compute_hmac_hash(content: str, metadata: dict | None, previous_hash: str | None) -> str:
     """Compute HMAC-SHA256 hash matching bastion.crypto.compute_hash().
 
     Uses the same HMAC secret and payload format as the main application
     to ensure hash chain verification works correctly.
     """
-    meta_str = "" if metadata is None else (
-        metadata if isinstance(metadata, str) else
-        json.dumps(dict(metadata) if not isinstance(metadata, dict) else metadata, sort_keys=True)
+    meta_str = (
+        ""
+        if metadata is None
+        else (
+            metadata
+            if isinstance(metadata, str)
+            else json.dumps(dict(metadata) if not isinstance(metadata, dict) else metadata, sort_keys=True)
+        )
     )
     payload = content + meta_str + (previous_hash or "")
     secret = _get_hmac_secret()
@@ -166,24 +173,28 @@ def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
 
         # Check hash chain link
         if stored_prev_hash != prev_hash:
-            breaks.append({
-                "memory_id": str(memory_id),
-                "type": "chain_break",
-                "expected_prev": prev_hash,
-                "actual_prev": str(stored_prev_hash),
-                "created_at": created_at.isoformat() if created_at else None,
-            })
+            breaks.append(
+                {
+                    "memory_id": str(memory_id),
+                    "type": "chain_break",
+                    "expected_prev": prev_hash,
+                    "actual_prev": str(stored_prev_hash),
+                    "created_at": created_at.isoformat() if created_at else None,
+                }
+            )
 
         # Check hash integrity (constant-time comparison)
         stored_hash_str = str(stored_hash) if stored_hash else ""
         if not hmac.compare_digest(stored_hash_str, expected_hash):
-            breaks.append({
-                "memory_id": str(memory_id),
-                "type": "hash_mismatch",
-                "expected": expected_hash[:16] + "...",
-                "actual": stored_hash_str[:16] + "..." if stored_hash_str else "null",
-                "created_at": created_at.isoformat() if created_at else None,
-            })
+            breaks.append(
+                {
+                    "memory_id": str(memory_id),
+                    "type": "hash_mismatch",
+                    "expected": expected_hash[:16] + "...",
+                    "actual": stored_hash_str[:16] + "..." if stored_hash_str else "null",
+                    "created_at": created_at.isoformat() if created_at else None,
+                }
+            )
 
         prev_hash = stored_hash_str
 
@@ -197,6 +208,7 @@ def verify_hash_chain(agent_id: str, conn) -> dict[str, Any]:
 
 
 # ── Anomaly Detection ───────────────────────────────────────────────────────
+
 
 def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
     """
@@ -228,44 +240,50 @@ def detect_anomalies(agent_id: str, conn) -> list[dict[str, Any]]:
         # Check for duplicate content (fact turnover)
         contents = [r[0] for r in recent]
         if len(contents) != len(set(contents)):
-            alerts.append({
-                "type": "fact_turnover",
-                "severity": "medium",
-                "detail": "Duplicate content detected in recent memory",
-                "agent_id": agent_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "fact_turnover",
+                    "severity": "medium",
+                    "detail": "Duplicate content detected in recent memory",
+                    "agent_id": agent_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
 
         # Check for size spike (>100 memories)
         if total > 100:
-            alerts.append({
-                "type": "size_spike",
-                "severity": "info",
-                "detail": f"Memory count ({total}) exceeds 100 records",
-                "agent_id": agent_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "size_spike",
+                    "severity": "info",
+                    "detail": f"Memory count ({total}) exceeds 100 records",
+                    "agent_id": agent_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
 
         # Check for rapid writes (>20 in last minute)
         cur.execute(
-            "SELECT COUNT(*) FROM agent_memory "
-            "WHERE agent_id = %s AND created_at > now() - INTERVAL '1 minute'",
+            "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s AND created_at > now() - INTERVAL '1 minute'",
             (agent_id,),
         )
         recent_count = cur.fetchone()[0]
         if recent_count > 20:
-            alerts.append({
-                "type": "rapid_writes",
-                "severity": "high",
-                "detail": f"{recent_count} memories written in last minute",
-                "agent_id": agent_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            })
+            alerts.append(
+                {
+                    "type": "rapid_writes",
+                    "severity": "high",
+                    "detail": f"{recent_count} memories written in last minute",
+                    "agent_id": agent_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
 
     return alerts
 
 
 # ── Snapshot & Rollback ─────────────────────────────────────────────────────
+
 
 def create_snapshot(agent_id: str, conn) -> dict[str, Any]:
     """Create a point-in-time snapshot of agent memory state."""
@@ -337,9 +355,13 @@ def rollback_from_snapshot(agent_id: str, snapshot_key: str, conn) -> dict[str, 
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (memory_id) DO NOTHING",
                 (
-                    mem["memory_id"], agent_id, mem["memory_type"],
-                    mem["content"], json.dumps(mem["metadata"]),
-                    mem["cryptographic_hash"], mem["created_at"],
+                    mem["memory_id"],
+                    agent_id,
+                    mem["memory_type"],
+                    mem["content"],
+                    json.dumps(mem["metadata"]),
+                    mem["cryptographic_hash"],
+                    mem["created_at"],
                     mem["importance_score"],
                 ),
             )
@@ -347,18 +369,19 @@ def rollback_from_snapshot(agent_id: str, snapshot_key: str, conn) -> dict[str, 
 
         # Log the rollback action
         cur.execute(
-            "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
-            "VALUES (%s, %s, %s, %s)",
+            "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
             (
                 agent_id,
                 str(__import__("uuid").uuid4()),
                 "rollback",
-                json.dumps({
-                    "snapshot_key": snapshot_key,
-                    "deleted": deleted,
-                    "restored": restored,
-                    "snapshot_timestamp": snapshot.get("timestamp"),
-                }),
+                json.dumps(
+                    {
+                        "snapshot_key": snapshot_key,
+                        "deleted": deleted,
+                        "restored": restored,
+                        "snapshot_timestamp": snapshot.get("timestamp"),
+                    }
+                ),
             ),
         )
 
@@ -374,6 +397,7 @@ def rollback_from_snapshot(agent_id: str, snapshot_key: str, conn) -> dict[str, 
 
 
 # ── Main Handler ─────────────────────────────────────────────────────────────
+
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
@@ -394,11 +418,13 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if _circuit_is_open():
         return {
             "statusCode": 503,
-            "body": json.dumps({
-                "status": "circuit_open",
-                "message": "Circuit breaker tripped. Too many recent failures.",
-                "retry_after_seconds": CIRCUIT_BREAKER_WINDOW,
-            }),
+            "body": json.dumps(
+                {
+                    "status": "circuit_open",
+                    "message": "Circuit breaker tripped. Too many recent failures.",
+                    "retry_after_seconds": CIRCUIT_BREAKER_WINDOW,
+                }
+            ),
         }
 
     if not CONN_STR:
@@ -455,13 +481,15 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             # 3. If chain is broken or critical anomaly detected → snapshot + alert
             if chain_result["status"] == "broken":
                 snapshot = create_snapshot(agent_id, conn)
-                results.append({
-                    "agent_id": agent_id,
-                    "action": "chain_break_detected",
-                    "chain_result": chain_result,
-                    "snapshot": snapshot,
-                    "anomalies": anomalies,
-                })
+                results.append(
+                    {
+                        "agent_id": agent_id,
+                        "action": "chain_break_detected",
+                        "chain_result": chain_result,
+                        "snapshot": snapshot,
+                        "anomalies": anomalies,
+                    }
+                )
 
                 # Publish alert if SNS topic configured
                 if ALERT_SNS_TOPIC:
@@ -469,36 +497,45 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     sns.publish(
                         TopicArn=ALERT_SNS_TOPIC,
                         Subject=f"Bastion Alert: Hash chain broken for {agent_id}",
-                        Message=json.dumps({
-                            "agent_id": agent_id,
-                            "breaks": chain_result["breaks"],
-                            "snapshot": snapshot,
-                        }, indent=2),
+                        Message=json.dumps(
+                            {
+                                "agent_id": agent_id,
+                                "breaks": chain_result["breaks"],
+                                "snapshot": snapshot,
+                            },
+                            indent=2,
+                        ),
                     )
             elif anomalies:
-                results.append({
-                    "agent_id": agent_id,
-                    "action": "anomalies_detected",
-                    "anomalies": anomalies,
-                    "chain_status": chain_result["status"],
-                })
+                results.append(
+                    {
+                        "agent_id": agent_id,
+                        "action": "anomalies_detected",
+                        "anomalies": anomalies,
+                        "chain_status": chain_result["status"],
+                    }
+                )
             else:
-                results.append({
-                    "agent_id": agent_id,
-                    "action": "processed",
-                    "chain_status": chain_result["status"],
-                    "topic": topic,
-                })
+                results.append(
+                    {
+                        "agent_id": agent_id,
+                        "action": "processed",
+                        "chain_status": chain_result["status"],
+                        "topic": topic,
+                    }
+                )
 
         _record_success()
 
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "status": "ok",
-                "events_processed": len(records),
-                "results": results,
-            }),
+            "body": json.dumps(
+                {
+                    "status": "ok",
+                    "events_processed": len(records),
+                    "results": results,
+                }
+            ),
         }
 
     except Exception as e:
@@ -532,18 +569,21 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 # This filters out no-op updates and provides the old content for diff analysis,
 # reducing Lambda invocations by ~60% for write-heavy workloads.
 
+
 def health_check(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Health check endpoint for monitoring."""
     return {
         "statusCode": 200,
-        "body": json.dumps({
-            "status": "healthy",
-            "circuit_breaker": {
-                "open": _circuit_is_open(),
-                "failure_count": _failure_count,
-                "open_until": _circuit_open_until,
-            },
-            "cdc_queries_enabled": True,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }),
+        "body": json.dumps(
+            {
+                "status": "healthy",
+                "circuit_breaker": {
+                    "open": _circuit_is_open(),
+                    "failure_count": _failure_count,
+                    "open_until": _circuit_open_until,
+                },
+                "cdc_queries_enabled": True,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        ),
     }

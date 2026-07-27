@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import json as _json
 import math
 import threading
 from collections import Counter
@@ -107,8 +107,7 @@ class BehavioralDriftDetector:
                 with conn.cursor() as cur:
                     # Memory type distribution
                     cur.execute(
-                        "SELECT memory_type, COUNT(*) FROM agent_memory "
-                        "WHERE agent_id = %s GROUP BY memory_type",
+                        "SELECT memory_type, COUNT(*) FROM agent_memory WHERE agent_id = %s GROUP BY memory_type",
                         (agent_id,),
                     )
                     type_counts = {row[0]: row[1] for row in cur.fetchall()}
@@ -136,7 +135,7 @@ class BehavioralDriftDetector:
                         if row[0]:
                             emb = row[0]
                             if isinstance(emb, str):
-                                emb = json.loads(emb)
+                                emb = _json.loads(emb)
                             recent_embeddings.append(list(emb))
                     baseline["semantic_similarity"] = {
                         "mean_vector": _mean_vector(recent_embeddings) if recent_embeddings else [],
@@ -224,8 +223,7 @@ class BehavioralDriftDetector:
                 with conn.cursor() as cur:
                     # Memory type distribution
                     cur.execute(
-                        "SELECT memory_type, COUNT(*) FROM agent_memory "
-                        "WHERE agent_id = %s GROUP BY memory_type",
+                        "SELECT memory_type, COUNT(*) FROM agent_memory WHERE agent_id = %s GROUP BY memory_type",
                         (agent_id,),
                     )
                     type_counts = {row[0]: row[1] for row in cur.fetchall()}
@@ -250,7 +248,7 @@ class BehavioralDriftDetector:
                         if row[0]:
                             emb = row[0]
                             if isinstance(emb, str):
-                                emb = json.loads(emb)
+                                emb = _json.loads(emb)
                             all_embeddings.append(list(emb))
 
                     # Hash chain gaps
@@ -328,14 +326,13 @@ class BehavioralDriftDetector:
         cross_agent_ops = 0
         total_ops_with_target = 0
         for entry in audit_entries:
-            details = getattr(entry, 'details', None) or {}
+            details = getattr(entry, "details", None) or {}
             if isinstance(details, str):
                 try:
-                    import json
-                    details = json.loads(details)
+                    details = _json.loads(details)
                 except Exception:
                     details = {}
-            target_agent = details.get('target_agent_id') or details.get('source_agent_id')
+            target_agent = details.get("target_agent_id") or details.get("source_agent_id")
             if target_agent:
                 total_ops_with_target += 1
                 if target_agent != agent_id:
@@ -406,12 +403,13 @@ class BehavioralDriftDetector:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        agent_id, report.overall_drift_score,
-                        json.dumps(report.dimensions),
+                        agent_id,
+                        report.overall_drift_score,
+                        _json.dumps(report.dimensions),
                         report.baseline_sessions,
                         report.alert_threshold,
                         report.status,
-                        json.dumps(report.top_drift_signals),
+                        _json.dumps(report.top_drift_signals),
                         report.recommendation,
                     ),
                 )
@@ -447,26 +445,36 @@ class BehavioralDriftDetector:
                 rows = cur.fetchall()
                 results = []
                 for row in rows:
-                    rm = row._mapping if hasattr(row, '_mapping') else {
-                        "score_id": row[0], "overall_drift_score": row[1],
-                        "dimensions": row[2], "baseline_sessions": row[3],
-                        "alert_threshold": row[4], "status": row[5],
-                        "top_drift_signals": row[6], "recommendation": row[7],
-                        "scorable_at": row[8],
-                    }
-                    results.append({
-                        "score_id": str(rm["score_id"]),
-                        "overall_drift_score": float(rm["overall_drift_score"]),
-                        "dimensions": _parse_json_field(rm["dimensions"]),
-                        "baseline_sessions": int(rm["baseline_sessions"]),
-                        "alert_threshold": float(rm["alert_threshold"]),
-                        "status": str(rm["status"]),
-                        "top_drift_signals": _parse_json_field(rm["top_drift_signals"]),
-                        "recommendation": str(rm["recommendation"]),
-                        "scorable_at": rm["scorable_at"].isoformat()
+                    rm = (
+                        row._mapping
+                        if hasattr(row, "_mapping")
+                        else {
+                            "score_id": row[0],
+                            "overall_drift_score": row[1],
+                            "dimensions": row[2],
+                            "baseline_sessions": row[3],
+                            "alert_threshold": row[4],
+                            "status": row[5],
+                            "top_drift_signals": row[6],
+                            "recommendation": row[7],
+                            "scorable_at": row[8],
+                        }
+                    )
+                    results.append(
+                        {
+                            "score_id": str(rm["score_id"]),
+                            "overall_drift_score": float(rm["overall_drift_score"]),
+                            "dimensions": _parse_json_field(rm["dimensions"]),
+                            "baseline_sessions": int(rm["baseline_sessions"]),
+                            "alert_threshold": float(rm["alert_threshold"]),
+                            "status": str(rm["status"]),
+                            "top_drift_signals": _parse_json_field(rm["top_drift_signals"]),
+                            "recommendation": str(rm["recommendation"]),
+                            "scorable_at": rm["scorable_at"].isoformat()
                             if hasattr(rm["scorable_at"], "isoformat")
                             else str(rm["scorable_at"]),
-                    })
+                        }
+                    )
                 return results
         except Exception:
             logger.exception("Failed to fetch recent drift scores for agent %s", agent_id)
@@ -476,7 +484,7 @@ class BehavioralDriftDetector:
 
 
 def _parse_json_field(v: Any) -> Any:
-    return json.loads(v) if isinstance(v, str) else v
+    return _json.loads(v) if isinstance(v, str) else v
 
 
 _MOCK_DRIFT_SCORES: dict[str, list[dict[str, Any]]] = {}
@@ -487,18 +495,20 @@ def _mock_store_drift_score(agent_id: str, report: DriftReport) -> None:
     with _DRIFT_LOCK:
         if agent_id not in _MOCK_DRIFT_SCORES:
             _MOCK_DRIFT_SCORES[agent_id] = []
-        _MOCK_DRIFT_SCORES[agent_id].append({
-            "score_id": str(hash(report.overall_drift_score) & 0xFFFFFFFF ^ hash(agent_id) & 0xFFFFFFFF),
-            "agent_id": report.agent_id,
-            "overall_drift_score": report.overall_drift_score,
-            "dimensions": report.dimensions,
-            "baseline_sessions": report.baseline_sessions,
-            "alert_threshold": report.alert_threshold,
-            "status": report.status,
-            "top_drift_signals": report.top_drift_signals,
-            "recommendation": report.recommendation,
-            "scorable_at": datetime.now(UTC).isoformat(),
-        })
+        _MOCK_DRIFT_SCORES[agent_id].append(
+            {
+                "score_id": str(hash(report.overall_drift_score) & 0xFFFFFFFF ^ hash(agent_id) & 0xFFFFFFFF),
+                "agent_id": report.agent_id,
+                "overall_drift_score": report.overall_drift_score,
+                "dimensions": report.dimensions,
+                "baseline_sessions": report.baseline_sessions,
+                "alert_threshold": report.alert_threshold,
+                "status": report.status,
+                "top_drift_signals": report.top_drift_signals,
+                "recommendation": report.recommendation,
+                "scorable_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
 
 def _mock_recent_drift_scores(agent_id: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -530,18 +540,112 @@ def _mean_vector(vectors: list[list[float]]) -> list[float]:
 
 def _word_frequencies(contents: list[str]) -> Counter:
     stop_words = {
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "shall", "can", "need", "dare", "ought",
-        "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-        "as", "into", "through", "during", "before", "after", "above", "below",
-        "between", "out", "off", "over", "under", "again", "further", "then",
-        "once", "here", "there", "when", "where", "why", "how", "all", "each",
-        "every", "both", "few", "more", "most", "other", "some", "such", "no",
-        "not", "only", "own", "same", "so", "than", "too", "very", "just",
-        "don't", "now", "and", "but", "or", "if", "while", "that", "this",
-        "it", "its", "i", "my", "me", "we", "our", "you", "your", "he", "she",
-        "they", "them", "what", "which", "who", "whom",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "dare",
+        "ought",
+        "used",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "out",
+        "off",
+        "over",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "don't",
+        "now",
+        "and",
+        "but",
+        "or",
+        "if",
+        "while",
+        "that",
+        "this",
+        "it",
+        "its",
+        "i",
+        "my",
+        "me",
+        "we",
+        "our",
+        "you",
+        "your",
+        "he",
+        "she",
+        "they",
+        "them",
+        "what",
+        "which",
+        "who",
+        "whom",
     }
     counts: Counter = Counter()
     for text in contents:
@@ -558,7 +662,7 @@ def _stddev(values: list[float | int]) -> float:
         return 0.1
     mean = sum(values) / n
     variance = sum((v - mean) ** 2 for v in values) / max(n - 1, 1)
-    std = variance ** 0.5
+    std = variance**0.5
     return std if std > 0 else 0.1
 
 

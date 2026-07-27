@@ -10,6 +10,7 @@ Usage:
     hooks.after_conversation_turn("user", "What is CockroachDB?")
     hooks.after_error("timeout", "Connection timed out")
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ logger = get_logger(__name__)
 @dataclass
 class CaptureEvent:
     """A captured lifecycle event."""
+
     event_type: str  # "tool_call", "conversation_turn", "error", "scheduled"
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -298,15 +300,14 @@ class CaptureHooks:
                 memory_type=memory_type,
                 content=event.content,
                 metadata=event.metadata,
-                _skip_guard=True, _guard_bypass_token=True,  # Events are internally generated
+                _skip_guard=True,
+                _guard_bypass_token=True,  # Events are internally generated
             )
             self._capture_count += 1
             self._recent_contents.append((event.content[:100], time.time()))
             # Trim old entries from dedup window
             cutoff = time.time() - self._dedup_window
-            self._recent_contents = [
-                (c, t) for c, t in self._recent_contents if t >= cutoff
-            ]
+            self._recent_contents = [(c, t) for c, t in self._recent_contents if t >= cutoff]
         except Exception as exc:
             logger.warning("Failed to capture event: %s", exc)
 

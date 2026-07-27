@@ -8,8 +8,8 @@ agent response latency under 2ms.
 from __future__ import annotations
 
 import re
-import time
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -65,6 +65,7 @@ class CognitiveFirewall:
                     )
 
         from bastion.pii import PII_DETECTION_PATTERNS
+
         pii_patterns = [(p, d) for _, p, d in PII_DETECTION_PATTERNS]
 
         for pattern, desc in pii_patterns:

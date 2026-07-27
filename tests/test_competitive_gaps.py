@@ -1,11 +1,10 @@
 """Tests for expanded CaptureHooks, ProceduralMemory, and Private Tags."""
+
 from __future__ import annotations
 
-import pytest
-
-from bastion.capture_hooks import CaptureHooks, CaptureEvent
-from bastion.procedural import ProceduralMemory, WorkflowPattern, DecisionPattern
-from bastion.tags import TagPreprocessor, TagExtraction
+from bastion.capture_hooks import CaptureHooks
+from bastion.procedural import DecisionPattern, ProceduralMemory, WorkflowPattern
+from bastion.tags import TagPreprocessor
 
 
 class FakeEngine:
@@ -15,12 +14,16 @@ class FakeEngine:
         self._memories = []
 
     def store(self, memory_type, content, metadata=None, **kwargs):
-        record = type("R", (), {
-            "memory_id": f"mem-{len(self._stored)}",
-            "content": content,
-            "memory_type": memory_type,
-            "metadata": metadata or {},
-        })()
+        record = type(
+            "R",
+            (),
+            {
+                "memory_id": f"mem-{len(self._stored)}",
+                "content": content,
+                "memory_type": memory_type,
+                "metadata": metadata or {},
+            },
+        )()
         self._stored.append(record)
         self._memories.append(record)
         return record

@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from bastion.dba import AutonomousDBA, SchemaEvolution, ALLOWED_COLUMN_TYPES, _UNSAFE_DDL_PATTERNS
+from bastion.dba import ALLOWED_COLUMN_TYPES, AutonomousDBA, SchemaEvolution
 
 
 class TestAutonomousDBA:
@@ -44,10 +42,12 @@ class TestAutonomousDBA:
     def test_inspect_query_latency_success(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout=json.dumps([
-                {"key": "SELECT *", "count": 100, "max_total_time": 5000, "max_service_latency": 200},
-                {"key": "INSERT INTO", "count": 50, "max_total_time": 1000, "max_service_latency": 50},
-            ]),
+            stdout=json.dumps(
+                [
+                    {"key": "SELECT *", "count": 100, "max_total_time": 5000, "max_service_latency": 200},
+                    {"key": "INSERT INTO", "count": 50, "max_total_time": 1000, "max_service_latency": 50},
+                ]
+            ),
             stderr="",
         )
         dba = AutonomousDBA(cluster_id="test-cluster", threshold_ms=100)
@@ -83,6 +83,7 @@ class TestAutonomousDBA:
 
     def test_scale_cooldown(self):
         from datetime import UTC, datetime
+
         dba = AutonomousDBA(cluster_id="test-cluster")
         dba._last_scale_time = datetime.now(UTC)
         result = dba.scale_up_cluster()
@@ -93,9 +94,7 @@ class TestAutonomousDBA:
     def test_recommendations_slow_queries(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout=json.dumps([
-                {"key": f"q{i}", "max_service_latency": 200} for i in range(15)
-            ]),
+            stdout=json.dumps([{"key": f"q{i}", "max_service_latency": 200} for i in range(15)]),
             stderr="",
         )
         dba = AutonomousDBA(cluster_id="test-cluster", threshold_ms=100)

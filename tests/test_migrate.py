@@ -1,12 +1,10 @@
 """Tests for bastion.migrate module."""
+
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 
 class TestDiscoverMigrations:

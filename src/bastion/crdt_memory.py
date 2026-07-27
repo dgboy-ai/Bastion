@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import uuid
 from collections import defaultdict
@@ -266,14 +265,14 @@ class CRDTMemory:
                 (memory_ids,),
             )
             cur.execute(
-                "SELECT cryptographic_hash FROM agent_memory "
-                "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
                 (self.agent_id,),
             )
             row = cur.fetchone()
             prev_hash = str(row[0]) if row else None
 
             from bastion.crypto import compute_hash
+
             crypto_hash = compute_hash(content, meta_json, prev_hash)
 
             cur.execute(
@@ -301,18 +300,30 @@ class CRDTMemory:
             if insert_row is None:
                 raise RuntimeError("INSERT RETURNING did not return a row")
 
-            row_map = insert_row._mapping if hasattr(insert_row, "_mapping") else {
-                "memory_id": insert_row[0], "created_at": insert_row[1],
-            }
+            row_map = (
+                insert_row._mapping
+                if hasattr(insert_row, "_mapping")
+                else {
+                    "memory_id": insert_row[0],
+                    "created_at": insert_row[1],
+                }
+            )
 
             workflow_id = str(uuid.uuid4())
             cur.execute(
                 "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                (self.agent_id, workflow_id, "crdt_resolve", json.dumps({
-                    "fact_key": fact_key,
-                    "candidates": memory_ids,
-                    "strategy": self._strategy,
-                })),
+                (
+                    self.agent_id,
+                    workflow_id,
+                    "crdt_resolve",
+                    json.dumps(
+                        {
+                            "fact_key": fact_key,
+                            "candidates": memory_ids,
+                            "strategy": self._strategy,
+                        }
+                    ),
+                ),
             )
 
             return MemoryRecord(
@@ -339,8 +350,10 @@ class CRDTMemory:
             logger.info(
                 "CRDT conflict resolved",
                 extra={
-                    "fact_key": fact_key, "resolved_id": result.memory_id,
-                    "strategy": self._strategy, "locking": True,
+                    "fact_key": fact_key,
+                    "resolved_id": result.memory_id,
+                    "strategy": self._strategy,
+                    "locking": True,
                 },
             )
             return result
@@ -361,7 +374,7 @@ class CRDTMemory:
 
     def _extract_clock(self, record: MemoryRecord) -> VectorClock:
         """Extract vector clock from record metadata with validation.
-        
+
         Rejects clocks with unreasonable tick values (> 100K) or too many
         agents (> 100) to prevent attacker-fabricated clocks from dominating
         conflict resolution.
@@ -422,6 +435,7 @@ class CRDTMemory:
             merged = self._llm_merge(contents, fact_key)
             # Return a copy to avoid mutating the original record
             import copy
+
             result = copy.deepcopy(candidates[0])
             result.content = merged
             return result
@@ -471,7 +485,10 @@ class LWWRegister:
     def get(self) -> str | None:
         """Return the latest value, or None if no writes exist."""
         candidates = self._memory.search(
-            self._key, k=20, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=20,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [r for r in candidates if self._key == (r.metadata or {}).get("_crdt_key")]
         if not target:
@@ -483,7 +500,9 @@ class LWWRegister:
         """Set the register value.  Returns the stored memory record."""
         meta = {"_crdt_key": self._key}
         return self._memory.store(
-            self._CRDT_TYPE, json.dumps({"value": value}), metadata=meta,
+            self._CRDT_TYPE,
+            json.dumps({"value": value}),
+            metadata=meta,
         )
 
     def merge(self, candidates: list[MemoryRecord]) -> MemoryRecord:
@@ -522,21 +541,28 @@ class ORSet:
         tag = str(uuid.uuid4())
         meta = {"_crdt_key": self._key, "_crdt_elem": element, "_crdt_tag": tag, "_crdt_op": "add"}
         return self._memory.store(
-            self._CRDT_TYPE, json.dumps({"element": element, "tag": tag, "op": "add"}), metadata=meta,
+            self._CRDT_TYPE,
+            json.dumps({"element": element, "tag": tag, "op": "add"}),
+            metadata=meta,
         )
 
     def remove(self, element: str) -> list[MemoryRecord]:
         """Remove *element* from the set.  Returns tombstone records."""
         meta = {"_crdt_key": self._key, "_crdt_elem": element, "_crdt_op": "remove"}
         record = self._memory.store(
-            self._CRDT_TYPE, json.dumps({"element": element, "op": "remove"}), metadata=meta,
+            self._CRDT_TYPE,
+            json.dumps({"element": element, "op": "remove"}),
+            metadata=meta,
         )
         return [record]
 
     def get(self) -> set[str]:
         """Return the current set of elements (adds minus concurrent-removes)."""
         records = self._memory.search(
-            self._key, k=200, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=200,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
@@ -600,13 +626,15 @@ class PNCounter:
 
     def increment(self, delta: int = 1) -> MemoryRecord:
         return self._memory.store(
-            self._CRDT_TYPE, json.dumps({"op": "inc", "delta": delta}),
+            self._CRDT_TYPE,
+            json.dumps({"op": "inc", "delta": delta}),
             metadata={"_crdt_key": self._key},
         )
 
     def decrement(self, delta: int = 1) -> MemoryRecord:
         return self._memory.store(
-            self._CRDT_TYPE, json.dumps({"op": "dec", "delta": delta}),
+            self._CRDT_TYPE,
+            json.dumps({"op": "dec", "delta": delta}),
             metadata={"_crdt_key": self._key},
         )
 
@@ -627,7 +655,10 @@ class PNCounter:
 
     def value(self) -> int:
         records = self._memory.search(
-            self._key, k=500, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=500,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
@@ -671,7 +702,10 @@ class PNCounter:
         by the merged vector clock state. Returns number of records removed.
         """
         records = self._memory.search(
-            self._key, k=500, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=500,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
         if len(target) <= 1:
@@ -755,13 +789,17 @@ class RGA:
             "_crdt_position": f"{self._memory.agent_id}:{self._seq_counter}",
         }
         return self._memory.store(
-            self._CRDT_TYPE, json.dumps({"entry_id": entry_id, "content": content}),
+            self._CRDT_TYPE,
+            json.dumps({"entry_id": entry_id, "content": content}),
             metadata=meta,
         )
 
     def list(self) -> list[str]:
         records = self._memory.search(
-            self._key, k=500, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=500,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
 
@@ -828,12 +866,15 @@ class ORMap:
 
     def get(self, sub_key: str) -> Any | None:
         records = self._memory.search(
-            sub_key, k=20, threshold=0.0, memory_type=self._CRDT_TYPE,
+            sub_key,
+            k=20,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         target = [
-            r for r in records
-            if (r.metadata or {}).get("_crdt_key") == self._key
-            and (r.metadata or {}).get("_crdt_sub_key") == sub_key
+            r
+            for r in records
+            if (r.metadata or {}).get("_crdt_key") == self._key and (r.metadata or {}).get("_crdt_sub_key") == sub_key
         ]
         if not target:
             return None
@@ -866,7 +907,10 @@ class ORMap:
 
     def keys(self) -> list[str]:
         records = self._memory.search(
-            self._key, k=100, threshold=0.0, memory_type=self._CRDT_TYPE,
+            self._key,
+            k=100,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
         )
         seen: set[str] = set()
         for r in records:

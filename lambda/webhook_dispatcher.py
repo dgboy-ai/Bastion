@@ -28,14 +28,14 @@ logger = logging.getLogger("bastion-webhook-dispatcher")
 
 # SSRF protection: blocked networks and schemes
 _BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),      # loopback
-    ipaddress.ip_network("10.0.0.0/8"),        # private
-    ipaddress.ip_network("172.16.0.0/12"),     # private
-    ipaddress.ip_network("192.168.0.0/16"),    # private
-    ipaddress.ip_network("169.254.0.0/16"),    # link-local (cloud metadata)
-    ipaddress.ip_network("::1/128"),           # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),          # IPv6 private
-    ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("10.0.0.0/8"),  # private
+    ipaddress.ip_network("172.16.0.0/12"),  # private
+    ipaddress.ip_network("192.168.0.0/16"),  # private
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local (cloud metadata)
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 private
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
 ]
 
 
@@ -62,7 +62,7 @@ def _is_safe_url(url: str) -> bool:
     # Resolve DNS and check against blocked networks
     try:
         resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
-        for family, _, _, _, sockaddr in resolved:
+        for _family, _, _, _, sockaddr in resolved:
             ip = ipaddress.ip_address(sockaddr[0])
             for net in _BLOCKED_NETWORKS:
                 if ip in net:
@@ -73,6 +73,7 @@ def _is_safe_url(url: str) -> bool:
         return False
 
     return True
+
 
 # Circuit breaker state
 _failures = 0
@@ -234,9 +235,11 @@ def health_check(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Health check endpoint."""
     return {
         "statusCode": 200,
-        "body": json.dumps({
-            "status": "ok",
-            "circuit_open": _circuit_is_open(),
-            "failures_in_window": len(_failure_timestamps),
-        }),
+        "body": json.dumps(
+            {
+                "status": "ok",
+                "circuit_open": _circuit_is_open(),
+                "failures_in_window": len(_failure_timestamps),
+            }
+        ),
     }

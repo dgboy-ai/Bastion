@@ -1,6 +1,7 @@
 import { getMockMemories } from "@/lib/mock-data";
 import { safeQuery, isMockMode, hasDbPool } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 const EVENTS = [
   "memory_stored",
@@ -54,9 +55,47 @@ function mapAuditToEvent(audit: Record<string, unknown>) {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * GET /api/events — SSE stream (default) or one-shot snapshot.
+ *
+ * ?mode=snapshot  → Returns a finite JSON response with recent audit entries.
+ *                    Does NOT hang. Safe for curl, fetch, tests.
+ * (no param)      → Long-lived SSE stream for EventSource (dashboard UI).
+ */
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
+
+  const { searchParams } = new URL(request.url);
+  const mode = searchParams.get("mode");
+
+  // ── SNAPSHOT MODE: one-shot JSON response (non-hanging) ─────────────
+  if (mode === "snapshot") {
+    const limit = Math.min(parseInt(searchParams.get("limit") ?? "50", 10), 200);
+
+    if (isMockMode()) {
+      const events = Array.from({ length: Math.min(limit, 10) }, () => randomEvent());
+      return apiSuccess({ events, total: events.length, mode: "snapshot" }, "dynamic");
+    }
+
+    try {
+      const result = await safeQuery(
+        "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit ORDER BY recorded_at DESC LIMIT $1",
+        [limit]
+      );
+      const events = result.rows.map(mapAuditToEvent);
+      return apiSuccess({ events, total: events.length, mode: "snapshot" }, "dynamic");
+    } catch (err) {
+      console.error("[Events] Snapshot query failed:", err);
+      if (isMockMode()) {
+        const events = Array.from({ length: Math.min(limit, 10) }, () => randomEvent());
+        return apiSuccess({ events, total: events.length, mode: "snapshot", mock: true }, "dynamic");
+      }
+      return apiError("Failed to fetch events", 500);
+    }
+  }
+
+  // ── SSE MODE: long-lived stream for EventSource ─────────────────────
   const closedPromise = new Promise<void>((resolve) => {
     if (request.signal.aborted) {
       resolve();

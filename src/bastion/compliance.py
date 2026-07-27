@@ -55,17 +55,15 @@ class IETFAATRecord:
         self.previous_hash: str | None = None
         self.record_hash: str = self._compute_hash()
 
-    def link_to(self, previous_record: "IETFAATRecord") -> None:
+    def link_to(self, previous_record: IETFAATRecord) -> None:
         """Link this record to the previous one in the hash chain."""
         self.previous_hash = previous_record.record_hash
         self.record_hash = self._compute_hash()
 
     def _compute_hash(self) -> str:
         from bastion.crypto import compute_hash
-        data = (
-            f"{self.agent_id}{self.action}{self.target}"
-            f"{self.outcome}{self.timestamp.isoformat()}"
-        )
+
+        data = f"{self.agent_id}{self.action}{self.target}{self.outcome}{self.timestamp.isoformat()}"
         return compute_hash(data, None, self.previous_hash)
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,13 +155,11 @@ class ComplianceReporter:
             "art12_requirements": {
                 "automatic_event_recording": len(audit_entries) > 0,
                 "tamper_evident_logs": any(
-                    getattr(e, "action", "") in ("write", "hash_verify", "gdpr_art17_unlearn")
-                    for e in audit_entries
+                    getattr(e, "action", "") in ("write", "hash_verify", "gdpr_art17_unlearn") for e in audit_entries
                 ),
                 "traceability": len(set(getattr(e, "action", "") for e in audit_entries)) >= 1,
                 "human_oversight_verification": any(
-                    getattr(e, "action", "") in ("override", "correction", "delete")
-                    for e in audit_entries
+                    getattr(e, "action", "") in ("override", "correction", "delete") for e in audit_entries
                 ),
                 "post_market_monitoring": total_operations > 0,
             },
@@ -204,14 +200,15 @@ class VerifiableUnlearning:
         memory_agent = getattr(self.memory, "agent_id", None)
         if memory_agent is not None and agent_id != memory_agent:
             raise PermissionError(
-                f"Cannot unlearn memories for agent {agent_id}: "
-                f"memory instance belongs to agent {memory_agent}"
+                f"Cannot unlearn memories for agent {agent_id}: memory instance belongs to agent {memory_agent}"
             )
 
         all_memories = self.memory.list_all()
         agent_memories = [m for m in all_memories if m.agent_id == agent_id]
         all_hashes = [m.cryptographic_hash for m in agent_memories if m.cryptographic_hash]
-        deleted_hashes = [m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids and m.cryptographic_hash]
+        deleted_hashes = [
+            m.cryptographic_hash for m in agent_memories if m.memory_id in memory_ids and m.cryptographic_hash
+        ]
 
         old_root = self._compute_merkle_root(all_hashes)
 
@@ -219,7 +216,7 @@ class VerifiableUnlearning:
         deleted_ids: list[str] = []
         not_found_ids: list[str] = []
 
-        if memory_ids and hasattr(self.memory, 'get_pool') and not getattr(self.memory, '_mock', False):
+        if memory_ids and hasattr(self.memory, "get_pool") and not getattr(self.memory, "_mock", False):
             pool = self.memory.get_pool()
             conn = pool.acquire(timeout=30.0)
             try:
@@ -240,7 +237,11 @@ class VerifiableUnlearning:
                         cur.execute(
                             "INSERT INTO agent_audit (agent_id, action, details, recorded_at) "
                             "VALUES (%s, %s, %s, now())",
-                            (agent_id, "gdpr_art17_unlearn", json.dumps({"memory_id": mid, "compliance": "gdpr_art17"})),
+                            (
+                                agent_id,
+                                "gdpr_art17_unlearn",
+                                json.dumps({"memory_id": mid, "compliance": "gdpr_art17"}),
+                            ),
                         )
                 conn.commit()
             except Exception as e:
@@ -314,7 +315,9 @@ class VerifiableUnlearning:
         if self._signer is not None:
             receipt_json = json.dumps(
                 {k: v for k, v in receipt.items() if k != "signature"},
-                sort_keys=True, separators=(",", ":"), default=str,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
             ).encode()
             sig_value = self._signer.sign_data(receipt_json)
             receipt["signature"] = {

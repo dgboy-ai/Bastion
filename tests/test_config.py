@@ -128,27 +128,31 @@ class TestSettingsSingleton:
 
 
 class TestEnvVarMapping:
-    @pytest.mark.parametrize("env_var,field,expected", [
-        ("BASTION_CONNECTION_STRING", "connection_string", "test-conn"),
-        ("BASTION_MOCK", "mock", True),
-        ("BASTION_BEDROCK_MODEL_ID", "bedrock_model_id", "test-model"),
-        ("BASTION_EMBED_DIM", "embed_dim", 256),
-        ("BASTION_AWS_REGION", "aws_region", "eu-west-1"),
-        ("BASTION_POOL_MIN_SIZE", "pool_min_size", 4),
-        ("BASTION_POOL_MAX_SIZE", "pool_max_size", 20),
-        ("BASTION_RETRY_MAX_RETRIES", "retry_max_retries", 3),
-        ("BASTION_RETRY_BASE_DELAY_MS", "retry_base_delay_ms", 25.0),
-        ("BASTION_RETRY_MAX_DELAY_MS", "retry_max_delay_ms", 5000.0),
-        ("BASTION_RETRY_JITTER_FACTOR", "retry_jitter_factor", 0.75),
-        ("BASTION_LOG_LEVEL", "log_level", "WARNING"),
-        ("BASTION_COMPLIANCE_MODE", "compliance_mode", "eu_ai_act"),
-        ("BASTION_API_KEY", "api_key", "sk-test123"),
-    ])
+    @pytest.mark.parametrize(
+        "env_var,field,expected",
+        [
+            ("BASTION_CONNECTION_STRING", "connection_string", "test-conn"),
+            ("BASTION_MOCK", "mock", True),
+            ("BASTION_BEDROCK_MODEL_ID", "bedrock_model_id", "test-model"),
+            ("BASTION_EMBED_DIM", "embed_dim", 256),
+            ("BASTION_AWS_REGION", "aws_region", "eu-west-1"),
+            ("BASTION_POOL_MIN_SIZE", "pool_min_size", 4),
+            ("BASTION_POOL_MAX_SIZE", "pool_max_size", 20),
+            ("BASTION_RETRY_MAX_RETRIES", "retry_max_retries", 3),
+            ("BASTION_RETRY_BASE_DELAY_MS", "retry_base_delay_ms", 25.0),
+            ("BASTION_RETRY_MAX_DELAY_MS", "retry_max_delay_ms", 5000.0),
+            ("BASTION_RETRY_JITTER_FACTOR", "retry_jitter_factor", 0.75),
+            ("BASTION_LOG_LEVEL", "log_level", "WARNING"),
+            ("BASTION_COMPLIANCE_MODE", "compliance_mode", "eu_ai_act"),
+            ("BASTION_API_KEY", "api_key", "sk-test123"),
+        ],
+    )
     def test_env_maps_to_field(self, monkeypatch, env_var, field, expected):
         monkeypatch.setenv(env_var, str(expected))
         settings = BastionSettings()
         actual = getattr(settings, field)
         from pydantic import SecretStr
+
         if isinstance(actual, SecretStr):
             assert actual.get_secret_value() == expected
         else:

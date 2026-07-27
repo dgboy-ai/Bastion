@@ -4,15 +4,10 @@ mock embeddings, and session memory TF-IDF search."""
 
 from __future__ import annotations
 
-import json
 import os
-import time
-from unittest.mock import AsyncMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from bastion.mock import reset
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -21,12 +16,14 @@ from bastion.mock import reset
 
 def _make_app(**kwargs):
     from bastion.a2a_server import create_a2a_server
+
     return create_a2a_server(mock=True, **kwargs)
 
 
 def _client(app):
     import anyio
     from httpx import ASGITransport, AsyncClient
+
     return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
@@ -354,32 +351,35 @@ class TestMockEmbedding:
         assert v1 == v2
 
     def test_similar_texts_high_similarity(self):
-        from bastion.mock import _mock_embed
         import math
+
+        from bastion.mock import _mock_embed
 
         v1 = _mock_embed("python code api server")
         v2 = _mock_embed("python code api database")
-        dot = sum(a * b for a, b in zip(v1, v2))
+        dot = sum(a * b for a, b in zip(v1, v2, strict=False))
         norm1 = math.sqrt(sum(a * a for a in v1))
         norm2 = math.sqrt(sum(b * b for b in v2))
         sim = dot / (norm1 * norm2)
         assert sim > 0.7  # Should be very similar (mock embeddings are less discriminative)
 
     def test_different_topics_low_similarity(self):
-        from bastion.mock import _mock_embed
         import math
+
+        from bastion.mock import _mock_embed
 
         v1 = _mock_embed("python code api server database")
         v2 = _mock_embed("invoice payment budget revenue cost")
-        dot = sum(a * b for a, b in zip(v1, v2))
+        dot = sum(a * b for a, b in zip(v1, v2, strict=False))
         norm1 = math.sqrt(sum(a * a for a in v1))
         norm2 = math.sqrt(sum(b * b for b in v2))
         sim = dot / (norm1 * norm2)
         assert sim < 0.7  # Should be less similar
 
     def test_unit_normalized(self):
-        from bastion.mock import _mock_embed
         import math
+
+        from bastion.mock import _mock_embed
 
         v = _mock_embed("test text")
         norm = math.sqrt(sum(x * x for x in v))

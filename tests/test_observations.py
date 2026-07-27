@@ -1,9 +1,10 @@
 """Tests for Observations — Meta-Pattern Detection."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime, timedelta
 
+from bastion.models import MemoryRecord
 from bastion.observations import (
     Observation,
     ObservationDetector,
@@ -11,10 +12,9 @@ from bastion.observations import (
     _extract_entities,
     _extract_ngrams,
 )
-from bastion.models import MemoryRecord
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _mem(content: str, memory_id: str = "m1", created_at: datetime | None = None) -> MemoryRecord:
     return MemoryRecord(
@@ -36,6 +36,7 @@ class FakeObsEngine:
 
 
 # ── Unit Tests ───────────────────────────────────────────────────────────────
+
 
 class TestExtractNgrams:
     def test_bigrams(self):
@@ -96,6 +97,7 @@ class TestObservationReport:
 
 # ── Integration Tests ────────────────────────────────────────────────────────
 
+
 class TestObservationDetector:
     def setup_method(self):
         self.engine = FakeObsEngine()
@@ -107,31 +109,37 @@ class TestObservationDetector:
         assert len(report.observations) == 0
 
     def test_too_few_memories(self):
-        self.engine._memories.extend([
-            _mem("CockroachDB is great", memory_id="m1"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("CockroachDB is great", memory_id="m1"),
+            ]
+        )
         report = self.detector.detect()
         assert len(report.observations) == 0
 
     def test_detects_recurring_themes(self):
         # Create memories with repeated bigrams
-        self.engine._memories.extend([
-            _mem("CockroachDB vector search is fast", memory_id="m1"),
-            _mem("CockroachDB vector indexing is efficient", memory_id="m2"),
-            _mem("CockroachDB vector queries are scalable", memory_id="m3"),
-            _mem("Unrelated content about cooking recipes", memory_id="m4"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("CockroachDB vector search is fast", memory_id="m1"),
+                _mem("CockroachDB vector indexing is efficient", memory_id="m2"),
+                _mem("CockroachDB vector queries are scalable", memory_id="m3"),
+                _mem("Unrelated content about cooking recipes", memory_id="m4"),
+            ]
+        )
         report = self.detector.detect()
         themes = [o for o in report.observations if o.pattern_type == "recurring_theme"]
         assert len(themes) >= 1
         assert any("cockroachdb" in o.description.lower() for o in themes)
 
     def test_detects_entity_clusters(self):
-        self.engine._memories.extend([
-            _mem("Bedrock embeddings are used for vector search", memory_id="m1"),
-            _mem("Bedrock Titan generates 1024-dim vectors", memory_id="m2"),
-            _mem("Bedrock is integrated with the memory layer", memory_id="m3"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("Bedrock embeddings are used for vector search", memory_id="m1"),
+                _mem("Bedrock Titan generates 1024-dim vectors", memory_id="m2"),
+                _mem("Bedrock is integrated with the memory layer", memory_id="m3"),
+            ]
+        )
         report = self.detector.detect()
         entities = [o for o in report.observations if o.pattern_type == "entity_cluster"]
         assert len(entities) >= 1
@@ -139,34 +147,40 @@ class TestObservationDetector:
 
     def test_detects_temporal_trends(self):
         now = datetime.now(UTC)
-        self.engine._memories.extend([
-            _mem("MCP server configuration is important", memory_id="m1", created_at=now - timedelta(hours=1)),
-            _mem("MCP server tools are registered", memory_id="m2", created_at=now - timedelta(hours=2)),
-            _mem("MCP server health check passed", memory_id="m3", created_at=now - timedelta(hours=3)),
-            _mem("Old MCP content from weeks ago", memory_id="m4", created_at=now - timedelta(days=10)),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("MCP server configuration is important", memory_id="m1", created_at=now - timedelta(hours=1)),
+                _mem("MCP server tools are registered", memory_id="m2", created_at=now - timedelta(hours=2)),
+                _mem("MCP server health check passed", memory_id="m3", created_at=now - timedelta(hours=3)),
+                _mem("Old MCP content from weeks ago", memory_id="m4", created_at=now - timedelta(days=10)),
+            ]
+        )
         report = self.detector.detect()
-        trends = [o for o in report.observations if o.pattern_type == "temporal_trend"]
+        [o for o in report.observations if o.pattern_type == "temporal_trend"]
         # May or may not find trends depending on the data distribution
         # The key is it doesn't crash
 
     def test_detects_co_occurrences(self):
-        self.engine._memories.extend([
-            _mem("Bedrock and CockroachDB work together for embeddings", memory_id="m1"),
-            _mem("Bedrock embeddings are stored in CockroachDB tables", memory_id="m2"),
-            _mem("CockroachDB hosts Bedrock vectors via C-SPANN index", memory_id="m3"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("Bedrock and CockroachDB work together for embeddings", memory_id="m1"),
+                _mem("Bedrock embeddings are stored in CockroachDB tables", memory_id="m2"),
+                _mem("CockroachDB hosts Bedrock vectors via C-SPANN index", memory_id="m3"),
+            ]
+        )
         report = self.detector.detect()
         cooccs = [o for o in report.observations if o.pattern_type == "co_occurrence"]
         assert len(cooccs) >= 1
 
     def test_observations_sorted_by_confidence(self):
-        self.engine._memories.extend([
-            _mem("CockroachDB vector search is fast and scalable", memory_id="m1"),
-            _mem("CockroachDB vector indexing is efficient and quick", memory_id="m2"),
-            _mem("CockroachDB vector queries scale horizontally", memory_id="m3"),
-            _mem("CockroachDB vector performance is excellent", memory_id="m4"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("CockroachDB vector search is fast and scalable", memory_id="m1"),
+                _mem("CockroachDB vector indexing is efficient and quick", memory_id="m2"),
+                _mem("CockroachDB vector queries scale horizontally", memory_id="m3"),
+                _mem("CockroachDB vector performance is excellent", memory_id="m4"),
+            ]
+        )
         report = self.detector.detect()
         if len(report.observations) > 1:
             for i in range(len(report.observations) - 1):
@@ -174,11 +188,13 @@ class TestObservationDetector:
 
     def test_max_observations_limit(self):
         detector = ObservationDetector(self.engine, min_frequency=2, max_observations=3)
-        self.engine._memories.extend([
-            _mem("Alpha beta gamma delta", memory_id="m1"),
-            _mem("Alpha beta gamma epsilon", memory_id="m2"),
-            _mem("Alpha beta gamma zeta", memory_id="m3"),
-            _mem("Alpha beta gamma eta", memory_id="m4"),
-        ])
+        self.engine._memories.extend(
+            [
+                _mem("Alpha beta gamma delta", memory_id="m1"),
+                _mem("Alpha beta gamma epsilon", memory_id="m2"),
+                _mem("Alpha beta gamma zeta", memory_id="m3"),
+                _mem("Alpha beta gamma eta", memory_id="m4"),
+            ]
+        )
         report = detector.detect()
         assert len(report.observations) <= 3

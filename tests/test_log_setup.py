@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 import os
 
-import pytest
-
-from bastion.log_setup import configure_logging, get_logger, _redact_secrets, _SENSITIVE_KEYS
+from bastion.log_setup import _SENSITIVE_KEYS, _redact_secrets, configure_logging, get_logger
 
 
 class TestConfigureLogging:
@@ -17,12 +14,14 @@ class TestConfigureLogging:
 
     def test_sets_log_level_from_env(self):
         import unittest.mock as mock
+
         with mock.patch.dict(os.environ, {"BASTION_LOG_LEVEL": "DEBUG"}):
             configure_logging()
             # Should not raise — logging is configured with DEBUG level
 
     def test_defaults_to_info(self):
         import unittest.mock as mock
+
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("BASTION_LOG_LEVEL", None)
             configure_logging()

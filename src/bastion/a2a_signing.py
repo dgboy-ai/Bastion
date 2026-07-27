@@ -87,12 +87,14 @@ class AgentCardSigner:
                 return cls(pem)
             logger.warning(
                 "Base64-decoded key from %s is %d bytes (expected 32 for Ed25519)",
-                env_var, len(raw_bytes),
+                env_var,
+                len(raw_bytes),
             )
         except Exception as exc:
             logger.warning(
                 "Failed to parse %s as base64 Ed25519 key: %s",
-                env_var, exc,
+                env_var,
+                exc,
             )
         return cls(raw)
 
@@ -269,14 +271,18 @@ class TrustedKeyRegistry:
                     return True
                 logger.warning(
                     "TOFU: key mismatch for agent %s (expected %s, got %s)",
-                    agent_id, existing[:12], fingerprint[:12],
+                    agent_id,
+                    existing[:12],
+                    fingerprint[:12],
                 )
                 return False
 
             # Strict/allowlist: unknown key rejected
             logger.warning(
                 "Untrusted key fingerprint %s (mode=%s, agent=%s)",
-                fingerprint[:12], self._mode, agent_id or "unknown",
+                fingerprint[:12],
+                self._mode,
+                agent_id or "unknown",
             )
             return False
 

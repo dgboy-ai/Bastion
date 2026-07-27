@@ -9,6 +9,7 @@ Usage:
     proc.record_workflow("deploy", ["lint", "test", "build", "deploy"])
     workflows = proc.find_similar_workflows("deploy to production")
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ logger = get_logger(__name__)
 @dataclass
 class WorkflowPattern:
     """A detected recurring workflow pattern."""
+
     pattern_id: str = ""
     name: str = ""
     steps: list[str] = field(default_factory=list)
@@ -47,6 +49,7 @@ class WorkflowPattern:
 @dataclass
 class DecisionPattern:
     """A learned decision pattern."""
+
     pattern_id: str = ""
     condition: str = ""
     action: str = ""
@@ -141,14 +144,16 @@ class ProceduralMemory:
             if not meta.get("procedural"):
                 continue
 
-            patterns.append(WorkflowPattern(
-                pattern_id=record.memory_id,
-                name=meta.get("workflow_name", "unknown"),
-                steps=meta.get("steps", []),
-                frequency=meta.get("frequency", 1),
-                tools_used=meta.get("tools_used", []),
-                metadata=meta,
-            ))
+            patterns.append(
+                WorkflowPattern(
+                    pattern_id=record.memory_id,
+                    name=meta.get("workflow_name", "unknown"),
+                    steps=meta.get("steps", []),
+                    frequency=meta.get("frequency", 1),
+                    tools_used=meta.get("tools_used", []),
+                    metadata=meta,
+                )
+            )
 
         return patterns
 

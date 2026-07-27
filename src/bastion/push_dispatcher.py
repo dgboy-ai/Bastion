@@ -8,8 +8,6 @@ Supports both CockroachDB-backed (real) and in-memory (mock) modes.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import threading
 import time
 from typing import Any
@@ -33,6 +31,7 @@ def _is_private_url(url: str) -> bool:
     """SSRF protection: block private/local/internal IPs, domains, and non-HTTPS schemes."""
     import ipaddress
     from urllib.parse import urlparse
+
     try:
         parsed = urlparse(url)
         hostname = parsed.hostname or ""
@@ -53,9 +52,7 @@ def _is_private_url(url: str) -> bool:
     blocked = ("localhost", "0.0.0.0", "::1")
     if hostname.lower() in blocked:
         return True
-    if hostname.endswith((".local", ".internal", ".localhost")):
-        return True
-    return False
+    return hostname.endswith((".local", ".internal", ".localhost"))
 
 
 class PushNotificationDispatcher:
@@ -169,7 +166,10 @@ class PushNotificationDispatcher:
     ) -> None:
         """Actual delivery logic with retries."""
         if _is_private_url(callback_url):
-            logger.warning("SSRF blocked callback URL at delivery", extra={"task_id": task_id, "callback_url": callback_url})
+            logger.warning(
+                "SSRF blocked callback URL at delivery",
+                extra={"task_id": task_id, "callback_url": callback_url},
+            )
             return
 
         payload = {
@@ -219,7 +219,7 @@ class PushNotificationDispatcher:
                 )
 
             if attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
+                time.sleep(_RETRY_DELAY_BASE * (2**attempt))
 
         logger.error(
             "Push notification failed after %d attempts",

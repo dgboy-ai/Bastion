@@ -7,9 +7,9 @@ import hashlib
 import secrets
 
 import pytest
+from mcp.shared.auth import OAuthClientInformationFull
 
 from bastion.auth_provider import BastionOAuthProvider
-from mcp.shared.auth import OAuthClientInformationFull
 
 
 @pytest.fixture
@@ -24,6 +24,7 @@ def provider():
 @pytest.fixture
 def client_info():
     from pydantic import AnyUrl
+
     return OAuthClientInformationFull(
         client_id="test-client",
         client_secret="test-secret",
@@ -40,14 +41,15 @@ class TestScopeEscalation:
     async def test_refresh_token_cannot_escalate_scopes(self, provider, client_info):
         """Requested scopes must be subset of original scopes."""
         from mcp.server.auth.provider import AuthorizationParams
-        from bastion.auth_provider import store_pkce_verifier
         from pydantic import AnyUrl
+
+        from bastion.auth_provider import store_pkce_verifier
 
         # Generate PKCE challenge
         code_verifier = secrets.token_urlsafe(32)
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode("ascii")).digest()
-        ).rstrip(b"=").decode()
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode()
+        )
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:3000/callback"),
@@ -80,13 +82,14 @@ class TestScopeEscalation:
     async def test_refresh_token_subset_scopes_allowed(self, provider, client_info):
         """Requested scopes that are a subset of original should be allowed."""
         from mcp.server.auth.provider import AuthorizationParams
-        from bastion.auth_provider import store_pkce_verifier
         from pydantic import AnyUrl
 
+        from bastion.auth_provider import store_pkce_verifier
+
         code_verifier = secrets.token_urlsafe(32)
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode("ascii")).digest()
-        ).rstrip(b"=").decode()
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("ascii")).digest()).rstrip(b"=").decode()
+        )
 
         params = AuthorizationParams(
             redirect_uri=AnyUrl("http://localhost:3000/callback"),
@@ -104,7 +107,5 @@ class TestScopeEscalation:
 
         refresh_token = await provider.load_refresh_token(client_info, token.refresh_token)
         # Request only memory:read (subset of original)
-        new_token = await provider.exchange_refresh_token(
-            client_info, refresh_token, ["memory:read"]
-        )
+        new_token = await provider.exchange_refresh_token(client_info, refresh_token, ["memory:read"])
         assert "memory:read" in new_token.scope.split()

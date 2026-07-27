@@ -52,7 +52,10 @@ class TestIETFAATRecord:
 
     def test_to_dict_includes_timestamp(self):
         record = IETFAATRecord(
-            agent_id="a1", action="store", target="t1", outcome="ok",
+            agent_id="a1",
+            action="store",
+            target="t1",
+            outcome="ok",
         )
         d = record.to_dict()
         assert "timestamp" in d
@@ -75,6 +78,7 @@ class TestIETFAATRecord:
         record = IETFAATRecord("a1", "store", "t1", "ok")
         line = record.to_jsonl()
         import json
+
         parsed = json.loads(line)
         assert parsed["agent_id"] == "a1"
         assert parsed["action"] == "store"
@@ -267,10 +271,16 @@ class TestVerifiableUnlearning:
         pubkey_pem = receipt["signature"]["publicKeyPem"]
         pubkey = serialization.load_pem_public_key(pubkey_pem.encode())
         sig_value = __import__("base64").b64decode(receipt["signature"]["value"])
-        receipt_json = __import__("json").dumps(
-            {k: v for k, v in receipt.items() if k != "signature"},
-            sort_keys=True, separators=(",", ":"), default=str,
-        ).encode()
+        receipt_json = (
+            __import__("json")
+            .dumps(
+                {k: v for k, v in receipt.items() if k != "signature"},
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+            .encode()
+        )
         try:
             pubkey.verify(sig_value, receipt_json)
             valid = True
@@ -298,6 +308,7 @@ class TestVerifiableUnlearning:
         gdpr_entries = [e for e in entries if e.action == "gdpr_art17_unlearn"]
         assert len(gdpr_entries) == 1
         import json
+
         details = gdpr_entries[0].details
         if isinstance(details, str):
             details = json.loads(details)
@@ -309,6 +320,7 @@ class TestVerifiableUnlearning:
         v = VerifiableUnlearning(None)
         root = v._compute_merkle_root([])
         from bastion.merkle import MerkleTree
+
         assert root == MerkleTree._hash("")
         assert len(root) == 64
 

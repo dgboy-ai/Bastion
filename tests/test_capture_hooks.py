@@ -1,10 +1,8 @@
 """Tests for Capture Hooks."""
+
 from __future__ import annotations
 
-import pytest
-from datetime import UTC, datetime
-
-from bastion.capture_hooks import CaptureHooks, CaptureEvent
+from bastion.capture_hooks import CaptureEvent, CaptureHooks
 
 
 class FakeEngine:

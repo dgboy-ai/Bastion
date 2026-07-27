@@ -175,8 +175,7 @@ class A2ATaskStore:
                 sql = (
                     "SELECT task_id, agent_id, skill_id, status, callback_url, "
                     "artifacts, created_at, completed_at "
-                    "FROM a2a_tasks" + where_clause +
-                    " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+                    "FROM a2a_tasks" + where_clause + " ORDER BY created_at DESC LIMIT %s OFFSET %s"
                 )
                 params.extend([limit, offset])
                 cur.execute(sql, params)

@@ -6,10 +6,9 @@ corrupt the hash chain, cause data races, or produce inconsistent state.
 
 from __future__ import annotations
 
-import math
+import contextlib
 import threading
 import time
-from collections import Counter
 
 import pytest
 
@@ -64,15 +63,13 @@ class TestConcurrentStores:
         for i, record in enumerate(records):
             if i == 0:
                 assert record.previous_hash is None, (
-                    f"First record (index 0) should have no previous_hash, "
-                    f"got {record.previous_hash}"
+                    f"First record (index 0) should have no previous_hash, got {record.previous_hash}"
                 )
             else:
                 # The previous_hash should match some earlier record's hash
                 earlier_hashes = {r.cryptographic_hash for r in records[:i]}
                 assert record.previous_hash in earlier_hashes, (
-                    f"Record {i} previous_hash {record.previous_hash} "
-                    f"not found in {i} earlier hashes"
+                    f"Record {i} previous_hash {record.previous_hash} not found in {i} earlier hashes"
                 )
 
     def test_50_concurrent_stores_all_unique_ids(self, mem):
@@ -251,9 +248,7 @@ class TestConcurrentSearch:
 
         assert not errors
         for mem_type, types_found in results:
-            assert all(t == mem_type for t in types_found), (
-                f"Expected all {mem_type}, got {types_found}"
-            )
+            assert all(t == mem_type for t in types_found), f"Expected all {mem_type}, got {types_found}"
 
 
 # ── Connection Pool Under Load ────────────────────────────────────────────────
@@ -381,10 +376,9 @@ class TestCircuitBreakerConcurrency:
                     pass  # Expected when circuit opens
 
         # Launch mixed threads
-        threads = (
-            [threading.Thread(target=fail_n, args=(3,)) for _ in range(5)]
-            + [threading.Thread(target=succeed_n, args=(3,)) for _ in range(5)]
-        )
+        threads = [threading.Thread(target=fail_n, args=(3,)) for _ in range(5)] + [
+            threading.Thread(target=succeed_n, args=(3,)) for _ in range(5)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -406,10 +400,8 @@ class TestCircuitBreakerConcurrency:
         )
         # Open the circuit
         for _ in range(2):
-            try:
+            with contextlib.suppress(Exception):
                 cb.call(lambda: (_ for _ in ()).throw(RuntimeError()))
-            except Exception:
-                pass
 
         time.sleep(2.1)  # Wait for recovery timeout to enter HALF_OPEN
 
@@ -454,10 +446,8 @@ class TestCircuitBreakerConcurrency:
         )
         # Trigger OPEN
         for _ in range(2):
-            try:
+            with contextlib.suppress(Exception):
                 cb.call(lambda: (_ for _ in ()).throw(RuntimeError()))
-            except Exception:
-                pass
 
         assert ("callback-test", "closed", "open") in transitions
 

@@ -158,6 +158,7 @@ class TestFreshnessScore:
 
     def test_old_memory_scores_lower(self, memory):
         from bastion.mock import _agent_data, _lock
+
         record = memory.store("fact", "old data")
         old_id = record.memory_id
         with _lock:
@@ -278,8 +279,10 @@ class TestSelfCheckGate:
 
     def test_fallback_on_exception(self, memory):
         triples = [("Bob", "likes", "Python", "entity", 0.8)]
+
         def broken_client():
             raise RuntimeError("Groq connection failed")
+
         memory._kg._get_groq_client = broken_client  # type: ignore
         result = memory._kg._self_check_triples("Bob likes Python", triples)
         assert result == triples, "Should return original triples on exception"

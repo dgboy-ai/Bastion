@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from bastion.mock import reset
 
 
@@ -13,6 +11,7 @@ class TestMessaging:
 
     def test_broadcast_returns_message_record(self):
         from bastion.memory import BastionMemory
+
         mem = BastionMemory("agent-1", mock=True)
         msg = mem.broadcast("task_complete", {"task_id": "t1"})
         assert msg.event_type == "task_complete"
@@ -21,6 +20,7 @@ class TestMessaging:
 
     def test_poll_messages_returns_unread(self):
         from bastion.memory import BastionMemory
+
         mem = BastionMemory("agent-1", mock=True)
         mem.broadcast("alert", {"level": "warning"})
         messages = mem.poll_messages()
@@ -29,6 +29,7 @@ class TestMessaging:
 
     def test_poll_messages_marks_as_read(self):
         from bastion.memory import BastionMemory
+
         mem = BastionMemory("agent-1", mock=True)
         mem.broadcast("event1", {})
         mem.broadcast("event2", {})
@@ -39,6 +40,7 @@ class TestMessaging:
 
     def test_namespace_isolation(self):
         from bastion.memory import BastionMemory
+
         mem1 = BastionMemory("agent-1", mock=True)
         mem2 = BastionMemory("agent-2", mock=True)
         mem1.broadcast("event1", {}, namespace="ns-a")
@@ -52,6 +54,7 @@ class TestMessaging:
 
     def test_broadcast_empty_payload(self):
         from bastion.memory import BastionMemory
+
         mem = BastionMemory("agent-1", mock=True)
         msg = mem.broadcast("ping", {})
         assert msg.payload == {}

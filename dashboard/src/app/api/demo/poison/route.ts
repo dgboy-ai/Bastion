@@ -1,6 +1,7 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
+import { guardCheck } from "@/lib/guard";
 import { createHash, randomUUID } from "crypto";
 
 const BASTION_REGION = process.env.BASTION_CRDB_REGION || "aws-ap-south-1";
@@ -73,7 +74,18 @@ export async function POST(request: Request) {
       return apiError("Invalid JSON body", 400);
     }
     const agentId = String(body.agentId || "agent-demo").slice(0, 128);
-    const attackScenario = ATTACK_SCENARIOS[Math.floor(Math.random() * ATTACK_SCENARIOS.length)];
+    const customContent = body.customContent ? String(body.customContent).slice(0, 500) : null;
+    const attackScenario = customContent
+      ? {
+          type: "custom_attack",
+          content: customContent,
+          patternsBlocked: ["custom"],
+          risk: "CRITICAL",
+          description: "User-supplied attack string tested against OWASP ASI06 guard",
+          attackerGoal: "Test the guard with custom input",
+          withoutBastion: "Agent would process the malicious input without detection",
+        }
+      : ATTACK_SCENARIOS[Math.floor(Math.random() * ATTACK_SCENARIOS.length)];
     const startTime = Date.now();
 
     // ─── 1. SNAPSHOT BEFORE ATTACK ──────────────────────────
@@ -101,15 +113,11 @@ export async function POST(request: Request) {
       : 87;
     const lastHash = lastMem.rows[0]?.cryptographic_hash as string || createHash("sha256").update("genesis-" + agentId).digest("hex");
 
-    // ─── 2. OWASP ASI06 GUARD (choreographed for demo) ───────
-    const guardResult = {
-      safe: false,
-      findings: attackScenario.patternsBlocked.map(p => `${p}: detected by OWASP ASI06 Guard (29 patterns + Groq LLM)`),
-      risk: attackScenario.risk,
-    };
+    // ─── 2. RUN REAL OWASP ASI06 GUARD ────────────────────────
+    const poisonContent = attackScenario.content;
+    const guardResult = guardCheck(poisonContent);
 
     // ─── 3. INSERT POISON MEMORY ────────────────────────────
-    const poisonContent = attackScenario.content;
     const poisonHash = createHash("sha256").update(lastHash + poisonContent + agentId + Date.now()).digest("hex");
     let poisonEmbedding: number[];
     try {
@@ -188,25 +196,34 @@ export async function POST(request: Request) {
           : `Agent has ${beforeMems.rowCount} memories with avg trust ${trustBefore.toFixed(0)}%. Hash chain head: ${lastHash.slice(0, 16)}...`,
       },
 
-      // ── ATTACK ──
+      // ── ATTACK (all derived from real guard detection) ──
       attack: {
         id: poisonId,
-        type: attackScenario.type,
-        description: attackScenario.description,
+        type: guardResult.findings[0]?.threatType?.toLowerCase().replace(/\s+/g, "_") || "unknown_attack",
+        description: guardResult.findings.length > 0
+          ? `Detected ${guardResult.findings.length} threat pattern(s) in supplied content`
+          : "No threats detected in supplied content",
         content: poisonContent,
-        attackerGoal: attackScenario.attackerGoal,
-        withoutBastion: attackScenario.withoutBastion,
-        patternsBlocked: attackScenario.patternsBlocked,
-        risk: attackScenario.risk,
+        attackerGoal: guardResult.findings.length > 0
+          ? `Attempts to ${guardResult.findings[0].threatType.toLowerCase()} — ${guardResult.findings.map((f: {threatType: string}) => f.threatType).join(", ")}`
+          : "Input passed guard with no detections",
+        risk: guardResult.findings.some((f: {severity: string}) => f.severity === "critical") ? "CRITICAL"
+          : guardResult.findings.some((f: {severity: string}) => f.severity === "high") ? "HIGH"
+          : guardResult.findings.length > 0 ? "MEDIUM" : "NONE",
+        findings: guardResult.findings.map((f: {threatType: string; severity: string; confidence: number}) => ({
+          threat: f.threatType,
+          severity: f.severity,
+          confidence: f.confidence,
+        })),
       },
 
       // ── GUARD DETECTION ──
       guard: {
-        blocked: !guardResult.safe,
-        risk: guardResult.risk,
-        findings: guardResult.findings,
-        scanLatency: "choreographed (real guard: ~734ms via Groq LLM)",
-        method: "OWASP ASI06 MemoryGuard — 40+ patterns (94% detection, ~32ms) + Groq LLM classification",
+        blocked: !guardResult.isSafe,
+        risk: guardResult.poisoningRisk,
+        findings: guardResult.findings.map((f: { threatType: string; severity: string; confidence: number }) => `${f.threatType} (${f.severity}, confidence=${f.confidence.toFixed(2)})`),
+        scanLatency: `${guardResult.scanLatencyMs}ms (pattern-only, 40+ ASI06 detectors)`,
+        method: "OWASP ASI06 MemoryGuard — 40+ patterns (94% detection, ~32ms)",
       },
 
       // ── AFTER STATE ──

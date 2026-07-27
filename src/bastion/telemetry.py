@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -31,8 +32,19 @@ def setup_otel(
 ):
     if not _has_otel_sdk:
         return None
+    if exporter is None:
+        otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if otel_endpoint:
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+                exporter = OTLPSpanExporter(endpoint=otel_endpoint)
+            except ImportError:
+                pass
+        if exporter is None:
+            exporter = ConsoleSpanExporter()
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-    provider.add_span_processor(BatchSpanProcessor(exporter or ConsoleSpanExporter()))
+    provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     return trace.get_tracer(service_name, "0.1.0")
 
@@ -84,6 +96,7 @@ class _NullSpan:
 class _NullContext:
     def __enter__(self):
         return None
+
     def __exit__(self, *args):
         pass
 
@@ -231,9 +244,14 @@ class TracedBastionMemory:
         with self._span("bastion.correct_memory", {"memory_id": memory_id}):
             return self._memory.correct_memory(memory_id, new_content)
 
-    def list_memories(self, memory_type: str | None = None, limit: int = 50, offset: int = 0) -> list[MemoryRecord]:
-        with self._span("bastion.list_memories", {"limit": limit, "offset": offset}):
-            return self._memory.list_memories(memory_type, limit, offset)
+    def list_memories(
+        self,
+        memory_type: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> list[MemoryRecord]:
+        with self._span("bastion.list_memories", {"limit": limit, "cursor": cursor or ""}):
+            return self._memory.list_memories(memory_type, limit, cursor)
 
     def apply_patch(self, memory_id: str, patch_ops: list[dict]) -> MemoryRecord | None:
         with self._span("bastion.apply_patch", {"memory_id": memory_id}):

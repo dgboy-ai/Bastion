@@ -32,6 +32,7 @@ class TestRealCockroachDB:
     @pytest.fixture
     def memory(self):
         import uuid
+
         conn = os.environ["BASTION_CONN"]
         agent_id = f"integration-test-{uuid.uuid4().hex[:8]}"
         inst = BastionMemory(
@@ -48,6 +49,7 @@ class TestRealCockroachDB:
     def _hash_embed(text):
         """Deterministic hash-based embedding for tests (bypasses Bedrock)."""
         import hashlib
+
         h = hashlib.sha256(text.encode()).digest()
         vec = []
         for i in range(1024):
@@ -58,8 +60,12 @@ class TestRealCockroachDB:
 
     def test_store_and_search(self, memory):
         """Store a memory and verify it can be searched."""
-        record = memory.store("fact", "CockroachDB is a distributed SQL database",
-                              metadata={"_precomputed_embedding": self._hash_embed("CockroachDB is a distributed SQL database")})
+        embedding = self._hash_embed("CockroachDB is a distributed SQL database")
+        record = memory.store(
+            "fact",
+            "CockroachDB is a distributed SQL database",
+            metadata={"_precomputed_embedding": embedding},
+        )
         assert isinstance(record, MemoryRecord)
         assert record.agent_id == memory.agent_id
         assert record.memory_type == "fact"
@@ -131,10 +137,16 @@ class TestRealCockroachDB:
         agent_b._embed = self._hash_embed
 
         try:
-            agent_a.store("fact", "Secret of agent alpha",
-                          metadata={"_precomputed_embedding": self._hash_embed("Secret of agent alpha")})
-            agent_b.store("fact", "Secret of agent beta",
-                          metadata={"_precomputed_embedding": self._hash_embed("Secret of agent beta")})
+            agent_a.store(
+                "fact",
+                "Secret of agent alpha",
+                metadata={"_precomputed_embedding": self._hash_embed("Secret of agent alpha")},
+            )
+            agent_b.store(
+                "fact",
+                "Secret of agent beta",
+                metadata={"_precomputed_embedding": self._hash_embed("Secret of agent beta")},
+            )
 
             a_all = agent_a.list_all()
             b_all = agent_b.list_all()
@@ -155,11 +167,7 @@ class TestRealCockroachDB:
         entries = memory.audit()
 
         assert len(entries) >= 1
-        assert any(
-            e.action == "memory_store"
-            and e.agent_id == memory.agent_id
-            for e in entries
-        )
+        assert any(e.action == "memory_store" and e.agent_id == memory.agent_id for e in entries)
 
     def test_memory_update(self, memory):
         """Verify memory content can be corrected."""

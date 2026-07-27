@@ -9,6 +9,7 @@ Usage:
     packed = packer.pack(budget_tokens=4000, query="What is the user's preference?")
     print(f"Packed {packed.total_tokens} tokens across {packed.memory_count} memories")
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -33,12 +34,14 @@ def _estimate_tokens(text: str) -> int:
     if not text:
         return 1
     # Check for CJK characters (Unicode ranges)
-    cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff' or '\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff')
+    cjk_count = sum(
+        1 for c in text if "\u4e00" <= c <= "\u9fff" or "\u3040" <= c <= "\u309f" or "\u30a0" <= c <= "\u30ff"
+    )
     if cjk_count > len(text) * 0.3:
         # Mostly CJK: each character is roughly a token
         return max(1, int(cjk_count * 1.5 + (len(text) - cjk_count) * 0.3))
     # Check if content looks like code/JSON (high density of special chars)
-    special_chars = sum(1 for c in text if c in '{}[](),:;=<>!@#$%^&*')
+    special_chars = sum(1 for c in text if c in "{}[](),:;=<>!@#$%^&*")
     if special_chars > len(text) * 0.1:
         # Code-like: characters / 4 is a better estimate
         return max(1, len(text) // 4)
@@ -50,6 +53,7 @@ def _estimate_tokens(text: str) -> int:
 @dataclass
 class PackedMemory:
     """A memory packed into the context budget."""
+
     memory_id: str
     content: str
     tokens: int
@@ -71,6 +75,7 @@ class PackedMemory:
 @dataclass
 class PackResult:
     """Result of packing memories into a token budget."""
+
     memories: list[PackedMemory] = field(default_factory=list)
     total_tokens: int = 0
     budget_tokens: int = 0
