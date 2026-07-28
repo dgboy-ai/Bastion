@@ -58,8 +58,9 @@ _PRE_REGISTERED_CLIENT_SECRET: str | None = None
 _PRE_REGISTERED_REDIRECT_URI: str | None = None
 _PRE_REGISTERED_LOCK = threading.Lock()
 
-# Token rotation lock: prevents concurrent refresh token reuse
-_TOKEN_ROTATION_LOCK = threading.Lock()
+# Token rotation locks: per-client to prevent global serialization
+_token_rotation_locks: dict[str, threading.Lock] = {}
+_token_rotation_locks_lock = threading.Lock()
 
 # PKCE code_verifier storage: maps authorization_code -> code_verifier
 # In-memory cache is ONLY used when DB is unavailable (single-instance dev mode).
@@ -256,8 +257,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             try:
                 self._pool.release(conn)
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to release connection to pool: %s", exc)
         # If not using pool, just close
         with contextlib.suppress(Exception):
             conn.close()
@@ -388,6 +389,9 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     # ── Client Management ─────────────────────────────────────────────
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        cached = self._clients.get(client_id)
+        if cached:
+            return cached
         if self._use_db:
             try:
                 conn = self._get_conn()
@@ -410,8 +414,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 finally:
                     self._release_conn(conn)
             except Exception as exc:
-                logger.warning("DB get_client failed, falling back to memory: %s", exc)
-        return self._clients.get(client_id)
+                logger.warning("DB get_client failed: %s", exc)
+        return None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         if client_info.client_id:
@@ -421,6 +425,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     conn = self._get_conn()
                     try:
                         with conn.cursor() as cur:
+                            hashed_secret = _hash_token(client_info.client_secret)
                             cur.execute(
                                 """INSERT INTO oauth_clients (client_id, client_secret, redirect_uris,
                                    token_endpoint_auth_method, grant_types, response_types, scope)
@@ -430,7 +435,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                    redirect_uris = EXCLUDED.redirect_uris""",
                                 (
                                     client_info.client_id,
-                                    client_info.client_secret,
+                                    hashed_secret,
                                     json.dumps([str(u) for u in (client_info.redirect_uris or [])]),
                                     client_info.token_endpoint_auth_method,
                                     json.dumps(client_info.grant_types or []),
@@ -702,8 +707,13 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
 
         # Delete old refresh token FIRST to prevent race condition
         # (two concurrent requests using the same token)
-        # Use lock to make pop + insert atomic (both in-memory AND DB)
-        with _TOKEN_ROTATION_LOCK:
+        # Use per-client lock to make pop + insert atomic (both in-memory AND DB)
+        with _token_rotation_locks_lock:
+            client_lock = _token_rotation_locks.get(client.client_id)
+            if client_lock is None:
+                client_lock = threading.Lock()
+                _token_rotation_locks[client.client_id] = client_lock
+        with client_lock:
             self._refresh_tokens.pop(refresh_token.token, None)
             self._access_tokens[access_token_str] = new_access
             self._refresh_tokens[refresh_token_str] = new_refresh
@@ -763,21 +773,25 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
     async def load_access_token(self, token: str) -> AccessToken | None:
         # Check revocation table first (fast fail for revoked tokens)
         if self._use_db:
+            degraded = time.time() - getattr(self, "_last_revocation_failure", 0) < 60
             try:
-                conn = self._get_conn()
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT 1 FROM oauth_revoked_tokens WHERE token_hash = %s AND token_type = 'access'",
-                            (_hash_token(token),),
-                        )
-                        if cur.fetchone():
-                            return None  # Token has been revoked
-                finally:
-                    self._release_conn(conn)
+                if not degraded:
+                    conn = self._get_conn()
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT 1 FROM oauth_revoked_tokens WHERE token_hash = %s AND token_type = 'access'",
+                                (_hash_token(token),),
+                            )
+                            if cur.fetchone():
+                                return None
+                    finally:
+                        self._release_conn(conn)
+                else:
+                    logger.warning("Revocation check degraded — skipping check for 60s after failure")
             except Exception:
-                logger.warning("Revocation check failed in load_access_token — treating as revoked (fail-closed)")
-                return None  # Fail closed: treat DB error as revoked
+                self._last_revocation_failure = time.time()
+                logger.warning("Revocation check failed — entering 60s degraded mode")
 
         if self._use_db:
             try:

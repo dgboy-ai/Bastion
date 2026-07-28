@@ -7,16 +7,27 @@ Agents generate two types of memory:
 This module manages the boundary between them, with automatic promotion
 of high-value session memories to permanent storage.
 
+Supports optional Redis backend for distributed session sync across
+horizontal scale-out. When redis_url is provided, session entries are
+stored in Redis with automatic TTL, enabling multi-instance agents to
+share session state.
+
 Usage:
     session = SessionMemory(memory_engine, session_id="sess-123")
     session.store("fact", "User asked about Python decorators")
     session.store("preference", "User prefers dark mode", promote=True)
     session.consolidate()  # Promote high-value session memories
+
+    # Distributed mode (Redis-backed):
+    session = SessionMemory(memory_engine, session_id="sess-123",
+                            redis_url="redis://localhost:6379/0")
 """
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -26,6 +37,15 @@ from typing import Any
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+_HAS_REDIS = False
+try:
+    import redis as _redis_sync
+    _HAS_REDIS = True
+except ImportError:
+    pass
+
+_MAX_CONTENT_LENGTH = 100_000
 
 
 @dataclass
@@ -56,6 +76,10 @@ class SessionMemory:
     Session memories are stored with a session_id prefix and are automatically
     cleaned up after the session ends. High-value memories can be promoted
     to permanent storage before cleanup.
+
+    When redis_url is provided, entries are also persisted to Redis for
+    distributed session sharing across agent instances. Redis entries auto-expire
+    after session_ttl_seconds.
     """
 
     def __init__(
@@ -65,6 +89,7 @@ class SessionMemory:
         max_session_size: int = 200,
         promotion_threshold: float = 7.0,
         session_ttl_seconds: int = 3600,
+        redis_url: str | None = None,
     ):
         self._memory = memory_engine
         self._session_id = session_id
@@ -74,6 +99,23 @@ class SessionMemory:
         self._entries: list[SessionEntry] = []
         self._created_at = time.time()
         self._lock = threading.Lock()
+        self._redis_url = redis_url or os.environ.get("BASTION_REDIS_URL", "")
+        self._redis: Any = None
+        self._redis_initialized = False
+        if self._redis_url and _HAS_REDIS:
+            self._redis_initialized = True
+            logger.info("SessionMemory configured for Redis at %s (lazy connect)", self._redis_url)
+        elif self._redis_url and not _HAS_REDIS:
+            logger.warning("redis-py not installed, install with: pip install redis")
+
+    def _ensure_redis(self) -> None:
+        if self._redis is not None or not self._redis_initialized:
+            return
+        try:
+            self._redis = _redis_sync.from_url(self._redis_url, decode_responses=True)
+            logger.info("SessionMemory connected to Redis at %s", self._redis_url)
+        except Exception as exc:
+            logger.warning("Redis connect failed, falling back to local-only: %s", exc)
 
     @property
     def session_id(self) -> str:
@@ -89,7 +131,64 @@ class SessionMemory:
 
     @property
     def size(self) -> int:
-        return len(self._entries)
+        with self._lock:
+            return len(self._entries)
+
+    def close(self) -> None:
+        if self._redis is not None:
+            try:
+                self._persist_to_redis()
+                self._redis.close()
+            except Exception as exc:
+                logger.debug("Redis close error: %s", exc)
+
+    def _redis_key(self, suffix: str = "") -> str:
+        return f"bastion:session:{self._session_id}{suffix}"
+
+    def _persist_to_redis(self) -> None:
+        if not self._redis:
+            return
+        try:
+            entries_dict = [e.to_dict() for e in self._entries]
+            self._redis.setex(self._redis_key(), self._session_ttl, json.dumps(entries_dict))
+        except Exception as exc:
+            logger.warning("Redis persist failed: %s", exc)
+
+    def _sync_from_redis(self) -> None:
+        if not self._redis:
+            return
+        try:
+            raw = self._redis.get(self._redis_key())
+            if raw:
+                entries_data = json.loads(raw)
+                with self._lock:
+                    existing_keys = {e.created_at + e.content[:50] for e in self._entries}
+                    for e in entries_data:
+                        key = e.get("created_at", "") + (e.get("content", "")[:50])
+                        if key not in existing_keys:
+                            self._entries.append(
+                                SessionEntry(
+                                    content=e["content"],
+                                    memory_type=e.get("memory_type", "session"),
+                                    metadata=e.get("metadata", {}),
+                                    importance=e.get("importance", 5.0),
+                                    created_at=e.get("created_at", datetime.now(UTC).isoformat()),
+                                    promoted=e.get("promoted", False),
+                                )
+                            )
+                            existing_keys.add(key)
+        except Exception as exc:
+            logger.warning("Redis sync failed, staying with local state: %s", exc)
+
+    def _validate_content(self, content: str) -> str:
+        if not content or not content.strip():
+            raise ValueError("Content must be a non-empty string")
+        if len(content) > _MAX_CONTENT_LENGTH:
+            raise ValueError(f"Content exceeds max length of {_MAX_CONTENT_LENGTH}")
+        return content
+
+    def _clamp(self, value: int, min_val: int = 1, max_val: int | None = None) -> int:
+        return max(min_val, min(value, max_val)) if max_val else max(min_val, value)
 
     def store(
         self,
@@ -108,6 +207,7 @@ class SessionMemory:
             importance: Importance score (0-10).
             promote: If True, immediately promote to permanent memory.
         """
+        self._validate_content(content)
         entry = SessionEntry(
             content=content,
             memory_type=memory_type,
@@ -121,26 +221,35 @@ class SessionMemory:
 
         with self._lock:
             self._entries.append(entry)
-
-        # Enforce session size limit — drop oldest unpinned
-        if len(self._entries) > self._max_session_size:
-            self._entries = self._entries[-self._max_session_size :]
+            if len(self._entries) > self._max_session_size:
+                dropped = len(self._entries) - self._max_session_size
+                self._entries = self._entries[-self._max_session_size :]
+                if dropped > 0:
+                    logger.info("Session truncated: dropped %d oldest entries", dropped)
 
         if promote or importance >= self._promotion_threshold:
-            self._promote_entry(entry)
-            entry.promoted = True
+            if self._promote_entry(entry):
+                entry.promoted = True
 
+        self._ensure_redis()
+        self._persist_to_redis()
         return entry
 
     def search(self, query: str, k: int = 5) -> list[SessionEntry]:
         """Search session memories using TF-IDF-like scoring with recency boost."""
+        if not query or not query.strip():
+            return self.get_recent(k)
+        self._ensure_redis()
+        self._sync_from_redis()
+        k = self._clamp(k, max_val=len(self._entries) if self._entries else 1)
+
+        with self._lock:
+            entries_snapshot = list(self._entries)
+
         query_lower = query.lower()
         query_words = query_lower.split()
         if not query_words:
             return self.get_recent(k)
-
-        with self._lock:
-            entries_snapshot = list(self._entries)
 
         # Build IDF weights from session corpus (log(N/df) approximation)
         total_entries = max(1, len(entries_snapshot))
@@ -155,19 +264,15 @@ class SessionMemory:
         scored = []
         now = time.time()
         for words, entry in entry_words:
-            # TF-IDF: sum of IDF for matching query words
             tfidf = 0.0
             for qw in query_words:
                 if qw in words:
                     df = word_doc_freq.get(qw, 1)
                     idf = math.log(total_entries / df) + 1.0
                     tfidf += idf
-            # Normalize by query length
             tfidf /= max(1, len(query_words))
-            # Recency boost: newer entries score slightly higher
             age_hours = (now - self._created_at) / 3600.0
             recency_boost = 1.0 + 0.05 * max(0, 1.0 - age_hours / 24.0)
-            # Combine with importance
             score = tfidf * (entry.importance / 10.0) * recency_boost
             if score > 0:
                 scored.append((score, entry))
@@ -181,12 +286,19 @@ class SessionMemory:
         Reviews all session entries and promotes those above the
         promotion threshold to the permanent memory store.
         """
+        self._ensure_redis()
+        self._sync_from_redis()
+        with self._lock:
+            entries_snapshot = list(self._entries)
+
         promoted = 0
-        for entry in self._entries:
+        for entry in entries_snapshot:
             if not entry.promoted and entry.importance >= self._promotion_threshold:
-                self._promote_entry(entry)
-                entry.promoted = True
-                promoted += 1
+                if self._promote_entry(entry):
+                    entry.promoted = True
+                    promoted += 1
+
+        self._persist_to_redis()
 
         return {
             "session_id": self._session_id,
@@ -197,21 +309,29 @@ class SessionMemory:
 
     def get_recent(self, n: int = 10) -> list[SessionEntry]:
         """Get the N most recent session entries."""
-        return self._entries[-n:]
+        self._ensure_redis()
+        self._sync_from_redis()
+        n = self._clamp(n)
+        with self._lock:
+            return list(self._entries[-n:])
 
     def get_stats(self) -> dict[str, Any]:
         """Get session statistics."""
+        with self._lock:
+            size = len(self._entries)
+            promoted_count = sum(1 for e in self._entries if e.promoted)
+            avg_importance = (sum(e.importance for e in self._entries) / max(1, size))
         return {
             "session_id": self._session_id,
-            "size": self.size,
+            "size": size,
             "age_seconds": round(self.age_seconds, 1),
             "is_expired": self.is_expired,
-            "promoted_count": sum(1 for e in self._entries if e.promoted),
-            "avg_importance": (sum(e.importance for e in self._entries) / max(1, len(self._entries))),
+            "promoted_count": promoted_count,
+            "avg_importance": avg_importance,
         }
 
-    def _promote_entry(self, entry: SessionEntry) -> None:
-        """Promote a session entry to permanent memory."""
+    def _promote_entry(self, entry: SessionEntry) -> bool:
+        """Promote a session entry to permanent memory. Returns True on success."""
         try:
             self._memory.store(
                 memory_type=entry.memory_type,
@@ -222,8 +342,8 @@ class SessionMemory:
                     "session_id": self._session_id,
                     "promoted_at": datetime.now(UTC).isoformat(),
                 },
-                _skip_guard=True,
-                _guard_bypass_token=True,
             )
+            return True
         except Exception as exc:
             logger.warning("Failed to promote session entry: %s", exc)
+            return False

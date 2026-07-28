@@ -1,0 +1,47 @@
+# ~/.codex/config.toml — Bastion Shield MCP Configuration
+# Copy this to ~/.codex/config.toml
+
+# CockroachDB Cloud Managed MCP Server (12 tools)
+[mcp_servers.cockroachdb-cloud]
+url = "https://cockroachlabs.cloud/mcp"
+http_headers = { "mcp-cluster-id" = "9a423301-d502-42f4-a5e5-1e7664e4e025" }
+# Optional: if you have an API key instead of OAuth
+# bearer_token_env_var = "COCKROACHDB_MCP_API_KEY"
+
+# Bastion Memory MCP Server (31 tools) - runs locally on port 8000
+[mcp_servers.bastion-memory]
+url = "http://127.0.0.1:8000/mcp"
+http_headers = { "Authorization" = "Bearer BASTION_API_KEY_REMOVED" }
+enabled = true
+startup_timeout_sec = 15
+tool_timeout_sec = 60
+
+# Optional: Stitch MCP (if you have access)
+# [mcp_servers.stitch]
+# url = "https://stitch.googleapis.com/mcp"
+# bearer_token_env_var = "STITCH_API_KEY"
+# http_headers = { "X-Goog-Api-Key" = "${STITCH_API_KEY}" }
+
+# Optional: Netlify MCP (STDIO)
+# [mcp_servers.netlify]
+# command = "npx"
+# args = ["-y", "@netlify/mcp"]
+# env_vars = ["NETLIFY_PERSONAL_ACCESS_TOKEN"]
+
+# MCP OAuth callback overrides (if needed for remote dev)
+# mcp_oauth_callback_port = 5555
+# mcp_oauth_callback_url = "https://devbox.example.internal/callback"
+
+# =============================================================================
+# A2A SERVER — NOT IN THIS CONFIG
+# =============================================================================
+# A2A (Agent-to-Agent) is a separate protocol from MCP.
+# Run it in a separate terminal:
+#   python -m bastion.a2a_server
+# 
+# A2A Agent Card: http://127.0.0.1:9998/.well-known/agent-card.json
+# 
+# The MCP tool `a2a_bridge` connects MCP → A2A:
+#   mcp__bastion-memory__a2a_bridge(a2a_url="http://127.0.0.1:9998")
+#   mcp__bastion-memory__a2a_bridge(a2a_url="http://127.0.0.1:9998", skill="memory_search", params={query="..."})
+# =============================================================================

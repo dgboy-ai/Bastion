@@ -1,0 +1,153 @@
+[
+  {
+    "file": "mcp_server.py",
+    "lines": 3373,
+    "remaining_issues": [
+      {
+        "severity": "CRITICAL",
+        "line": 3267,
+        "description": "Unprotected concurrent mutation of _metrics_requests_total dict in RateLimitMiddleware. Multiple threads call `_metrics_requests_total[key] = _metrics_requests_total.get(key, 0) + 1` without holding _metrics_lock. CPython GIL does not make read-modify-write atomic — counter loss/corruption under load.",
+        "code": "_metrics_requests_total[key] = _metrics_requests_total.get(key, 0) + 1"
+      },
+      {
+        "severity": "CRITICAL",
+        "line": 3272,
+        "description": "Unprotected concurrent mutation of _metrics_durations list. `dur_list.append(_elapsed)` and `dur_list.pop(0)` can race, corrupting list internals or losing entries.",
+        "code": "dur_list.append(_elapsed) / dur_list.pop(0)"
+      },
+      {
+        "severity": "HIGH",
+        "line": 235,
+        "description": "_decrement_consumer called BEFORE the double-release O(1) guard in pool.release(). If a connection is double-released, consumer count is decremented twice. _conn_to_consumer.pop() on second call returns None so consumer_counts is safe, but pattern is fragile.",
+        "code": "self._decrement_consumer(conn)\n...\nif id(conn) in self._pool_ids:\n    return"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 374,
+        "description": "Silent `except Exception: pass` in _resolve_memory swallows all errors including programming errors (AttributeError, TypeError). The SET application_name path quietly fails with zero observability.",
+        "code": "except Exception:\n    pass  # Non-critical - don't fail the request"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 1647,
+        "description": "valid_types set is redefined on every iteration of the for loop in memory_store_batch. ~20-element set created per-item for up to 100 items. Wasteful allocation.",
+        "code": "for i, entry in enumerate(memories):\n    ...\n    valid_types = {\"fact\", \"task\", ...}"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 92,
+        "description": "_total_created is used as BOTH a cumulative count in get_stats() and a current-capacity counter in acquire(). _reap_idle_connections decrements it (line 92), making the stat misleadingly named and conflating two concerns.",
+        "code": "self._total_created -= 1  # in _reap_idle_connections\n\"total_created\": self._total_created  # in get_stats"
+      },
+      {
+        "severity": "LOW",
+        "line": 165,
+        "description": "Shadowed import: `from bastion.pool import ConnectionPool` imported inside _load_api_keys when a module-level import exists at line 49.",
+        "code": "from bastion.pool import ConnectionPool  # inside function"
+      },
+      {
+        "severity": "LOW",
+        "line": 2496,
+        "description": "Fragile substring check for --format flag. `\"--format\" in \" \".join(full_cmd)` can false-positive if any argument substring-matches (e.g., a URL containing '--format').",
+        "code": "if \"--format\" not in \" \".join(full_cmd):"
+      }
+    ]
+  },
+  {
+    "file": "a2a_server.py",
+    "lines": 2261,
+    "remaining_issues": [
+      {
+        "severity": "MEDIUM",
+        "line": 1083,
+        "description": "_verify_api_key only checks against the single _api_key variable, NOT the full set of keys from BASTION_MCP_API_KEYS or the agent_auth DB table. Multi-key and dynamically-revocable keys are ignored by A2A server auth.",
+        "code": "def _verify_api_key(provided: str) -> bool:\n    ...\n    return _secrets.compare_digest(provided, _api_key)"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 215,
+        "description": "Key length leaked via timing side-channel in _resolve_role. The `len(k.strip()) == len(api_key_value)` check before compare_digest reveals key length to an attacker with timing measurements.",
+        "code": "if len(k.strip()) == len(api_key_value) and _secrets.compare_digest(k.strip(), api_key_value):"
+      },
+      {
+        "severity": "LOW",
+        "line": 1040,
+        "description": "Dead code: `datetime.datetime.fromtimestamp(...)` result computed and discarded. No side-effect, no variable assignment. Unreachable logic?",
+        "code": "if _auth_max_failures <= 1:\n    datetime.datetime.fromtimestamp(now + _auth_lockout_seconds, tz=datetime.UTC)"
+      },
+      {
+        "severity": "LOW",
+        "line": 190,
+        "description": "Dead keys in _skill_roles: 'broadcast' and 'reinforce' are not in skill_map (line 139), so they can never be invoked. Dead entries with no corresponding method mapping.",
+        "code": "\"broadcast\": \"writer\",\n\"reinforce\": \"writer\","
+      },
+      {
+        "severity": "LOW",
+        "line": 1722,
+        "description": "Trivial ternary where both branches return the same value \"reader\". The expression `\"reader\" if not _api_key else \"reader\"` is always \"reader\". Unnecessary conditional.",
+        "code": "caller_role = _resolve_role(caller_token) if caller_token else (\"reader\" if not _api_key else \"reader\")"
+      },
+      {
+        "severity": "LOW",
+        "line": 1979,
+        "description": "Inconsistent max list limit: MCP server caps at 200, A2A _execute_skill memory_list caps at 500. Different clients get different pagination limits for the same operation.",
+        "code": "limit = max(1, min(int(params.get(\"limit\", 50)), 500))"
+      }
+    ]
+  },
+  {
+    "file": "auth_provider.py",
+    "lines": 891,
+    "remaining_issues": [
+      {
+        "severity": "LOW",
+        "line": 243,
+        "description": "_get_conn has a TOCTOU race on _pool: two threads can both see _pool is None and both create raw psycopg connections. Pool is never created on this path; only _init_pool creates it. Pool stays None for all subsequent calls.",
+        "code": "if self._pool is not None:\n    try:\n        return self._pool.acquire(timeout=5.0)\n    except Exception:\n        pass\nimport psycopg\nreturn psycopg.connect(self._conn_str)"
+      },
+      {
+        "severity": "LOW",
+        "line": 789,
+        "description": "Fail-closed on revocation DB error: if the DB is temporarily unavailable, ALL tokens are treated as revoked. This is secure by default but can cause total auth outage during transient DB failures.",
+        "code": "except Exception:\n    logger.warning(\"Revocation check failed...\")\n    return None"
+      },
+      {
+        "severity": "LOW",
+        "line": 51,
+        "description": "_hash_token uses plain SHA-256 without salt for token hashing in revocation table. Unsalted hashes are vulnerable to rainbow table lookups if the table is compromised.",
+        "code": "return hashlib.sha256(token.encode()).hexdigest()"
+      }
+    ],
+    "checks": {
+      "client_secret_hashed_before_db_storage": "PASS — Line 228-232 (__init__): hashed with hashlib.sha256 before storing in self._clients. Line 428 (register_client): uses _hash_token() which calls SHA-256 before DB INSERT into oauth_clients.",
+      "pkce_verifier_hashed_before_storage": "PASS — Line 83-84: code_verifier SHA-256 hashed with url-safe base64 before DB/memory storage."
+    }
+  },
+  {
+    "file": "pool.py",
+    "lines": 425,
+    "remaining_issues": [
+      {
+        "severity": "HIGH",
+        "line": 235,
+        "description": "_decrement_consumer called BEFORE the double-release O(1) guard check. While the _conn_to_consumer.pop() returns None on second release (making this safe for consumer counts), ordering violates principle: the guard should be the FIRST thing checked.",
+        "code": "def release(self, conn: Any) -> None:\n    self._decrement_consumer(conn)  # BEFORE guard\n    ...\n    if id(conn) in self._pool_ids:\n        return"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 309,
+        "description": "AsyncConnectionPool has no double-release protection at all. No _pool_ids, no O(1) guard. Calling async release() twice returns the same connection to asyncpg pool, causing corruption.",
+        "code": "async def release(self, conn: Any) -> None:\n    ...\n    await self._pool.release(conn)"
+      },
+      {
+        "severity": "MEDIUM",
+        "line": 92,
+        "description": "_total_created conflates two concerns: it's used as a current-connection counter in acquire() (line 181) AND decremented during reaping (line 92). But get_stats() reports it as 'total_created' which implies a cumulative lifetime count.",
+        "code": "self._total_created -= 1  # reaper\n...\nif self._total_created < self.max_size:  # acquire slot check"
+      }
+    ],
+    "checks": {
+      "o1_double_release_check": "PASS — Lines 237-241: `id(conn) in self._pool_ids` is O(1) set membership. _pool_ids is maintained at lines 58 (init), 156 (pop/acquire discard), and 277 (release add)."
+    }
+  }
+]

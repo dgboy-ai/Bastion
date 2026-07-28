@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -230,6 +231,7 @@ class BastionMemory:
         )
 
         self._guard = MemoryGuard()
+        self._embedding_degraded = False
 
         # Sub-modules for extracted concerns
         from bastion.a2a_tasks import A2ATaskStore
@@ -278,12 +280,6 @@ class BastionMemory:
             pool.release(conn)
 
     def _set_rls_context(self, conn: Any) -> None:
-        """Set agent context for RLS filtering within a transaction.
-
-        ``SET LOCAL`` requires an active transaction to take effect.
-        If the connection is in autocommit mode, we start a transaction
-        to ensure RLS is enforced.
-        """
         if not self._rls_enabled:
             return
         was_autocommit = getattr(conn, "autocommit", False)
@@ -294,8 +290,7 @@ class BastionMemory:
                     "Auto-started transaction for RLS context (was autocommit)",
                     extra={"agent_id": self.agent_id},
                 )
-            with conn.cursor() as cur:
-                cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
+            self._refresh_rls_context(conn)
         except Exception as exc:
             if was_autocommit:
                 conn.autocommit = True
@@ -309,6 +304,29 @@ class BastionMemory:
                 raise RuntimeError(
                     f"RLS context setup failed for agent '{self.agent_id}'. Agent data isolation cannot be guaranteed."
                 ) from exc
+
+    def _refresh_rls_context(self, conn: Any) -> None:
+        """Re-set RLS context after a transaction commit (SET LOCAL is scoped to the transaction)."""
+        if not self._rls_enabled:
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
+        except Exception as exc:
+            if not self._mock:
+                logger.error(
+                    "Failed to refresh RLS context — agent data isolation may be compromised",
+                    extra={"agent_id": self.agent_id, "error": str(exc)},
+                )
+
+    def _retry_write(self, conn: Any, operation: Callable[[Any], Any]) -> Any:
+        try:
+            result = self._retry_engine.execute(conn, operation, isolation="serializable")
+            conn.commit()
+            return result
+        except Exception:
+            conn.rollback()
+            raise
 
     @property
     def is_mock(self) -> bool:
@@ -461,44 +479,41 @@ class BastionMemory:
 
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0, consumer_id="store_batch")
-        self._set_rls_context(conn)
         try:
-            for entry in memories:
-                memory_type = entry.get("memory_type", "fact")
-                content = entry.get("content", "")
-                metadata = entry.get("metadata")
-                expires_in = entry.get("expires_in_seconds")
+            self._set_rls_context(conn)
+            last_prev_hash: str | None = None
 
-                meta = dict(metadata) if metadata else {}
-                precomputed = meta.pop("_precomputed_embedding", None)
-                if precomputed is not None:
-                    embedding = precomputed
-                else:
-                    embedding = self._embed(content)
+            def _batch_insert_all(cur: Any) -> list[MemoryRecord]:
+                nonlocal last_prev_hash
+                batch_records: list[MemoryRecord] = []
+                for entry in memories:
+                    memory_type = entry.get("memory_type", "fact")
+                    content = entry.get("content", "")
+                    metadata = entry.get("metadata")
+                    expires_in = entry.get("expires_in_seconds")
 
-                embedding_str = json.dumps(embedding)
-                now = datetime.now(UTC)
-                expires_dt = (now + timedelta(seconds=expires_in)) if expires_in is not None else None
+                    meta = dict(metadata) if metadata else {}
+                    precomputed = meta.pop("_precomputed_embedding", None)
+                    embedding = precomputed if precomputed is not None else self._embed(content)
 
-                def _batch_insert(
-                    cur: Any,
-                    mt: str = memory_type,
-                    ct: str = content,
-                    em: str = embedding_str,
-                    md: dict = meta,
-                    ex: datetime | None = expires_dt,
-                    embedding=embedding,
-                ) -> tuple:
-                    cur.execute(
-                        "SELECT cryptographic_hash FROM agent_memory "
-                        "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
-                        (self.agent_id,),
-                    )
-                    prev_row = cur.fetchone()
-                    prev_hash = prev_row[0] if prev_row else None
+                    embedding_str = json.dumps(embedding)
+                    now = datetime.now(UTC)
+                    expires_dt = (now + timedelta(seconds=expires_in)) if expires_in is not None else None
+
+                    if last_prev_hash is None:
+                        cur.execute(
+                            "SELECT cryptographic_hash FROM agent_memory "
+                            "WHERE agent_id = %s ORDER BY created_at DESC LIMIT 1",
+                            (self.agent_id,),
+                        )
+                        prev_row = cur.fetchone()
+                        prev_hash = prev_row[0] if prev_row else None
+                    else:
+                        prev_hash = last_prev_hash
                     from bastion.crypto import compute_hash
 
-                    crypto_hash = compute_hash(ct, md, prev_hash)
+                    crypto_hash = compute_hash(content, meta, prev_hash)
+                    last_prev_hash = crypto_hash
                     cur.execute(
                         "INSERT INTO agent_memory (agent_id, memory_type, content, embedding, metadata, "
                         "previous_hash, cryptographic_hash, expires_at, importance_score, trust_level, "
@@ -507,40 +522,39 @@ class BastionMemory:
                         "RETURNING memory_id, created_at",
                         (
                             self.agent_id,
-                            mt,
-                            ct,
-                            em,
-                            json.dumps(md),
+                            memory_type,
+                            content,
+                            embedding_str,
+                            json.dumps(meta),
                             prev_hash,
                             crypto_hash,
-                            ex.isoformat() if ex else None,
+                            expires_dt.isoformat() if expires_dt else None,
                         ),
                     )
                     row = cur.fetchone()
                     if row is None:
                         raise RuntimeError("Batch INSERT RETURNING did not return a row")
                     row_map = row._mapping if hasattr(row, "_mapping") else {"memory_id": row[0], "created_at": row[1]}
-                    records.append(
+                    batch_records.append(
                         MemoryRecord(
                             memory_id=str(row_map["memory_id"]),
                             agent_id=self.agent_id,
-                            memory_type=mt,
-                            content=ct,
+                            memory_type=memory_type,
+                            content=content,
                             embedding=embedding,
-                            metadata=md,
+                            metadata=meta,
                             previous_hash=prev_hash,
                             cryptographic_hash=crypto_hash,
                             created_at=row_map["created_at"],
-                            expires_at=ex,
+                            expires_at=expires_dt,
                             importance_score=5.0,
                             trust_level=2,
                             source_provenance="agent_direct",
                         )
                     )
-                    return (row, prev_hash, crypto_hash)
+                return batch_records
 
-                self._retry_engine.execute(conn, _batch_insert, isolation="serializable")
-
+            records = self._retry_engine.execute(conn, _batch_insert_all, isolation="serializable")
             conn.commit()
             return records
         except Exception:
@@ -728,14 +742,36 @@ class BastionMemory:
         else:
             self._store_audit_real(agent_id, action, details)
 
-    def heal(self, agent_id: str | None = None) -> dict[str, Any]:
+    def heal(self, agent_id: str | None = None, background_verify: bool = False) -> dict[str, Any]:
         target = agent_id or self.agent_id
         if target != self.agent_id:
             raise PermissionError("Cannot query memories for another agent")
         agent_id = target
         if self._mock:
             return _mock.mock_heal(agent_id)
-        return self._heal_real(agent_id)
+        result = self._heal_real(agent_id)
+        if background_verify:
+            result["background_verify"] = self._flag_needs_verification(agent_id)
+        return result
+
+    def _flag_needs_verification(self, agent_id: str) -> dict[str, Any]:
+        """Mark all memories for this agent as needs_verification.
+        CDC changefeed or a background worker picks these up for async hash recheck.
+        """
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            self._set_rls_context(conn)
+            def _op(cur):
+                cur.execute(
+                    "UPDATE agent_memory SET needs_verification = true "
+                    "WHERE agent_id = %s AND cryptographic_hash IS NOT NULL",
+                    (agent_id,),
+                )
+                return {"flagged_for_verification": cur.rowcount}
+            return self._retry_write(conn, _op)
+        finally:
+            pool.release(conn)
 
     def resolve_conflict(self, fact_a: str, fact_b: str, context: str | None = None) -> str:
         if not fact_a or not isinstance(fact_a, str):
@@ -910,10 +946,9 @@ class BastionMemory:
             return _mock.mock_delete_memory(self.agent_id, memory_id)
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
-        committed = False
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 cur.execute(
                     "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
@@ -924,19 +959,16 @@ class BastionMemory:
                     "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
                     (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id})),
                 )
-                conn.commit()
-                committed = True
                 return True
+            return self._retry_write(conn, _op)
         finally:
-            if not committed:
-                with contextlib.suppress(Exception):
-                    conn.rollback()
             pool.release(conn)
 
     def close(self):
         pool = self._pool
         if pool is not None:
             pool.close_all()
+            self._pool = None
 
     def _store_real(
         self,
@@ -945,6 +977,7 @@ class BastionMemory:
         metadata: dict[str, Any] | None,
         expires_in_seconds: int | None,
         region: str | None = None,
+        conn: Any = None,
     ) -> MemoryRecord:
         pool = self.get_pool()
 
@@ -956,8 +989,12 @@ class BastionMemory:
         else:
             embedding = self._embed(content)
 
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
+        # Use provided connection for atomic multi-operation transactions
+        if conn is None:
+            conn = pool.acquire(timeout=30.0)
+            should_release = True
+        else:
+            should_release = False
         embedding_str = json.dumps(embedding)
         now = datetime.now(UTC)
         expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
@@ -1010,6 +1047,7 @@ class BastionMemory:
             if row is None:
                 raise RuntimeError("INSERT RETURNING did not return a row")
 
+            memory_id_str = str(row[0])
             workflow_id = str(uuid.uuid4())
             cur.execute(
                 "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
@@ -1017,12 +1055,20 @@ class BastionMemory:
                     self.agent_id,
                     workflow_id,
                     "memory_store",
-                    json.dumps({"memory_type": memory_type, "content_preview": pii_scan(content[:200])[0]}),
+                    json.dumps({
+                        "memory_id": memory_id_str,
+                        "memory_type": memory_type,
+                        "content_preview": pii_scan(content[:200])[0],
+                        "hash": crypto_hash,
+                        "previous_hash": prev_hash
+                    }),
                 ),
             )
             return (row, prev_hash, crypto_hash)
 
         try:
+            if should_release:
+                self._set_rls_context(conn)
             # Use retry engine with SERIALIZABLE isolation for hash chain integrity
             row, prev_hash, crypto_hash = self._retry_engine.execute(conn, _insert_operation, isolation="serializable")
 
@@ -1046,7 +1092,8 @@ class BastionMemory:
             logger.exception("store_real failed", extra={"agent_id": self.agent_id, "error": str(exc)})
             raise
         finally:
-            pool.release(conn)
+            if should_release:
+                pool.release(conn)
 
     def _search_real(
         self,
@@ -1059,8 +1106,8 @@ class BastionMemory:
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             using_hash_embeddings = self._mock or os.environ.get("BASTION_EMBED_FALLBACK")
             if not using_hash_embeddings and self._bedrock_cb.state.value != "open":
                 try:
@@ -1162,8 +1209,8 @@ class BastionMemory:
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             agent_filter = "agent_id LIKE %s" if namespace_scope == "shared" else "agent_id = %s"
             if agent_filter not in _ALLOWED_AGENT_FILTERS:
                 raise ValueError(f"Unexpected agent_filter: {agent_filter}")
@@ -1215,8 +1262,8 @@ class BastionMemory:
             return [m for m in _mock.mock_list_all(self.agent_id) if hasattr(m, "created_at") and m.created_at][:limit]
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1239,8 +1286,8 @@ class BastionMemory:
             return [m for m in _mock.mock_list_all(self.agent_id) if getattr(m, "is_pinned", False)]
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1275,8 +1322,8 @@ class BastionMemory:
             return results[:limit]
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             type_clause = ""
             params: list = [self.agent_id, min_importance]
             if memory_type:
@@ -1308,8 +1355,8 @@ class BastionMemory:
             return [m for m in _mock.mock_list_all(self.agent_id) if kw in (m.content or "").lower()][:limit]
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1332,8 +1379,8 @@ class BastionMemory:
             return len(_mock.mock_list_all(self.agent_id))
         pool = self.get_pool()
         conn = pool.acquire(timeout=10.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT count(*) FROM agent_memory "
@@ -1350,8 +1397,8 @@ class BastionMemory:
     def _get_memory_by_id_real(self, memory_id: str) -> MemoryRecord | None:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     (
@@ -1378,6 +1425,7 @@ class BastionMemory:
             # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
             try:
                 with conn.cursor() as cur:
+                    cur.execute("BEGIN")
                     cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (abs_timestamp,))
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
@@ -1454,8 +1502,8 @@ class BastionMemory:
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT audit_id, agent_id, workflow_id, action, details, recorded_at "
@@ -1486,15 +1534,15 @@ class BastionMemory:
 
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 details_json = details if isinstance(details, str) else json.dumps(details)
                 cur.execute(
                     "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
                     (agent_id, str(uuid.uuid4()), action, details_json),
                 )
-                conn.commit()
+            self._retry_write(conn, _op)
         except Exception as e:
             logger.exception("store_audit failed", extra={"agent_id": agent_id, "action": action})
             raise RuntimeError("store_audit failed") from e
@@ -1502,27 +1550,22 @@ class BastionMemory:
             pool.release(conn)
 
     def _heal_real(self, agent_id: str) -> dict[str, Any]:
+        import uuid as _uuid
+
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            pruned = 0
-            resealed = 0
-            with conn.cursor() as cur:
-                # 1. Delete expired memories
+            self._set_rls_context(conn)
+            from bastion.crypto import compute_hash
+
+            def _op(cur):
+                pruned = 0
+                resealed = 0
                 cur.execute(
                     "DELETE FROM agent_memory WHERE agent_id = %s AND expires_at <= now()",
                     (agent_id,),
                 )
                 pruned = cur.rowcount
-
-                # 2. Recompute broken hashes (cryptographic_hash IS NULL)
-                # NOTE: This reseals corrupted data. An attacker who modifies
-                # the last record's content and sets hash=NULL can launder
-                # corruption through heal(). We flag this as a repair action
-                # in the audit trail so it's detectable.
-                from bastion.crypto import compute_hash
-
                 cur.execute(
                     "SELECT memory_id, content, metadata, previous_hash "
                     "FROM agent_memory WHERE agent_id = %s AND cryptographic_hash IS NULL "
@@ -1538,20 +1581,25 @@ class BastionMemory:
                         (new_hash, mid),
                     )
                     resealed += 1
-                    # Log repair action for audit trail
+                    cur.execute(
+                        "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                        (
+                            agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
+                            json.dumps({"memory_id": mid, "content_snippet": (content or "")[:200]}),
+                        ),
+                    )
                     logger.warning(
                         "Hash chain repair: resealed memory %s for agent %s — may indicate tampering",
                         mid,
                         agent_id,
                     )
-
-                conn.commit()
                 return {
                     "agent_id": agent_id,
                     "pruned": pruned,
                     "resealed": resealed,
                     "status": "healed",
                 }
+            return self._retry_write(conn, _op)
         except Exception:
             logger.exception("heal query failed", extra={"agent_id": agent_id})
             return {"agent_id": agent_id, "pruned": 0, "resealed": 0, "status": "error"}
@@ -1559,51 +1607,59 @@ class BastionMemory:
             pool.release(conn)
 
     def _resolve_conflict_real(self, fact_a: str, fact_b: str, context: str) -> str:
-        pool = self.get_pool()
-        conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
-        try:
-            with conn.cursor() as cur:
-                # Acquire lock FIRST (before doing expensive merge work)
-                lock_resource = f"conflict:{hashlib.sha256((fact_a + fact_b).encode()).hexdigest()[:16]}"
-                cur.execute(
-                    "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
-                    "VALUES (%s, %s, 'exclusive', %s) RETURNING lock_id",
-                    (self.agent_id, lock_resource, json.dumps({"status": "acquired"})),
-                )
-                lock_row = cur.fetchone()
-                lock_id = lock_row[0] if lock_row else None
-                conn.commit()
-
+        max_retries = 50
+        for attempt in range(max_retries):
+            pool = self.get_pool()
+            conn = pool.acquire(timeout=30.0)
             try:
-                # Do merge work AFTER lock is acquired
-                merged = self._smart_merge(fact_a, fact_b, context)
-
-                # Update lock payload with result
+                self._set_rls_context(conn)
                 with conn.cursor() as cur:
+                    lock_resource = f"conflict:{hashlib.sha256((fact_a + fact_b).encode()).hexdigest()[:16]}"
                     cur.execute(
-                        "UPDATE agent_coordination SET payload = %s WHERE lock_id = %s",
-                        (
-                            json.dumps({"fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context}),
-                            lock_id,
-                        ),
+                        "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
+                        "VALUES (%s, %s, 'exclusive', %s) "
+                        "ON CONFLICT (agent_id, resource) DO NOTHING "
+                        "RETURNING lock_id",
+                        (self.agent_id, lock_resource, json.dumps({"status": "acquired"})),
                     )
-                    conn.commit()
-                return merged
+                    lock_row = cur.fetchone()
+                    lock_id = lock_row[0] if lock_row else None
+                    if not lock_id:
+                        conn.rollback()
+                        continue
+
+                conn.commit()
+                self._refresh_rls_context(conn)
+
+                try:
+                    merged = self._smart_merge(fact_a, fact_b, context)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE agent_coordination SET payload = %s WHERE lock_id = %s AND agent_id = %s",
+                            (
+                                json.dumps({"fact_a": fact_a, "fact_b": fact_b, "merged": merged, "context": context}),
+                                lock_id,
+                                self.agent_id,
+                            ),
+                        )
+                        conn.commit()
+                    return merged
+                finally:
+                    if lock_id:
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute("DELETE FROM agent_coordination WHERE lock_id = %s AND agent_id = %s", (lock_id, self.agent_id))
+                                conn.commit()
+                        except Exception:
+                            logger.warning("Failed to release coordination lock %s", lock_id)
+            except Exception as e:
+                logger.exception("resolve_conflict failed")
+                raise RuntimeError("Conflict resolution failed") from e
             finally:
-                # Always release the lock
-                if lock_id:
-                    try:
-                        with conn.cursor() as cur:
-                            cur.execute("DELETE FROM agent_coordination WHERE lock_id = %s", (lock_id,))
-                            conn.commit()
-                    except Exception:
-                        logger.warning("Failed to release coordination lock %s", lock_id)
-        except Exception as e:
-            logger.exception("resolve_conflict failed")
-            raise RuntimeError("Conflict resolution failed") from e
-        finally:
-            pool.release(conn)
+                pool.release(conn)
+            time.sleep(0.5)
+
+        raise RuntimeError("Conflict resolution timed out after %d retries" % max_retries)
 
     def _smart_merge(self, fact_a: str, fact_b: str, context: str) -> str:
         """Merge two conflicting facts using LLM (Groq) or heuristic fallback.
@@ -1667,15 +1723,19 @@ class BastionMemory:
         if results:
             return results[0].content, {"cache": "hit", "memory_id": results[0].memory_id}
         response = llm_callback(query)
-        self._store_real(memory_type, response, {"query": query, "from_cache": False}, None)
+        guard_report = self._guard.check(response)
+        if guard_report.is_safe:
+            self._store_real(memory_type, response, {"query": query, "from_cache": False}, None)
+        else:
+            logger.warning("LLM response blocked by guard — not caching")
         return response, {"cache": "miss"}
 
     def _reinforce_real(self, memory_id: str, success: bool) -> dict:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 cur.execute(
                     "SELECT importance_score, access_count FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
@@ -1683,27 +1743,25 @@ class BastionMemory:
                 row = cur.fetchone()
                 if not row:
                     return {"status": "not_found"}
-
                 base_imp = float(row[0]) or 5.0
                 settings = get_settings()
                 if success:
-                    boost = 0.1 + settings.reinforce_boost  # Raise importance
+                    boost = 0.1 + settings.reinforce_boost
                 else:
-                    boost = -0.5  # Lower importance (superseded memories sink in results)
+                    boost = -0.5
                 new_imp = max(0.0, min(base_imp + boost, 10.0))
-
                 cur.execute(
                     "UPDATE agent_memory SET importance_score = %s, access_count = access_count + 1 "
                     "WHERE memory_id = %s AND agent_id = %s",
                     (new_imp, memory_id, self.agent_id),
                 )
-                conn.commit()
                 return {
                     "status": "reinforced",
                     "memory_id": memory_id,
                     "importance_score": new_imp,
                     "delta": round(new_imp - base_imp, 2),
                 }
+            return self._retry_write(conn, _op)
         finally:
             pool.release(conn)
 
@@ -1714,46 +1772,46 @@ class BastionMemory:
         pin_priority: int,
         metadata: dict[str, Any] | None,
     ) -> MemoryRecord:
-        record = self._store_real(memory_type, content, metadata, None)
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            record = self._store_real(memory_type, content, metadata, None, conn=conn)
+            self._refresh_rls_context(conn)
+            def _pin_op(cur):
                 cur.execute(
                     "UPDATE agent_memory SET is_pinned = true, pin_priority = %s "
                     "WHERE memory_id = %s AND agent_id = %s",
                     (pin_priority, record.memory_id, self.agent_id),
                 )
-            conn.commit()
+            self._retry_write(conn, _pin_op)
+            record.is_pinned = True
+            record.pin_priority = pin_priority
+            return record
         finally:
             pool.release(conn)
-        record.is_pinned = True
-        record.pin_priority = pin_priority
-        return record
 
     def _unpin_real(self, memory_id: str) -> bool:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 cur.execute(
                     "UPDATE agent_memory SET is_pinned = false, pin_priority = 0 "
                     "WHERE memory_id = %s AND agent_id = %s AND is_pinned = true",
                     (memory_id, self.agent_id),
                 )
-                deleted: bool = cur.rowcount > 0
-            conn.commit()
-            return deleted
+                return cur.rowcount > 0
+            return self._retry_write(conn, _op)
         finally:
             pool.release(conn)
 
     def _get_pinned_real(self, min_priority: int) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT {_MEMORY_COLS} FROM agent_memory "
@@ -1768,9 +1826,9 @@ class BastionMemory:
     def _list_memories_real(self, memory_type: str | None, limit: int, cursor: str | None = None) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0, consumer_id="list_memories")
-        self._set_rls_context(conn)
         fetch_limit = limit + 1  # Fetch +1 to detect if there are more pages
         try:
+            self._set_rls_context(conn)
             with conn.cursor() as cur:
                 if cursor:
                     if memory_type:
@@ -1810,13 +1868,18 @@ class BastionMemory:
     ) -> MemoryRecord | None:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
-                # Compute new hash for the corrected content
-                from bastion.crypto import compute_hash
+            self._set_rls_context(conn)
+            from bastion.crypto import compute_hash
 
-                new_hash = compute_hash(new_content, metadata)
+            def _op(cur):
+                cur.execute(
+                    "SELECT previous_hash FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
+                )
+                prev_row = cur.fetchone()
+                prev_hash = prev_row[0] if prev_row else None
+                new_hash = compute_hash(new_content, metadata, prev_hash)
                 cur.execute(
                     "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata), "
                     "cryptographic_hash = %s "
@@ -1826,12 +1889,21 @@ class BastionMemory:
                 row = cur.fetchone()
                 if not row:
                     return None
+                cur.execute(
+                    "UPDATE agent_memory SET cryptographic_hash = NULL "
+                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
+                    "WHERE memory_id = %s)",
+                    (self.agent_id, memory_id),
+                )
+                downstream_count = cur.rowcount
                 logger.warning(
-                    "Memory corrected — hash chain invalidated at memory_id=%s. Run 'memory_heal' to reseal the chain.",
+                    "Memory corrected — downstream hash chain invalidated for %d records at memory_id=%s. "
+                    "Run 'memory_heal' to reseal.",
+                    downstream_count,
                     memory_id,
                 )
-                conn.commit()
                 return MemoryRecord.from_row(row)
+            return self._retry_write(conn, _op)
         finally:
             pool.release(conn)
 
@@ -1848,9 +1920,9 @@ class BastionMemory:
             raise RuntimeError("jsonpatch is required for apply_patch: pip install jsonpatch")
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
-        self._set_rls_context(conn)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 cur.execute(
                     "SELECT memory_id, metadata FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
@@ -1859,7 +1931,6 @@ class BastionMemory:
                 if not row:
                     return None
                 current_metadata = dict(row[1]) if row[1] else {}
-                # Fix patch ops: convert "replace" to "add" for non-existent keys
                 fixed_ops = []
                 for op in patch_ops:
                     if op.get("op") == "replace":
@@ -1883,8 +1954,8 @@ class BastionMemory:
                     "UPDATE agent_memory SET metadata = %s WHERE memory_id = %s AND agent_id = %s",
                     (_json.dumps(patched), memory_id, self.agent_id),
                 )
-            conn.commit()
-            return {"memory_id": memory_id, "metadata": patched}
+                return {"memory_id": memory_id, "metadata": patched}
+            return self._retry_write(conn, _op)
         finally:
             pool.release(conn)
 
@@ -1905,6 +1976,8 @@ class BastionMemory:
 
         # If fallback is forced, skip all remote/local models — use hash directly
         if os.environ.get("BASTION_EMBED_FALLBACK"):
+            logger.warning("Embedding fallback forced via BASTION_EMBED_FALLBACK — vector search quality degraded")
+            self._embedding_degraded = True
             return _hash_fallback_embed(text)
 
         # Try Bedrock first
@@ -1922,6 +1995,8 @@ class BastionMemory:
             logger.debug("Local embedding unavailable, using hash fallback")
 
         # Final fallback: hash-based
+        logger.warning("Embedding fallback activated — all remote/local models unavailable. Search quality degraded.")
+        self._embedding_degraded = True
         return _hash_fallback_embed(text)
 
     def _embed_bedrock(self, text: str) -> list[float] | None:
@@ -2002,9 +2077,9 @@ class BastionMemory:
         """
         pool = self.get_pool()
         conn = _existing_conn or pool.acquire(timeout=30.0)
-        if not _existing_conn:
-            self._set_rls_context(conn)
         try:
+            if not _existing_conn:
+                self._set_rls_context(conn)
             # Use ILIKE for fuzzy keyword matching as degraded-mode fallback
             keywords = [w.strip() for w in query.lower().split() if len(w.strip()) > 2]
             if not keywords:
@@ -2048,9 +2123,15 @@ class BastionMemory:
         skill_id: str,
         status: str = "WORKING",
         callback_url: str | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        parent_task_id: str | None = None,
+        priority: int = 0,
     ) -> dict[str, Any]:
         """Insert a new A2A task into CockroachDB. Returns the task record."""
-        return self._a2a_store.store_task(task_id, agent_id, skill_id, status, callback_url)
+        return self._a2a_store.store_task(
+            task_id, agent_id, skill_id, status, callback_url,
+            runtime_metadata, parent_task_id, priority,
+        )
 
     def get_a2a_task(self, task_id: str) -> dict[str, Any] | None:
         """Retrieve an A2A task by ID from CockroachDB."""
@@ -2062,6 +2143,9 @@ class BastionMemory:
         status: str | None = None,
         artifacts: list[dict[str, Any]] | None = None,
         callback_url: str | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        error_message: str | None = None,
+        retry_count: int | None = None,
         cleanup_stale: bool = False,
         stale_timeout: int = 3600,
     ) -> dict[str, Any] | None:
@@ -2072,7 +2156,10 @@ class BastionMemory:
         """
         if cleanup_stale:
             return self._cleanup_stale_tasks(stale_timeout)
-        return self._a2a_store.update_task(task_id, status, artifacts, callback_url)
+        return self._a2a_store.update_task(
+            task_id, status, artifacts, callback_url,
+            runtime_metadata, error_message, retry_count,
+        )
 
     def _cleanup_stale_tasks(self, stale_timeout: int = 3600) -> int:
         """Mark stale non-terminal A2A tasks as FAILED. Returns count."""
@@ -2081,19 +2168,21 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=10.0)
         try:
-            with conn.cursor() as cur:
+            self._set_rls_context(conn)
+            def _op(cur):
                 cur.execute(
                     "UPDATE a2a_tasks SET status = 'FAILED', updated_at = now() "
-                    "WHERE status IN ('SUBMITTED', 'WORKING') "
+                    "WHERE agent_id = %s "
+                    "AND status IN ('SUBMITTED', 'WORKING') "
                     "AND created_at < now() - make_interval(secs => %s) "
                     "RETURNING task_id",
-                    (stale_timeout,),
+                    (self.agent_id, stale_timeout),
                 )
                 cleaned = [row[0] for row in cur.fetchall()]
-            conn.commit()
-            if cleaned:
-                logger.warning("Cleaned up %d orphaned A2A tasks", len(cleaned))
-            return len(cleaned)
+                if cleaned:
+                    logger.warning("Cleaned up %d orphaned A2A tasks", len(cleaned))
+                return len(cleaned)
+            return self._retry_write(conn, _op)
         finally:
             pool.release(conn)
 

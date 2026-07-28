@@ -14,13 +14,13 @@ export async function POST(request: Request) {
 
     const startTime = Date.now();
 
-    // Search memories using embedding_384 column
+    // Search memories using embedding column
     const result = await safeQuery(
       `SELECT memory_id, agent_id, memory_type, content::varchar(200), trust_level, created_at,
-              embedding_384 <=> $1::vector AS distance
+              embedding <=> $1::vector(1024) AS distance
        FROM agent_memory
        WHERE agent_id = $2
-       ORDER BY embedding_384 <=> $1::vector
+       ORDER BY embedding <=> $1::vector(1024)
        LIMIT $3`,
       [await getEmbedding(query), agentId, Math.min(k, 20)]
     );
@@ -59,9 +59,13 @@ async function getEmbedding(text: string): Promise<string> {
     const data = await res.json();
     return `[${data.embedding.join(",")}]`;
   } catch {
-    // Fallback: generate a deterministic mock embedding
-    const hash = Array.from(text).reduce((acc, c) => ((acc << 5) - acc + c.charCodeAt(0)) | 0, 0);
-    const mock = Array.from({ length: 384 }, (_, i) => Math.sin(hash + i) * 0.1);
-    return `[${mock.join(",")}]`;
+    // 1024-dim hash fallback (matches Python's _hash_fallback_embed)
+    const digest = Array.from(text).reduce((acc, c, i) => 
+      acc ^ (c.charCodeAt(0) * 31 + i), 0);
+    const mock = Array.from({ length: 1024 }, (_, i) => 
+      Math.sin(digest * 31 + i) * 0.1);
+    // L2 normalize
+    const norm = Math.sqrt(mock.reduce((s, v) => s + v * v, 0)) || 1;
+    return `[${mock.map(v => v / norm).join(",")}]`;
   }
 }

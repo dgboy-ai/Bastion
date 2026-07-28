@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -31,6 +32,8 @@ import uuid
 from typing import Any
 
 import anyio
+import anyio.to_thread
+import httpx
 from dotenv import load_dotenv
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
@@ -53,6 +56,13 @@ load_dotenv()  # loads .env.local or .env
 MAX_K = 100
 MAX_STORE_BYTES = 100_000
 _MAX_CONTENT_LENGTH = 100_000
+_MAX_REQUEST_BYTES = 1_048_576
+
+
+def check_request_size(data_len: int) -> None:
+    """Ensure the incoming request does not exceed safety limits."""
+    if data_len > _MAX_REQUEST_BYTES:
+        raise ValueError("Request too large")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +98,26 @@ _metrics_durations: dict[tuple[str, str], list[float]] = {}
 _metrics_rate_limit_hits: int = 0
 _metrics_start_time: float = time.monotonic()
 
+# -- Bridge egress rate limiter (token bucket, reset per 60s) --
+_BRIDGE_MAX_TOKENS: int = int(os.environ.get("BASTION_BRIDGE_RATE_LIMIT", "60"))
+_BRIDGE_BUCKET: int = _BRIDGE_MAX_TOKENS
+_BRIDGE_LAST_REFILL: float = time.monotonic()
+_BRIDGE_LOCK = threading.Lock()
+
+
+def _bridge_acquire_token() -> bool:
+    global _BRIDGE_BUCKET, _BRIDGE_LAST_REFILL
+    now = time.monotonic()
+    with _BRIDGE_LOCK:
+        elapsed = now - _BRIDGE_LAST_REFILL
+        if elapsed >= 60.0:
+            _BRIDGE_BUCKET = _BRIDGE_MAX_TOKENS
+            _BRIDGE_LAST_REFILL = now
+        if _BRIDGE_BUCKET > 0:
+            _BRIDGE_BUCKET -= 1
+            return True
+        return False
+
 
 def _get_shared_memory() -> BastionMemory:
     """Return the shared memory instance used by HTTP health routes."""
@@ -116,7 +146,7 @@ def _load_api_keys() -> set[str]:
     if _API_KEYS is None:
         with _INIT_LOCK:
             if _API_KEYS is None:
-                # Accept both BASTION_MCP_API_KEYS (comma-separated) and BASTION_API_KEY (single)
+                # 1. Env-var keys (legacy, still honored)
                 raw_multi = os.environ.get("BASTION_MCP_API_KEYS", "")
                 raw_single = os.environ.get("BASTION_API_KEY", "")
                 keys: set[str] = set()
@@ -124,11 +154,40 @@ def _load_api_keys() -> set[str]:
                     keys = {k.strip() for k in raw_multi.split(",") if k.strip()}
                 if raw_single and raw_single not in keys:
                     keys.add(raw_single.strip())
+
+                # 2. DB-backed keys from agent_auth table (dynamic, revocable)
+                conn_str = os.environ.get("BASTION_CONN", "")
+                if conn_str:
+                    import bcrypt
+
+                    try:
+                        from bastion.pool import ConnectionPool
+                        pool = ConnectionPool(connection_string=conn_str, min_size=1, max_size=1)
+                        db_conn = pool.acquire(timeout=5)
+                        try:
+                            with db_conn.cursor() as cur:
+                                cur.execute(
+                                    "SELECT key_hash FROM agent_auth "
+                                    "WHERE revoked_at IS NULL "
+                                    "AND (expires_at IS NULL OR expires_at > now())"
+                                )
+                                for row in cur.fetchall():
+                                    keys.add(row[0])
+                        finally:
+                            pool.release(db_conn)
+                        pool.close_all()
+                        if keys:
+                            logger.info("Loaded %d active API keys from agent_auth table", len(keys))
+                    except ImportError:
+                        logger.debug("bcrypt not available — DB key lookup skipped")
+                    except Exception as exc:
+                        logger.debug("DB key lookup failed (non-fatal): %s", exc)
+
                 _API_KEYS = keys
                 if not _API_KEYS:
                     logger.warning(
                         "No API keys configured — MCP server is running without authentication. "
-                        "Set BASTION_MCP_API_KEYS or BASTION_API_KEY."
+                        "Set BASTION_MCP_API_KEYS, BASTION_API_KEY, or add keys to agent_auth table."
                     )
     return _API_KEYS
 
@@ -215,6 +274,10 @@ def create_server(
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
+    # Configure anyio thread pool to prevent exhaustion under high load
+    _thread_pool_max = int(os.environ.get("BASTION_THREAD_POOL_MAX", "40"))
+    anyio.to_thread.current_default_thread_limiter().total_tokens = _thread_pool_max
+
     # Pre-warm local embedding model in background thread (eliminates 28s cold start)
     if not is_mock:
 
@@ -232,6 +295,40 @@ def create_server(
         t = threading.Thread(target=_prewarm_model, daemon=True)
         t.start()
         logger.info("Background embedding pre-warm started")
+
+        # Start background auto-consolidation daemon
+        _consolidation_interval = int(
+            os.environ.get("BASTION_CONSOLIDATION_INTERVAL_MINUTES", "60")
+        )
+
+        def _consolidation_worker() -> None:
+            """Periodically run memory consolidation in the background."""
+            from bastion.dreaming import MemoryDreamer
+
+            dreamer = MemoryDreamer(_shared)
+            while True:
+                try:
+                    time.sleep(_consolidation_interval * 60)
+                    journal = dreamer.dream()
+                    if journal.memories_reviewed > 0:
+                        logger.info(
+                            "Auto-consolidation: reviewed=%d consolidated=%d "
+                            "promoted=%d pruned=%d duration=%dms",
+                            journal.memories_reviewed,
+                            journal.memories_consolidated,
+                            journal.memories_promoted,
+                            journal.memories_pruned,
+                            journal.duration_ms,
+                        )
+                except Exception as exc:
+                    logger.warning("Auto-consolidation cycle failed: %s", exc)
+
+        cw = threading.Thread(target=_consolidation_worker, daemon=True)
+        cw.start()
+        logger.info(
+            "Background auto-consolidation started (every %d min)",
+            _consolidation_interval,
+        )
 
     # Store shared memory globally for health check routes (thread-safe)
     global _SHARED_MEMORY, _SHARED_POOL
@@ -558,11 +655,13 @@ def create_server(
             threshold = 0.3 if mem.is_mock else 0.8
         internal_k = max(k, 200)
         results = await anyio.to_thread.run_sync(
-            mem.search,
-            query,
-            internal_k,
-            threshold,
-            memory_type,
+            functools.partial(
+                mem.search,
+                query,
+                internal_k,
+                threshold,
+                memory_type,
+            )
         )
 
         offset = 0
@@ -675,16 +774,18 @@ def create_server(
 
         try:
             record = await anyio.to_thread.run_sync(
-                mem.store,
-                memory_type,
-                content,
-                meta,
-                expires_in_seconds,
+                functools.partial(
+                    mem.store,
+                    memory_type,
+                    content,
+                    meta,
+                    expires_in_seconds,
+                )
             )
         except SecurityBlockError as exc:
             logger.warning("Memory store blocked by guard: %s", exc)
             report = getattr(exc, "report", None)
-            result = {
+            result: dict[str, Any] = {
                 "error": "security_block",
                 "detail": "Content blocked by security guard",
                 "is_safe": False,
@@ -789,7 +890,7 @@ def create_server(
         except SecurityBlockError as exc:
             logger.warning("Batch store blocked by guard: %s", exc)
             report = getattr(exc, "report", None)
-            result = {"error": "security_block", "detail": "Content blocked by security guard", "is_safe": False}
+            result: dict[str, Any] = {"error": "security_block", "detail": "Content blocked by security guard", "is_safe": False}
             if report:
                 result["findings"] = [
                     {"detector": f.detector, "threat_type": f.threat_type, "severity": f.severity, "detail": f.detail}
@@ -889,12 +990,12 @@ def create_server(
             openWorldHint=False,
         ),
     )
-    async def memory_heal(ctx: Context, agent_id: str | None = None) -> str:
+    async def memory_heal(ctx: Context, agent_id: str | None = None, background_verify: bool = False) -> str:
         mem = _resolve_memory(ctx)
         try:
-            await _report_progress(ctx, 0, 2, "Pruning expired memories...")
-            result = await anyio.to_thread.run_sync(mem.heal, agent_id)
-            await _report_progress(ctx, 2, 2, "Self-heal complete")
+            await _report_progress(ctx, 0, 3, "Pruning expired memories...")
+            result = await anyio.to_thread.run_sync(mem.heal, agent_id, background_verify)
+            await _report_progress(ctx, 3, 3, "Self-heal complete")
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(result, indent=2, default=str)
         except Exception:
@@ -1103,7 +1204,8 @@ def create_server(
         title="Memory Health Metrics",
         description=(
             "Return memory health metrics: total count, pinned count, "
-            "freshness ratio, average access/importance scores."
+            "freshness ratio, average access/importance scores, "
+            "vector index health, and embedding quality status."
         ),
         annotations=ToolAnnotations(
             title="Memory Health Metrics",
@@ -1611,9 +1713,11 @@ def create_server(
         try:
             packer = ContextBudgetManager(mem)
             result = await anyio.to_thread.run_sync(
-                packer.pack,
-                budget_tokens,
-                query,
+                functools.partial(
+                    packer.pack,
+                    budget_tokens,
+                    query,
+                )
             )
             return json.dumps(result.to_dict(), indent=2, default=str)
         except Exception:
@@ -1758,10 +1862,14 @@ def create_server(
             signed = _mcp_card_signer.sign_card(card)
             return json.dumps(signed, indent=2, default=str)
 
+        # Egress rate limit: acquire token from the per-minute bucket
+        if not _bridge_acquire_token():
+            return json.dumps({"error": "Bridge rate limit exceeded — try again later (60 requests/min)"})
+
         # Forwarding mode: send request to A2A server
         import ipaddress
+        import socket
 
-        # SSRF protection: validate target URL (resolves DNS to prevent rebinding)
         from urllib.parse import urlparse
 
         import httpx
@@ -1773,28 +1881,46 @@ def create_server(
             hostname = parsed.hostname or ""
             if not hostname:
                 return json.dumps({"error": "Invalid URL: no hostname"})
-            blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
-            if hostname.lower() in blocked or hostname.endswith((".local", ".internal", ".localhost")):
-                return json.dumps({"error": "Internal/private URLs are blocked (SSRF protection)"})
-            # Resolve DNS and check resolved IPs (prevents rebinding attacks)
-            import socket
-
-            try:
-                resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-                for _, _, _, _, sockaddr in resolved:
-                    resolved_ip = ipaddress.ip_address(sockaddr[0])
-                    if (
-                        resolved_ip.is_private
-                        or resolved_ip.is_loopback
-                        or resolved_ip.is_link_local
-                        or resolved_ip.is_reserved
-                        or resolved_ip.is_multicast
-                    ):
-                        return json.dumps({"error": "Private/internal IP addresses are blocked (SSRF protection)"})
-            except (socket.gaierror, OSError):
-                return json.dumps({"error": "DNS resolution failed — URL blocked"})
         except Exception:
             return json.dumps({"error": "Invalid URL format"})
+
+        # ------------------------------------------------------------------
+        # SSRF protection: resolve DNS once and pin the resolved IP
+        # This eliminates the TOCTOU gap where a re-resolve could return a
+        # different (internal) IP after the security check passes.
+        # ------------------------------------------------------------------
+        _allow_loopback = os.environ.get("BASTION_BRIDGE_ALLOW_LOOPBACK", "").lower() in ("1", "true", "yes")
+        try:
+            addrinfo = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except socket.gaierror:
+            return json.dumps({"error": f"DNS resolution failed for {hostname}"})
+        resolved_ips: list[str] = []
+        for _, _, _, _, sockaddr in addrinfo:
+            ip = sockaddr[0]
+            try:
+                ip_addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            is_private = ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local or ip_addr.is_reserved
+            if is_private and not _allow_loopback:
+                continue
+            if is_private and _allow_loopback:
+                resolved_ips.append(ip)
+            elif not is_private:
+                resolved_ips.append(ip)
+        if not resolved_ips:
+            return json.dumps({"error": "No reachable IP addresses for target A2A server"})
+
+        pinned_ip = resolved_ips[0]
+        port_part = f":{parsed.port}" if parsed.port else ""
+        url_scheme = parsed.scheme
+        pinned_url = f"{url_scheme}://{pinned_ip}{port_part}{parsed.path or '/'}"
+        if parsed.query:
+            pinned_url += f"?{parsed.query}"
+        logger.info(
+            "Bridge DNS pinned",
+            extra={"hostname": hostname, "pinned_ip": pinned_ip, "target": a2a_url},
+        )
 
         target_url = f"{a2a_url.rstrip('/')}/"
         payload = {
@@ -1810,13 +1936,17 @@ def create_server(
                 "configuration": {"return_immediately": True},
             },
         }
-        headers = {"A2A-Version": "1.0", "Content-Type": "application/json"}
+        headers = {
+            "A2A-Version": "1.0",
+            "Content-Type": "application/json",
+            "Host": hostname,
+        }
         # NOTE: Do NOT forward the server's own API key to external A2A servers.
         # The target server should have its own auth configured.
 
         try:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-                resp = await client.post(target_url, json=payload, headers=headers)
+                resp = await client.post(pinned_url, json=payload, headers=headers)
                 resp.raise_for_status()
                 body = resp.json()
                 if "error" in body:
@@ -1850,6 +1980,600 @@ def create_server(
         except Exception:
             logger.exception("A2A bridge failed")
             return json.dumps({"error": "A2A bridge failed — check server logs", "source": "a2a_bridge"})
+
+    @mcp.tool(
+        name="managed_mcp_list_tools",
+        title="List Official CockroachDB Cloud MCP Tools",
+        description=(
+            "List all available tools on the official CockroachDB Cloud Managed MCP Server. "
+            "Requires COCKROACHDB_MCP_API_KEY env var (Advanced plan) or OAuth browser flow. "
+            "Use this to discover which Cloud Console operations are available via the managed MCP."
+        ),
+        annotations=ToolAnnotations(
+            title="List Official CockroachDB Cloud MCP Tools",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def managed_mcp_list_tools(ctx: Context) -> str:
+        api_key = os.environ.get("COCKROACHDB_MCP_API_KEY", "")
+        oauth_token = os.environ.get("COCKROACHDB_MCP_OAUTH_TOKEN", "")
+        dashboard_url = os.environ.get("BASTION_DASHBOARD_URL", "http://localhost:3000")
+        url = f"{dashboard_url.rstrip('/')}/api/official-mcp"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        elif oauth_token:
+            headers["Authorization"] = f"Bearer {oauth_token}"
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                tools = data.get("tools", [])
+                return json.dumps(
+                    {
+                        "provider": "CockroachDB Cloud Managed MCP",
+                        "cluster_id": data.get("clusterId"),
+                        "cluster_name": data.get("clusterName"),
+                        "region": data.get("region"),
+                        "plan": data.get("plan"),
+                        "auth": data.get("auth"),
+                        "oauth_config": data.get("oauthConfig"),
+                        "tools": tools,
+                        "tool_count": len(tools),
+                    },
+                    indent=2,
+                )
+        except httpx.ConnectError:
+            return json.dumps(
+                {
+                    "error": "Could not connect to Bastion dashboard proxy",
+                    "detail": f"Ensure the dashboard is running at {dashboard_url}",
+                    "setup_steps": [
+                        "1. Start the Bastion dashboard: cd dashboard && npm run dev",
+                        "2. Verify it's accessible at http://localhost:3000 (or set BASTION_DASHBOARD_URL)",
+                        "3. For OAuth (Basic plan): open https://cockroachlabs.cloud/mcp in browser",
+                        "   → Log in to CockroachDB Cloud",
+                        "   → Select your organization",
+                        "   → Click 'Authorize' for the 'bastion-memory' cluster (ID: 9a423301-d502-42f4-a5e5-1e7664e4e025)",
+                        "   → Grant Read + Write permissions",
+                        "4. For API key (Advanced plan only): create service account in Cloud Console",
+                        "   → Assign Cluster Admin/Operator role on 'bastion-memory'",
+                        "   → Copy secret key → set COCKROACHDB_MCP_API_KEY=<key> in .env.local",
+                        "5. For server-side calls on Basic plan: after OAuth in browser, extract access_token",
+                        "   → from your MCP client config (e.g., ~/.config/Claude/claude_desktop_config.json)",
+                        "   → set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
+                    ],
+                },
+                indent=2,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                return json.dumps(
+                    {
+                        "error": "Authentication required (401)",
+                        "detail": "No valid auth provided to CockroachDB Cloud Managed MCP",
+                        "plan": "Basic (your cluster: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud)",
+                        "cluster_id": "9a423301-d502-42f4-a5e5-1e7664e4e025",
+                        "setup_steps": [
+                            "1. BASIC PLAN ONLY SUPPORTS OAUTH BROWSER FLOW — no API keys",
+                            "2. Open https://cockroachlabs.cloud/mcp in your browser",
+                            "3. Log in to CockroachDB Cloud",
+                            "4. Select your organization (if multiple)",
+                            "5. Click 'Authorize' to grant access to 'bastion-memory' cluster",
+                            "6. Choose: Read only, or Read + Write",
+                            "7. For MCP CLIENTS (Claude Desktop, Cursor, Cline): they handle this automatically",
+                            "   → Just add the MCP server config and click 'Authenticate' in the client",
+                            "8. FOR SERVER-SIDE CALLS (this tool): you must manually provide a token:",
+                            "   a. Complete OAuth in a browser-based MCP client first",
+                            "   b. Extract the access_token from the client's config file",
+                            "   c. Set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
+                            "   d. Restart the MCP server",
+                            "9. Token expires ~1 hour — repeat when it fails again",
+                            "10. UPGRADE TO ADVANCED PLAN for API keys (service accounts) that don't expire",
+                        ],
+                        "docs": "https://www.cockroachlabs.com/docs/cockroachdb-cloud/mcp-server",
+                    },
+                    indent=2,
+                )
+            try:
+                detail = exc.response.json()
+            except Exception:
+                detail = exc.response.text[:500]
+            return json.dumps(
+                {
+                    "error": f"Managed MCP returned {exc.response.status_code}",
+                    "detail": detail,
+                    "hint": "If running on Basic plan, use OAuth browser flow (see steps above). "
+                    "API keys require Advanced plan.",
+                },
+                indent=2,
+            )
+
+    @mcp.tool(
+        name="managed_mcp_call",
+        title="Call Official CockroachDB Cloud MCP Tool",
+        description=(
+            "Execute a tool on the official CockroachDB Cloud Managed MCP Server. "
+            "Proxied through the Bastion dashboard /api/official-mcp route. "
+            "Use this to query cluster info, databases, tables, schemas, and execute SQL "
+            "on your CockroachDB Cloud cluster via the official managed MCP."
+        ),
+        annotations=ToolAnnotations(
+            title="Call Official CockroachDB Cloud MCP Tool",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def managed_mcp_call(
+        ctx: Context,
+        tool: str,
+        args: dict[str, Any] | None = None,
+    ) -> str:
+        if not tool or not tool.strip():
+            return json.dumps({"error": "tool name is required"})
+        valid_tools = {
+            "list_clusters",
+            "get_cluster",
+            "list_databases",
+            "list_tables",
+            "get_table_schema",
+            "select_query",
+            "explain_query",
+            "show_statement",
+            "show_running_queries",
+            "create_database",
+            "create_table",
+            "insert_rows",
+        }
+        if tool not in valid_tools:
+            return json.dumps(
+                {
+                    "error": f"Unknown tool: {tool}",
+                    "valid_tools": sorted(valid_tools),
+                }
+            )
+        api_key = os.environ.get("COCKROACHDB_MCP_API_KEY", "")
+        oauth_token = os.environ.get("COCKROACHDB_MCP_OAUTH_TOKEN", "")
+        dashboard_url = os.environ.get("BASTION_DASHBOARD_URL", "http://localhost:3000")
+        url = f"{dashboard_url.rstrip('/')}/api/official-mcp"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        elif oauth_token:
+            headers["Authorization"] = f"Bearer {oauth_token}"
+        payload = {"tool": tool, "args": args or {}}
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                result = resp.json()
+                return json.dumps(
+                    {
+                        "tool": tool,
+                        "provider": "CockroachDB Cloud Managed MCP",
+                        "result": result,
+                    },
+                    indent=2,
+                    default=str,
+                )
+        except httpx.ConnectError:
+            return json.dumps(
+                {
+                    "error": "Could not connect to Bastion dashboard proxy",
+                    "detail": f"Ensure the dashboard is running at {dashboard_url}",
+                    "setup_steps": [
+                        "1. Start the Bastion dashboard: cd dashboard && npm run dev",
+                        "2. Verify it's accessible at http://localhost:3000 (or set BASTION_DASHBOARD_URL)",
+                        "3. For OAuth (Basic plan): open https://cockroachlabs.cloud/mcp in browser",
+                        "   → Log in to CockroachDB Cloud",
+                        "   → Select your organization",
+                        "   → Click 'Authorize' for the 'bastion-memory' cluster (ID: 9a423301-d502-42f4-a5e5-1e7664e4e025)",
+                        "   → Grant Read + Write permissions",
+                        "4. For API key (Advanced plan only): create service account in Cloud Console",
+                        "   → Assign Cluster Admin/Operator role on 'bastion-memory'",
+                        "   → Copy secret key → set COCKROACHDB_MCP_API_KEY=<key> in .env.local",
+                        "5. For server-side calls on Basic plan: after OAuth in browser, extract access_token",
+                        "   → from your MCP client config (e.g., ~/.config/Claude/claude_desktop_config.json)",
+                        "   → set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
+                    ],
+                },
+                indent=2,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                return json.dumps(
+                    {
+                        "error": "Authentication required (401)",
+                        "detail": "No valid auth provided to CockroachDB Cloud Managed MCP",
+                        "plan": "Basic (your cluster: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud)",
+                        "cluster_id": "9a423301-d502-42f4-a5e5-1e7664e4e025",
+                        "setup_steps": [
+                            "1. BASIC PLAN ONLY SUPPORTS OAUTH BROWSER FLOW — no API keys",
+                            "2. Open https://cockroachlabs.cloud/mcp in your browser",
+                            "3. Log in to CockroachDB Cloud",
+                            "4. Select your organization (if multiple)",
+                            "5. Click 'Authorize' to grant access to 'bastion-memory' cluster",
+                            "6. Choose: Read only, or Read + Write",
+                            "7. For MCP CLIENTS (Claude Desktop, Cursor, Cline): they handle this automatically",
+                            "   → Just add the MCP server config and click 'Authenticate' in the client",
+                            "8. FOR SERVER-SIDE CALLS (this tool): you must manually provide a token:",
+                            "   a. Complete OAuth in a browser-based MCP client first",
+                            "   b. Extract the access_token from the client's config file",
+                            "   c. Set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
+                            "   d. Restart the MCP server",
+                            "9. Token expires ~1 hour — repeat when it fails again",
+                            "10. UPGRADE TO ADVANCED PLAN for API keys (service accounts) that don't expire",
+                        ],
+                        "docs": "https://www.cockroachlabs.com/docs/cockroachdb-cloud/mcp-server",
+                    },
+                    indent=2,
+                )
+            try:
+                detail = exc.response.json()
+            except Exception:
+                detail = exc.response.text[:500]
+            return json.dumps(
+                {
+                    "error": f"Managed MCP returned {exc.response.status_code}",
+                    "detail": detail,
+                    "hint": "If running on Basic plan, use OAuth browser flow (see steps above). "
+                    "API keys require Advanced plan.",
+                },
+                indent=2,
+            )
+        except Exception as exc:
+            logger.exception("managed_mcp_call failed")
+            return json.dumps({"error": "Failed to call managed MCP"}, indent=2)
+
+    @mcp.tool(
+        name="invoke_agent_skill",
+        title="Invoke CockroachDB Agent Skill",
+        description=(
+            "Execute a CockroachDB Agent Skill from the official skills repo (.agents/skills/). "
+            "Skills are machine-executable playbooks for cluster operations: health checks, "
+            "performance triage, schema analysis, security audits, capacity planning, and more. "
+            "Returns the skill's diagnostic queries and (optionally) executes them against your cluster."
+        ),
+        annotations=ToolAnnotations(
+            title="Invoke CockroachDB Agent Skill",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def invoke_agent_skill(
+        ctx: Context,
+        skill_name: str,
+        execute: bool = False,
+        params: dict[str, Any] | None = None,
+    ) -> str:
+        """Invoke a CockroachDB Agent Skill by name.
+
+        Args:
+            skill_name: Name of the skill (e.g., 'triaging-live-sql-activity', 'reviewing-cluster-health')
+            execute: If true, execute the skill's SQL queries against the cluster
+            params: Optional parameters for the skill (e.g., {"threshold_minutes": 5})
+        """
+        import re
+        from pathlib import Path
+
+        if not re.match(r'^[a-zA-Z0-9_-]+$', skill_name):
+            return json.dumps({"error": f"Invalid skill name: '{skill_name}'"}, indent=2)
+
+        skills_dir = Path(__file__).parent.parent.parent / ".agents" / "skills"
+        if not skills_dir.exists():
+            return json.dumps({"error": "Agent skills directory not found"}, indent=2)
+
+        skill_dir = skills_dir / skill_name
+        if not skill_dir.exists():
+            available = sorted([d.name for d in skills_dir.iterdir() if d.is_dir()])
+            return json.dumps(
+                {
+                    "error": f"Skill '{skill_name}' not found",
+                    "available_skills": available,
+                },
+                indent=2,
+            )
+
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            return json.dumps({"error": f"SKILL.md not found for '{skill_name}'"}, indent=2)
+
+        content = skill_file.read_text()
+
+        # Extract SQL code blocks
+        sql_blocks = re.findall(r"```sql\n(.*?)\n```", content, re.DOTALL)
+
+        # Extract bash code blocks (for CLI commands)
+        bash_blocks = re.findall(r"```bash\n(.*?)\n```", content, re.DOTALL)
+
+        # Parse frontmatter
+        frontmatter = {}
+        if content.startswith("---"):
+            fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+            if fm_match:
+                for line in fm_match.group(1).split("\n"):
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        frontmatter[k.strip()] = v.strip()
+
+        result = {
+            "skill": skill_name,
+            "description": frontmatter.get("description", ""),
+            "compatibility": frontmatter.get("compatibility", ""),
+            "sql_queries": sql_blocks,
+            "bash_commands": bash_blocks,
+            "executed": False,
+        }
+
+        if execute and sql_blocks:
+            # Execute queries against the cluster
+            mem = _resolve_memory(ctx)
+            if mem._mock:
+                result["execution_results"] = [
+                    {"query": q[:100] + "...", "status": "skipped", "reason": "mock mode"}
+                    for q in sql_blocks
+                ]
+            else:
+                execution_results = []
+                pool = mem.get_pool()
+                for i, query in enumerate(sql_blocks):
+                    # Apply parameter substitutions using parameterized SQL
+                    q = query
+                    exec_params: dict[str, str] = {}
+                    if params:
+                        for k, v in params.items():
+                            q = q.replace(f"{{{k}}}", f"%({k})s")
+                            q = q.replace(f"${k}", f"%({k})s")
+                            exec_params[k] = str(v)
+
+                    # Safety: only allow SELECT/SHOW/WITH queries
+                    q_stripped = q.lstrip()
+                    while q_stripped.startswith("--"):
+                        q_stripped = q_stripped[q_stripped.find("\n") + 1:].lstrip()
+                    q_stripped = q_stripped.upper()
+                    if not (q_stripped.startswith("SELECT") or
+                            q_stripped.startswith("WITH") or
+                            q_stripped.startswith("SHOW")):
+                        execution_results.append({
+                            "query_index": i,
+                            "query": q[:200],
+                            "status": "rejected",
+                            "reason": "Only SELECT/SHOW/WITH queries allowed for safety"
+                        })
+                        continue
+
+                    try:
+                        conn = pool.acquire(timeout=10.0)
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute(q, exec_params if exec_params else None)
+                                rows = cur.fetchall()
+                                cols = [desc[0] for desc in cur.description] if cur.description else []
+                                execution_results.append({
+                                    "query_index": i,
+                                    "query": q[:200],
+                                    "status": "success",
+                                    "row_count": len(rows),
+                                    "columns": cols,
+                                    "rows": rows[:20],  # Limit rows
+                                })
+                        finally:
+                            pool.release(conn)
+                    except Exception as e:
+                        execution_results.append({
+                            "query_index": i,
+                            "query": q[:200],
+                            "status": "error",
+                            "error": str(e)[:200],
+                        })
+
+                result["executed"] = True
+                result["execution_results"] = execution_results
+
+        return json.dumps(result, indent=2, default=str)
+
+    @mcp.tool(
+        name="list_agent_skills",
+        title="List CockroachDB Agent Skills",
+        description=(
+            "List all available CockroachDB Agent Skills from the official skills repo (.agents/skills/). "
+            "Each skill is a machine-executable playbook for cluster operations."
+        ),
+        annotations=ToolAnnotations(
+            title="List CockroachDB Agent Skills",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def list_agent_skills(ctx: Context) -> str:
+        import re
+        from pathlib import Path
+
+        skills_dir = Path(__file__).parent.parent.parent / ".agents" / "skills"
+        if not skills_dir.exists():
+            return json.dumps({"error": "Agent skills directory not found"}, indent=2)
+
+        skills = []
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if skill_dir.is_dir():
+                skill_file = skill_dir / "SKILL.md"
+                desc = ""
+                compat = ""
+                if skill_file.exists():
+                    content = skill_file.read_text()
+                    if content.startswith("---"):
+                        fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+                        if fm_match:
+                            for line in fm_match.group(1).split("\n"):
+                                if ":" in line:
+                                    k, v = line.split(":", 1)
+                                    if k.strip() == "description":
+                                        desc = v.strip()
+                                    elif k.strip() == "compatibility":
+                                        compat = v.strip()
+
+                skills.append({
+                    "name": skill_dir.name,
+                    "description": desc,
+                    "compatibility": compat,
+                })
+
+        return json.dumps(
+            {
+                "total": len(skills),
+                "skills": skills,
+            },
+            indent=2,
+        )
+
+    @mcp.tool(
+        name="ccloud_exec",
+        title="Execute ccloud CLI Command",
+        description=(
+            "Run CockroachDB Cloud CLI (ccloud) commands with JSON output for agent integration. "
+            "Supports cluster management, SQL execution, backup operations, networking, and audit logs. "
+            "Requires ccloud CLI installed and authenticated (ccloud auth login or service account)."
+        ),
+        annotations=ToolAnnotations(
+            title="Execute ccloud CLI Command",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def ccloud_exec(
+        ctx: Context,
+        command: str,
+        args: list[str] | None = None,
+        cluster_id: str | None = None,
+        timeout_seconds: int = 60,
+    ) -> str:
+        """Execute a ccloud CLI command with JSON output.
+
+        Args:
+            command: ccloud subcommand (e.g., 'cluster', 'sql', 'backup', 'network', 'audit-log')
+            args: Additional arguments (e.g., ['list', '--format=json'])
+            cluster_id: Optional cluster ID to scope the command (adds --cluster flag)
+            timeout_seconds: Command timeout (max 120)
+        """
+        import shlex
+        import subprocess
+
+        # Validate timeout
+        timeout_seconds = min(max(timeout_seconds, 5), 120)
+
+        # Allowed ccloud commands (safety allowlist — no `sql` or `node` to prevent arbitrary execution)
+        allowed_commands = {
+            "cluster", "backup", "restore", "network",
+            "audit-log", "user", "service-account", "organization",
+            "version", "completion", "auth",
+        }
+
+        cmd_parts = command.split()
+        if not cmd_parts or cmd_parts[0] not in allowed_commands:
+            return json.dumps(
+                {
+                    "error": f"Command '{command}' not allowed",
+                    "allowed_commands": sorted(allowed_commands),
+                },
+                indent=2,
+            )
+
+        # Build command
+        full_cmd = ["ccloud"] + cmd_parts
+        if args:
+            full_cmd.extend(args)
+
+        # Ensure JSON output — strip any user-supplied --format first
+        full_cmd = [p for p in full_cmd if not p.startswith("--format")]
+        full_cmd.extend(["--format", "json"])
+
+        # Add cluster scoping if provided
+        if cluster_id and "cluster" in cmd_parts[0]:
+            full_cmd.extend(["--cluster", cluster_id])
+
+        # Security: validate no shell injection (block all shell metacharacters)
+        _SHELL_METACHARS = set(";&|`$(){}[]<>!\\'\"\n\r\t#*?~")
+        for part in full_cmd:
+            for c in part:
+                if c in _SHELL_METACHARS:
+                    safe_repr = " ".join(shlex.quote(p) for p in full_cmd)
+                    logger.warning("ccloud_exec blocked: metachar %r in %s", c, safe_repr)
+                    return json.dumps({"error": f"Invalid character {c!r} in command"}, indent=2)
+
+        try:
+            # Check ccloud exists
+            result = subprocess.run(
+                ["ccloud", "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return json.dumps(
+                    {
+                        "error": "ccloud CLI not found or not authenticated",
+                        "detail": "Install: https://www.cockroachlabs.com/docs/cockroachdb-cloud/ccloud-install",
+                        "auth": "Run 'ccloud auth login' (OAuth) or 'ccloud auth login --service-account' (API key)",
+                    },
+                    indent=2,
+                )
+
+            # Execute command
+            result = subprocess.run(
+                full_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+
+            output = result.stdout.strip()
+            stderr = result.stderr.strip()
+
+            # Parse JSON output if possible
+            parsed = None
+            if output:
+                try:
+                    parsed = json.loads(output)
+                except json.JSONDecodeError:
+                    parsed = output  # Return raw text
+
+            return json.dumps(
+                {
+                    "command": " ".join(shlex.quote(p) for p in full_cmd),
+                    "exit_code": result.returncode,
+                    "stdout": parsed,
+                    "stderr": stderr if stderr else None,
+                    "success": result.returncode == 0,
+                },
+                indent=2,
+                default=str,
+            )
+
+        except subprocess.TimeoutExpired:
+            return json.dumps({"error": f"Command timed out after {timeout_seconds}s"}, indent=2)
+        except FileNotFoundError:
+            return json.dumps(
+                {
+                    "error": "ccloud CLI not installed",
+                    "install": "https://www.cockroachlabs.com/docs/cockroachdb-cloud/ccloud-install",
+                },
+                indent=2,
+            )
+        except Exception as exc:
+            logger.exception("ccloud_exec failed")
+            return json.dumps({"error": "Failed to execute ccloud"}, indent=2)
 
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
@@ -1989,6 +2713,31 @@ def create_server(
             {
                 "name": "agent_schema",
                 "description": "Query agent's own database schema via MCP",
+                "read_only": True,
+            },
+            {
+                "name": "managed_mcp_list_tools",
+                "description": "List available tools on the official CockroachDB Cloud Managed MCP Server",
+                "read_only": True,
+            },
+            {
+                "name": "managed_mcp_call",
+                "description": "Execute a tool on the official CockroachDB Cloud Managed MCP Server (cluster queries, SQL, schema)",
+                "read_only": False,
+            },
+            {
+                "name": "invoke_agent_skill",
+                "description": "Execute a CockroachDB Agent Skill from the official skills repo (health checks, triage, audits)",
+                "read_only": True,
+            },
+            {
+                "name": "list_agent_skills",
+                "description": "List all available CockroachDB Agent Skills from the official skills repo (.agents/skills/)",
+                "read_only": True,
+            },
+            {
+                "name": "ccloud_exec",
+                "description": "Execute ccloud CLI commands with JSON output (cluster ops, SQL, backups, networking, audit logs)",
                 "read_only": True,
             },
         ]
@@ -2131,18 +2880,22 @@ def create_server(
         except Exception:
             limiter_stats = {"current": 0, "queued": 0, "max_concurrent": 20}
 
+        with _metrics_lock:
+            total_snapshot = dict(_metrics_requests_total)
+            durations_snapshot = {k: list(v) for k, v in _metrics_durations.items()}
+
         lines = [
             "# HELP bastion_mcp_requests_total Total MCP HTTP requests by method, path, and status",
             "# TYPE bastion_mcp_requests_total counter",
         ]
-        for (method, path, status), count in sorted(_metrics_requests_total.items()):
+        for (method, path, status), count in sorted(total_snapshot.items()):
             lines.append(f'bastion_mcp_requests_total{{method="{method}",path="{path}",status="{status}"}} {count}')
         lines.append("")
         lines.append(
             "# HELP bastion_mcp_request_duration_seconds Request duration percentiles (sampled last 500 per path)"
         )
         lines.append("# TYPE bastion_mcp_request_duration_seconds summary")
-        for (method, path), durations in sorted(_metrics_durations.items()):
+        for (method, path), durations in sorted(durations_snapshot.items()):
             if not durations:
                 continue
             dur_sorted = sorted(durations)
@@ -2517,15 +3270,16 @@ def _make_http_app(mcp: FastMCP) -> Any:
                 response = await asyncio.wait_for(call_next(request), timeout=_request_timeout_seconds)
                 response.headers["X-Request-ID"] = request_id
                 _elapsed = time.monotonic() - _start_time
-                key = (request.method, path, response.status_code)
-                _metrics_requests_total[key] = _metrics_requests_total.get(key, 0) + 1
-                dur_key = (request.method, path)
-                if dur_key not in _metrics_durations:
-                    _metrics_durations[dur_key] = []
-                dur_list = _metrics_durations[dur_key]
-                dur_list.append(_elapsed)
-                if len(dur_list) > 500:
-                    dur_list.pop(0)
+                with _metrics_lock:
+                    key = (request.method, path, response.status_code)
+                    _metrics_requests_total[key] = _metrics_requests_total.get(key, 0) + 1
+                    dur_key = (request.method, path)
+                    if dur_key not in _metrics_durations:
+                        _metrics_durations[dur_key] = []
+                    dur_list = _metrics_durations[dur_key]
+                    dur_list.append(_elapsed)
+                    if len(dur_list) > 500:
+                        dur_list.pop(0)
                 return response
             except TimeoutError:
                 return JSONResponse({"error": "Request timeout"}, status_code=504)
@@ -2598,11 +3352,12 @@ def main() -> None:
         while True:
             time.sleep(300)  # every 5 minutes
             cutoff = time.monotonic() - 3600  # keep last hour
-            for key in list(_metrics_durations.keys()):
-                durations = _metrics_durations[key]
-                _metrics_durations[key] = [d for d in durations if d > cutoff]
-                if not _metrics_durations[key]:
-                    del _metrics_durations[key]
+            with _metrics_lock:
+                for key in list(_metrics_durations.keys()):
+                    durations = _metrics_durations[key]
+                    _metrics_durations[key] = [d for d in durations if d > cutoff]
+                    if not _metrics_durations[key]:
+                        del _metrics_durations[key]
 
     cleanup_thread = threading.Thread(target=_cleanup_metrics, daemon=True)
     cleanup_thread.start()

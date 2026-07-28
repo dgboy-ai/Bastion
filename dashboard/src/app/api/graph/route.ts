@@ -1,14 +1,10 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockGraph } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (isMockMode()) {
-    return apiSuccess(getMockGraph(), 'short', { mock: true });
-  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -19,7 +15,6 @@ export async function GET(request: Request) {
     const params: unknown[] = [];
 
     if (asOf) {
-      // Validate as_of format: ISO timestamp or relative interval like "-5s", "-1h"
       if (asOf.length > 50) {
         return apiError("as_of parameter too long (max 50 chars)", 400, "INVALID_AS_OF");
       }
@@ -34,9 +29,6 @@ export async function GET(request: Request) {
     }
 
     const entitiesRes = await safeQuery(entitiesSql, params);
-    if (entitiesRes.mock) {
-      return apiSuccess(getMockGraph(), 'short', { mock: true });
-    }
     const relationsRes = await safeQuery(relationsSql, params);
 
     type EntityRow = Record<string, unknown>;
@@ -59,13 +51,6 @@ export async function GET(request: Request) {
     return apiSuccess({ nodes, links }, 'short');
   } catch (error) {
     console.error("[api/graph] Query failed:", error instanceof Error ? error.message : "Unknown error");
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess(getMockGraph(), "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
-

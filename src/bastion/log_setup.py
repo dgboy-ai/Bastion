@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+import io
 import logging
 import os
 import sys
 from typing import Any
+
+
+def _utf8_stderr() -> io.TextIOWrapper:
+    """Return sys.stderr wrapped as UTF-8 (no-op if already UTF-8 or non-Windows)."""
+    try:
+        if hasattr(sys.stderr, "buffer") and getattr(sys.stderr, "encoding", "").lower() not in ("utf-8", "utf8"):
+            return io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    return sys.stderr  # type: ignore[return-value]
 
 try:
     import structlog
@@ -71,12 +82,12 @@ def configure_logging() -> None:
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
-        logging.basicConfig(level=level, stream=sys.stderr)
+        logging.basicConfig(level=level, stream=_utf8_stderr())
     else:
         logging.basicConfig(
             level=level,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            stream=sys.stderr,
+            stream=_utf8_stderr(),
         )
 
     logging.getLogger("botocore").setLevel(logging.WARNING)

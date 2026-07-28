@@ -115,3 +115,13 @@ omit = ["tests/*", "scripts/*", "lambda/*"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 60
+
+[tool.pyrefly]
+# Point Pyrefly at the conda environment where all packages are installed.
+# Without this it defaults to the Microsoft Store Python 3.13 and cannot
+# find mcp, dotenv, sentence_transformers, etc.
+python-interpreter = "C:\\Users\\Trueb\\miniconda3\\python.exe"
+# Exclude Pyrefly's own virtual in-memory analysis buffers from diagnostics.
+# These synthetic files (e.g. _pyrefly_virtual_\inmemory\*.py) are created by
+# Pyrefly internally and generate false-positive parse errors.
+exclude = ["**/_pyrefly_virtual_/**"]

@@ -21,8 +21,8 @@ def memory_health_real(mem: BastionMemory) -> dict[str, Any]:
     """Return memory health metrics: count, freshness distribution, pinned count."""
     pool = mem.get_pool()
     conn = pool.acquire(timeout=30.0)
-    mem._set_rls_context(conn)
     try:
+        mem._set_rls_context(conn)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(*), "
@@ -42,6 +42,30 @@ def memory_health_real(mem: BastionMemory) -> dict[str, Any]:
             avg_access = float(row[4] or 0)
             avg_importance = float(row[5] or 0)
             freshness = week / max(total, 1)
+            # Check vector index health: verify C-SPANN index exists and is operational
+            vector_healthy = False
+            vector_dim = None
+            try:
+                cur.execute(
+                    "SELECT index_type, is_operational, dimension "
+                    "FROM vector_health WHERE agent_id = %s ORDER BY last_check_at DESC LIMIT 1",
+                    (mem.agent_id,),
+                )
+                vh_row = cur.fetchone()
+                if vh_row:
+                    vector_healthy = vh_row[1]
+                    vector_dim = vh_row[2]
+                else:
+                    # Fallback: check if the vector index exists via SHOW INDEXES
+                    cur.execute(
+                        "SELECT index_type FROM vector_health "
+                        "WHERE index_name = 'idx_memory_embedding' ORDER BY last_check_at DESC LIMIT 1"
+                    )
+                    index_row = cur.fetchone()
+                    if index_row:
+                        vector_healthy = True
+            except Exception:
+                logger.debug("Vector health check skipped (table/index may not exist)")
             return {
                 "total_memories": total,
                 "pinned_memories": pinned,
@@ -50,6 +74,9 @@ def memory_health_real(mem: BastionMemory) -> dict[str, Any]:
                 "freshness_ratio": round(freshness, 4),
                 "avg_access_count": round(avg_access, 2),
                 "avg_importance_score": round(avg_importance, 2),
+                "vector_index_healthy": vector_healthy,
+                "vector_index_dimension": vector_dim,
+                "embedding_degraded": getattr(mem, "_embedding_degraded", False),
             }
     finally:
         pool.release(conn)
@@ -91,8 +118,8 @@ def detect_anomalies_real(mem: BastionMemory, agent_id: str) -> list[dict]:
     """Detect anomalies in agent memory patterns."""
     pool = mem.get_pool()
     conn = pool.acquire(timeout=30.0)
-    mem._set_rls_context(conn)
     try:
+        mem._set_rls_context(conn)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s",

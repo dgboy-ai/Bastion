@@ -345,10 +345,12 @@ class BastionAgent:
             )
         )
 
-        # 6. Update conversation history (thread-safe)
+        # 6. Update conversation history (thread-safe, capped at 2000 turns)
         with self._history_lock:
             self._conversation_history.append({"role": "user", "content": user_message})
             self._conversation_history.append({"role": "assistant", "content": response})
+            if len(self._conversation_history) > 2000:
+                self._conversation_history = self._conversation_history[-2000:]
 
         # 7. Reinforce relevant memories
         memory_ref = self.memory
@@ -509,7 +511,8 @@ class BastionAgent:
 
     def start_consolidation(self):
         """Start the background memory consolidation process."""
-        if self._consolidator:
+        if self._consolidator and not getattr(self._consolidator, "_started", False):
+            self._consolidator._started = True
             try:
                 asyncio.create_task(self._consolidator.run())
             except RuntimeError:

@@ -34,7 +34,7 @@ class FakeEngine:
         self._pinned = []
         self._stored = []
 
-    def list_all(self, namespace_scope="own", memory_type=None):
+    def list_all(self, namespace_scope="own", memory_type=None, **kwargs):
         return self._memories
 
     def get_pinned(self, min_priority=1):

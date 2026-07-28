@@ -41,12 +41,12 @@ export default function SecurityPage() {
         <h2 style={{ fontSize: "22px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "36px 0 12px" }}>Cryptographic Integrity</h2>
         <p style={{ marginBottom: "12px" }}>Every memory block is sealed with a SHA-256 hash chain:</p>
         <div style={{ background: "#0a0608", border: "1px solid rgba(255,170,0,.12)", borderRadius: "8px", padding: "14px 16px", fontFamily: "var(--font-mono)", fontSize: "12px", color: "#d0c8d4", lineHeight: 1.6, margin: "16px 0" }}>
-          <span style={{ color: C.mute }}>// Each memory stores:</span>{"\n"}
+          <span style={{ color: C.mute }}>{'// Each memory stores:'}</span>{"\n"}
           <span style={{ color: C.cyan }}>cryptographic_hash</span> = SHA-256(content + previous_hash){"\n"}
           <span style={{ color: C.cyan }}>previous_hash</span> = SHA-256 of the last block{"\n"}
           {"\n"}
-          <span style={{ color: C.mute }}>// If any record is modified:</span>{"\n"}
-          <span style={{ color: C.lava }}>// Hash chain breaks → detected by memory_audit</span>
+          <span style={{ color: C.mute }}>{'// If any record is modified:'}</span>{"\n"}
+          <span style={{ color: C.lava }}>{'// Hash chain breaks → detected by memory_audit'}</span>
         </div>
 
         <h2 style={{ fontSize: "22px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "36px 0 12px" }}>A2A Trust Protocol</h2>

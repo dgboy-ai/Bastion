@@ -1,5 +1,4 @@
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockMemories } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
@@ -10,10 +9,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
   const type = (searchParams.get("type") || "").slice(0, 255);
-
-  if (isMockMode()) {
-    return apiSuccess(getMockAuditEvents(limit), "short", { mock: true });
-  }
 
   try {
     let sql = `
@@ -36,10 +31,6 @@ export async function GET(request: Request) {
     }
 
     const result = await safeQuery(sql, params);
-
-    if (result.mock) {
-      return apiSuccess(getMockAuditEvents(limit), "short", { mock: true });
-    }
 
     const events = result.rows.map((row: Record<string, unknown>) => {
       const det = (row.details || {}) as Record<string, unknown>;
@@ -64,13 +55,6 @@ export async function GET(request: Request) {
     return apiSuccess({ events }, "short");
   } catch (error) {
     console.error("[api/audit] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    const fallbackEvents = getMockAuditEvents(10);
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess({ events: fallbackEvents }, "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
@@ -93,60 +77,3 @@ function mapActionToStatus(action: string): string {
   if (action.includes("fail") || action.includes("error")) return "failed";
   return "success";
 }
-
-function extractContentPreview(details: unknown): string {
-  if (!details || typeof details !== "object") return "N/A";
-  const d = details as Record<string, unknown>;
-  if (d.content_preview) return String(d.content_preview);
-  if (d.content) return String(d.content).substring(0, 100);
-  if (d.memory_type) return `[${d.memory_type}] memory operation`;
-  return "Audit entry";
-}
-
-function extractHash(details: unknown): string | undefined {
-  if (!details || typeof details !== "object") return undefined;
-  const d = details as Record<string, unknown>;
-  if (d.cryptographic_hash) return String(d.cryptographic_hash);
-  if (d.hash) return String(d.hash);
-  return undefined;
-}
-
-function extractPreviousHash(details: unknown): string | undefined {
-  if (!details || typeof details !== "object") return undefined;
-  const d = details as Record<string, unknown>;
-  if (d.previous_hash) return String(d.previous_hash);
-  return undefined;
-}
-
-function extractTrustScore(details: unknown): number | undefined {
-  if (!details || typeof details !== "object") return undefined;
-  const d = details as Record<string, unknown>;
-  if (typeof d.trust_score === "number") return d.trust_score;
-  if (typeof d.importance_score === "number") return d.importance_score / 10;
-  return 0.85;
-}
-
-function getMockAuditEvents(limit: number) {
-  const memories = getMockMemories();
-  const events = [];
-  const actions = ["memory_store", "memory_search", "guard_scan", "hash_verify", "memory_heal"];
-
-  for (let i = 0; i < Math.min(limit, 20); i++) {
-    const mem = memories[i % memories.length];
-    const action = actions[i % actions.length];
-    events.push({
-      id: `audit-${i}`,
-      timestamp: new Date(Date.now() - i * 60000).toISOString(),
-      type: mapActionToType(action),
-      agent_id: mem.agentId,
-      content_preview: mem.content.substring(0, 100),
-      hash: mem.cryptographicHash || `hash-${i}`,
-      previous_hash: i > 0 ? `hash-${i - 1}` : null,
-      trust_score: 0.7 + Math.random() * 0.3,
-      status: i % 5 === 0 ? "blocked" : "success",
-      details: JSON.stringify({ memory_type: mem.memoryType }),
-    });
-  }
-  return { events };
-}
-

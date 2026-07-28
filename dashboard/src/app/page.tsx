@@ -789,7 +789,7 @@ function Consolidation() {
               {/* Daemon status bar */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
                 <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute,letterSpacing:"2px"}}>
-                  DAEMON_STATE <span style={{color:steps[stage].c}}>// {daemonLabels[stage]}</span>
+                  DAEMON_STATE <span style={{color:steps[stage].c}}>{'// '}{daemonLabels[stage]}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
                   <div style={{width:"6px",height:"6px",borderRadius:"50%",background:steps[stage].c,boxShadow:`0 0 8px ${steps[stage].c}`,animation:"pulse 1.5s infinite"}}/>

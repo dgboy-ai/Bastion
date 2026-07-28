@@ -55,6 +55,7 @@ class SerializationRetryEngine:
         with span:
             last_error: Exception | None = None
             start_time = time.monotonic()
+            isolation_applied = False
 
             for attempt in range(self.max_retries + 1):
                 # Check total time limit
@@ -68,6 +69,16 @@ class SerializationRetryEngine:
                     break
 
                 try:
+                    was_autocommit = getattr(conn, "autocommit", False)
+                    if not isolation_applied:
+                        with conn.cursor() as cur:
+                            if was_autocommit:
+                                cur.execute("BEGIN")
+                            isolation_upper = isolation.upper()
+                            if isolation_upper not in ("SERIALIZABLE", "READ COMMITTED", "SNAPSHOT", "READ UNCOMMITTED", "REPEATABLE READ"):
+                                isolation_upper = "SERIALIZABLE"
+                            cur.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation_upper}")
+                            isolation_applied = True
                     with conn.cursor() as cur:
                         result = operation(cur)
                         conn.commit()
@@ -75,6 +86,7 @@ class SerializationRetryEngine:
                         return result
                 except Exception as e:
                     conn.rollback()
+                    isolation_applied = False  # Must re-apply after rollback
                     if not _is_serialization_error(e) or attempt == self.max_retries:
                         raise
 
@@ -82,7 +94,7 @@ class SerializationRetryEngine:
                     self._total_retries += 1
                     delay = self._compute_delay(attempt)
                     # Cap delay to not exceed total time limit
-                    remaining = self.max_total_time_seconds - (time.monotonic() - start_time)
+                    remaining = max(0, self.max_total_time_seconds - (time.monotonic() - start_time))
                     delay = min(delay, remaining * 1000, self.max_delay_ms)
                     logger.warning(
                         "serialization_retry",

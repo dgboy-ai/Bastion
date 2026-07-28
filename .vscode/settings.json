@@ -1,0 +1,11 @@
+{
+    "chat.mcp.serverSampling": {
+        "bastion/.vscode/mcp.json: cockroachdb-cloud": {
+            "allowedModels": [
+                "copilotcli/auto",
+                "copilot/auto",
+                "agent-host-copilotcli:auto"
+            ]
+        }
+    }
+}

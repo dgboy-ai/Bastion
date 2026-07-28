@@ -256,12 +256,18 @@ class MemoryDreamer:
         # Cap at 200 to bound O(n²) complexity
         memories = memories[:200]
 
+        _STOP_WORDS = {"the", "a", "an", "is", "was", "were", "be", "been", "are",
+                       "in", "on", "at", "to", "for", "of", "and", "or", "but", "not",
+                       "it", "its", "this", "that", "these", "those", "with", "from",
+                       "by", "as", "do", "does", "did", "has", "have", "had", "can",
+                       "could", "will", "would", "shall", "should", "may", "might"}
+
         # Simple O(n^2) similarity check — fine for <200 memories
         for i, mem_a in enumerate(memories):
             for mem_b in memories[i + 1 :]:
-                # Quick text similarity check
-                words_a = set((mem_a.content or "").lower().split())
-                words_b = set((mem_b.content or "").lower().split())
+                # Quick text similarity check with stop word filtering
+                words_a = {w for w in (mem_a.content or "").lower().split() if w not in _STOP_WORDS}
+                words_b = {w for w in (mem_b.content or "").lower().split() if w not in _STOP_WORDS}
                 if not words_a or not words_b:
                     continue
                 intersection = words_a & words_b
@@ -305,10 +311,8 @@ class MemoryDreamer:
         The secondary memory is deleted but its contribution is recorded
         in the primary's metadata for audit trail purposes.
         """
-        # Delete the secondary (lower-importance duplicate)
-        # In production, we'd merge content, but for safety we just delete
-        # and record that a merge happened
-        self._memory._delete_by_id(candidate.memory_id)
+        # Delete the secondary (lower-importance duplicate) using public API
+        self._memory.delete_memory(candidate.memory_id)
         logger.debug(
             "Merged duplicate memory",
             removed_id=candidate.memory_id,
@@ -339,8 +343,6 @@ class MemoryDreamer:
                 "analysis_result": True,
                 "analysis_type": "consolidation",
             },
-            _skip_guard=True,
-            _guard_bypass_token=True,  # Derived from already-validated memory
         )
 
     def _extract_lesson(self, record: Any) -> str | None:
@@ -423,7 +425,7 @@ class MemoryDreamer:
                 if expires.tzinfo is None:
                     expires = expires.replace(tzinfo=UTC)
                 if expires < now:
-                    self._memory._delete_by_id(mem.memory_id)
+                    self._memory.delete_memory(mem.memory_id)
                     pruned += 1
                     continue
 
@@ -432,7 +434,7 @@ class MemoryDreamer:
                 created = created.replace(tzinfo=UTC)
             age_days = (now - created).days
             if age_days > 7 and mem.access_count <= self._prune_access_threshold and mem.importance_score < 3.0:
-                self._memory._delete_by_id(mem.memory_id)
+                self._memory.delete_memory(mem.memory_id)
                 pruned += 1
 
         return pruned
