@@ -2254,7 +2254,7 @@ def main():
 
     mock = "--mock" in sys.argv or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
     port = int(os.environ.get("A2A_PORT", os.environ.get("PORT", "9998")))
-    host = os.environ.get("A2A_HOST", "127.0.0.1")
+    host = os.environ.get("A2A_HOST", "0.0.0.0")
 
     app, memory = create_a2a_server(mock=mock, host=host, port=port)
 
