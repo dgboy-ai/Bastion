@@ -247,7 +247,7 @@ class MultiSignalRetriever:
             if hasattr(self._memory, "_embed"):
                 query_embedding = self._memory._embed(query)
         except Exception:
-            pass
+            logger.warning("embedding_failed", extra={"query": query[:128]}, exc_info=True)
 
         elapsed_prep = (datetime.now(UTC) - start).total_seconds() * 1000
 

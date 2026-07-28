@@ -7,6 +7,7 @@ if application code has bugs.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from bastion.log_setup import get_logger
@@ -62,6 +63,7 @@ class RowLevelSecurity:
 
     def __init__(self, conn: Any):
         self.conn = conn
+        self._verify_lock = threading.Lock()
 
     def enable_rls(self) -> dict[str, Any]:
         """Enable RLS on all agent tables."""
@@ -117,10 +119,6 @@ class RowLevelSecurity:
 
     def verify_isolation(self, agent_id: str) -> dict[str, Any]:
         """Verify that RLS is working correctly."""
-        import threading
-
-        if not hasattr(self, "_verify_lock"):
-            self._verify_lock = threading.Lock()
         with self._verify_lock:
             prev_autocommit = self.conn.autocommit
             try:

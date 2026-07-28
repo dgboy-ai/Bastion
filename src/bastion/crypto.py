@@ -190,19 +190,18 @@ def rotate_hmac_secret() -> bytes:
     new_secret = secrets.token_bytes(32)
     with _hmac_lock:
         _hmac_secret = new_secret
-    # Persist to disk
-    try:
-        os.makedirs(_SECRET_DIR, exist_ok=True, mode=0o700)
-        protected = _protect_secret(new_secret)
-        tmp = _SECRET_FILE + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
         try:
-            os.write(fd, protected)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp, _SECRET_FILE)
-        logger.info("HMAC secret rotated and persisted to %s", _SECRET_FILE)
-    except Exception as exc:
-        logger.error("Failed to persist rotated HMAC secret: %s", exc)
+            os.makedirs(_SECRET_DIR, exist_ok=True, mode=0o700)
+            protected = _protect_secret(new_secret)
+            tmp = _SECRET_FILE + ".tmp"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+            try:
+                os.write(fd, protected)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, _SECRET_FILE)
+            logger.info("HMAC secret rotated and persisted to %s", _SECRET_FILE)
+        except Exception as exc:
+            logger.error("Failed to persist rotated HMAC secret: %s", exc)
     return new_secret

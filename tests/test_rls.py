@@ -75,7 +75,9 @@ class TestPoolResetAll:
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         pool._total_created = 1
         pool.release(conn)
-        cur.execute.assert_called_once_with("RESET ALL")
+        assert cur.execute.call_count == 2
+        cur.execute.assert_any_call("ROLLBACK")
+        cur.execute.assert_any_call("RESET ALL")
 
     def test_release_adds_conn_back_to_pool(self):
         conn = MagicMock()

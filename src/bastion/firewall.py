@@ -139,8 +139,8 @@ class CognitiveFirewall:
 
             pool = self.memory.get_pool()
             conn = pool.acquire(timeout=30.0)
-            self.memory._set_rls_context(conn)
             try:
+                self.memory._set_rls_context(conn)
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT memory_id, agent_id, memory_type, content, embedding, metadata, "

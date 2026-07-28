@@ -82,6 +82,8 @@ class MemoryRecord(BaseModel):
             trust_level=int(vals.get("trust_level", 2)) if vals.get("trust_level") is not None else 2,
             source_provenance=str(vals.get("source_provenance", "agent_direct")),
             overwrite_count=int(vals.get("overwrite_count", 0)) if vals.get("overwrite_count") is not None else 0,
+            is_pinned=bool(vals.get("is_pinned", False)),
+            pin_priority=int(vals.get("pin_priority", 0)) if vals.get("pin_priority") is not None else 0,
         )
 
     def to_dict(self) -> dict[str, Any]:

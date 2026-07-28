@@ -55,6 +55,7 @@ class ConnectionPool:
         self.max_size = max_size
         self.max_idle_seconds = max_idle_seconds
         self._pool: deque[tuple[Any, float]] = deque()  # (conn, last_used_time)
+        self._pool_ids: set[int] = set()  # id(conn) for O(1) double-release check
         self._lock = threading.Lock()
         self._total_created = 0
         self._total_reused = 0
@@ -80,17 +81,22 @@ class ConnectionPool:
     def _reap_idle_connections(self) -> None:
         """Close connections that have been idle too long."""
         now = time.time()
+        stale: list[Any] = []
         with self._lock:
             while self._pool:
                 conn, last_used = self._pool[0]
                 if now - last_used > self.max_idle_seconds:
                     self._pool.popleft()
-                    with contextlib.suppress(Exception):
-                        conn.close()
+                    self._pool_ids.discard(id(conn))
+                    stale.append(conn)
                     self._total_expired += 1
-                    self._total_created -= 1
+                    if self._total_created > 0:
+                        self._total_created -= 1
                 else:
                     break
+        for conn in stale:
+            with contextlib.suppress(Exception):
+                conn.close()
 
     def _create_connection(self) -> Any:
         """Create a new database connection with statement timeout."""
@@ -134,37 +140,44 @@ class ConnectionPool:
             BastionPoolExhaustedError: If no connection available within timeout or
                 consumer quota exceeded.
         """
-        # Check consumer quota before attempting to acquire
-        if self._max_per_consumer > 0:
-            with self._consumer_lock:
-                count = self._consumer_counts.get(consumer_id, 0)
-                if count >= self._max_per_consumer:
-                    self._total_rejected += 1
-                    raise BastionPoolExhaustedError(
-                        f"Consumer '{consumer_id}' exceeded max_per_consumer={self._max_per_consumer}"
-                    )
-
         deadline = time.time() + timeout
 
         while True:
+            # Atomically check AND reserve consumer slot
+            consumer_reserved = False
+            if self._max_per_consumer > 0:
+                with self._consumer_lock:
+                    count = self._consumer_counts.get(consumer_id, 0)
+                    if count >= self._max_per_consumer:
+                        self._total_rejected += 1
+                        raise BastionPoolExhaustedError(
+                            f"Consumer '{consumer_id}' exceeded max_per_consumer={self._max_per_consumer}"
+                        )
+                    self._consumer_counts[consumer_id] = count + 1
+                    consumer_reserved = True
+
             conn_to_check = None
             conn_last_used = 0.0
             with self._lock:
                 while self._pool:
                     conn_to_check, conn_last_used = self._pool.popleft()
+                    self._pool_ids.discard(id(conn_to_check))
                     break
 
             if conn_to_check is not None:
-                # Only run full health check if connection has been idle > threshold
-                # Configurable via BASTION_POOL_IDLE_CHECK_SECONDS (default 30s)
                 idle_threshold = int(os.environ.get("BASTION_POOL_IDLE_CHECK_SECONDS", "30"))
                 idle_seconds = time.time() - conn_last_used
                 if idle_seconds < idle_threshold or self._is_healthy(conn_to_check):
                     with self._lock:
                         self._total_reused += 1
-                    self._increment_consumer(consumer_id, conn_to_check)
+                    if consumer_reserved:
+                        with self._conn_to_consumer_lock:
+                            self._conn_to_consumer[id(conn_to_check)] = consumer_id
                     return conn_to_check
                 else:
+                    if consumer_reserved:
+                        with self._consumer_lock:
+                            self._consumer_counts[consumer_id] = self._consumer_counts.get(consumer_id, 0) - 1
                     with contextlib.suppress(Exception):
                         conn_to_check.close()
                     with self._lock:
@@ -183,13 +196,22 @@ class ConnectionPool:
             if create_conn:
                 try:
                     conn = self._create_connection()
-                    self._increment_consumer(consumer_id, conn)
+                    if consumer_reserved:
+                        with self._conn_to_consumer_lock:
+                            self._conn_to_consumer[id(conn)] = consumer_id
                     return conn
                 except Exception:
+                    if consumer_reserved:
+                        with self._consumer_lock:
+                            self._consumer_counts[consumer_id] = self._consumer_counts.get(consumer_id, 0) - 1
                     with self._lock:
                         self._total_created -= 1  # rollback on failure
                     logger.warning("Failed to create connection")
                     raise
+            else:
+                if consumer_reserved:
+                    with self._consumer_lock:
+                        self._consumer_counts[consumer_id] = self._consumer_counts.get(consumer_id, 0) - 1
 
             if time.time() >= deadline:
                 with self._lock:
@@ -198,13 +220,8 @@ class ConnectionPool:
 
             time.sleep(0.01)
 
-    def _increment_consumer(self, consumer_id: str, conn: Any) -> None:
-        """Track connection ownership for per-consumer quota."""
-        if self._max_per_consumer > 0:
-            with self._consumer_lock:
-                self._consumer_counts[consumer_id] = self._consumer_counts.get(consumer_id, 0) + 1
-            with self._conn_to_consumer_lock:
-                self._conn_to_consumer[id(conn)] = consumer_id
+    # NOTE: _increment_consumer was removed in favor of inline tracking in acquire()
+    # Kept as a no-op placeholder if any external code references it by name.
 
     def _decrement_consumer(self, conn: Any) -> None:
         """Release consumer quota tracking for a connection."""
@@ -232,19 +249,19 @@ class ConnectionPool:
         """
         self._decrement_consumer(conn)
 
-        # Guard against double-release — track which connections are in the pool
+        # Guard against double-release — O(1) membership check via _pool_ids
         with self._lock:
-            if conn in [c for c, _ in self._pool]:
+            if id(conn) in self._pool_ids:
                 logger.warning("Double-release detected for connection %s — discarding", id(conn))
                 return
 
         reset_ok = False
         try:
             with conn.cursor() as cur:
-                # Rollback any open transaction before resetting session state
                 with contextlib.suppress(Exception):
                     cur.execute("ROLLBACK")
                 cur.execute("RESET ALL")
+            conn.autocommit = True
             reset_ok = True
         except Exception:
             logger.debug("RESET ALL failed during release — discarding connection")
@@ -258,8 +275,8 @@ class ConnectionPool:
             elif hasattr(conn, "closed"):
                 is_healthy = not getattr(conn, "closed", False)
             # If neither method available, assume healthy (will be caught on next use)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Connection health check failed: %s", exc)
 
         if not reset_ok or not is_healthy:
             # Discard connection to prevent leaking stale state
@@ -272,6 +289,7 @@ class ConnectionPool:
         with self._lock:
             if len(self._pool) < self.max_size:
                 self._pool.append((conn, time.time()))
+                self._pool_ids.add(id(conn))
             else:
                 with contextlib.suppress(Exception):
                     conn.close()
@@ -287,6 +305,7 @@ class ConnectionPool:
                 "total_created": self._total_created,
                 "total_reused": self._total_reused,
                 "total_expired": self._total_expired,
+                "total_rejected": self._total_rejected,
                 "reuse_rate": round(self._total_reused / max(self._total_created + self._total_reused, 1) * 100, 2),
                 "max_per_consumer": self._max_per_consumer,
                 "active_consumers": len(self._consumer_counts),
@@ -362,8 +381,8 @@ class AsyncConnectionPool:
             closed_val = getattr(conn, "closed", None)
             if is_closed_val is True or closed_val is True:
                 is_healthy = False
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Async health check failed: %s", exc)
 
         if not reset_ok or not is_healthy:
             # Discard connection

@@ -220,7 +220,7 @@ class SecurityReport:
 
 # ── Prompt Injection Patterns (ASI06) ────────────────────────────────────────
 
-_INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
+_INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
     # ── Instruction Override ──────────────────────────────────────────────────
     (
         re.compile(r"ignore\s+(all\s+)?(previous|prior|earlier|above|preceding)\s+instructions", re.I),
@@ -395,15 +395,19 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
     (re.compile(r"reset\s+your\s+(memory|context|instructions)", re.I), "Memory reset injection", ThreatSeverity.HIGH),
     (re.compile(r"clear\s+your\s+(context|memory|instructions)", re.I), "Memory clear injection", ThreatSeverity.HIGH),
     (re.compile(r"start\s+(over|fresh)\s+(from|with|as|new)", re.I), "Session reset injection", ThreatSeverity.HIGH),
-]
+)
 
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
 
-_SECRET_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
-    (re.compile(r"\b(?![a-f0-9\-]{32,}\b)[A-Za-z0-9_-]{32,}\b"), "Potential API key or token", ThreatSeverity.HIGH),
+_SECRET_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
     (
-        re.compile(r"(?i)(?:sk|pk|api)[-_]?[a-z0-9]{20,}"),
-        "Structured API key pattern",
+        re.compile(r"(?i)(?:sk[-_])?[a-z0-9]{32,48}(?:[=+-]|$)"),
+        "Potential API key or token (sk-prefixed length-32+)",
+        ThreatSeverity.HIGH,
+    ),
+    (
+        re.compile(r"(?i)(?:pk|api)[-_]?[a-z0-9]{20,}"),
+        "Structured API key pattern (pk/api-prefixed)",
         ThreatSeverity.HIGH,
     ),
     (
@@ -418,7 +422,7 @@ _SECRET_PATTERNS: list[tuple[re.Pattern, str, ThreatSeverity]] = [
     ),
     (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key)"), "AWS credential", ThreatSeverity.CRITICAL),
     (re.compile(r"(?i)(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}"), "GitHub token", ThreatSeverity.CRITICAL),
-]
+)
 
 
 class MemoryGuard:
@@ -640,8 +644,8 @@ class MemoryGuard:
                                 )
                             )
                             break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Base64 decode failed (non-critical): %s", exc)
 
         # Check for URL-encoded suspicious content
         if "%" in content:
@@ -840,7 +844,7 @@ class MemoryGuard:
 
 # ── MCP Tool Manifest Scanner (ClawHavoc Defence) ─────────────────────────
 
-MALICIOUS_TOOL_PATTERNS = [
+MALICIOUS_TOOL_PATTERNS = (
     re.compile(r"exfiltrat", re.IGNORECASE),
     re.compile(r"send.*credential", re.IGNORECASE),
     re.compile(r"forward.*to.*http", re.IGNORECASE),
@@ -850,7 +854,7 @@ MALICIOUS_TOOL_PATTERNS = [
     re.compile(r"steal.*key", re.IGNORECASE),
     re.compile(r"bypass.*security", re.IGNORECASE),
     re.compile(r"override.*permission", re.IGNORECASE),
-]
+)
 
 
 @dataclass

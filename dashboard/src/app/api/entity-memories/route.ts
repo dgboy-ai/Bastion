@@ -1,6 +1,5 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockMemories } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
@@ -37,14 +36,6 @@ export async function GET(request: Request) {
       [entityId, limit, offset]
     );
 
-    if (isMockMode() || countRes.mock || memoriesRes.mock) {
-      const allMemories = getMockMemories().filter((_, i) => i % 2 === 0);
-      const total = allMemories.length;
-      const totalPages = Math.ceil(total / limit);
-      const memories = allMemories.slice(offset, offset + limit);
-      return apiSuccess({ memories, total, page, limit, totalPages }, 'short', { mock: true });
-    }
-
     const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
     const totalPages = Math.ceil(total / limit);
     type MemoryRow = Record<string, unknown>;
@@ -60,14 +51,6 @@ export async function GET(request: Request) {
     return apiSuccess({ memories, total, page, limit, totalPages }, 'short');
   } catch (error) {
     console.error("[api/entity-memories] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    const fallbackMemories = getMockMemories().slice(0, 5);
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess({ memories: fallbackMemories, total: fallbackMemories.length, page: 1, limit: 20, totalPages: 1 }, "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
-

@@ -46,7 +46,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
   useEffect(() => { onNodeClickRef.current = onNodeClick; });
 
   useEffect(() => {
-    if (!svgRef.current || nodes.length === 0) return;
+    if (!svgRef.current) return;
 
     const width = svgRef.current.clientWidth || 800;
     const height = svgRef.current.clientHeight || 600;
@@ -54,6 +54,8 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     // Clear previous drawing
     const svg = select(svgRef.current);
     svg.selectAll("*").remove();
+
+    if (nodes.length === 0) return;
 
     const defs = svg.append("defs");
 
@@ -127,7 +129,11 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
         const tgtId = typeof l.target === "object" ? l.target.id : l.target;
         return nodeIds.has(srcId) && nodeIds.has(tgtId);
       })
-      .map((l) => ({ ...l }));
+      .map((l) => ({
+        ...l,
+        source: typeof l.source === "object" ? l.source.id : l.source,
+        target: typeof l.target === "object" ? l.target.id : l.target,
+      }));
 
     // Dynamic layout constraints
     const simulation = forceSimulation<Node>(nodes)
@@ -235,8 +241,8 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     simulation.on("tick", () => {
       // Calculate arc curves for link elements
       link.attr("d", (d) => {
-        const s = d.source as Node;
-        const t = d.target as Node;
+        const s = d.source as unknown as Node;
+        const t = d.target as unknown as Node;
         const sx = s.x || 0;
         const sy = s.y || 0;
         const tx = t.x || 0;

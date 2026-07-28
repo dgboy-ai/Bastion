@@ -452,7 +452,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
 function MemoryHeatmap({ hourly }: { hourly: number[] }) {
   const data = useMemo(() =>
     hourly.length > 0 ? hourly : Array.from({ length: 24 }, (_, i) =>
-      Math.floor(30 + Math.sin(i * 0.5) * 20 + Math.random() * 25)),
+      30 + Math.floor(Math.sin(i * 0.5) * 20 + ((i * 7 + 13) % 25))),
   [hourly]);
   const max = Math.max(...data, 1);
   const hours = ["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"];

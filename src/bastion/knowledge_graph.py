@@ -202,7 +202,7 @@ class KnowledgeGraph:
         relation_path: list[str] | None = None,
         hops: int = 2,
     ) -> list[dict[str, Any]]:
-        """BFS traversal from start_entity. Returns list of {source, target, relation, confidence, depth}."""
+        """BFS traversal from start_entity using a single recursive CTE on CockroachDB."""
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
         if self._set_rls:
@@ -218,43 +218,79 @@ class KnowledgeGraph:
                     return []
                 start_id = str(row[0])
 
-                found: list[dict[str, Any]] = []
-                visited: set[str] = {start_id}
-                queue: deque[tuple[str, int]] = deque([(start_id, 0)])
+                anchor_filter = ""
+                recursive_filter = ""
+                sql_params = []
 
-                while queue:
-                    eid, depth = queue.popleft()
-                    if depth >= hops:
-                        continue
+                sql_params.append(start_id)
+                sql_params.append(self.agent_id)
+                if relation_path:
+                    placeholders = ", ".join("%s" for _ in relation_path)
+                    anchor_filter = f"AND r.relation_type IN ({placeholders})"
+                    sql_params.extend(relation_path)
 
-                    rel_type_filter = ""
-                    params: list[Any] = [eid]
-                    if relation_path:
-                        placeholders = ", ".join("%s" for _ in relation_path)
-                        rel_type_filter = f"AND r.relation_type IN ({placeholders})"
-                        params.extend(relation_path)
+                sql_params.append(hops)
+                sql_params.append(self.agent_id)
+                if relation_path:
+                    placeholders = ", ".join("%s" for _ in relation_path)
+                    recursive_filter = f"AND r.relation_type IN ({placeholders})"
+                    sql_params.extend(relation_path)
 
-                    cur.execute(
-                        f"SELECT r.relation_type, r.confidence, r.source_memory_id, "
-                        f"e.name AS target_name, e.entity_id AS target_id "
-                        f"FROM agent_relations r JOIN agent_entities e ON r.target_entity_id = e.entity_id "
-                        f"WHERE r.source_entity_id = %s {rel_type_filter}",
-                        params,
-                    )
-                    for rel_row in cur.fetchall():
-                        target_id = str(rel_row[4])
-                        found.append(
-                            {
-                                "source": start_entity,
-                                "target": str(rel_row[3]),
-                                "relation": str(rel_row[0]),
-                                "confidence": float(rel_row[1]),
-                                "depth": depth + 1,
-                            }
-                        )
-                        if target_id not in visited:
-                            visited.add(target_id)
-                            queue.append((target_id, depth + 1))
+                cte_sql = f"""
+                WITH RECURSIVE bfs AS (
+                    -- Anchor member
+                    SELECT 
+                        r.source_entity_id, 
+                        r.target_entity_id, 
+                        r.relation_type, 
+                        r.confidence,
+                        r.source_memory_id,
+                        1 AS depth
+                    FROM agent_relations r
+                    WHERE r.source_entity_id = %s
+                      AND r.agent_id = %s
+                      {anchor_filter}
+                    
+                    UNION ALL
+                    
+                    -- Recursive member
+                    SELECT 
+                        r.source_entity_id, 
+                        r.target_entity_id, 
+                        r.relation_type, 
+                        r.confidence,
+                        r.source_memory_id,
+                        b.depth + 1 AS depth
+                    FROM agent_relations r
+                    JOIN bfs b ON r.source_entity_id = b.target_entity_id
+                    WHERE b.depth < %s
+                      AND r.agent_id = %s
+                      {recursive_filter}
+                )
+                SELECT DISTINCT ON (b.source_entity_id, b.target_entity_id, b.relation_type)
+                    se.name AS source_name,
+                    te.name AS target_name,
+                    b.relation_type,
+                    b.confidence,
+                    b.source_memory_id,
+                    b.depth
+                FROM bfs b
+                JOIN agent_entities se ON b.source_entity_id = se.entity_id
+                JOIN agent_entities te ON b.target_entity_id = te.entity_id
+                ORDER BY b.source_entity_id, b.target_entity_id, b.relation_type, b.depth ASC;
+                """
+
+                cur.execute(cte_sql, sql_params)
+
+                found = []
+                for row in cur.fetchall():
+                    found.append({
+                        "source": str(row[0]),
+                        "target": str(row[1]),
+                        "relation": str(row[2]),
+                        "confidence": float(row[3]),
+                        "depth": int(row[5]),
+                    })
                 return found
         finally:
             pool.release(conn)

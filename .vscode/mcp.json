@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "bastion-memory": {
+      "type": "http",
+      "url": "http://127.0.0.1:8005/mcp",
+      "headers": {
+        "Authorization": "Bearer bastion-f6ce4b88f8f1ecb1bbfba069ea86955e30be9c1b"
+      }
+    },
+    "cockroachdb-cloud": {
+      "type": "http",
+      "url": "https://cockroachlabs.cloud/mcp",
+      "headers": {
+        "mcp-cluster-id": "9a423301-d502-42f4-a5e5-1e7664e4e025"
+      }
+    }
+  }
+}

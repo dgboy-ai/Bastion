@@ -20,7 +20,9 @@ from bastion.log_setup import get_logger
 logger = get_logger(__name__)
 
 # Approximate tokens per word (English average)
-TOKENS_PER_WORD = 1.3
+TOKENS_PER_WORD: float = 1.3
+
+_MAX_CANDIDATES = 500
 
 
 def _estimate_tokens(text: str) -> int:
@@ -127,11 +129,12 @@ class ContextBudgetManager:
         query: str | None = None,
         min_importance: float = 0.0,
         include_types: list[str] | None = None,
+        session_id: str | None = None,
     ) -> PackResult:
         """Pack memories into a token budget.
 
         Args:
-            budget_tokens: Maximum tokens to use.
+            budget_tokens: Maximum tokens to use (must be >= 1).
             query: Optional query for relevance-based ranking.
             min_importance: Minimum importance score to include.
             include_types: Optional filter by memory types.
@@ -139,10 +142,18 @@ class ContextBudgetManager:
         Returns:
             PackResult with packed memories and statistics.
         """
+        if budget_tokens < 1:
+            raise ValueError(f"budget_tokens must be >= 1, got {budget_tokens}")
         result = PackResult(budget_tokens=budget_tokens)
 
         # Reserve budget for pinned memories first
-        pinned = self._memory.get_pinned(min_priority=1) if hasattr(self._memory, "get_pinned") else []
+        pinned = []
+        if hasattr(self._memory, "get_pinned"):
+            try:
+                pinned = self._memory.get_pinned(min_priority=1)
+            except Exception as exc:
+                logger.warning("Failed to fetch pinned memories: %s", exc)
+
         pinned_tokens = 0
         for mem in pinned:
             tokens = _estimate_tokens(mem.content or "")
@@ -162,24 +173,44 @@ class ContextBudgetManager:
         remaining_budget = budget_tokens - pinned_tokens
 
         # Get candidate memories — use SQL-filtered queries to avoid O(n) loading
-        if query and hasattr(self._memory, "search"):
-            all_memories = self._memory.search(query, k=min(200, budget_tokens // 10), namespace_scope="own")
-        elif hasattr(self._memory, "list_by_importance"):
-            all_memories = self._memory.list_by_importance(
-                min_importance=min_importance,
-                memory_type=include_types[0] if include_types and len(include_types) == 1 else None,
-                limit=200,
-                exclude_ids={p.memory_id for p in result.memories},
-            )
-        else:
-            all_memories = self._memory.list_all(namespace_scope="own")
-        if include_types and not (hasattr(self._memory, "list_by_importance") and len(include_types) != 1):
-            all_memories = [m for m in all_memories if m.memory_type in include_types]
+        all_memories = []
+        try:
+            if query and hasattr(self._memory, "search"):
+                all_memories = self._memory.search(
+                    query, k=min(200, budget_tokens // 10), namespace_scope="own"
+                )
+            elif hasattr(self._memory, "list_by_importance"):
+                all_memories = self._memory.list_by_importance(
+                    min_importance=min_importance,
+                    memory_type=include_types[0] if include_types and len(include_types) == 1 else None,
+                    limit=min(_MAX_CANDIDATES, max(200, budget_tokens // 5)),
+                    exclude_ids={p.memory_id for p in result.memories},
+                )
+            else:
+                all_memories = self._memory.list_all(namespace_scope="own", limit=_MAX_CANDIDATES)
+        except Exception as exc:
+            logger.warning("Memory fetch failed, returning pinned only: %s", exc)
+            result.total_tokens = pinned_tokens
+            result.memory_count = len(result.memories)
+            return result
+
+        if len(all_memories) > _MAX_CANDIDATES:
+            all_memories = all_memories[:_MAX_CANDIDATES]
+
+        # Push type and session filters to Python level with bounded set
+        if include_types:
+            type_set = set(include_types)
+            all_memories = [m for m in all_memories if m.memory_type in type_set]
+
+        if session_id:
+            all_memories = [
+                m for m in all_memories
+                if m.metadata and m.metadata.get("session_id") == session_id
+            ]
 
         # Score and sort candidates
         scored = []
         for mem in all_memories:
-            # Skip if already included as pinned
             if any(p.memory_id == mem.memory_id for p in result.memories):
                 continue
             if mem.importance_score < min_importance:
@@ -188,7 +219,6 @@ class ContextBudgetManager:
             tokens = _estimate_tokens(mem.content or "")
             score = mem.importance_score
 
-            # Boost score if query-relevant
             if query:
                 query_words = set(query.lower().split())
                 content_words = set((mem.content or "").lower().split())
@@ -197,7 +227,6 @@ class ContextBudgetManager:
 
             scored.append((score, tokens, mem))
 
-        # Sort by score descending, pack greedily
         scored.sort(key=lambda x: x[0], reverse=True)
         used_tokens = 0
 
@@ -224,11 +253,37 @@ class ContextBudgetManager:
 
     def estimate_context_size(self, query: str | None = None) -> dict[str, Any]:
         """Estimate how many memories would fit in a given budget."""
-        all_memories = self._memory.list_all(namespace_scope="own")
-        total_tokens = sum(_estimate_tokens(m.content or "") for m in all_memories)
-        return {
-            "total_memories": len(all_memories),
-            "total_tokens": total_tokens,
-            "avg_tokens_per_memory": total_tokens // max(1, len(all_memories)),
-            "pinned_count": sum(1 for m in all_memories if getattr(m, "is_pinned", False)),
-        }
+        try:
+            if hasattr(self._memory, "count_memories"):
+                total = self._memory.count_memories()
+                all_memories = []
+            else:
+                all_memories = self._memory.list_all(namespace_scope="own", limit=1000)
+                total = len(all_memories)
+
+            if all_memories:
+                total_memories = len(all_memories)
+                total_tokens = sum(_estimate_tokens(m.content or "") for m in all_memories)
+                avg_tokens = total_tokens // max(1, total_memories)
+                pinned_count = sum(1 for m in all_memories if getattr(m, "is_pinned", False))
+            else:
+                total_memories = total
+                total_tokens = 0
+                avg_tokens = 0
+                pinned_count = 0
+
+            return {
+                "total_memories": total_memories,
+                "total_tokens": total_tokens,
+                "avg_tokens_per_memory": avg_tokens,
+                "pinned_count": pinned_count,
+            }
+        except Exception as exc:
+            logger.warning("Failed to estimate context size: %s", exc)
+            return {
+                "total_memories": 0,
+                "total_tokens": 0,
+                "avg_tokens_per_memory": 0,
+                "pinned_count": 0,
+                "error": str(exc),
+            }

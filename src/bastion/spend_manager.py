@@ -99,8 +99,9 @@ class SpendManager:
                 )
 
                 # Check if suspended
-                limit_col = f"hard_limit_{category}s"
-                daily_col = f"daily_{category}s"
+                suffix = "es" if category == "search" else "s"
+                limit_col = f"hard_limit_{category}{suffix}"
+                daily_col = f"daily_{category}{suffix}"
                 cur.execute(
                     f"SELECT {daily_col}, {limit_col}, is_suspended, suspension_reason "
                     f"FROM agent_budgets WHERE agent_id = %s",
@@ -188,8 +189,8 @@ class SpendManager:
             logger.error("check_and_increment failed", extra={"agent": agent_id[:32], "cat": category, "err": str(exc)})
             with contextlib.suppress(Exception):
                 conn.rollback()
-            # Fail open: allow the request but log the failure
-            return {"allowed": True, "remaining": 999999, "limit": 999999, "suspended": False, "reason": None}
+            # Fail closed: deny when spend DB is unreachable to prevent runaway spending
+            return {"allowed": False, "remaining": 0, "limit": 0, "suspended": True, "reason": "spend_check_error"}
         finally:
             pool.release(conn)
 
@@ -254,7 +255,8 @@ class SpendManager:
             for cat, limit in limits.items():
                 if cat not in _valid_categories:
                     raise ValueError(f"Invalid category: {cat}")
-                col = f"hard_limit_{cat}s"
+                suffix = "es" if cat == "search" else "s"
+                col = f"hard_limit_{cat}{suffix}"
                 set_clauses.append(f"{col} = %s")
                 params.append(limit)
             if not set_clauses:
@@ -381,7 +383,8 @@ class SpendManager:
         _valid_categories = frozenset({"search", "store", "embed", "heal"})
         if category not in _valid_categories:
             raise ValueError(f"Invalid category: {category}")
-        col = f"daily_{category}s"
+        suffix = "es" if category == "search" else "s"
+        col = f"daily_{category}{suffix}"
         pool = self._get_pool()
         conn = pool.acquire(timeout=10.0)
         try:

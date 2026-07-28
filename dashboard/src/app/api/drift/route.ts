@@ -1,6 +1,5 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockDrift } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 interface DriftRow {
@@ -15,9 +14,6 @@ interface DriftRow {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (isMockMode()) {
-    return apiSuccess(getMockDrift(), 'short', { mock: true });
-  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -45,11 +41,8 @@ export async function GET(request: Request) {
     params.push(limit);
 
     const res = await safeQuery(sql, params);
-    if (res.mock) {
-      return apiSuccess(getMockDrift(), 'short', { mock: true });
-    }
 
-    // Return real empty state instead of mock when table has no data
+    // Return real empty state when table has no data
     if (res.rows.length === 0) {
       return apiSuccess({
         latest: { overall_drift_score: 0, status: "HEALTHY", top_drift_signals: [], recommendation: "No drift data collected yet", dimensions: {} },
@@ -121,12 +114,6 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/drift] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess(getMockDrift(), "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }

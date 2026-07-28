@@ -55,6 +55,9 @@ def _is_private_url(url: str) -> bool:
     return hostname.endswith((".local", ".internal", ".localhost"))
 
 
+from collections import OrderedDict
+
+
 class PushNotificationDispatcher:
     """Delivers push notifications to registered callback URLs.
 
@@ -64,7 +67,7 @@ class PushNotificationDispatcher:
 
     def __init__(self) -> None:
         self._registrations: dict[str, str] = {}  # task_id -> callback_url
-        self._delivered: set[str] = set()  # task_ids already notified
+        self._delivered = OrderedDict()  # task_id -> timestamp (FIFO bounded cache)
         self._lock = threading.Lock()
         self._client = httpx.Client(timeout=_NOTIFICATION_TIMEOUT, follow_redirects=False)
         self._client_lock = threading.Lock()  # Protect client from concurrent use
@@ -101,7 +104,7 @@ class PushNotificationDispatcher:
         with self._lock:
             if task_id in self._registrations:
                 del self._registrations[task_id]
-                self._delivered.discard(task_id)
+                self._delivered.pop(task_id, None)
                 return True
             return False
 
@@ -125,7 +128,9 @@ class PushNotificationDispatcher:
                 return
             if task_id in self._delivered:
                 return
-            self._delivered.add(task_id)
+            self._delivered[task_id] = time.time()
+            if len(self._delivered) > 10000:
+                self._delivered.popitem(last=False)
             callback_url = self._registrations.get(task_id)
 
         if not callback_url:
@@ -229,10 +234,12 @@ class PushNotificationDispatcher:
 
     def cleanup_delivered(self, max_age_seconds: float = 3600) -> int:
         """Clean up delivered notification records older than max_age."""
+        now = time.time()
         with self._lock:
-            count = len(self._delivered)
-            self._delivered.clear()
-        return count
+            to_remove = [tid for tid, ts in self._delivered.items() if now - ts > max_age_seconds]
+            for tid in to_remove:
+                self._delivered.pop(tid, None)
+            return len(to_remove)
 
     def get_stats(self) -> dict[str, Any]:
         """Return dispatcher statistics."""

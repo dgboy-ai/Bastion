@@ -20,17 +20,36 @@ class A2ATaskStore:
         self._is_mock = is_mock_fn
         self._set_rls_context = set_rls_context_fn
 
+    _TASK_COLS = (
+        "task_id, agent_id, skill_id, status, callback_url, "
+        "artifacts, created_at, completed_at, "
+        "runtime_metadata, last_heartbeat, error_message, retry_count, "
+        "parent_task_id, priority"
+    )
+
     def _make_record(self, row: tuple) -> dict[str, Any]:
-        return {
-            "task_id": str(row[0]),
-            "agent_id": row[1],
-            "skill_id": row[2],
-            "status": row[3],
-            "callback_url": row[4],
-            "artifacts": row[5],
-            "created_at": row[6].isoformat() if row[6] else None,
-            "completed_at": row[7].isoformat() if row[7] else None,
+        idx = [0]
+        def nxt(val):
+            idx[0] += 1
+            return val
+        record = {
+            "task_id": str(nxt(row[0])),
+            "agent_id": nxt(row[1]),
+            "skill_id": nxt(row[2]),
+            "status": nxt(row[3]),
+            "callback_url": nxt(row[4]),
+            "artifacts": nxt(row[5]),
+            "created_at": nxt(row[6]).isoformat() if row[6] else None,
+            "completed_at": nxt(row[7]).isoformat() if row[7] else None,
         }
+        if len(row) > 8:
+            record["runtime_metadata"] = nxt(row[8])
+            record["last_heartbeat"] = nxt(row[9]).isoformat() if row[9] else None
+            record["error_message"] = nxt(row[10])
+            record["retry_count"] = nxt(row[11]) or 0
+            record["parent_task_id"] = str(nxt(row[12])) if row[12] else None
+            record["priority"] = nxt(row[13]) or 0
+        return record
 
     def store_task(
         self,
@@ -39,8 +58,11 @@ class A2ATaskStore:
         skill_id: str,
         status: str = "WORKING",
         callback_url: str | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        parent_task_id: str | None = None,
+        priority: int = 0,
     ) -> dict[str, Any]:
-        """Insert a new A2A task into CockroachDB. Returns the task record."""
+        """Insert a new A2A task into CockroachDB with optional runtime metadata."""
         if self._is_mock():
             return {
                 "task_id": task_id,
@@ -51,19 +73,28 @@ class A2ATaskStore:
                 "artifacts": None,
                 "created_at": datetime.now(UTC).isoformat(),
                 "completed_at": None,
+                "runtime_metadata": runtime_metadata,
+                "last_heartbeat": None,
+                "error_message": None,
+                "retry_count": 0,
+                "parent_task_id": parent_task_id,
+                "priority": priority,
             }
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO a2a_tasks (task_id, agent_id, skill_id, status, callback_url) "
-                    "VALUES (%s, %s, %s, %s, %s) "
-                    "RETURNING task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at",
-                    (task_id, agent_id, skill_id, status, callback_url),
+                    "INSERT INTO a2a_tasks "
+                    "(task_id, agent_id, skill_id, status, callback_url, "
+                    " runtime_metadata, parent_task_id, priority) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                    "RETURNING " + self._TASK_COLS,
+                    (task_id, agent_id, skill_id, status, callback_url,
+                     json.dumps(runtime_metadata) if runtime_metadata else None,
+                     parent_task_id, priority),
                 )
                 row = cur.fetchone()
                 conn.commit()
@@ -79,14 +110,12 @@ class A2ATaskStore:
             return None
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at "
-                    "FROM a2a_tasks WHERE task_id = %s",
+                    "SELECT " + self._TASK_COLS + " FROM a2a_tasks WHERE task_id = %s",
                     (task_id,),
                 )
                 row = cur.fetchone()
@@ -102,25 +131,40 @@ class A2ATaskStore:
         status: str,
         artifacts: list[dict[str, Any]] | None = None,
         callback_url: str | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        error_message: str | None = None,
+        retry_count: int | None = None,
     ) -> dict[str, Any] | None:
-        """Update task status, artifacts, and/or callback URL."""
+        """Update task status, artifacts, callback URL, and runtime metadata."""
         if self._is_mock():
             return {"task_id": task_id, "status": status}
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 completed_at = datetime.now(UTC).isoformat() if status in ("COMPLETED", "FAILED", "CANCELED") else None
                 cur.execute(
-                    "UPDATE a2a_tasks SET status = %s, "
+                    "UPDATE a2a_tasks SET "
+                    "status = %s, "
                     "artifacts = COALESCE(%s, artifacts), "
                     "callback_url = COALESCE(%s, callback_url), "
-                    "completed_at = COALESCE(%s, completed_at) "
+                    "completed_at = COALESCE(%s, completed_at), "
+                    "last_heartbeat = now(), "
+                    "runtime_metadata = COALESCE(%s, runtime_metadata), "
+                    "error_message = COALESCE(%s, error_message), "
+                    "retry_count = COALESCE(%s, retry_count) "
                     "WHERE task_id = %s "
-                    "RETURNING task_id, agent_id, skill_id, status, callback_url, artifacts, created_at, completed_at",
-                    (status, json.dumps(artifacts) if artifacts else None, callback_url, completed_at, task_id),
+                    "RETURNING " + self._TASK_COLS,
+                    (status,
+                     json.dumps(artifacts) if artifacts else None,
+                     callback_url,
+                     completed_at,
+                     json.dumps(runtime_metadata) if runtime_metadata else None,
+                     error_message,
+                     retry_count,
+                     task_id),
                 )
                 row = cur.fetchone()
                 conn.commit()
@@ -136,9 +180,9 @@ class A2ATaskStore:
             return False
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM a2a_tasks WHERE task_id = %s", (task_id,))
                 deleted = cur.rowcount > 0
@@ -159,9 +203,9 @@ class A2ATaskStore:
             return []
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 conditions: list[str] = []
                 params: list[Any] = []
@@ -173,9 +217,8 @@ class A2ATaskStore:
                     params.append(status)
                 where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
                 sql = (
-                    "SELECT task_id, agent_id, skill_id, status, callback_url, "
-                    "artifacts, created_at, completed_at "
-                    "FROM a2a_tasks" + where_clause + " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+                    "SELECT " + self._TASK_COLS
+                    + " FROM a2a_tasks" + where_clause + " ORDER BY created_at DESC LIMIT %s OFFSET %s"
                 )
                 params.extend([limit, offset])
                 cur.execute(sql, params)
@@ -189,9 +232,9 @@ class A2ATaskStore:
             return 0
         pool = self._get_pool()
         conn = pool.acquire(timeout=30.0)
-        if self._set_rls_context:
-            self._set_rls_context(conn)
         try:
+            if self._set_rls_context:
+                self._set_rls_context(conn)
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM a2a_tasks "

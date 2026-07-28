@@ -1,6 +1,5 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockTrust } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 function computeTrustScore(row: Record<string, unknown>) {
@@ -51,9 +50,6 @@ function computeTrustScore(row: Record<string, unknown>) {
 export async function GET(request: Request) {
   const authError = requireAuth(request);
   if (authError) return authError;
-  if (isMockMode()) {
-    return apiSuccess(getMockTrust(), 'short', { mock: true });
-  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -81,9 +77,6 @@ export async function GET(request: Request) {
     params.push(limit);
 
     const res = await safeQuery(sql, params);
-    if (res.mock) {
-      return apiSuccess(getMockTrust(), 'short', { mock: true });
-    }
 
     const trustLevelCounts: Record<number, number> = {};
     const poisoningCounts: Record<string, number> = {};
@@ -123,13 +116,6 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/trust] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess(getMockTrust(), "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }
-

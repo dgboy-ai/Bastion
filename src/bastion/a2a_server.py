@@ -504,6 +504,9 @@ def create_a2a_server(
         status: str,
         artifacts: list[dict[str, Any]] | None = None,
         callback_url: str | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        parent_task_id: str | None = None,
+        priority: int = 0,
     ) -> dict[str, Any]:
         nonlocal _tasks_warned
         now = time.time()
@@ -518,6 +521,9 @@ def create_a2a_server(
                     "unknown",
                     status,
                     callback_url,
+                    runtime_metadata,
+                    parent_task_id,
+                    priority,
                 )
                 return {
                     "id": task_record["task_id"],
@@ -527,10 +533,15 @@ def create_a2a_server(
                     "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
                     "_cm": mono,
                     "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
+                    "runtime_metadata": task_record.get("runtime_metadata"),
+                    "last_heartbeat": task_record.get("last_heartbeat"),
+                    "error_message": task_record.get("error_message"),
+                    "retry_count": task_record.get("retry_count", 0),
+                    "parent_task_id": task_record.get("parent_task_id"),
+                    "priority": task_record.get("priority", 0),
                 }
             except Exception:
                 logger.exception("DB task store failed, falling back to in-memory")
-                # Fall through to in-memory fallback
 
         # In-memory fallback (mock mode or DB failure)
         if not _tasks_warned:
@@ -546,6 +557,12 @@ def create_a2a_server(
             "_completed_at": None if status in ("WORKING", "SUBMITTED") else now,
             "_cm": mono,
             "_dm": None if status in ("WORKING", "SUBMITTED") else mono,
+            "runtime_metadata": runtime_metadata,
+            "last_heartbeat": None,
+            "error_message": None,
+            "retry_count": 0,
+            "parent_task_id": parent_task_id,
+            "priority": priority,
         }
         with _tasks_lock:
             _tasks[tid] = task
@@ -566,6 +583,12 @@ def create_a2a_server(
                         "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
                         "_cm": mono,
                         "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "runtime_metadata": record.get("runtime_metadata"),
+                        "last_heartbeat": record.get("last_heartbeat"),
+                        "error_message": record.get("error_message"),
+                        "retry_count": record.get("retry_count", 0),
+                        "parent_task_id": record.get("parent_task_id"),
+                        "priority": record.get("priority", 0),
                     }
             except Exception:
                 logger.exception("DB task get failed, falling back to in-memory")
@@ -578,6 +601,9 @@ def create_a2a_server(
         tid: str,
         status: str,
         artifacts: list[dict[str, Any]] | None = None,
+        runtime_metadata: dict[str, Any] | None = None,
+        error_message: str | None = None,
+        retry_count: int | None = None,
     ) -> dict[str, Any] | None:
         existing_task = await _get_task(tid)
         if existing_task:
@@ -591,7 +617,16 @@ def create_a2a_server(
 
         if not memory._mock:
             try:
-                record = await anyio.to_thread.run_sync(memory.update_a2a_task, tid, status, artifacts)
+                record = await anyio.to_thread.run_sync(
+                    memory.update_a2a_task,
+                    tid,
+                    status,
+                    artifacts,
+                    None,  # callback_url unchanged
+                    runtime_metadata,
+                    error_message,
+                    retry_count,
+                )
                 if record:
                     now = time.time()
                     mono = time.monotonic()
@@ -604,6 +639,12 @@ def create_a2a_server(
                         "_completed_at": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
                         "_cm": mono,
                         "_dm": now if record["status"] in ("COMPLETED", "FAILED", "CANCELED") else None,
+                        "runtime_metadata": record.get("runtime_metadata"),
+                        "last_heartbeat": record.get("last_heartbeat"),
+                        "error_message": record.get("error_message"),
+                        "retry_count": record.get("retry_count", 0),
+                        "parent_task_id": record.get("parent_task_id"),
+                        "priority": record.get("priority", 0),
                     }
             except Exception:
                 logger.exception("DB task update failed, falling back to in-memory")
@@ -615,6 +656,13 @@ def create_a2a_server(
                 task["status"]["state"] = status
                 if artifacts is not None:
                     task["artifacts"] = artifacts
+                if runtime_metadata is not None:
+                    task["runtime_metadata"] = runtime_metadata
+                if error_message is not None:
+                    task["error_message"] = error_message
+                if retry_count is not None:
+                    task["retry_count"] = retry_count
+                task["last_heartbeat"] = time.time()
                 if status in ("COMPLETED", "FAILED", "CANCELED"):
                     task["_completed_at"] = time.time()
                     task["_dm"] = time.monotonic()
@@ -624,6 +672,17 @@ def create_a2a_server(
     # -- FastAPI app -------------------------------------------------------
 
     app = FastAPI(title="Bastion A2A Server", version=VERSION)
+
+    # Schedule periodic orphaned-task cleanup
+    async def _schedule_cleanup():
+        while True:
+            await anyio.sleep(_task_stale_timeout // 2)
+            await _cleanup_orphaned_tasks()
+
+    @app.on_event("startup")
+    async def _start_cleanup():
+        _cleanup_task = asyncio.ensure_future(_schedule_cleanup())
+
     cors_origins = [
         o.strip()
         for o in os.environ.get(
@@ -776,6 +835,10 @@ def create_a2a_server(
             hostname = parsed.hostname or ""
             if not hostname:
                 return False
+            # Allow loopback for local dev (BASTION_BRIDGE_ALLOW_LOOPBACK)
+            _allow_loopback = os.environ.get("BASTION_BRIDGE_ALLOW_LOOPBACK", "").lower() in ("1", "true", "yes")
+            if _allow_loopback:
+                return True
             # Block known internal hostnames
             blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal")
             if hostname.lower() in blocked:
@@ -807,10 +870,36 @@ def create_a2a_server(
         if not sender_url or not signature_b64:
             return False  # partial headers — reject (prevents signature bypass)
 
-        # SSRF protection: validate URL before fetching
-        if not _is_safe_url(sender_url):
-            logger.warning("Blocked SSRF attempt via X-Sender-URL", extra={"sender_url": sender_url})
+        # SSRF protection with DNS pinning (TOCTOU-safe)
+        parsed_url = urlparse(sender_url)
+        hostname = parsed_url.hostname or ""
+        if not hostname:
             return False
+        _allow_loopback = os.environ.get("BASTION_BRIDGE_ALLOW_LOOPBACK", "").lower() in ("1", "true", "yes")
+        try:
+            addrinfo = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except socket.gaierror:
+            return False
+        resolved_ips = []
+        for _, _, _, _, sockaddr in addrinfo:
+            ip = sockaddr[0]
+            try:
+                ip_addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            is_private = ip_addr.is_private or ip_addr.is_loopback or ip_addr.is_link_local or ip_addr.is_reserved
+            if is_private and not _allow_loopback:
+                continue
+            resolved_ips.append(ip)
+        if not resolved_ips:
+            return False
+        pinned_ip = resolved_ips[0]
+        port_part = f":{parsed_url.port}" if parsed_url.port else ""
+        base_path = parsed_url.path.rstrip('/') if parsed_url.path else ''
+        pinned_fetch_url = f"{parsed_url.scheme}://{pinned_ip}{port_part}{base_path}/.well-known/agent-card.json"
+        if parsed_url.query:
+            pinned_fetch_url += f"?{parsed_url.query}"
+        logger.debug("DNS pinned for sender auth", extra={"hostname": hostname, "pinned_ip": pinned_ip})
 
         # Check cache
         now = time.time()
@@ -819,12 +908,12 @@ def create_a2a_server(
         if cached and cached[1] > now:
             pubkey_pem = cached[0]
         else:
-            # Fetch sender's agent card
+            # Fetch sender's agent card via pinned IP (no re-resolve)
             try:
                 import httpx
 
                 async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-                    resp = await client.get(f"{sender_url.rstrip('/')}/.well-known/agent-card.json")
+                    resp = await client.get(pinned_fetch_url)
                     if resp.status_code != 200:
                         logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
                         return False
@@ -839,7 +928,6 @@ def create_a2a_server(
                         return False
                     with _sender_key_cache_lock:
                         _sender_key_cache[sender_url] = (pubkey_pem, now + _signature_cache_ttl)
-                        # Evict oldest entry if cache exceeds max size
                         if len(_sender_key_cache) > _signature_cache_maxsize:
                             oldest = min(_sender_key_cache, key=lambda k: _sender_key_cache[k][1])
                             _sender_key_cache.pop(oldest)
@@ -1190,7 +1278,7 @@ def create_a2a_server(
             body = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             logger.warning("Parse error", extra={"request_id": rid, "error": str(exc)})
-            return _rpc_error(_JSONRPC_PARSE_ERROR, f"Parse error: {exc}")
+            return _rpc_error(_JSONRPC_PARSE_ERROR, "Parse error")
 
         if not isinstance(body, dict):
             return _rpc_error(_JSONRPC_INVALID_REQUEST, "Body must be a JSON object")
@@ -1217,7 +1305,7 @@ def create_a2a_server(
         params = body.get("params", {})
 
         try:
-            # Verify signature for ALL methods in strict mode (not just SendMessage)
+            # Verify signature for ALL methods in strict mode
             if _strict_auth and request and raw:
                 sender_url = request.headers.get("X-Sender-URL", "")
                 sender_sig = request.headers.get("X-Sender-Signature", "")
@@ -1381,7 +1469,7 @@ def create_a2a_server(
                         if part_text:
                             guard_result = _guard.check(part_text)
                             if not guard_result.is_safe:
-                                threat_details = [f.finding.threat_type for f in guard_result.findings]
+                                threat_details = [f.threat_type for f in guard_result.findings]
                                 threat_msg = ", ".join(threat_details) or "injection detected"
                                 await _update_task(task_id, "FAILED")
                                 error_data = json.dumps(
@@ -1670,7 +1758,7 @@ def create_a2a_server(
         caller_role = _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
         # Warn when running without API key (dev mode only — not for production)
         if not _api_key and not caller_token:
-            logger.debug("No API key configured — unauthenticated requests treated as admin (dev mode)")
+            logger.debug("No API key configured — unauthenticated requests treated as reader (dev mode)")
         required_level = _role_hierarchy.get(required_role, 0)
         caller_level = _role_hierarchy.get(caller_role, 0)
         if caller_level < required_level:
@@ -1710,7 +1798,7 @@ def create_a2a_server(
                 if part_text:
                     guard_result = _guard.check(part_text)
                     if not guard_result.is_safe:
-                        threat_details = [f.finding.threat_type for f in guard_result.findings]
+                        threat_details = [f.threat_type for f in guard_result.findings]
                         logger.warning(
                             "OWASP guard blocked A2A message content",
                             extra={

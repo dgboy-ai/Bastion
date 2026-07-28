@@ -16,8 +16,7 @@ const mockResult = (): SafeQueryResult => ({
 });
 
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
-const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true"
-  || (!connectionString && !process.env.BASTION_MOCK);
+const isMockForced = false;
 
 async function ensureSchema(pool: any) {
   if (pool.schemaEnsured) return;

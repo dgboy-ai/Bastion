@@ -90,8 +90,15 @@ export default function GraphPage() {
         if (cancelled) return;
         const data = json.data || json;
         
-        setNodes(data.nodes as Node[]);
-        setLinks(data.links as Link[]);
+        const fetchedNodes = (data.nodes || []) as Node[];
+        setNodes(fetchedNodes);
+        setLinks((data.links || []) as Link[]);
+        setSelectedNode(prev => {
+          if (prev && !fetchedNodes.some(n => n.id === prev.id)) {
+            return null;
+          }
+          return prev;
+        });
       } catch (err: unknown) {
         if ((err as Error)?.name === "AbortError") return;
         if (cancelled) return;
@@ -215,7 +222,7 @@ export default function GraphPage() {
         
         {/* Left Column: Interactive Map Panel */}
         <div className="panel" style={{ padding: 0, overflow: "hidden", position: "relative", height: "640px" }}>
-          <div className="graph-overlay-hud">
+          <div className="graph-overlay-hud" style={{ position: "absolute", top: "16px", left: "16px", zIndex: 10 }}>
             <div className="badge-mono" style={{ backgroundColor: "rgba(10,10,10,0.85)", borderColor: "var(--glass-border)", display: "flex", flexDirection: "column", gap: "4px", padding: "10px", borderRadius: "6px" }}>
               <span style={{ color: "var(--accent-sunset)", fontWeight: 600 }}>COCKROACHDB C-SPANN ACTIVE</span>
               <span style={{ fontSize: "9px" }}>Nodes: {nodes.length} | Edges: {links.length}</span>
@@ -249,7 +256,7 @@ export default function GraphPage() {
           </div>
 
           {/* Temporal Time-Travel Slider */}
-          <div className="graph-slider-panel">
+          <div className="graph-slider-panel" style={{ position: "absolute", bottom: "16px", left: "16px", right: "16px", zIndex: 10, background: "rgba(10,10,10,0.85)", padding: "12px", borderRadius: "8px", border: "1px solid var(--glass-border)", backdropFilter: "blur(8px)" }}>
             <div className="slider-row">
               <span className="slider-label">AS OF SYSTEM TIME</span>
               <input
