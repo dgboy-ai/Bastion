@@ -63,4 +63,4 @@ EXPOSE 9997
 
 # Default: MCP server over Streamable HTTP
 # Override with: docker run bastion-mcp python -m bastion.mcp_server --transport stdio
-CMD ["python", "-m", "bastion.mcp_server", "--transport", "http", "--host", "0.0.0.0", "--port", "9997"]
+CMD python -m bastion.mcp_server --transport http --host 0.0.0.0 --port ${PORT:-9997}
