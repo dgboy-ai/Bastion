@@ -276,7 +276,10 @@ def create_server(
 
     # Configure anyio thread pool to prevent exhaustion under high load
     _thread_pool_max = int(os.environ.get("BASTION_THREAD_POOL_MAX", "40"))
-    anyio.to_thread.current_default_thread_limiter().total_tokens = _thread_pool_max
+    try:
+        anyio.to_thread.current_default_thread_limiter().total_tokens = _thread_pool_max
+    except RuntimeError:
+        pass  # no event loop yet; will be set when server starts
 
     # Pre-warm local embedding model in background thread (eliminates 28s cold start)
     if not is_mock:
