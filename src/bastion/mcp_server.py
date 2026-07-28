@@ -3213,7 +3213,8 @@ def _make_http_app(mcp: FastMCP) -> Any:
                 except Exception:
                     logger.debug("PKCE capture failed (non-blocking)")
 
-            if path in skip_paths:
+            # Skip paths (exact or with trailing slash)
+            if path in skip_paths or path.rstrip("/") in skip_paths:
                 return await call_next(request)
 
             # Brute-force protection
