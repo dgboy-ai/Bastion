@@ -22,13 +22,18 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    const CLUSTER_ID = '9a423301-d502-42f4-a5e5-1e7664e4e025';
+
+    // Extract authorization from incoming request headers, fallback to env-configured API key
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization') || (process.env.COCKROACHDB_MCP_API_KEY ? `Bearer ${process.env.COCKROACHDB_MCP_API_KEY}` : '');
+
     const response = await fetch(MANAGED_MCP_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(process.env.COCKROACHDB_MCP_API_KEY
-          ? { Authorization: `Bearer ${process.env.COCKROACHDB_MCP_API_KEY}` }
-          : {}),
+        ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(CLUSTER_ID ? { 'mcp-cluster-id': CLUSTER_ID } : {}),
+        'crdb-mcp-enable-write-queries': 'true'
       },
       body: JSON.stringify(mcpRequest),
     });
@@ -41,7 +46,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await response.json();
+    const text = await response.text();
+    let result: any = {};
+    if (text) {
+      try {
+        result = JSON.parse(text);
+      } catch {
+        const lines = text.split(/\r?\n/);
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              result = JSON.parse(line.slice(6));
+              break;
+            } catch {
+              // ignore non-JSON data chunks
+            }
+          }
+        }
+      }
+    }
+
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json(
