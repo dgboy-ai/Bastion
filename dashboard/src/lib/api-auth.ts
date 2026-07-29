@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual as cryptoTimingSafeEqual, createHmac, randomBytes } from "crypto";
+import { timingSafeEqual as cryptoTimingSafeEqual, createHmac } from "crypto";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
@@ -142,12 +142,8 @@ export function checkRateLimit(request: Request): NextResponse | null {
   // ── Layer 2: Signed cookie counter (survives across serverless invocations) ──
   const cookieData = getRateLimitCookie(request);
   let cookieCount = 0;
-  let cookieWindowStart = now;
   if (cookieData && now - cookieData.windowStart < RATE_LIMIT_WINDOW_MS) {
     cookieCount = cookieData.count;
-    cookieWindowStart = cookieData.windowStart;
-  } else {
-    cookieWindowStart = now;
   }
 
   // Use the higher of the two counters

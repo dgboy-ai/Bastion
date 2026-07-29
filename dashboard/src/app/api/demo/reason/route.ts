@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     sqlQueries.push(searchSql);
     const mems = await safeQuery(searchSql, [agentId]);
 
-    const rows = mems.rows as MemoryRow[];
+    const rows = mems.rows as unknown as MemoryRow[];
     let similarMemories: { memoryId: string; content: string; similarity: number; trustLevel: number; type: string }[] = [];
 
     if (rows.length > 0) {

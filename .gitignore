@@ -74,7 +74,7 @@ test_remaining.ts
 .claude/
 .vscode/
 # Dev/test scripts — not needed for production deployment
-scripts/
+# scripts/
 examples/
 judge.md
 multiagent.md

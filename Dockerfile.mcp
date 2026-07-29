@@ -52,6 +52,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY src/ /app/src/
+COPY .agents/skills/ /app/.agents/skills/
 
 # Set Python path
 ENV PYTHONPATH=/app/src

@@ -3,8 +3,9 @@ import { headers } from "next/headers";
 import fs from "fs";
 import path from "path";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SafeQueryResult = QueryResult<any> & { mock?: boolean };
+type QueryResultRow = Record<string, unknown>;
+
+export type SafeQueryResult = QueryResult<QueryResultRow> & { mock?: boolean };
 
 const mockResult = (): SafeQueryResult => ({
   rows: [],
@@ -36,7 +37,7 @@ async function ensureSchema(pool: any) {
 
     // 2. Fetch already applied migration versions
     const appliedRes = await pool.query("SELECT version FROM _schema_migrations");
-    const appliedVersions = new Set(appliedRes.rows.map((r: any) => r.version));
+    const appliedVersions = new Set(appliedRes.rows.map((r: QueryResultRow) => r.version));
 
     // 3. Locate schema directory
     const schemaDir = path.resolve(process.cwd(), "../schema");
@@ -74,12 +75,12 @@ async function ensureSchema(pool: any) {
       for (const stmt of statements) {
         try {
           await pool.query(stmt);
-        } catch (err: any) {
-          if (err.message.includes("already exists") || err.message.includes("duplicate")) {
-            // Ignore expected idempotent duplicates
-          } else {
-            console.warn(`[DB Bootstrap] Statement warning in ${file}: ${err.message}`);
-          }
+} catch (err: unknown) {
+            if (err instanceof Error && (err.message.includes("already exists") || err.message.includes("duplicate"))) {
+              // Ignore expected idempotent duplicates
+            } else {
+              console.warn(`[DB Bootstrap] Statement warning in ${file}: ${err instanceof Error ? err.message : String(err)}`);
+            }
         }
       }
       const elapsed = Date.now() - start;
@@ -95,8 +96,8 @@ async function ensureSchema(pool: any) {
     if (appliedCount > 0) {
       console.log(`[DB Bootstrap] Successfully applied ${appliedCount} schema migration(s).`);
     }
-  } catch (err: any) {
-    console.error("[DB Bootstrap] Failed to check or apply migrations:", err.message);
+} catch (err) {
+    console.error("[DB Bootstrap] Failed to check or apply migrations:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -131,7 +132,7 @@ async function getDynamicConnectionString(): Promise<string | null> {
   try {
     const h = await headers();
     return h.get("x-bastion-conn") || null;
-  } catch {
+} catch (err: unknown) {
     return null;
   }
 }

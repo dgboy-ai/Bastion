@@ -41,10 +41,10 @@ export async function GET(request: Request) {
     if (statsResult.mock) {
       return apiSuccess(getMockCacheStats(), 'short', { mock: true });
     }
-    const stats = statsResult.rows[0];
+    const stats = statsResult.rows[0] as Record<string, string | number | null>;
 
-    const totalQueries = parseInt(stats.total_queries ?? "0");
-    const cacheHits = parseInt(stats.cache_hits ?? "0");
+    const totalQueries = parseInt((stats.total_queries ?? "0") as string);
+    const cacheHits = parseInt((stats.cache_hits ?? "0") as string);
     const hitRate = totalQueries > 0 ? Math.round((cacheHits / totalQueries) * 100) : 0;
 
     let hourlySql = `
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     `;
     const hourlyResult = await safeQuery(hourlySql, hourlyParams);
 
-    const dailyCost = parseFloat(stats.total_cost_saved ?? "0");
+    const dailyCost = parseFloat(String(stats.total_cost_saved ?? "0"));
     const monthlyProjection = dailyCost * 30;
     const annualProjection = dailyCost * 365;
 
@@ -82,13 +82,13 @@ export async function GET(request: Request) {
       summary: {
         total_queries: totalQueries,
         cache_hits: cacheHits,
-        cache_misses: parseInt(stats.cache_misses ?? "0"),
+        cache_misses: parseInt(String(stats.cache_misses ?? "0")),
         hit_rate_percent: hitRate,
-        total_tokens_saved: parseInt(stats.total_tokens_saved ?? "0"),
+        total_tokens_saved: parseInt(String(stats.total_tokens_saved ?? "0")),
         total_cost_saved_usd: Math.round(dailyCost * 100) / 100,
-        avg_latency_ms: Math.round(parseFloat(stats.avg_latency_ms ?? "0")),
-        avg_hit_latency_ms: Math.round(parseFloat(stats.avg_hit_latency_ms ?? "0")),
-        avg_miss_latency_ms: Math.round(parseFloat(stats.avg_miss_latency_ms ?? "0")),
+        avg_latency_ms: Math.round(parseFloat(String(stats.avg_latency_ms ?? "0"))),
+        avg_hit_latency_ms: Math.round(parseFloat(String(stats.avg_hit_latency_ms ?? "0"))),
+        avg_miss_latency_ms: Math.round(parseFloat(String(stats.avg_miss_latency_ms ?? "0"))),
       },
       projections: {
         daily: Math.round(dailyCost * 100) / 100,

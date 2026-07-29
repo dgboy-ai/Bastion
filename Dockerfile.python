@@ -32,29 +32,6 @@ RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.ta
     | tar -xz -C /usr/local/bin/ && \
     chmod +x /usr/local/bin/ccloud
 
-# Runtime stage
-FROM python:3.12-slim AS runtime
-
-WORKDIR /app
-
-# Copy installed packages
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
 # Copy application code
 COPY src/ /app/src/
-
-# Set Python path
-ENV PYTHONPATH=/app/src
-
-# Non-root user
-RUN groupadd -r bastion && useradd -r -g bastion bastion
-USER bastion
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9997/healthz')" || exit 1
-
-# Default: MCP server over HTTP
-EXPOSE 9997
-CMD ["python", "-m", "bastion.mcp_server", "--transport", "http", "--host", "0.0.0.0", "--port", "9997"]
+COPY .agents/skills/ /app/.agents/skills/

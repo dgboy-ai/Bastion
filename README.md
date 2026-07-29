@@ -1,216 +1,180 @@
 # Bastion Shield — Production-Grade Memory Integrity for AI Agents
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CockroachDB](https://img.shields.io/badge/CockroachDB-v26.2.1-blue)](https://cockroachlabs.com)
+[![AWS](https://img.shields.io/badge/AWS-Lambda%20%7C%20Bedrock%20%7C%20S3-orange)](https://aws.amazon.com)
+[![MCP](https://img.shields.io/badge/MCP-35%20tools-purple)](https://modelcontextprotocol.io)
+[![A2A](https://img.shields.io/badge/A2A-25%20skills-green)](https://a2a-protocol.org)
 
-**Bastion** is a memory integrity layer for AI agents built on CockroachDB. It detects, verifies, and heals agent memories in real-time — combining SHA-256 hash chains, C-SPANN vector search, and multi-agent orchestration.
+> **"Every other project builds memory *for* agents. Bastion builds memory that can *prove itself*."**
+
+---
+
+## 🤖 The Agent Is Cline
+
+**Cline IS the agent.** Every memory stored, vector searched, hash chain verified happens because **Cline (your IDE agent) calls Bastion's MCP server as its memory layer** through the Model Context Protocol.
+
+---
+
+## Problem → Solution
+
+| Problem | Bastion Solution |
+|---------|-----------------|
+| **Memory poisoning** — silent fact overwrite | **OWASP ASI06 Guard** — 40+ detectors, 95.8% TP, 0% FP, ~10ms |
+| **Compliance exposure** — EU AI Act Article 12 | **Tamper-evident HMAC hash chains** — cryptographic proof |
+| **No forensics** — can't prove what agent knew | **AS OF SYSTEM TIME** — time-travel to any moment via MVCC |
+
+---
 
 ## Key Features
 
 | Feature | What It Does |
 |---------|-------------|
-| **SHA-256 Hash Chains** | Every memory is cryptographically linked to the previous — tamper-proof ledger |
-| **AS OF SYSTEM TIME** | Time-travel to any past moment using CockroachDB MVCC |
-| **OWASP ASI06 Guard** | 40+ pattern detectors block prompt injection before memory is stored (95.8% TP, 0% FP, ~10ms avg, ~30ms p99) |
-| **C-SPANN Vector Search** | Distributed vector index for semantic similarity search across all memories |
-| **EU AI Act Compliance** | Article 12 tamper-evident logging out of the box — hash chains, append-only audit trails, compliance reporting |
-| **Groq LLM Reasoning** | Real LLM-powered analysis of incidents using historical memory context |
-| **MCP Server (35 tools)** | Model Context Protocol server for memory + compliance operations |
-| **A2A Server (25 skills)** | Agent-to-Agent protocol for multi-agent coordination |
-| **Multi-Agent SOC** | Analyst + Responder agents collaborate via A2A to detect and heal poisoning attacks |
+| **⚡ SERIALIZABLE Isolation** | Prevents "agent stampedes" |
+| **🕐 Row-Level TTL** | Short-term memories expire automatically |
+| **🔍 Hybrid Vector Search** | Semantic + metadata in single SQL query |
+| **SHA-256 HMAC Hash Chains** | Every memory cryptographically linked |
+| **AS OF SYSTEM TIME** | Time-travel to any moment via MVCC |
+| **OWASP ASI06 Guard** | 40+ detectors, 95.8% TP, 0% FP, ~10ms |
+| **Self-Healing Memory** | Detects breaks → queries MVCC → restores snapshot |
+| **EU AI Act Compliance** | Article 12 tamper-evident logging (enforceable Aug 2, 2026) |
+| **MCP Server (35 tools)** | Model Context Protocol for memory + compliance |
+| **A2A Server (25 skills)** | Agent-to-Agent protocol, Ed25519-signed |
+| **Multi-Agent SOC** | Analyst + Responder via A2A |
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│              Bastion Shield                   │
-│        Agent Memory Integrity Layer           │
-├──────────────────────────────────────────────┤
-│                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │Dashboard │  │MCP Server│  │A2A Server│   │
-│  │ :3000    │  │ :9997    │  │ :9998    │   │
-│  │ Next.js  │  │ Python   │  │ Python   │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-│       └──────┬──────┴──────┬──────┘          │
-│       ┌──────▼─────────────▼──────┐           │
-│       │     CockroachDB Cloud     │           │
-│       │  C-SPANN + SQL + MVCC    │           │
-│       │  SHA-256 Hash Chains     │           │
-│       │  AS OF SYSTEM TIME       │           │
-│       └──────────────────────────┘           │
-│                                               │
-│  ┌──────────────────────────────────────┐    │
-│  │ Integration Points                   │    │
-│  │ all-MiniLM-L6-v2 (embeddings)        │    │
-│  │ AWS KMS (encryption)                 │    │
-│  │ Groq LLM (reasoning)                 │    │
-│  └──────────────────────────────────────┘    │
-└──────────────────────────────────────────────┘
+Bastion Shield — Agent Memory Integrity Layer
+├── Dashboard (:3000) — Next.js
+├── MCP Server (:9997) — 35 tools
+├── A2A Server (:9998) — 25 skills
+└── CockroachDB Cloud
+    ├── C-SPANN Vector Index (vectors IN same DB)
+    ├── SERIALIZABLE Isolation
+    ├── AS OF SYSTEM TIME MVCC
+    ├── Row-Level TTL + RLS
+    └── SHA-256 HMAC Hash Chains
+AWS: Lambda (CDC), S3 (snapshots), KMS (keys), SNS (alerts), CloudWatch, Bedrock
 ```
 
-## CockroachDB Tools Used
+---
 
-| Tool | Integration |
-|------|-------------|
-| **Managed MCP Server** | Live SQL queries against CockroachDB Cloud via `cockroachlabs.cloud/mcp` |
-| **C-SPANN Vector Index** | Distributed vector index on `embedding_384` column for similarity search |
-| **ccloud CLI** | Cluster management, audit trail, SQL access — integrated in playground |
-| **Agent Skills** | 34 machine-executable skills from `cockroachlabs/cockroachdb-skills` — invoked via MCP `invoke_agent_skill` tool with live SQL execution against the cluster |
+## CockroachDB Tools Used (4/4 Required)
 
-## Agent Skills Repo (Live Execution)
+| Tool | How We Use It |
+|------|--------------|
+| Managed MCP Server | Live SQL via `cockroachlabs.cloud/mcp` |
+| C-SPANN Vector Index | `embedding_384 VECTOR(384)` + cosine distance |
+| ccloud CLI | Cluster mgmt, audit, SQL — `ccloud_exec` MCP tool |
+| Agent Skills Repo | 34 skills from `cockroachlabs/cockroachdb-skills` via `invoke_agent_skill` |
 
-34 skills from [cockroachlabs/cockroachdb-skills](https://github.com/cockroachlabs/cockroachdb-skills) installed. Invoked via MCP `invoke_agent_skill` tool — reads SKILL.md, extracts SQL, executes against the cluster:
+---
 
-```bash
-# Via MCP: invoke_agent_skill("reviewing-cluster-health", execute=True)
+## AWS Services (6)
 
---- Cluster version ---
-('CockroachDB CCL v26.2.1 (x86_64-pc-linux-gnu, built 2026/05/21)')
+| Service | Role |
+|---------|------|
+| Amazon Bedrock | Titan Embed v2 (1024-dim) → C-SPANN |
+| AWS Lambda | CDC changefeed → hash verification + self-healing |
+| Amazon S3 | Memory snapshots + Glacier archive |
+| AWS KMS | Encryption key management |
+| Amazon SNS | Real-time breach alerts |
+| Amazon CloudWatch | Lambda error alarms |
 
---- Memory count ---
-(1869,)
-
---- Cluster settings ---
-('kv.rangefeed.enabled', 'true')
-('sql.stats.automatic_collection.enabled', 'true')
-```
-
-Skills cover health checks, performance triage, schema analysis, security audits, and migrations.
-| **AS OF SYSTEM TIME** | MVCC time-travel for memory forensics |
-| **SERIALIZABLE Isolation** | Prevents hash chain forks in concurrent multi-agent scenarios |
-| **VECTOR Data Type** | Native 1024-dim vector storage with cosine distance operator `<=>` |
-
-## AWS Services Used
-
-- **Sentence Transformers** — all-MiniLM-L6-v2 for local embedding generation
-- **AWS KMS** — Encryption key management for memory encryption
-- **Amazon EC2** — Production deployment target
-- **AWS Lambda** — CDC handler for hash chain verification + self-healing (via Terraform)
-- **Amazon S3** — Memory archives with Glacier lifecycle (via Terraform)
-
-## ccloud CLI (Authenticated — Live Cluster)
-
-```bash
-$ ccloud cluster list -o json
-[
-  {
-    "id": "<cluster-id>",
-    "name": "bastion-memory",
-    "cloud_provider": "AWS",
-    "plan": "SERVERLESS",
-    "cockroach_version": "v26.2.1",
-    "state": "CREATED",
-    "regions": [
-      {
-        "name": "ap-south-1",
-        "primary": true,
-        "sql_dns": "<sql-endpoint>"
-      }
-    ]
-  }
-]
-```
-
-Used in `dba.py` (`_run_ccloud`) for auto-scaling, SQL queries, cluster health checks, and in `mcp_server.py` (`ccloud_exec` MCP tool) for agent-driven cluster management.
-
-## EU AI Act Compliance
-
-Bastion provides **automatic, tamper-evident logging** that satisfies EU AI Act Article 12 record-keeping requirements — enforceable since **2 August 2026**.
-
-| Requirement | Bastion Feature |
-|---|---|
-| Automatic event recording | `agent_audit` table logs every memory operation |
-| Tamper-evident logs | SHA-256 hash chain — cryptographic proof of integrity |
-| Traceability | `forensic_report` and `compliance_report` MCP tools |
-| 6-month retention | CockroachDB durable storage with TTL |
-| Time-travel reconstruction | `AS OF SYSTEM TIME` queries |
-
-Generate a regulator-ready compliance report via the MCP tool:
-```
-compliance_report(start_date="2026-07-01T00:00:00Z")
-```
-
-See [docs/EU_AI_ACT.md](docs/EU_AI_ACT.md) for the full compliance mapping.
+---
 
 ## Quick Start
 
-### Prerequisites
-
-- Node.js 20+
-- Python 3.11+
-- CockroachDB Cloud cluster (Serverless or Dedicated)
-- Groq API key (for LLM reasoning)
-
-### 1. Clone & Install
-
 ```bash
-git clone https://github.com/dgboy-ai/Bastion.git
-cd Bastion
+git clone https://github.com/dgboy-ai/Bastion.git && cd Bastion
 
 # Dashboard
-cd dashboard
-npm ci
-npm run dev &
+cd dashboard && npm ci && npm run dev &
 
 # Python services
-cd ..
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e ".[mcp,a2a,groq]"
 
 # Start MCP + A2A servers
 python -m bastion.mcp_server --transport http --host 0.0.0.0 --port 9997 &
 python -m bastion.a2a_server &
+
+# Deploy Lambda (AWS)
+python lambda/deploy.py --conn "$BASTION_CONN" --stack bastion-lambda --region ap-south-1
 ```
 
-### 2. Configure Environment
+---
 
-```bash
-cp .env.local.example .env.local
-# Edit .env.local with your credentials
+## Documentation
+
+| Doc | Link |
+|-----|------|
+| EU AI Act Compliance | [docs/EU_AI_ACT.md](docs/EU_AI_ACT.md) |
+| MCP Server | [docs/MCP_SERVER.md](docs/MCP_SERVER.md) |
+| A2A Server | [docs/A2A_SERVER.md](docs/A2A_SERVER.md) |
+| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| AWS Services | [docs/AWS_SERVICES.md](docs/AWS_SERVICES.md) |
+| CockroachDB Tools | [docs/COCKROACHDB_TOOLS.md](docs/COCKROACHDB_TOOLS.md) |
+| Deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Architecture Decisions | [docs/adr/](docs/adr/) |
+
+---
+
+## Memory Architecture (Deep Dive)
+
+| Layer | Tech | Purpose |
+|-------|------|---------|
+| **Hash Chain** | HMAC-SHA256 (server secret) | Tamper-proof ledger |
+| **Time-Travel** | `AS OF SYSTEM TIME` | MVCC forensics |
+| **Vector Search** | C-SPANN `VECTOR(1024)` | Semantic + metadata in one query |
+| **TTL** | `expires_at` + background GC | Auto-expiry by tier |
+| **RLS** | `app.current_agent_id` | Zero-trust isolation |
+| **Self-Heal** | CDC Lambda + MVCC | Auto-repair hash breaks |
+
+---
+
+## Quick Reference
+
+```python
+from bastion import BastionMemory
+
+mem = BastionMemory(agent_id="soc-analyst")
+
+# Store (guard → hash → TTL)
+record = mem.store("fact", "User prefers Python", importance=8.0)
+
+# Search (hybrid vector + keyword + entity + temporal)
+results = mem.search("Python preferences", k=5, threshold=0.8)
+
+# Time-travel
+past = mem.get_at_time("2026-07-28T10:00:00Z")
+
+# Hash chain verification
+report = mem.forensic_report()
+
+# Self-heal
+result = mem.heal()
+
+# Compliance
+report = mem.compliance_report(start_date="2026-07-01")
 ```
 
-### 3. Open Dashboard
+---
 
-Navigate to [http://localhost:3000](http://localhost:3000) and run the 19-step demo.
+## Performance (Live AWS ap-south-1)
 
-## API Endpoints
+| Operation | p50 | p99 |
+|-----------|-----|-----|
+| `memory_store` (with hash chain) | ~45ms | ~120ms |
+| `memory_search` (C-SPANN vector) | ~38ms | ~95ms |
+| OWASP ASI06 guard scan | ~10ms | ~30ms |
+| `AS OF SYSTEM TIME` read | ~25ms | ~60ms |
 
-| Endpoint | Description |
-|----------|-------------|
-| `/api/demo/poison` | Inject a poisoned memory with real OWASP guard detection |
-| `/api/demo/heal` | Time-travel recovery via `AS OF SYSTEM TIME` |
-| `/api/demo/chat` | Semantic vector search with cosine similarity |
-| `/api/demo/reason` | Groq LLM-powered reasoning chain with memory context |
-| `/api/soc` | Multi-agent orchestration (Analyst → Responder) |
-| `/api/mcp/*` | 35 MCP tools (memory_store, search, timetravel, compliance_report, etc.) |
-| `/api/a2a` | A2A agent card with 25 skills |
-| `/api/compliance/report` | EU AI Act Article 12 compliance report |
-| `/api/skills` | 34 CockroachDB Agent Skills |
-| `/api/ccloud` | ccloud CLI proxy (`cluster list`, `audit list`) |
-| `/api/official-mcp` | Official CockroachDB Managed MCP tool listing |
-
-## Demo (19 Steps)
-
-1. **Memory Poisoning Detection** — Inject malicious payload, OWASP guard blocks it
-2. **Time Travel Recovery** — Restore clean state via `AS OF SYSTEM TIME '-5s'`
-3. **Semantic Vector Search** — Query memories using C-SPANN vector index
-4. **Multi-Agent Orchestration** — Analyst detects, Responder heals via A2A
-5. **LLM Reasoning** — Groq analyzes incident with memory context
-6. **Official Tools** — Managed MCP, ccloud CLI, Agent Skills
-
-## Project Structure
-
-```
-Bastion/
-  dashboard/       Next.js 16 dashboard (playground, API)
-  src/bastion/      Python MCP + A2A servers (63 modules)
-  scripts/         EC2 deployment scripts
-  .agents/skills/  34 CockroachDB Agent Skills
-  terraform/       Terraform deployment config
-  lambda/          AWS Lambda handlers (CDC, webhooks)
-```
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)

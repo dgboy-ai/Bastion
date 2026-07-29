@@ -61,24 +61,27 @@ export async function GET(request: Request) {
 
     return apiSuccess({
       scan: {
-        total: parseInt(memoryCountRes.rows[0]?.count || "0", 10),
-        types: Object.fromEntries(typeDistRes.rows.map((r) => [r.memory_type, parseInt(r.count, 10)])),
-        agentCount: parseInt(agentCountRes.rows[0]?.count || "0", 10),
-        recentHour: parseInt(recentCountRes.rows[0]?.count || "0", 10),
+        total: parseInt(String(memoryCountRes.rows[0]?.count || "0"), 10),
+        types: Object.fromEntries(typeDistRes.rows.map((r) => [r.memory_type, parseInt(String(r.count), 10)])),
+        agentCount: parseInt(String(agentCountRes.rows[0]?.count || "0"), 10),
+        recentHour: parseInt(String(recentCountRes.rows[0]?.count || "0"), 10),
       },
       dedup: {
         duplicates: dupeRes.rows.length,
-        pairs: dupeRes.rows.map((r) => ({ a: r.content_a?.substring(0, 60), b: r.content_b?.substring(0, 60) })),
+        pairs: dupeRes.rows.map((r: Record<string, unknown>) => ({
+          a: String(r.content_a ?? "").substring(0, 60),
+          b: String(r.content_b ?? "").substring(0, 60),
+        })),
       },
       conflicts: {
-        detected: parseInt(conflictRes.rows[0]?.count || "0", 10),
+        detected: parseInt(String(conflictRes.rows[0]?.count || "0"), 10),
         recent: recentConflictsRes.rows.map((r) => r.details),
       },
       seal: {
-        totalAudits: parseInt(sealRes.rows[0]?.count || "0", 10),
+        totalAudits: parseInt(String(sealRes.rows[0]?.count || "0"), 10),
         latest: latestAuditRes.rows.map((r) => ({ action: r.action, at: r.recorded_at })),
-        chainValid: parseInt(hashCheckRes.rows[0]?.valid || "0", 10),
-        chainTotal: parseInt(hashCheckRes.rows[0]?.total || "0", 10),
+        chainValid: parseInt(String(hashCheckRes.rows[0]?.valid || "0"), 10),
+        chainTotal: parseInt(String(hashCheckRes.rows[0]?.total || "0"), 10),
       },
     });
   } catch (error) {
