@@ -809,6 +809,133 @@ def create_server(
         return json.dumps(record.to_dict(), indent=2, default=str)
 
     @mcp.tool(
+        name="memory_store_encrypted",
+        title="Store Encrypted Agent Memory",
+        description=(
+            "Store a memory encrypted with AWS KMS AES-256-GCM envelope encryption. "
+            "Content is encrypted before storage using the BastionEncryption KMS key. "
+            "Embedding is computed on plaintext before encryption, so vector similarity "
+            "search still works. Decryption happens transparently on retrieval. "
+            "Uses ARN: arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3"
+        ),
+        annotations=ToolAnnotations(
+            title="Store Encrypted Agent Memory",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def memory_store_encrypted(
+        ctx: Context,
+        content: str,
+        memory_type: str = "fact",
+        metadata: dict[str, Any] | None = None,
+        expires_in_seconds: int | None = None,
+    ) -> str:
+        valid_types = {
+            "fact", "task", "preference", "learned", "procedure",
+            "session", "instruction", "episodic", "semantic", "procedural",
+            "system_event", "security", "thought_node", "saga",
+            "conversation", "user_message", "agent_response", "error_log",
+            "checkpoint", "observation", "contradiction", "dream",
+        }
+        if memory_type not in valid_types:
+            return json.dumps({"error": f"Invalid memory_type: {memory_type}. Must be one of: {sorted(valid_types)}"})
+        if not content or not content.strip():
+            return json.dumps({"error": "content must be a non-empty string"})
+        if len(content.encode("utf-8")) > MAX_STORE_BYTES:
+            return json.dumps({"error": f"content exceeds maximum size of {MAX_STORE_BYTES} bytes"})
+        mem = _resolve_memory(ctx)
+        from bastion.kms import EncryptedMemoryWrapper
+        wrapper = EncryptedMemoryWrapper(mem)
+        try:
+            record = await anyio.to_thread.run_sync(
+                functools.partial(
+                    wrapper.store,
+                    memory_type,
+                    content,
+                    metadata,
+                    expires_in_seconds,
+                )
+            )
+        except SecurityBlockError as exc:
+            logger.warning("Encrypted store blocked by guard: %s", exc)
+            report = getattr(exc, "report", None)
+            result: dict[str, Any] = {
+                "error": "security_block",
+                "detail": "Content blocked by security guard",
+                "is_safe": False,
+            }
+            if report:
+                result["findings"] = [
+                    {"detector": f.detector, "threat_type": f.threat_type, "severity": f.severity, "detail": f.detail}
+                    for f in report.findings
+                ]
+                result["trust_score"] = report.trust_score
+                result["poisoning_risk"] = report.poisoning_risk
+            return json.dumps(result, indent=2)
+        except Exception:
+            logger.exception("memory_store_encrypted failed")
+            return json.dumps({"error": "Encrypted store operation failed — check server logs for details"})
+        return json.dumps(record.to_dict(), indent=2, default=str)
+
+    @mcp.tool(
+        name="memory_search_encrypted",
+        title="Search Encrypted Agent Memories",
+        description=(
+            "Search agent memories that were encrypted with AWS KMS. "
+            "Results are transparently decrypted on retrieval using the "
+            "BastionEncryption KMS key. Uses C-SPANN vector similarity search."
+        ),
+        annotations=ToolAnnotations(
+            title="Search Encrypted Agent Memories",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def memory_search_encrypted(
+        ctx: Context,
+        query: str,
+        k: int = 5,
+        threshold: float | None = None,
+        memory_type: str | None = None,
+    ) -> str:
+        if k < 1:
+            return json.dumps({"error": "k must be >= 1"})
+        k = min(k, MAX_K)
+        if threshold is not None and not 0.0 <= threshold <= 1.0:
+            return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
+        if not query or not query.strip():
+            return json.dumps({"error": "query must be a non-empty string"})
+        mem = _resolve_memory(ctx)
+        from bastion.kms import EncryptedMemoryWrapper
+        wrapper = EncryptedMemoryWrapper(mem)
+        if threshold is None:
+            threshold = 0.3 if mem.is_mock else 0.8
+        internal_k = max(k, 200)
+        results = await anyio.to_thread.run_sync(
+            functools.partial(
+                wrapper.search,
+                query,
+                internal_k,
+                threshold,
+                memory_type,
+            )
+        )
+        page = results[:k]
+        return json.dumps(
+            {
+                "results": [r.to_dict() for r in page],
+                "total": len(results),
+            },
+            indent=2,
+            default=str,
+        )
+
+    @mcp.tool(
         name="memory_store_batch",
         title="Batch Store Memories",
         description=(
