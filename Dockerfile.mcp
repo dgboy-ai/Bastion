@@ -9,9 +9,9 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# System deps for psycopg binary
+# System deps for psycopg binary + ccloud download
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
+    gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
@@ -35,6 +35,11 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
         "google-cloud-kms>=2.20" \
         "groq>=0.12"
 
+# Install ccloud CLI for agent operations
+RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
+    | tar -xz -C /usr/local/bin/ ccloud && \
+    chmod +x /usr/local/bin/ccloud
+
 # Runtime stage — minimal image
 FROM python:3.12-slim AS runtime
 
@@ -49,11 +54,6 @@ COPY src/ /app/src/
 
 # Set Python path
 ENV PYTHONPATH=/app/src
-
-# Install ccloud CLI for agent operations
-RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
-    | tar -xz -C /usr/local/bin/ ccloud && \
-    chmod +x /usr/local/bin/ccloud
 
 # Security: non-root user
 RUN groupadd -r bastion && useradd -r -g bastion -m bastion
