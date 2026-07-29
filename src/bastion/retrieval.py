@@ -139,8 +139,9 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _extract_entities(text: str) -> list[str]:
-    """Extract capitalized multi-word phrases as named entities."""
-    return list(set(re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", text)))
+    """Extract capitalized multi-word phrases as named entities, normalized to lowercase."""
+    entities = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", text)
+    return list(set(e.lower() for e in entities))
 
 
 def _bm25_score(query_tokens: list[str], content_tokens: list[str], k1: float = 1.5, b: float = 0.75) -> float:
@@ -195,6 +196,7 @@ class RetrievalResult:
             "importance": getattr(self.memory, "importance_score", 0),
             "createdAt": getattr(self.memory, "created_at", ""),
             "similarity": round(self.vector_score, 4),
+            "vector_score": round(self.vector_score, 4),
             "keyword_score": round(self.keyword_score, 4),
             "entity_score": round(self.entity_score, 4),
             "temporal_score": round(self.temporal_score, 4),

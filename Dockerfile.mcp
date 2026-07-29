@@ -33,7 +33,8 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
         "mcp>=1.0" \
         "cryptography>=42.0" \
         "google-cloud-kms>=2.20" \
-        "groq>=0.12"
+        "groq>=0.12" \
+        "sentence-transformers>=3.0,<4"
 
 # Install ccloud CLI for agent operations
 RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \

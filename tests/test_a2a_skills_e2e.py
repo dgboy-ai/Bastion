@@ -17,7 +17,13 @@ class TestA2ASkillsE2E:
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     def _h(self):
-        return {"A2A-Version": "1.0"}
+        import os
+
+        h = {"A2A-Version": "1.0"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
+        return h
 
     def _send(self, client, skill, params, req_id="1"):
         return client.post(

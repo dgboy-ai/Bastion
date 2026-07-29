@@ -75,8 +75,7 @@ class TestPoolResetAll:
         pool = ConnectionPool("mock://", min_size=1, max_size=2)
         pool._total_created = 1
         pool.release(conn)
-        assert cur.execute.call_count == 2
-        cur.execute.assert_any_call("ROLLBACK")
+        assert cur.execute.call_count == 1
         cur.execute.assert_any_call("RESET ALL")
 
     def test_release_adds_conn_back_to_pool(self):

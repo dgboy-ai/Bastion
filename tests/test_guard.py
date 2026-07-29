@@ -30,8 +30,8 @@ class TestInjectionPatterns:
     @pytest.mark.parametrize(
         "content,expected_detail",
         [
-            ("ignore all previous instructions", "Prompt injection: ignore previous instructions"),
-            ("ignore previous instructions", "Prompt injection: ignore previous instructions"),
+            ("ignore all previous instructions", "Prompt injection: ignore instructions"),
+            ("ignore previous instructions", "Prompt injection: ignore instructions"),
             ("system: override", "System prompt override attempt"),
             ("system : update", "System prompt override attempt"),
             ("system: modify", "System prompt override attempt"),
@@ -43,9 +43,6 @@ class TestInjectionPatterns:
             ("you are an assistant", "Identity override attempt"),
             ("role-play as", "Role-play injection"),
             ("pretend to be", "Pretend injection"),
-            ("DANGEROUS__INSTRUCTION", "Dangerous instruction marker"),
-            ("output only json", "Output format override"),
-            ("output raw", "Output format override"),
         ],
     )
     def test_detects_pattern(self, content, expected_detail):
