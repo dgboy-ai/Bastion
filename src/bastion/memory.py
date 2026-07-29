@@ -2104,7 +2104,12 @@ class BastionMemory:
         stale_timeout seconds as FAILED (orphans from client disconnects).
         """
         if cleanup_stale:
-            return self._cleanup_stale_tasks(stale_timeout)
+            count = self._cleanup_stale_tasks(stale_timeout)
+            return {"cleaned_count": count}
+        if task_id is None:
+            raise ValueError("task_id is required when cleanup_stale is False")
+        if status is None:
+            raise ValueError("status is required when cleanup_stale is False")
         return self._a2a_store.update_task(
             task_id, status, artifacts, callback_url,
             runtime_metadata, error_message, retry_count,

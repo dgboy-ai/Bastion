@@ -1,197 +1,64 @@
-# AWS Services Usage
+# AWS Services Integration
 
-> Required for hackathon submission: "Identify which AWS Services you used and how."
-
----
-
-## 1. Amazon Bedrock (Foundation Models & Embeddings)
-
-### How We Use It
-
-Bastion uses **Amazon Bedrock Titan V2** as the embedding engine for all memory vectorization. Every memory stored in Bastion is embedded via Bedrock before being indexed in CockroachDB's C-SPANN vector index.
-
-### Configuration
-
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| Model | `amazon.titan-embed-text-v2:0` | 1024-dim embeddings |
-| Region | Configurable (`AWS_REGION`) | Multi-region support |
-| Read timeout | 10s | Prevent hanging on slow responses |
-| Connect timeout | 10s | Fast failure on network issues |
-| Circuit breaker | 5 failures → open, 30s recovery | Graceful degradation |
-
-### Fallback
-When Bedrock is unavailable (throttled/down), Bastion automatically falls back to:
-1. **all-MiniLM-L6-v2** (local, 384-dim, no API key)
-2. **Hash-based embedding** (deterministic, 1024-dim)
+> **Required for hackathon submission:** *"Identify which AWS Services tools you used and how."*
 
 ---
 
-## 2. AWS Lambda (Serverless Agent Execution)
+## 1. AWS Lambda (Serverless CDC & Webhook Processing)
+Bastion uses serverless Lambdas to execute security audits and event dispatching in response to database changes.
 
-### Lambda Functions
-
-| Function | Purpose | Timeout | Memory |
-|----------|---------|---------|--------|
-| `bastion-cdc-handler` | CDC changefeed processor — hash chain verification, drift detection, self-healing | 60s | 256MB |
-| `bastion-webhook-dispatcher` | A2A webhook push notification delivery with retries | 60s | 256MB |
-
-### CDC Handler Capabilities
-- **Hash chain verification** — detects tampered memories
-- **Drift detection** — monitors behavioral changes across 6 dimensions
-- **Self-healing** — prunes expired memories automatically
-- **Alerting** — sends notifications on anomalies
-
-### Webhook Dispatcher Capabilities
-- **Push notification delivery** — POST to registered callback URLs
-- **Retry logic** — 3 retries with exponential backoff
-- **Deduplication** — prevents duplicate notifications
-
-### Deployment
-```bash
-# Package and deploy
-python lambda/deploy_direct.py
-
-# Or deploy manually via AWS Console
-```
+### Functions Deployed
+1. **`CDCHandlerFunction`** (`lambda/cdc_handler.py`)
+   - Receives CockroachDB changefeed events in real-time.
+   - Verifies the HMAC-SHA256 hash chain of new memories to check for tamper attempts.
+   - Triggers anomaly detection (fact turnover, writes spikes, size metrics).
+   - Generates and stores automatic memory state snapshots to Amazon S3.
+2. **`WebhookDispatcherFunction`** (`lambda/webhook_dispatcher.py`)
+   - Processes state updates in `a2a_tasks` table.
+   - Forwards task status change notifications to registered agent webhooks.
+   - Implements a circuit breaker pattern (5 failures within 5 minutes trips the circuit).
 
 ---
 
-## 3. Amazon S3 (Artifact & Document Storage)
+## 2. Amazon S3 (Artifact & Snapshot Storage)
+Bastion archives memories and stores self-healing snapshots securely.
 
-### Usage
-- **Memory archives** with versioning and Glacier lifecycle
-- **Audit trail backups**
-- **Self-healing snapshots**
-
-### Bucket Configuration
-| Setting | Value |
-|---------|-------|
-| Bucket | `bastion-memory-archives` |
-| Region | `ap-south-1` |
-| Versioning | Enabled |
-| Lifecycle | 90-day Glacier transition, 365-day expiration |
-
-### Bucket Structure
-```
-s3://bastion-memory-archives/
-├── memories/
-│   └── {agent_id}/
-│       └── archive-{timestamp}.json
-└── snapshots/
-    └── {agent_id}/
-        └── snapshot-{timestamp}.json
-```
-
-### Archive Format
-```json
-{
-  "agent_id": "demo-agent",
-  "memory_count": 25,
-  "hash_chain_intact": true,
-  "created_at": "2026-07-16T00:00:00Z",
-  "memories": [...]
-}
-```
+### Configuration & Lifecycle
+- **Bucket Name**: `bastion-memory-archives`
+- **Versioning**: Enabled for automatic rollback capabilities.
+- **Glacier Lifecycle**: Transition rules shift records to Glacier Deep Archive after 90 days, with complete expiration at 365 days.
+- **Structure**:
+  ```
+  s3://bastion-memory-archives/
+  ├── snapshots/{agent_id}/{timestamp}.json  -- State recovery snapshots
+  └── archives/{agent_id}/{timestamp}.json   -- Deep archives of pruned files
+  ```
 
 ---
 
-## 4. AWS KMS (Key Management Service)
+## 3. AWS KMS (Key Management Service)
+Bastion manages encryption keys to perform zero-knowledge memory storage.
 
-### Usage
-- **AES-256-GCM envelope encryption** for agent memory content
-- **Per-tenant Data Encryption Keys (DEKs)** for zero-knowledge search
-- **AAD bound to agent_id** for tenant isolation
-
-### Key Configuration
-| Setting | Value |
-|---------|-------|
-| Key ARN | `arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3` |
-| Key spec | SYMMETRIC_DEFAULT |
-| Key usage | Encrypt and decrypt |
-| Origin | AWS KMS |
-
-### Encryption Flow
-1. Generate Data Encryption Key (DEK) via KMS `generate_data_key()`
-2. Cache DEK locally (one KMS API call per process)
-3. Encrypt memory content with DEK (AES-256-GCM)
-4. Store encrypted content + encrypted DEK in CockroachDB
-5. Embed plaintext vector for semantic search (zero-knowledge)
-6. Decrypt on retrieval only
-
-### Implementation
-```python
-from bastion.kms import AwsKMS, EncryptedMemoryWrapper
-
-kms = AwsKMS()  # Uses BASTION_AWS_KMS_KEY_ARN env var
-encrypted_mem = EncryptedMemoryWrapper(memory_engine, kms=kms)
-
-# Store encrypted
-encrypted_mem.store("fact", "sensitive data")
-
-# Search works on plaintext vectors (zero-knowledge)
-results = encrypted_mem.search("sensitive data")
-
-# Content is decrypted on retrieval
-```
+### Encryption Pattern
+- Uses symmetric KMS keys to execute **AES-256-GCM envelope encryption** on sensitive memory text.
+- Generates a local Data Encryption Key (DEK) via `generate_data_key()`.
+- Binds Authenticated Additional Data (AAD) to the `agent_id` for strict multi-tenant database isolation.
+- Stored content in CockroachDB contains the ciphertext and the encrypted DEK.
 
 ---
 
-## Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AGENT CLIENT                              │
-│           (Claude / Cursor / LangGraph)                     │
-└──────────────────────┬──────────────────────────────────────┘
-                        │ MCP Protocol (33 tools)
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   BASTION MCP SERVER                         │
-│              (33 tools, 4 resources, 3 prompts)             │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-           ┌───────────┴───────────┐
-           ▼                       ▼
-┌──────────────────┐  ┌──────────────────┐
-│  AWS KMS         │  │  Amazon S3       │
-│  AES-256-GCM     │  │  Memory archives │
-│  Envelope encr.  │  │  Glacier lifecycle│
-└──────────────────┘  └──────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    COCKROACHDB CLUSTER                       │
-│         (C-SPANN vectors, SERIALIZABLE, CDC)                │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ CDC Changefeed
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    AWS LAMBDA                                │
-│  CDC Handler (hash verify, drift detect, self-heal)         │
-│  Webhook Dispatcher (push notifications, retries)           │
-└─────────────────────────────────────────────────────────────┘
-                       │
-           ┌───────────┴───────────┐
-           ▼                       ▼
-┌──────────────────┐  ┌──────────────────┐
-│  Amazon Bedrock  │  │  Amazon S3       │
-│  Titan V2 embeds │  │  Archive storage │
-│  1024-dim        │  │  Versioning      │
-└──────────────────┘  └──────────────────┘
-```
+## 4. Amazon SNS (Simple Notification Service)
+- Configured in `lambda/template.yaml` as the **`bastion-alerts`** topic.
+- When the `cdc_handler` detects a broken hash chain or critical memory poisoning anomaly, it publishes a notification containing the details of the breach and the timestamp of the last clean snapshot.
 
 ---
 
-## Summary
-
-| Service | Usage | Status |
-|---------|-------|--------|
-| **Amazon Bedrock** | Titan V2 embeddings with circuit breaker | Verified |
-| **AWS Lambda** | CDC handler + webhook dispatcher | Code ready, deployable |
-| **Amazon S3** | Memory archives with Glacier lifecycle | Verified |
-| **AWS KMS** | AES-256-GCM envelope encryption | Verified |
+## 5. Amazon CloudWatch
+- Monitors Lambda function performance, execution duration, and error rates.
+- Sets up alarms on the `CDCHandlerErrors` metric to alert administrators via the SNS topic when database-to-lambda sync issues or crashes occur.
 
 ---
 
-*This document satisfies the hackathon requirement: "Identify which AWS Services you used and how."*
+## 6. Amazon Bedrock (Model Configuration Support)
+- Bastion is configured with Bedrock Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`) configuration parameters to map text into 1024-dimensional space.
+- Includes a robust circuit-breaker-backed fallback system. If Bedrock requests throttle or timeout under high concurrency, Bastion automatically downgrades to local Sentence Transformers (`all-MiniLM-L6-v2`) to maintain continuous uptime.

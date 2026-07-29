@@ -1,169 +1,102 @@
-# CockroachDB Tools Usage
+# CockroachDB Tools Integration Guide
 
-> Required for hackathon submission: "Identify which CockroachDB tools you used and how."
+> **Required for hackathon submission:** *"Identify which CockroachDB tools you used and how — what did the agent actually do with them?"*
 
 ---
 
-## 1. CockroachDB Cloud Managed MCP Server ✅
-
-Bastion implements a **full MCP (Model Context Protocol) server** that exposes CockroachDB as a persistent memory layer for AI agents.
+## 1. Managed MCP Server
+Bastion bridges the official **CockroachDB Managed MCP Server** to expose live database operations to AI agents, with full audit trail logging.
 
 ### How We Use It
+Our MCP server (`src/bastion/mcp_server.py`) implements **35 tools** to manage agent memories, orchestrate transactions, and interact with the database:
 
-Our MCP server (`src/bastion/mcp_server.py`) provides **35 tools**, **4 resources**, and **3 prompts** that any MCP-compatible client can call:
-
-| MCP Tool | What It Does | CockroachDB Feature Used |
-|----------|-------------|-------------------------|
-| `memory_store` | Store memories with hash chain integrity | INSERT with SHA-256 chain |
-| `memory_search` | Vector similarity search with decay scoring | C-SPANN distributed vector index |
-| `memory_timetravel` | Query memory state at any past timestamp | `AS OF SYSTEM TIME` |
-| `memory_audit` | Verify append-only audit trail | Hash chain verification |
-| `memory_heal` | Self-healing: prune expired, detect anomalies | CDC-triggered cleanup |
-| `memory_delete` | Delete memory with confirmation | SERIALIZABLE transaction |
-| `resolve_conflict` | Multi-agent conflict resolution | CRDT + SELECT FOR UPDATE |
-| `memory_pin` | Pin safety-critical memories | Partial index on `is_pinned` |
-| `memory_get_pinned` | Get all pinned memories | Filtered query with priority |
-| `memory_list` | List memories with pagination | Offset/limit pagination |
-| `memory_correct` | Update memory content | UPDATE with hash chain |
-| `memory_health` | Memory health metrics | Aggregation queries |
-| `memory_apply_patch` | RFC 6902 JSON Patch on metadata | Atomic metadata update |
-| `a2a_bridge` | Agent-to-agent discovery | A2A Agent Card |
-| `ltm_check_reuse` | LTM Gateway: check cached analyses | C-SPANN similarity search |
-| `ltm_store_analysis` | LTM Gateway: store analysis results | INSERT with embedding |
-| `ltm_invalidate` | LTM Gateway: mark stale analyses | UPDATE status flag |
-| `dream` | Sleep-time memory consolidation | Multi-table transaction |
-| `dream_history` | Past dreaming sessions | SELECT from audit |
-| `detect_contradictions` | Auto-detect contradictions | Semantic comparison |
-| `scan_all_contradictions` | Batch contradiction scan | Full table scan |
-| `detect_observations` | Meta-pattern detection | Aggregation queries |
-| `multi_signal_search` | 4-signal fusion search | Vector + BM25 + Entity + Temporal |
-| `context_pack` | Token budget packing for LLM | Ranked result selection |
-| `agent_schema` | Query own database schema | INFORMATION_SCHEMA |
-
-### MCP Resources
-
-| Resource | Purpose |
-|----------|---------|
-| `bastion://schema` | Database schema definition |
-| `bastion://config` | Current configuration |
-| `bastion://stats` | Usage statistics |
-| `bastion://memory/{id}` | Individual memory record |
-
-### MCP Prompts
-
-| Prompt | Purpose |
-|--------|---------|
-| `analyze_memory` | Analyze a memory record |
-| `conflict_analysis` | Analyze conflicting memories |
-| `audit_review` | Review audit trail |
-
-### Transport Support
-- **stdio** (local development, single process)
-- **Streamable HTTP** (production, horizontally scalable)
-- **OAuth 2.1 + PKCE** (enterprise authentication)
+| Category | Tools | CockroachDB Feature Utilized |
+|----------|-------|------------------------------|
+| **Core Memory** | `memory_store`, `memory_search`, `memory_store_encrypted`, `memory_search_encrypted`, `memory_store_batch`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete` | HMAC-SHA256, C-SPANN, MVCC `AS OF SYSTEM TIME` |
+| **Pinning** | `memory_pin`, `memory_get_pinned` | Partial indexing on `is_pinned` |
+| **Governance** | `memory_list`, `memory_correct`, `memory_health`, `forensic_report`, `memory_apply_patch`, `compliance_report` | SQL pagination, updates, EU AI Act compliance checks |
+| **Consensus** | `resolve_conflict` | `SERIALIZABLE` isolation transactions |
+| **LTM Gateway** | `ltm_check_reuse`, `ltm_store_analysis`, `ltm_invalidate` | Cached analysis retrieval |
+| **Dreaming** | `dream`, `dream_history` | Episodic-to-semantic consolidation |
+| **Cognitive** | `detect_contradictions`, `scan_all_contradictions`, `detect_observations` | Semantic contradiction and trend checks |
+| **Retrieval** | `multi_signal_search`, `context_pack` | 4-signal fusion, context optimization |
+| **Infrastructure** | `agent_schema`, `a2a_bridge`, `managed_mcp_list_tools`, `managed_mcp_call`, `invoke_agent_skill`, `list_agent_skills`, `ccloud_exec` | Introspection, A2A card generation, CLI wrappers |
 
 ---
 
-## 2. Distributed Vector Indexing (C-SPANN) ✅
+## 2. Distributed Vector Indexing (C-SPANN)
+We store high-dimensional embeddings natively inside CockroachDB using the `VECTOR` data type, combined with `C-SPANN` indexes.
 
-Bastion uses CockroachDB's native C-SPANN vector index for semantic search at scale.
-
-### Schema
-
+### Table DDL
 ```sql
-CREATE TABLE agent_memory (
-    memory_id VARCHAR(64) PRIMARY KEY,
-    agent_id VARCHAR(128) NOT NULL,
-    embedding VECTOR(1024),  -- Bedrock Titan V2 embeddings
-    content TEXT NOT NULL,
-    importance_score FLOAT DEFAULT 5.0,
-    cryptographic_hash VARCHAR(64) NOT NULL,
-    previous_hash VARCHAR(64),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    is_pinned BOOLEAN DEFAULT false,
-    pin_priority INT DEFAULT 0
+CREATE TABLE public.agent_memory (
+    memory_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id STRING NOT NULL,
+    memory_type STRING NOT NULL,
+    content STRING NOT NULL,
+    embedding VECTOR(1024) NULL,  -- Amazon Bedrock Titan v2 (1024-dim)
+    embedding_384 VECTOR(384) NULL, -- local MiniLM fallback
+    metadata JSONB NULL,
+    cryptographic_hash STRING NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    expires_at TIMESTAMPTZ NULL,
+    importance_score FLOAT8 DEFAULT 5.0,
+    trust_level INT8 DEFAULT 2,
+    is_pinned BOOL DEFAULT false,
+    pin_priority INT8 DEFAULT 0
 );
 
--- Tenant-partitioned vector index
-CREATE VECTOR INDEX idx_memory_embedding ON agent_memory (agent_id, embedding);
+-- Indexing C-SPANN vector distance
+CREATE INDEX idx_memory_embedding_384 ON agent_memory (agent_id, embedding_384);
 ```
 
-### How It Works
-
-1. **Store**: Memory content is embedded via AWS Bedrock Titan V2 (1024-dim vectors), then stored with the vector in CockroachDB
-2. **Search**: Cosine similarity search with importance decay weighting
-3. **Time-Travel**: Query vector search results at any historical timestamp
-
-### Why CockroachDB Vector Indexing
-
-| Feature | Benefit |
-|---------|---------|
-| Distributed index | Scales horizontally across regions |
-| ACID transactions | Vector writes are consistent with relational data |
-| No separate vector store | Single database footprint |
-| Time-travel on vectors | Query historical embedding states |
-| C-SPANN quantization | 94% storage reduction |
+### Hybrid Query Pattern
+We combine vector search with relational filters (tenant ID, expiry, importance) in a single SQL statement:
+```sql
+SELECT memory_id, content, importance_score,
+       embedding_384 <=> $1 AS distance
+FROM agent_memory
+WHERE agent_id = $2
+  AND (expires_at IS NULL OR expires_at > now())
+ORDER BY distance ASC
+LIMIT $3;
+```
 
 ---
 
-## 3. ccloud CLI (Agent-Ready) ✅
+## 3. ccloud CLI (Agent-Ready)
+Bastion provides administrative actions via a secure wrapper around CockroachDB's `ccloud` CLI tool.
 
-Bastion wraps CockroachDB's `ccloud` CLI for agent-driven cluster management.
-
-### Usage in Bastion
-
+### Integrated Wrapper (`src/bastion/dba.py`)
+AI agents can call the `ccloud_exec` tool to manage the database cluster directly from the chat:
 ```python
-class AutonomousDBA:
-    """Wraps ccloud CLI for agent-driven cluster operations."""
-    
-    def provision_cluster(self, name: str, region: str) -> ClusterInfo:
-        """Provision a new CockroachDB Serverless cluster."""
-        
-    def get_cluster_info(self) -> ClusterInfo:
-        """Get current cluster connection details."""
+def _run_ccloud(self, cmd: list[str]) -> str:
+    # Runs the binary with -o json parameter formatting
+    # Autoinjects BASTION_CCLOUD_API_KEY and service account RBAC
 ```
-
-### ccloud Commands Used
-
-| Command | Purpose | Bastion Use |
-|---------|---------|-------------|
-| `ccloud cluster create` | Provision new cluster | `provision_cluster()` |
-| `ccloud cluster list` | List available clusters | Cluster discovery |
-| `ccloud sql connect` | Connect to cluster | Connection pool setup |
-| `ccloud audit log` | Get audit logs | Compliance reporting |
+Supported functions:
+- `ccloud cluster list`
+- `ccloud cluster status`
+- `ccloud audit log list`
 
 ---
 
-## 4. CockroachDB Agent Skills Repo ✅
+## 4. CockroachDB Agent Skills Repo
+We have integrated all **34 machine-executable skills** from the official `cockroachdb-skills` repository.
 
-Bastion provides **8 machine-executable Agent Skills** in `skills/manifest.json`:
+### Execution Model
+The MCP server tool `invoke_agent_skill(skill_name, execute=True)` will:
+1. Locate the playbook directory inside `.agents/skills/{skill_name}/`.
+2. Parse the markdown instructions and extract the database tuning SQL.
+3. Execute the SQL against the active database cluster.
 
-| Skill | What It Provides |
-|-------|-----------------|
-| `memory_store` | Store memories with hash chain integrity |
-| `memory_search` | Semantic vector search |
-| `memory_timetravel` | Time-travel queries |
-| `memory_audit` | Hash chain verification |
-| `memory_heal` | Self-healing corruption repair |
-| `graph_query` | Knowledge graph traversal |
-| `resolve_conflict` | CRDT conflict resolution |
-| `a2a_bridge` | Agent-to-agent communication |
-
----
-
-## 5. Key CockroachDB Features Demonstrated
-
-| Feature | How Bastion Uses It |
-|---------|-------------------|
-| **AS OF SYSTEM TIME** | Time-travel queries for memory state at any point |
-| **SERIALIZABLE isolation** | Conflict resolution with SELECT FOR UPDATE |
-| **Row-Level Security** | Multi-tenant memory isolation |
-| **JSONB** | Flexible metadata storage on memories |
-| **CDC Changefeeds** | Real-time event streaming for SSE dashboard |
-| **MVCC** | Versioned data for time-travel and audit |
-| **Vector Indexing (C-SPANN)** | Distributed semantic search |
-| **Global Distribution** | Multi-region memory with zero downtime |
-
----
-
-*This document satisfies the hackathon requirement: "Identify which CockroachDB tools you used and how."*
+Installed skills include:
+- `reviewing-cluster-health`
+- `triaging-live-sql-activity`
+- `auditing-cloud-cluster-security`
+- `configuring-audit-logging`
+- `hardening-user-privileges`
+- `profiling-statement-fingerprints`
+- `profiling-transaction-fingerprints`
+- `designing-application-transactions`
+- `upgrading-cluster-version`
