@@ -174,7 +174,7 @@ To prevent serverless concurrency spikes from starving the database, Bastion uti
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   BASTION MCP SERVER                         │
-│              (25 tools, 4 resources, 3 prompts)             │
+│              (33 tools, 4 resources, 3 prompts)             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
         ┌──────────────┼──────────────┐

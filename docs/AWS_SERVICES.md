@@ -144,11 +144,11 @@ results = encrypted_mem.search("sensitive data")
 │                    AGENT CLIENT                              │
 │           (Claude / Cursor / LangGraph)                     │
 └──────────────────────┬──────────────────────────────────────┘
-                       │ MCP Protocol (25 tools)
+                        │ MCP Protocol (33 tools)
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   BASTION MCP SERVER                         │
-│              (25 tools, 4 resources, 3 prompts)             │
+│              (33 tools, 4 resources, 3 prompts)             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
            ┌───────────┴───────────┐

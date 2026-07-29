@@ -13,7 +13,7 @@
 | **OWASP ASI06 Guard** | 40+ pattern detectors block prompt injection before memory is stored (94% detection, ~32ms) |
 | **C-SPANN Vector Search** | Distributed vector index for semantic similarity search across all memories |
 | **Groq LLM Reasoning** | Real LLM-powered analysis of incidents using historical memory context |
-| **MCP Server (25 tools)** | Model Context Protocol server for memory operations (store, search, heal, audit) |
+| **MCP Server (33 tools)** | Model Context Protocol server for memory operations (store, search, heal, audit) |
 | **A2A Server (25 skills)** | Agent-to-Agent protocol for multi-agent coordination |
 | **Multi-Agent SOC** | Analyst + Responder agents collaborate via A2A to detect and heal poisoning attacks |
 
@@ -116,7 +116,7 @@ Navigate to [http://localhost:3000](http://localhost:3000) and run the 19-step d
 | `/api/demo/chat` | Semantic vector search with cosine similarity |
 | `/api/demo/reason` | Groq LLM-powered reasoning chain with memory context |
 | `/api/soc` | Multi-agent orchestration (Analyst → Responder) |
-| `/api/mcp/*` | 25 MCP tools (memory_store, search, timetravel, etc.) |
+| `/api/mcp/*` | 33 MCP tools (memory_store, search, timetravel, etc.) |
 | `/api/a2a` | A2A agent card with 25 skills |
 | `/api/skills` | 34 CockroachDB Agent Skills |
 | `/api/ccloud` | ccloud CLI proxy (`cluster list`, `audit list`) |

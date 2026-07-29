@@ -8,7 +8,7 @@ Welcome, Hackathon Judges! This document provides a step-by-step technical guide
 
 | Criteria | Bastion Evidence |
 |----------|------------------|
-| **Agentic Memory Design** | IS agentic memory. 25 MCP tools, C-SPANN, time-travel, 6 regions |
+| **Agentic Memory Design** | IS agentic memory. 33 MCP tools, C-SPANN, time-travel, 6 regions |
 | **Technical Implementation** | 159 brutal tests, production code, dual SDKs, A2A v1.0 |
 | **Real-World Impact** | Solves amnesia, poisoning, crashes for all AI agents |
 | **Production Readiness** | OWASP, OAuth, RLS, KMS, 6 regions |
@@ -49,10 +49,10 @@ Welcome, Hackathon Judges! This document provides a step-by-step technical guide
 
 | Tool | Implementation |
 |------|---------------|
-| **MCP Server** | 25 tools, 4 resources, 3 prompts |
+| **MCP Server** | 33 tools, 4 resources, 3 prompts |
 | **Vector Indexing** | C-SPANN with 1024-dim embeddings |
 | **ccloud CLI** | Cluster provisioning, migrations |
-| **Agent Skills** | 8 machine-executable skills |
+| **Agent Skills** | 34 machine-executable skills |
 
 ### Does the agent use the tools correctly and safely?
 
@@ -142,9 +142,9 @@ The demo shows a real attack scenario:
 
 | File | What to look at |
 |------|----------------|
-| `src/bastion/memory.py` | Core BastionMemory class — all 25 MCP tools |
+| `src/bastion/memory.py` | Core BastionMemory class — all 33 MCP tools |
 | `src/bastion/guard.py` | OWASP ASI06 guard — the security heart |
-| `src/bastion/mcp_server.py` | MCP server — 25 tools, 4 resources, 3 prompts |
+| `src/bastion/mcp_server.py` | MCP server — 33 tools, 4 resources, 3 prompts |
 | `src/bastion/a2a_server.py` | A2A v1.0 — signed agent cards, task lifecycle |
 | `src/bastion/crypto.py` | SHA-256 hash chain engine |
 | `scripts/test_brutal_crdb.py` | Brutal real CockroachDB test suite |

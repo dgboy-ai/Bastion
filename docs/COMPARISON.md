@@ -34,7 +34,7 @@
 | AS OF SYSTEM TIME | Time travel queries | Not used |
 | SERIALIZABLE | Multi-agent coordination | Not used |
 | CDC Changefeed | Self-healing pipeline | Not used |
-| MCP Server | 25 tools | Not used |
+| MCP Server | 33 tools | Not used |
 | ccloud CLI | Auto-provision from SDK | Not used |
 | Agent Skills | 8 pre-built skills | Not used |
 

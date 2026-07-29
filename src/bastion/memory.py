@@ -1420,23 +1420,30 @@ class BastionMemory:
         pool = self.get_pool()
         conn = pool.acquire(timeout=10)
         try:
+            self._set_rls_context(conn)
             abs_timestamp = self._parse_timestamp(timestamp)
 
-            # Try CockroachDB's AS OF SYSTEM TIME for true MVCC time-travel
+            # Use statement-level AS OF SYSTEM TIME (CockroachDB requires LITERAL timestamp).
+            # abs_timestamp is validated by _parse_timestamp — safe for interpolation.
+            # Add 1s buffer for MVCC clock skew (application timestamps are slightly
+            # before CockroachDB MVCC commit timestamps).
             try:
+                from datetime import timedelta
+                parsed_dt = datetime.fromisoformat(abs_timestamp.replace("Z", "+00:00"))
+                adjusted_ts = (parsed_dt + timedelta(seconds=1)).isoformat()
+                safe_ts = adjusted_ts.replace("'", "''")
                 with conn.cursor() as cur:
-                    cur.execute("BEGIN")
-                    cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (abs_timestamp,))
                     cur.execute(
-                        f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE agent_id = %s ORDER BY created_at",
+                        f"SELECT {_MEMORY_COLS} FROM agent_memory "
+                        f"AS OF SYSTEM TIME '{safe_ts}' "
+                        "WHERE agent_id = %s ORDER BY created_at",
                         (agent_id,),
                     )
                     results = [MemoryRecord.from_row(r) for r in cur.fetchall()]
-                    conn.rollback()
+                    with contextlib.suppress(Exception):
+                        conn.commit()
                     return results
             except Exception as primary_exc:
-                # Fallback: if AS OF SYSTEM TIME fails (e.g., timestamp too old),
-                # use timestamp filtering as a degraded mode
                 logger.debug("AS OF SYSTEM TIME failed, using fallback: %s", primary_exc)
                 with contextlib.suppress(Exception):
                     conn.rollback()
