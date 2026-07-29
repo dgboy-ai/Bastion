@@ -239,7 +239,7 @@ class A2ATaskStore:
                 cur.execute(
                     "DELETE FROM a2a_tasks "
                     "WHERE completed_at IS NOT NULL "
-                    "AND completed_at < now() - make_interval(secs => %s)",
+                    "AND completed_at < now() - (%s * INTERVAL '1 second')",
                     (max_age_seconds,),
                 )
                 deleted = cur.rowcount
