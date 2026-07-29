@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       return apiSuccess(getPaginatedMemories(), "short", { mock: true });
     }
 
-    const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
+    const total = parseInt(String(countRes.rows[0]?.cnt ?? "0"), 10);
     const totalPages = Math.ceil(total / limit);
     type MemoryRow = Record<string, unknown>;
     const memories = dataRes.rows.map((row: MemoryRow) => ({

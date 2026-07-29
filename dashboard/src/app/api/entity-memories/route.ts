@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       [entityId, limit, offset]
     );
 
-    const total = parseInt(countRes.rows[0]?.cnt ?? "0", 10);
+    const total = parseInt(String(countRes.rows[0]?.cnt ?? "0"), 10);
     const totalPages = Math.ceil(total / limit);
     type MemoryRow = Record<string, unknown>;
     const memories = memoriesRes.rows.map((row: MemoryRow) => ({

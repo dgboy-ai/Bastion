@@ -1,0 +1,21 @@
+import sys
+sys.path.insert(0, 'src')
+from bastion.mcp_server import create_server
+import asyncio
+import json
+
+async def test():
+    mcp = create_server(connection_string='', mock=False)
+    tool = mcp._tool_manager._tools['invoke_agent_skill']
+    
+    class MockContext:
+        client_id = 'test'
+    
+    result = await tool.fn(MockContext(), 'triaging-live-sql-activity', execute=True)
+    data = json.loads(result)
+    print(f'Skill: {data["skill"]}')
+    print(f'Executed: {data["executed"]}')
+    for r in data.get('execution_results', []):
+        print(f'  Query {r["query_index"]}: {r["status"]} - {r.get("row_count", "N/A")} rows - {r.get("reason", r.get("error", ""))[:80]}')
+
+asyncio.run(test())

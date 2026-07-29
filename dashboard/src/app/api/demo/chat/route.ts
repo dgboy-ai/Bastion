@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     // ─── 3. COMPUTE SIMILARITY SCORES ───────────────────────
-    const rows = mems.rows as MemoryRow[];
+    const rows = mems.rows as unknown as MemoryRow[];
     const toCompute: { row: MemoryRow; idx: number }[] = [];
     const vectors: (number[] | undefined)[] = new Array(rows.length);
 

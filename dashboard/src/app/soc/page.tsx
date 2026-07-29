@@ -11,8 +11,8 @@ export default async function SOCPage() {
       safeQuery(`SELECT COUNT(*)::int AS cnt FROM agent_memory WHERE agent_id IN ('soc-analyst', 'soc-responder')`),
       safeQuery(`SELECT COUNT(*)::int AS cnt FROM agent_audit WHERE agent_id IN ('soc-analyst', 'soc-responder')`),
     ]);
-    stats.memories = memRes.rows[0]?.cnt || 0;
-    stats.auditLogs = auditRes.rows[0]?.cnt || 0;
+    stats.memories = Number(memRes.rows[0]?.cnt ?? 0);
+    stats.auditLogs = Number(auditRes.rows[0]?.cnt ?? 0);
   } catch {
     // Stats unavailable — page still works
   }

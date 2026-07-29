@@ -24,13 +24,13 @@ export async function GET(request: Request) {
     const params: unknown[] = [since];
     const statsResult = await safeQuery(statsSql, params);
 
-    const stats = statsResult.rows[0];
-    const totalChecks = parseInt(stats.total_checks ?? "0");
-    const totalReuses = parseInt(stats.total_reuses ?? "0");
+    const stats = statsResult.rows[0] as Record<string, string | number | null>;
+    const totalChecks = parseInt(String(stats.total_checks ?? "0"));
+    const totalReuses = parseInt(String(stats.total_reuses ?? "0"));
     const reuseRate = totalChecks > 0 ? totalReuses / totalChecks : 0;
-    const totalTokensSaved = parseInt(stats.total_tokens_saved ?? "0");
+    const totalTokensSaved = parseInt(String(stats.total_tokens_saved ?? "0"));
     const avgTokensPerReuse = totalReuses > 0 ? Math.round(totalTokensSaved / totalReuses) : 2965;
-    const avgSimilarity = parseFloat(stats.avg_similarity ?? "0.0") || 0.85;
+    const avgSimilarity = parseFloat(String(stats.avg_similarity ?? "0.0")) || 0.85;
 
     const costPerToken = 0.000002;
     const dailyUsd = Math.round(totalTokensSaved * costPerToken * 100) / 100;
@@ -48,10 +48,10 @@ export async function GET(request: Request) {
          LIMIT 5`
       );
       if (topRes.rows.length > 0) {
-        topReused = topRes.rows.map((r) => ({
+        topReused = topRes.rows.map((r: Record<string, unknown>) => ({
           query: String(r.content || "").slice(0, 80),
-          reuse_count: parseInt(r.reuse_count || "1"),
-          similarity: parseFloat(r.similarity || "0.85"),
+          reuse_count: parseInt(String(r.reuse_count || "1")),
+          similarity: parseFloat(String(r.similarity || "0.85")),
         }));
       }
     } catch {
@@ -76,12 +76,12 @@ export async function GET(request: Request) {
       
       const hourlyMap = new Map(hourlyRes.rows.map(r => [r.hr, r]));
       hourly = Array.from({ length: 24 }, (_, i) => {
-        const row = hourlyMap.get(i);
+        const row = hourlyMap.get(i) as Record<string, unknown> | undefined;
         return {
           hour: i,
-          checks: row ? parseInt(row.checks_count ?? "0") : 0,
-          reuses: row ? parseInt(row.reuses_count ?? "0") : 0,
-          tokens_saved: row ? parseInt(row.saved_count ?? "0") : 0,
+          checks: row ? parseInt(String(row.checks_count ?? "0")) : 0,
+          reuses: row ? parseInt(String(row.reuses_count ?? "0")) : 0,
+          tokens_saved: row ? parseInt(String(row.saved_count ?? "0")) : 0,
         };
       });
     } catch {
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
       gateway: {
         total_checks: totalChecks,
         total_reuses: totalReuses,
-        total_stores: parseInt(stats.total_stores ?? "0"),
+        total_stores: parseInt(String(stats.total_stores ?? "0")),
         total_tokens_saved: totalTokensSaved,
         avg_similarity: Math.round(avgSimilarity * 1000) / 1000,
         reuse_rate: Math.round(reuseRate * 1000) / 1000,

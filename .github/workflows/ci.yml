@@ -27,7 +27,6 @@ jobs:
           pip install -e ".[dev,all]" --upgrade pip
       - name: Lint with ruff
         run: ruff check .
-        working-directory: src
 
   python-test:
     runs-on: ubuntu-latest
@@ -121,7 +120,7 @@ jobs:
           version: "3.8"
           services:
             cockroachdb:
-              image: cockroachdb/cockroach:v24.3
+              image: cockroachdb/cockroach:v26.2.1
               command: start-single-node --insecure --accept-licenses
               ports:
                 - "26257:26257"

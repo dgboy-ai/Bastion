@@ -25,8 +25,8 @@ async function main() {
     const sample = await client.query("SELECT * FROM agent_audit LIMIT 5");
     console.log(sample.rows);
     
-  } catch (err: any) {
-    console.error("Error executing query:", err.message);
+  } catch (err) {
+    console.error("Error executing query:", err instanceof Error ? err.message : String(err));
   } finally {
     await client.end();
   }

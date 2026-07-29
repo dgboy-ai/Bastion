@@ -13,10 +13,10 @@ export async function GET() {
       safeQuery("SELECT COUNT(*) as cnt FROM agent_audit"),
     ]);
     return apiSuccess({
-      memories: parseInt(memRes.rows[0]?.cnt ?? "0", 10),
-      entities: parseInt(entRes.rows[0]?.cnt ?? "0", 10),
-      relations: parseInt(relRes.rows[0]?.cnt ?? "0", 10),
-      auditLogs: parseInt(auditRes.rows[0]?.cnt ?? "0", 10),
+      memories: parseInt(String(memRes.rows[0]?.cnt ?? "0"), 10),
+      entities: parseInt(String(entRes.rows[0]?.cnt ?? "0"), 10),
+      relations: parseInt(String(relRes.rows[0]?.cnt ?? "0"), 10),
+      auditLogs: parseInt(String(auditRes.rows[0]?.cnt ?? "0"), 10),
       regions: 1,
     }, "dynamic");
   } catch {

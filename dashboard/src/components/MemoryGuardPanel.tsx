@@ -58,6 +58,7 @@ export default function MemoryGuardPanel() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchGuardReport();
   }, []);
 

@@ -92,16 +92,16 @@ export async function GET(request: Request) {
       summary: {
         total_operations: auditResult.rowCount ?? 0,
         operations_by_type: operationsByType,
-        total_memories: parseInt(memStats.total ?? "0"),
-        memory_types: parseInt(memStats.memory_types ?? "0"),
+        total_memories: parseInt(String(memStats.total ?? "0")),
+        memory_types: parseInt(String(memStats.memory_types ?? "0")),
       },
       compliance_status: {
         framework: "EU AI Act Article 12",
         tamper_evident_logging: true,
         hash_chain_integrity: true,
         audit_trail_format: "IETF AAT draft-sharif-agent-audit-trail-00",
-        hash_chain_coverage: parseInt(hashStats.total ?? "0") > 0
-          ? Math.round((parseInt(hashStats.chained ?? "0") / parseInt(hashStats.total ?? "1")) * 100)
+        hash_chain_coverage: parseInt(String(hashStats.total ?? "0")) > 0
+          ? Math.round((parseInt(String(hashStats.chained ?? "0")) / parseInt(String(hashStats.total ?? "1"))) * 100)
           : 0,
         status: "COMPLIANT",
       },

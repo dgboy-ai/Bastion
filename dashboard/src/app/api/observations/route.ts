@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       return apiSuccess(getMockObservations(), "short", { mock: true });
     }
 
-    const memories = memoriesResult.rows;
+    const memories = memoriesResult.rows as unknown as { memory_id: string; content: string | null; memory_type: string | null }[];
     const stopWords = new Set(["the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "and", "but", "or", "if", "that", "this", "it", "its"]);
 
     // Bigram frequency

@@ -64,28 +64,28 @@ export async function GET(request: Request) {
       ) dupes
     `);
     // Mask exact duplicate count to avoid revealing data quality patterns
-    const rawDuplicates = parseInt(anomalyCountRes.rows[0]?.count || "0", 10);
+    const rawDuplicates = parseInt(String(anomalyCountRes.rows[0]?.count || "0"), 10);
     const duplicateCount = rawDuplicates === 0 ? 0 : rawDuplicates <= 5 ? "few" : rawDuplicates <= 20 ? "some" : "many";
 
-    const val24 = parseFloat(curveRes.rows[0]?.val_24 || "8.5");
-    const val18 = parseFloat(curveRes.rows[0]?.val_18 || "6.2");
-    const val12 = parseFloat(curveRes.rows[0]?.val_12 || "3.8");
-    const val6 = parseFloat(curveRes.rows[0]?.val_6 || "7.5");
-    const valNow = parseFloat(avgImportanceRes.rows[0]?.avg || "5.0");
+    const val24 = parseFloat(String(curveRes.rows[0]?.val_24 || "8.5"));
+    const val18 = parseFloat(String(curveRes.rows[0]?.val_18 || "6.2"));
+    const val12 = parseFloat(String(curveRes.rows[0]?.val_12 || "3.8"));
+    const val6 = parseFloat(String(curveRes.rows[0]?.val_6 || "7.5"));
+    const valNow = parseFloat(String(avgImportanceRes.rows[0]?.avg || "5.0"));
 
     // Format hourly growth blocks (24 hours sliding window)
     const hourlyCounts = Array(24).fill(0);
     const currentHour = new Date().getHours();
     
     // Map database counts into correct index of our 24 hours list
-    const rows = hourlyGrowthRes.rows;
+    const rows = hourlyGrowthRes.rows as Array<Record<string, unknown>>;
     for (const rowVal of rows) {
       if (rowVal && rowVal.hr_val !== undefined) {
-        const hr = parseInt(rowVal.hr_val, 10);
+        const hr = parseInt(String(rowVal.hr_val), 10);
         // Calculate dynamic relative index from 23 hours ago to current hour
         const index = (hr - (currentHour - 23) + 24) % 24;
         if (index >= 0 && index < 24) {
-          hourlyCounts[index] = parseInt(rowVal.count, 10);
+          hourlyCounts[index] = parseInt(String(rowVal.count), 10);
         }
       }
     }
@@ -94,12 +94,12 @@ export async function GET(request: Request) {
     const topRecalls = topRecallsRes.rows.map((row, idx) => ({
       rank: idx + 1,
       text: row.content,
-      count: Math.round((row.importance_score || 5.0) * 5) + 3
+      count: Math.round((Number(row.importance_score || 5.0) * 5)) + 3
     }));
 
     // Calculate Cache Hit percentage
-    const cacheHits = parseInt(cacheRes.rows[0]?.cache_hits || "0", 10);
-    const totalMem = parseInt(cacheRes.rows[0]?.total || "0", 10);
+    const cacheHits = parseInt(String(cacheRes.rows[0]?.cache_hits || "0"), 10);
+    const totalMem = parseInt(String(cacheRes.rows[0]?.total || "0"), 10);
     const cacheHitPct = totalMem > 0 
       ? ((cacheHits / totalMem) * 100).toFixed(1)
       : "94.2";
@@ -115,11 +115,11 @@ export async function GET(request: Request) {
 
     return apiSuccess({
       alerts,
-      memories: parseInt(memoryCountRes.rows[0]?.count || "0", 10),
-      entities: parseInt(entityCountRes.rows[0]?.count || "0", 10),
-      relations: parseInt(relationCountRes.rows[0]?.count || "0", 10),
-      auditLogs: parseInt(auditCountRes.rows[0]?.count || "0", 10),
-      conflicts: parseInt(conflictCountRes.rows[0]?.count || "0", 10),
+      memories: parseInt(String(memoryCountRes.rows[0]?.count || "0"), 10),
+      entities: parseInt(String(entityCountRes.rows[0]?.count || "0"), 10),
+      relations: parseInt(String(relationCountRes.rows[0]?.count || "0"), 10),
+      auditLogs: parseInt(String(auditCountRes.rows[0]?.count || "0"), 10),
+      conflicts: parseInt(String(conflictCountRes.rows[0]?.count || "0"), 10),
       avgImportance: valNow.toFixed(2),
       decayCurve: [
         { label: "24h ago", value: val24 },

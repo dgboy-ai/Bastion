@@ -57,13 +57,14 @@ export async function GET(request: Request) {
           "ap-south1": "AP South (Mumbai)",
           "ap-northeast1": "AP NE (Tokyo)",
         };
-        regions = regionResult.rows.map((row) => ({
+        const rows = regionResult.rows as unknown as { region: string; memories: string | number; avg_latency_ms: string | number }[];
+        regions = rows.map((row) => ({
           region: row.region,
           label: regionLabels[row.region] ?? row.region,
-          memories: parseInt(row.memories ?? "0"),
-          latency_ms: parseInt(row.avg_latency_ms ?? "25"),
+          memories: parseInt(String(row.memories ?? "0")),
+          latency_ms: parseInt(String(row.avg_latency_ms ?? "25")),
           status: "healthy" as const,
-          utilization: Math.min(1, parseInt(row.memories ?? "0") / 2000),
+          utilization: Math.min(1, parseInt(String(row.memories ?? "0")) / 2000),
         }));
         totalMemories = regions.reduce((sum, r) => sum + r.memories, 0);
         avgLatency = regions.length > 0
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
     // If no region data, show single region with real count
     if (regions.length === 0) {
       const countRes = await safeQuery("SELECT COUNT(*) as count FROM agent_memory");
-      const realCount = parseInt(countRes.rows[0]?.count || "0");
+      const realCount = parseInt(String(countRes.rows[0]?.count || "0"));
       regions = [{
         region: "default",
         label: "CockroachDB Cluster",

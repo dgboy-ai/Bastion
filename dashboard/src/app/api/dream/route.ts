@@ -113,8 +113,8 @@ export async function POST(request: Request) {
       changes: {
         duplicatesRemoved,
         contradictionsFound,
-        memoriesHealed: afterStats.trustedMemories - beforeStats.trustedMemories,
-        netReduction: beforeStats.totalMemories - afterStats.totalMemories,
+        memoriesHealed: Number(afterStats.trustedMemories) - Number(beforeStats.trustedMemories),
+        netReduction: Number(beforeStats.totalMemories) - Number(afterStats.totalMemories),
       },
       mcpDreamResult,
       cockroachdbFeatures: [
