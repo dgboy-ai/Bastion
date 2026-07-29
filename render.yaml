@@ -19,6 +19,14 @@ services:
         value: "60"
       - key: CORS_ALLOW_ORIGINS
         value: "https://bastion-self.vercel.app,http://localhost:3000"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: "ap-south-1"
+      - key: BASTION_AWS_KMS_KEY_ARN
+        value: "arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3"
     healthCheckPath: /healthz
     autoDeploy: true
     plan: starter  # Free tier spins down after 15min idle
