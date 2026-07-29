@@ -19,7 +19,12 @@ class TestA2AServer:
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     def _h(self, extra: dict | None = None) -> dict:
+        import os
+
         h = {"A2A-Version": "1.0"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
         if extra:
             h.update(extra)
         return h
@@ -553,7 +558,12 @@ class TestA2ASignatureVerification:
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     def _h(self, extra: dict | None = None) -> dict:
+        import os
+
         h = {"A2A-Version": "1.0"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
         if extra:
             h.update(extra)
         return h
@@ -698,7 +708,12 @@ class TestA2ARestEndpoints:
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     def _h(self, extra: dict | None = None) -> dict:
+        import os
+
         h = {"A2A-Version": "1.0"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
         if extra:
             h.update(extra)
         return h
@@ -711,7 +726,7 @@ class TestA2ARestEndpoints:
 
         async def run():
             async with client:
-                r = await client.get("/tasks/nonexistent-id")
+                r = await client.get("/tasks/nonexistent-id", headers=self._h())
                 assert r.status_code == 404
 
         anyio.run(run)
@@ -736,7 +751,7 @@ class TestA2ARestEndpoints:
                 )
                 assert r.status_code == 200
                 task_id = r.json()["result"]["id"]
-                r2 = await client.get(f"/tasks/{task_id}")
+                r2 = await client.get(f"/tasks/{task_id}", headers=self._h())
                 assert r2.status_code == 200
                 assert r2.json()["id"] == task_id
 
@@ -761,7 +776,7 @@ class TestA2ARestEndpoints:
                     headers=self._h(),
                 )
                 task_id = r.json()["result"]["id"]
-                r2 = await client.post(f"/tasks/{task_id}:cancel")
+                r2 = await client.post(f"/tasks/{task_id}:cancel", headers=self._h())
                 assert r2.status_code == 400
 
         anyio.run(run)
@@ -785,10 +800,10 @@ class TestA2ARestEndpoints:
                     headers=self._h(),
                 )
                 task_id = r.json()["result"]["id"]
-                r2 = await client.delete(f"/tasks/{task_id}")
+                r2 = await client.delete(f"/tasks/{task_id}", headers=self._h())
                 assert r2.status_code == 200
                 assert r2.json()["deleted"] == task_id
-                r3 = await client.get(f"/tasks/{task_id}")
+                r3 = await client.get(f"/tasks/{task_id}", headers=self._h())
                 assert r3.status_code == 404
 
         anyio.run(run)
@@ -812,7 +827,7 @@ class TestA2ARestEndpoints:
                     headers=self._h(),
                 )
                 task_id = r.json()["result"]["id"]
-                r2 = await client.delete(f"/tasks/{task_id}")
+                r2 = await client.delete(f"/tasks/{task_id}", headers=self._h())
                 assert r2.status_code == 200  # completed task is terminal
 
         anyio.run(run)
@@ -825,6 +840,8 @@ class TestA2ARestEndpoints:
 
         async def run():
             async with client:
+                h = self._h()
+                del h["A2A-Version"]
                 r = await client.post(
                     "/message:send",
                     json={
@@ -833,6 +850,7 @@ class TestA2ARestEndpoints:
                             "metadata": {"skill": "memory_store", "params": {"content": "test"}},
                         }
                     },
+                    headers=h,
                 )
                 assert r.status_code == 400
 
@@ -857,7 +875,7 @@ class TestA2ARestEndpoints:
                     headers=self._h(),
                 )
                 task_id = r.json()["result"]["id"]
-                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "https://hooks.example.com/push"})
+                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "https://hooks.example.com/push"}, headers=self._h())
                 assert r2.status_code == 200
 
         anyio.run(run)
@@ -881,7 +899,7 @@ class TestA2ARestEndpoints:
                     headers=self._h(),
                 )
                 task_id = r.json()["result"]["id"]
-                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "http://example.com/hook"})
+                r2 = await client.put(f"/tasks/{task_id}", json={"callback_url": "http://example.com/hook"}, headers=self._h())
                 assert r2.status_code == 400
 
         anyio.run(run)
@@ -921,7 +939,12 @@ class TestA2AStreaming:
         return anyio, AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     def _h(self, extra: dict | None = None) -> dict:
+        import os
+
         h = {"A2A-Version": "1.0"}
+        api_key = os.environ.get("BASTION_API_KEY", "")
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
         if extra:
             h.update(extra)
         return h

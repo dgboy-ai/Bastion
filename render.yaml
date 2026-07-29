@@ -27,8 +27,6 @@ services:
         value: "ap-south-1"
       - key: BASTION_AWS_KMS_KEY_ARN
         value: "arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3"
-      - key: BASTION_EMBED_FALLBACK
-        value: "true"
       - key: COCKROACHDB_MCP_API_KEY
         value: "CCDB1_bheoZlH9eT6L3enuDz59W9_A0Vl229o6xeCyJsJtekWwlqARUL5oa340E06Rbk7"
       - key: BASTION_DASHBOARD_URL

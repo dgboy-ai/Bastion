@@ -15,7 +15,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bastion import mock as _mock
-from bastion.circuit_breaker import CircuitBreaker
 from bastion.config import AUDIT_LIMIT, get_settings
 from bastion.errors import BastionPoolExhaustedError, SecurityBlockError
 from bastion.guard import MemoryGuard, pii_scan
@@ -31,40 +30,8 @@ logger = get_logger(__name__)
 _guard_bypass_counter = 0
 _guard_bypass_lock = threading.Lock()
 
-_bedrock_client = None
-_bedrock_client_lock = threading.Lock()
 _local_model_lock = threading.Lock()
 _local_model = None
-
-
-def _get_bedrock_client():
-    global _bedrock_client
-    if _bedrock_client is not None:
-        return _bedrock_client
-    with _bedrock_client_lock:
-        if _bedrock_client is not None:
-            return _bedrock_client
-        try:
-            import boto3
-            from botocore.config import Config as BotoConfig
-        except ImportError:
-            logger.warning("boto3 not available, Bedrock client disabled")
-            return None
-        settings = get_settings()
-        cfg = BotoConfig(
-            read_timeout=settings.bedrock_read_timeout,
-            connect_timeout=settings.bedrock_connect_timeout,
-        )
-        try:
-            _bedrock_client = boto3.client(
-                "bedrock-runtime",
-                region_name=settings.aws_region,
-                config=cfg,
-            )
-        except Exception as exc:
-            logger.error("Failed to create Bedrock client", error=str(exc))
-            _bedrock_client = None
-    return _bedrock_client
 
 
 def _hash_fallback_embed(text: str) -> list[float]:
@@ -217,12 +184,6 @@ class BastionMemory:
         self._pool_lock = threading.Lock()
         self._rls_enabled = False
 
-        self._bedrock_cb = CircuitBreaker(
-            name="bedrock_embed",
-            failure_threshold=settings.circuit_breaker_failure_threshold,
-            recovery_timeout=settings.circuit_breaker_recovery_timeout,
-            success_threshold=settings.circuit_breaker_success_threshold,
-        )
         self._retry_engine = SerializationRetryEngine(
             max_retries=settings.retry_max_retries,
             base_delay_ms=settings.retry_base_delay_ms,
@@ -1109,11 +1070,10 @@ class BastionMemory:
         try:
             self._set_rls_context(conn)
             using_hash_embeddings = self._mock or os.environ.get("BASTION_EMBED_FALLBACK")
-            if not using_hash_embeddings and self._bedrock_cb.state.value != "open":
+            if not using_hash_embeddings:
                 try:
-                    import importlib
-
-                    using_hash_embeddings = not importlib.util.find_spec("sentence_transformers")
+                    import sentence_transformers
+                    using_hash_embeddings = False
                 except ImportError:
                     using_hash_embeddings = True
 
@@ -1974,98 +1934,41 @@ class BastionMemory:
     def _embed(self, text: str) -> list[float]:
         """
         Generate an embedding using one of:
-        1. AWS Bedrock Titan V2 (1024-dim) — production
-        2. all-MiniLM-L6-v2 (384-dim) — local, no API key
+        1. HuggingFace Inference API (1024-dim) — if HF_TOKEN is set
+        2. all-MiniLM-L6-v2 via sentence-transformers (384→1024-dim) — local, no API key
         3. Hash-based fallback (1024-dim) — deterministic fallback
         """
         if self._mock:
             return _hash_fallback_embed(text)
 
-        # If fallback is forced, skip all remote/local models — use hash directly
         if os.environ.get("BASTION_EMBED_FALLBACK"):
-            logger.warning("Embedding fallback forced via BASTION_EMBED_FALLBACK — vector search quality degraded")
+            logger.warning("Embedding fallback forced via BASTION_EMBED_FALLBACK")
             self._embedding_degraded = True
             return _hash_fallback_embed(text)
 
-        # Try Bedrock first
-        try:
-            bedrock_result = self._embed_bedrock(text)
-            if bedrock_result is not None:
-                return bedrock_result
-        except Exception:
-            logger.debug("Bedrock embedding unavailable, trying local fallback")
+        from bastion.embeddings import _embed_hf, _embed_local
 
-        # Try all-MiniLM (local, no API key needed)
+        # Try HuggingFace Inference API (requires HF_TOKEN)
         try:
-            return self._embed_local(text)
+            result = _embed_hf(text)
+            if result is not None:
+                return result
         except Exception:
-            logger.debug("Local embedding unavailable, using hash fallback")
+            logger.debug("HF embedding unavailable")
 
-        # Final fallback: hash-based
-        logger.warning("Embedding fallback activated — all remote/local models unavailable. Search quality degraded.")
+        # Try local all-MiniLM (sentence-transformers, free, no API key)
+        try:
+            result = _embed_local(text)
+            if result is not None:
+                return result
+        except Exception:
+            logger.debug("Local embedding unavailable")
+
+        logger.warning("All embedding models unavailable — using hash fallback. Search quality degraded.")
         self._embedding_degraded = True
         return _hash_fallback_embed(text)
 
-    def _embed_bedrock(self, text: str) -> list[float] | None:
-        """Try Bedrock embedding. Returns None if unavailable."""
-        import random
-        import time
 
-        if self._bedrock_cb.state.value == "open":
-            return None
-
-        client = _get_bedrock_client()
-        if client is None:
-            return None
-
-        settings = get_settings()
-        body = json.dumps({"inputText": text, "dimensions": settings.embed_dim, "normalize": True})
-        max_retries = min(settings.retry_max_retries, 2)  # Limit retries for demo
-
-        def _invoke():
-            response = client.invoke_model(
-                modelId=settings.bedrock_model_id,
-                body=body,
-                contentType="application/json",
-                accept="application/json",
-            )
-            result: Any = json.loads(response["body"].read())
-            return result["embedding"]
-
-        for attempt in range(max_retries + 1):
-            try:
-                return self._bedrock_cb.call(_invoke)
-            except Exception as exc:
-                exc_name = type(exc).__name__
-                if attempt < max_retries and exc_name in ("ThrottlingException", "ServiceUnavailableException"):
-                    time.sleep((2**attempt) + random.uniform(0, 1))
-                    continue
-                return None
-        return None
-
-    def _embed_local(self, text: str) -> list[float]:
-        """Use all-MiniLM-L6-v2 for local embeddings (384-dim).
-
-        If the local model dimension doesn't match the target, falls back to
-        hash-based embedding rather than zero-padding (which degrades search quality).
-        """
-        global _local_model
-        if _local_model is None:
-            with _local_model_lock:
-                if _local_model is None:
-                    try:
-                        from sentence_transformers import SentenceTransformer
-
-                        _local_model = SentenceTransformer("all-MiniLM-L6-v2")
-                    except ImportError:
-                        raise RuntimeError("sentence-transformers not installed")
-        embedding = _local_model.encode(text).tolist()
-        settings = get_settings()
-        target_dim = settings.embed_dim
-        # If dimensions don't match, use hash fallback instead of zero-padding
-        if len(embedding) != target_dim:
-            return _hash_fallback_embed(text)
-        return embedding
 
     def _search_keyword_fallback(
         self,

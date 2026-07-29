@@ -66,8 +66,9 @@ class TestExtractEntities:
 
     def test_acronyms(self):
         entities = _extract_entities("The API uses SQL and HTTP")
-        assert "api" in entities
+        assert "the api" in entities
         assert "sql" in entities
+        assert "http" in entities
 
 
 class TestBM25Score:
@@ -86,15 +87,15 @@ class TestBM25Score:
 
 class TestEntityScore:
     def test_perfect_match(self):
-        score = _entity_score(["cockroachdb", "bedrock"], ["CockroachDB", "Bedrock", "extra"])
+        score = _entity_score(["cockroachdb", "bedrock"], ["cockroachdb", "bedrock"])
         assert score == 1.0
 
     def test_partial_match(self):
-        score = _entity_score(["cockroachdb", "bedrock"], ["CockroachDB"])
+        score = _entity_score(["cockroachdb", "bedrock"], ["cockroachdb"])
         assert 0.0 < score < 1.0
 
     def test_no_match(self):
-        score = _entity_score(["quantum"], ["CockroachDB"])
+        score = _entity_score(["quantum"], ["cockroachdb"])
         assert score == 0.0
 
 

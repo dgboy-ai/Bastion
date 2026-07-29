@@ -253,7 +253,9 @@ class TestDistributedMode:
             pytest.skip("BASTION_CONN not set — skipping integration test")
 
     @pytest.fixture
-    def d_limiter(self):
+    def d_limiter(self, monkeypatch):
+        # Ensure we run in distributed mode, not mock mode
+        monkeypatch.delenv("BASTION_MOCK", raising=False)
         # Clean up any leftover slots from previous test runs
         import os
 
