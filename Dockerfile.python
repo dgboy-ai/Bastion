@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
 
 # Install ccloud CLI for agent operations
 RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
-    | tar -xz -C /usr/local/bin/ ccloud && \
+    | tar -xz -C /usr/local/bin/ && \
     chmod +x /usr/local/bin/ccloud
 
 # Runtime stage
