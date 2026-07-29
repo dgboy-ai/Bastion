@@ -2204,7 +2204,7 @@ def create_server(
                         "3. For OAuth (Basic plan): open https://cockroachlabs.cloud/mcp in browser",
                         "   → Log in to CockroachDB Cloud",
                         "   → Select your organization",
-                        "   → Click 'Authorize' for the 'bastion-memory' cluster (ID: 9a423301-d502-42f4-a5e5-1e7664e4e025)",
+                        "   → Click 'Authorize' for your cluster",
                         "   → Grant Read + Write permissions",
                         "4. For API key (Advanced plan only): create service account in Cloud Console",
                         "   → Assign Cluster Admin/Operator role on 'bastion-memory'",
@@ -2222,8 +2222,8 @@ def create_server(
                     {
                         "error": "Authentication required (401)",
                         "detail": "No valid auth provided to CockroachDB Cloud Managed MCP",
-                        "plan": "Basic (your cluster: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud)",
-                        "cluster_id": "9a423301-d502-42f4-a5e5-1e7664e4e025",
+                        "plan": "Basic (your cluster details in Cloud Console)",
+                        "cluster_id": "<set-via-COCKROACHDB_CLUSTER_ID-env-var>",
                         "setup_steps": [
                             "1. BASIC PLAN ONLY SUPPORTS OAUTH BROWSER FLOW — no API keys",
                             "2. Open https://cockroachlabs.cloud/mcp in your browser",
@@ -2306,7 +2306,7 @@ def create_server(
             )
         api_key = os.environ.get("COCKROACHDB_MCP_API_KEY", "")
         oauth_token = os.environ.get("COCKROACHDB_MCP_OAUTH_TOKEN", "")
-        cluster_id = os.environ.get("COCKROACHDB_CLUSTER_ID", "9a423301-d502-42f4-a5e5-1e7664e4e025")
+        cluster_id = os.environ.get("COCKROACHDB_CLUSTER_ID", "<your-cluster-id>")
 
         # Official CockroachDB Cloud MCP endpoint
         url = "https://cockroachlabs.cloud/mcp"
@@ -2452,7 +2452,7 @@ def create_server(
         if not skill_file.exists():
             return json.dumps({"error": f"SKILL.md not found for '{skill_name}'"}, indent=2)
 
-        content = skill_file.read_text()
+        content = skill_file.read_text(encoding="utf-8")
 
         # Extract SQL code blocks
         sql_blocks = re.findall(r"```sql\n(.*?)\n```", content, re.DOTALL)
@@ -2576,7 +2576,7 @@ def create_server(
                 desc = ""
                 compat = ""
                 if skill_file.exists():
-                    content = skill_file.read_text()
+                    content = skill_file.read_text(encoding="utf-8")
                     if content.startswith("---"):
                         fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
                         if fm_match:

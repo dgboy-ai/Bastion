@@ -5,9 +5,17 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    cockroach = {
-      source  = "cockroachdb/cockroach"
-      version = "~> 0.1"
+    cockroachlabs = {
+      source  = "cockroachlabs/cockroachcloud"
+      version = "~> 1.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
     }
   }
 }
@@ -21,14 +29,17 @@ provider "aws" {
 # NOTE: BASIC plan does NOT support vector indexes (C-SPANN).
 #       Use STANDARD or ADVANCED for vector index support.
 # ──────────────────────────────────────────────────────────────
-resource "cockroachcloud_cluster" "bastion" {
+resource "cockroachlabs_cockroachcloud_cluster" "bastion" {
   name           = "bastion-hackathon"
   cloud_provider = "AWS"
   plan           = var.cockroach_plan
 
-  basic_config {
+  # Use STANDARD plan for C-SPANN vector index support
+  dedicated_config {
     region_nodes = {
-      "${var.aws_region}" = {}
+      "${var.aws_region}" = {
+        node_count = 3
+      }
     }
   }
 }
@@ -181,9 +192,9 @@ resource "aws_lambda_function" "cdc_handler" {
 
   environment {
     variables = {
-      BASTION_CONN       = cockroachcloud_cluster.bastion.connection_string
+      BASTION_CONN       = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
       BASTION_HMAC_SECRET = var.bastion_hmac_secret
-      BASTION_S3_BUCKET  = aws_s3_bucket.bastion_artifacts.bucket
+      BASTION_S3_BUCKET  = aws_s3_bucket.bastion_artifacts.id
       AWS_REGION         = var.aws_region
     }
   }
@@ -210,7 +221,7 @@ resource "aws_lambda_function" "cdc_handler" {
 #
 #   environment {
 #     variables = {
-#       BASTION_CONN = cockroachcloud_cluster.bastion.connection_string
+#       BASTION_CONN = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
 #       BASTION_MOCK = "false"
 #     }
 #   }
@@ -240,6 +251,6 @@ resource "aws_cloudwatch_metric_alarm" "cdc_handler_errors" {
 # ──────────────────────────────────────────────────────────────
 output "cockroach_connection_string" {
   description = "CockroachDB connection string (sensitive)"
-  value       = cockroachcloud_cluster.bastion.connection_string
+  value       = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
   sensitive   = true
 }

@@ -1,6 +1,6 @@
 output "cluster_id" {
   description = "CockroachDB Cloud cluster ID"
-  value       = cockroachcloud_cluster.bastion.id
+  value       = cockroachlabs_cockroachcloud_cluster.bastion.id
 }
 
 output "cluster_region" {

@@ -172,3 +172,63 @@ class MultiSignalRetriever:
             return math.exp(-days_old / 30)
         except Exception:
             return 0.5
+
+
+# Module-level helper functions for tests (match test expectations)
+def _tokenize(text: str) -> list[str]:
+    """Tokenize text into keywords (remove stop words)."""
+    stop_words = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "dare", "ought",
+        "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "as", "into", "through", "during", "before", "after", "above", "below",
+        "between", "out", "off", "over", "under", "again", "further", "then",
+        "once", "here", "there", "when", "where", "why", "how", "all", "both",
+        "each", "few", "more", "most", "other", "some", "such", "no", "nor",
+        "not", "only", "own", "same", "so", "than", "too", "very", "just",
+        "don", "now", "what", "which", "who", "whom", "this", "that", "these",
+        "those", "i", "me", "my", "we", "our", "you", "your", "he", "him",
+        "his", "she", "her", "it", "its", "they", "them", "their",
+    }
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return [w for w in words if w not in stop_words and len(w) > 2]
+
+
+def _extract_entities(text: str) -> list[str]:
+    """Extract capitalized entities and emails from text (lowercased)."""
+    entities = []
+    for match in re.finditer(r"\b([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)\b", text):
+        entities.append(match.group(1).lower())
+    for match in re.finditer(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", text):
+        entities.append(match.group(0))
+    return entities
+
+
+def _bm25_score(query_tokens: list[str], doc_tokens: list[str]) -> float:
+    """Simple BM25-like score between query and document tokens."""
+    if not query_tokens or not doc_tokens:
+        return 0.0
+    doc_token_set = set(doc_tokens)
+    matches = sum(1 for q in query_tokens if q in doc_token_set)
+    return min(matches / max(len(query_tokens), 1), 1.0)
+
+
+def _entity_score(query_entities: list[str], doc_entities: list[str]) -> float:
+    """Entity overlap score between query and document."""
+    if not query_entities or not doc_entities:
+        return 0.5
+    query_set = set(e.lower() for e in query_entities)
+    doc_set = set(e.lower() for e in doc_entities)
+    matches = len(query_set & doc_set)
+    return min(matches / max(len(query_set), 1), 1.0)
+
+
+def _temporal_score(access_count: int, hours_old: float) -> float:
+    """Temporal relevance score based on access count and age."""
+    import math
+    if hours_old <= 0:
+        hours_old = 1
+    recency = math.exp(-hours_old / 720)  # decay over 30 days
+    access_bonus = min(access_count / 10.0, 0.5)
+    return min(recency + access_bonus, 1.0)

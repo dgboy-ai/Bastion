@@ -72,6 +72,7 @@ test_full_e2e.ts
 test_remaining.ts
 .agents/
 .claude/
+.vscode/
 # Dev/test scripts — not needed for production deployment
 scripts/
 examples/

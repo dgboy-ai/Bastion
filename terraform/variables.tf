@@ -20,5 +20,6 @@ variable "bastion_hmac_secret" {
 variable "cockroach_plan" {
   description = "CockroachDB Cloud plan (BASIC, STANDARD, ADVANCED)"
   type        = string
-  default     = "BASIC"
+  # NOTE: Use STANDARD or ADVANCED for C-SPANN vector index support
+  default     = "STANDARD"
 }
