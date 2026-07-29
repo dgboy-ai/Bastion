@@ -11,7 +11,7 @@ WORKDIR /app
 
 # Install system deps for psycopg
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
+    gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for layer caching
@@ -25,6 +25,11 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
         "structlog>=24.1,<25" "pydantic>=2.0,<3" "pydantic-settings>=2.0,<3" \
         "fastapi>=0.115" "uvicorn>=0.32" "mcp>=1.0" \
         "cryptography>=42.0" "google-cloud-kms>=2.20" "groq>=0.12"
+
+# Install ccloud CLI for agent operations
+RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
+    | tar -xz -C /usr/local/bin/ ccloud && \
+    chmod +x /usr/local/bin/ccloud
 
 # Runtime stage
 FROM python:3.12-slim AS runtime
@@ -40,11 +45,6 @@ COPY src/ /app/src/
 
 # Set Python path
 ENV PYTHONPATH=/app/src
-
-# Install ccloud CLI for agent operations
-RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
-    | tar -xz -C /usr/local/bin/ ccloud && \
-    chmod +x /usr/local/bin/ccloud
 
 # Non-root user
 RUN groupadd -r bastion && useradd -r -g bastion bastion
