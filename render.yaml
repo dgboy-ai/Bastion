@@ -29,6 +29,10 @@ services:
         value: "arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3"
       - key: BASTION_EMBED_FALLBACK
         value: "true"
+      - key: COCKROACHDB_MCP_API_KEY
+        sync: false  # Optional: set for official CRDB MCP tools
+      - key: GROQ_API_KEY
+        sync: false  # Optional: set for LLM reasoning
     healthCheckPath: /healthz
     autoDeploy: true
     plan: starter  # Free tier spins down after 15min idle
