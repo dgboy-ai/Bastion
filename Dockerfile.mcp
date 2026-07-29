@@ -50,6 +50,11 @@ COPY src/ /app/src/
 # Set Python path
 ENV PYTHONPATH=/app/src
 
+# Install ccloud CLI for agent operations
+RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.tar.gz \
+    | tar -xz -C /usr/local/bin/ ccloud && \
+    chmod +x /usr/local/bin/ccloud
+
 # Security: non-root user
 RUN groupadd -r bastion && useradd -r -g bastion -m bastion
 USER bastion

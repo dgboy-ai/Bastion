@@ -2591,6 +2591,10 @@ def create_server(
     ) -> str:
         """Execute a ccloud CLI command with JSON output.
 
+        Falls back to direct CockroachDB Cloud REST API if ccloud CLI is unavailable
+        (e.g., on headless servers like Render). Requires COCKROACHDB_MCP_API_KEY env var
+        for REST API fallback.
+
         Args:
             command: ccloud subcommand (e.g., 'cluster', 'sql', 'backup', 'network', 'audit-log')
             args: Additional arguments (e.g., ['list', '--format=json'])
@@ -2642,68 +2646,177 @@ def create_server(
                     logger.warning("ccloud_exec blocked: metachar %r in %s", c, safe_repr)
                     return json.dumps({"error": f"Invalid character {c!r} in command"}, indent=2)
 
+        # Try ccloud CLI first, fall back to REST API
         try:
-            # Check ccloud exists
             result = subprocess.run(
                 ["ccloud", "version"],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
-            if result.returncode != 0:
-                return json.dumps(
-                    {
-                        "error": "ccloud CLI not found or not authenticated",
-                        "detail": "Install: https://www.cockroachlabs.com/docs/cockroachdb-cloud/ccloud-install",
-                        "auth": "Run 'ccloud auth login' (OAuth) or 'ccloud auth login --service-account' (API key)",
-                    },
-                    indent=2,
+            ccloud_available = result.returncode == 0
+        except FileNotFoundError:
+            ccloud_available = False
+
+        if ccloud_available:
+            try:
+                result = subprocess.run(
+                    full_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
                 )
 
-            # Execute command
-            result = subprocess.run(
-                full_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
+                output = result.stdout.strip()
+                stderr = result.stderr.strip()
 
-            output = result.stdout.strip()
-            stderr = result.stderr.strip()
+                parsed = None
+                if output:
+                    try:
+                        parsed = json.loads(output)
+                    except json.JSONDecodeError:
+                        parsed = output
 
-            # Parse JSON output if possible
-            parsed = None
-            if output:
-                try:
-                    parsed = json.loads(output)
-                except json.JSONDecodeError:
-                    parsed = output  # Return raw text
+                return json.dumps(
+                    {
+                        "backend": "ccloud_cli",
+                        "command": " ".join(shlex.quote(p) for p in full_cmd),
+                        "exit_code": result.returncode,
+                        "stdout": parsed,
+                        "stderr": stderr if stderr else None,
+                        "success": result.returncode == 0,
+                    },
+                    indent=2,
+                    default=str,
+                )
 
+            except subprocess.TimeoutExpired:
+                return json.dumps({"error": f"Command timed out after {timeout_seconds}s"}, indent=2)
+            except Exception as exc:
+                logger.exception("ccloud_exec failed")
+                return json.dumps({"error": "Failed to execute ccloud"}, indent=2)
+
+        # Fallback: direct REST API using COCKROACHDB_MCP_API_KEY
+        api_key = os.environ.get("COCKROACHDB_MCP_API_KEY", "")
+        if not api_key:
             return json.dumps(
                 {
-                    "command": " ".join(shlex.quote(p) for p in full_cmd),
-                    "exit_code": result.returncode,
-                    "stdout": parsed,
-                    "stderr": stderr if stderr else None,
-                    "success": result.returncode == 0,
+                    "backend": "rest_api",
+                    "error": "ccloud CLI not available and no COCKROACHDB_MCP_API_KEY set",
+                    "detail": "Install ccloud CLI (https://cockroachlabs.com/docs/ccloud-install) or set COCKROACHDB_MCP_API_KEY for REST API fallback",
+                    "hint": "Generate an API key: CockroachDB Cloud Console → API Keys → Create API Key",
                 },
                 indent=2,
-                default=str,
             )
 
-        except subprocess.TimeoutExpired:
-            return json.dumps({"error": f"Command timed out after {timeout_seconds}s"}, indent=2)
-        except FileNotFoundError:
+        crdb_api = "https://cockroachlabs.cloud/api/v1"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        }
+
+        rest_routes = {
+            "cluster": {
+                "list": ("GET", "/clusters"),
+                "describe": ("GET", f"/clusters/{cluster_id}" if cluster_id else "/clusters"),
+            },
+            "backup": {
+                "list": ("GET", f"/clusters/{cluster_id}/backups" if cluster_id else "/clusters"),
+            },
+            "audit-log": {
+                "list": ("GET", "/auditlogevents"),
+            },
+            "user": {
+                "list": ("GET", "/users"),
+            },
+            "service-account": {
+                "list": ("GET", "/serviceaccounts"),
+            },
+            "organization": {
+                "describe": ("GET", "/organizations"),
+            },
+            "version": {
+                "version": None,
+            },
+        }
+
+        sub_cmd = cmd_parts[1] if len(cmd_parts) > 1 else "list"
+        top_cmd = cmd_parts[0]
+
+        if top_cmd == "version":
             return json.dumps(
                 {
-                    "error": "ccloud CLI not installed",
-                    "install": "https://www.cockroachlabs.com/docs/cockroachdb-cloud/ccloud-install",
+                    "backend": "rest_api",
+                    "stdout": {"version": "0.6.12+rest", "source": "REST API fallback"},
+                    "success": True,
+                },
+                indent=2,
+            )
+
+        route = rest_routes.get(top_cmd, {}).get(sub_cmd)
+        if not route:
+            return json.dumps(
+                {
+                    "backend": "rest_api",
+                    "error": f"REST API fallback: '{top_cmd} {sub_cmd}' not supported",
+                    "supported": [
+                        f"{t} {s}" for t, subs in rest_routes.items()
+                        for s in subs if subs.get(s)
+                    ],
+                    "hint": "Install ccloud CLI for full command support",
+                },
+                indent=2,
+            )
+
+        method, url_path = route
+        url = f"{crdb_api}{url_path}"
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                if method == "GET":
+                    resp = await client.get(url, headers=headers)
+                elif method == "POST":
+                    resp = await client.post(url, headers=headers)
+                else:
+                    return json.dumps({"error": f"Unsupported method {method}"}, indent=2)
+
+                resp.raise_for_status()
+                data = resp.json()
+
+                return json.dumps(
+                    {
+                        "backend": "rest_api",
+                        "command": f"{top_cmd} {sub_cmd}",
+                        "stdout": data,
+                        "success": True,
+                    },
+                    indent=2,
+                    default=str,
+                )
+
+        except httpx.HTTPStatusError as exc:
+            return json.dumps(
+                {
+                    "backend": "rest_api",
+                    "error": f"API error: {exc.response.status_code}",
+                    "detail": exc.response.text[:500],
+                    "hint": "Verify COCKROACHDB_MCP_API_KEY has correct permissions",
+                },
+                indent=2,
+            )
+        except httpx.ConnectError:
+            return json.dumps(
+                {
+                    "backend": "rest_api",
+                    "error": "Could not connect to CockroachDB Cloud API",
+                    "detail": f"Failed to reach {crdb_api}",
                 },
                 indent=2,
             )
         except Exception as exc:
-            logger.exception("ccloud_exec failed")
-            return json.dumps({"error": "Failed to execute ccloud"}, indent=2)
+            logger.exception("ccloud_exec REST fallback failed")
+            return json.dumps({"backend": "rest_api", "error": "REST API fallback failed"}, indent=2)
 
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
