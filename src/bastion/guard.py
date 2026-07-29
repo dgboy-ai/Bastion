@@ -494,7 +494,7 @@ class MemoryGuard:
                 Finding(
                     detector="multilang_injection",
                     threat_type="ASI06: Multi-language Injection",
-                    severity="high",
+                    severity=ThreatSeverity.HIGH,
                     detail=f"Non-English injection pattern detected: {match}",
                     confidence=0.80,
                 )

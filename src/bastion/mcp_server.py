@@ -263,6 +263,16 @@ def _build_a2a_card(agent_id: str) -> dict:
     }
 
 
+def _parse_sse_response(text: str) -> dict:
+    for line in text.strip().splitlines():
+        if line.startswith("data: "):
+            try:
+                return json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+    return {"error": "No data line in SSE response", "raw": text[:500]}
+
+
 def create_server(
     connection_string: str | None = None,
     mock: bool | None = None,
@@ -1355,6 +1365,32 @@ def create_server(
             return json.dumps({"error": "Health check failed — check server logs"})
 
     @mcp.tool(
+        name="forensic_report",
+        title="Forensic Integrity Report",
+        description=(
+            "Generate a forensic integrity report from live CockroachDB data. "
+            "Verifies SHA-256 hash chain integrity, counts audit entries, checks "
+            "memory distribution by type, and returns guard statistics. "
+            "No mocks — all data comes from real cluster queries."
+        ),
+        annotations=ToolAnnotations(
+            title="Forensic Integrity Report",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def forensic_report(ctx: Context) -> str:
+        try:
+            mem = _resolve_memory(ctx)
+            report = await anyio.to_thread.run_sync(mem.forensic_report)
+            return json.dumps(report, indent=2, default=str)
+        except Exception:
+            logger.exception("forensic_report failed")
+            return json.dumps({"error": "Forensic report failed — check server logs"})
+
+    @mcp.tool(
         name="memory_apply_patch",
         title="Apply JSON Patch to Memory",
         description=(
@@ -2270,24 +2306,53 @@ def create_server(
             )
         api_key = os.environ.get("COCKROACHDB_MCP_API_KEY", "")
         oauth_token = os.environ.get("COCKROACHDB_MCP_OAUTH_TOKEN", "")
-        dashboard_url = os.environ.get("BASTION_DASHBOARD_URL", "http://localhost:3000")
-        url = f"{dashboard_url.rstrip('/')}/api/official-mcp"
+        cluster_id = os.environ.get("COCKROACHDB_CLUSTER_ID", "9a423301-d502-42f4-a5e5-1e7664e4e025")
+
+        # Official CockroachDB Cloud MCP endpoint
+        url = "https://cockroachlabs.cloud/mcp"
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         elif oauth_token:
             headers["Authorization"] = f"Bearer {oauth_token}"
-        payload = {"tool": tool, "args": args or {}}
+        # Scope to our cluster
+        if cluster_id:
+            headers["mcp-cluster-id"] = cluster_id
+
+        # MCP JSON-RPC payload
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": tool,
+                "arguments": args or {},
+            },
+        }
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
-                result = resp.json()
+                content_type = resp.headers.get("content-type", "")
+                if "text/event-stream" in content_type:
+                    result = _parse_sse_response(resp.text)
+                else:
+                    result = resp.json()
+                tool_result = result.get("result", result)
+                if isinstance(tool_result, dict) and "content" in tool_result:
+                    for item in tool_result["content"]:
+                        if item.get("type") == "text":
+                            try:
+                                tool_result = json.loads(item["text"])
+                            except (json.JSONDecodeError, TypeError):
+                                tool_result = item["text"]
+                            break
                 return json.dumps(
                     {
                         "tool": tool,
                         "provider": "CockroachDB Cloud Managed MCP",
-                        "result": result,
+                        "cluster_id": cluster_id,
+                        "result": tool_result,
                     },
                     indent=2,
                     default=str,
@@ -2295,23 +2360,9 @@ def create_server(
         except httpx.ConnectError:
             return json.dumps(
                 {
-                    "error": "Could not connect to Bastion dashboard proxy",
-                    "detail": f"Ensure the dashboard is running at {dashboard_url}",
-                    "setup_steps": [
-                        "1. Start the Bastion dashboard: cd dashboard && npm run dev",
-                        "2. Verify it's accessible at http://localhost:3000 (or set BASTION_DASHBOARD_URL)",
-                        "3. For OAuth (Basic plan): open https://cockroachlabs.cloud/mcp in browser",
-                        "   → Log in to CockroachDB Cloud",
-                        "   → Select your organization",
-                        "   → Click 'Authorize' for the 'bastion-memory' cluster (ID: 9a423301-d502-42f4-a5e5-1e7664e4e025)",
-                        "   → Grant Read + Write permissions",
-                        "4. For API key (Advanced plan only): create service account in Cloud Console",
-                        "   → Assign Cluster Admin/Operator role on 'bastion-memory'",
-                        "   → Copy secret key → set COCKROACHDB_MCP_API_KEY=<key> in .env.local",
-                        "5. For server-side calls on Basic plan: after OAuth in browser, extract access_token",
-                        "   → from your MCP client config (e.g., ~/.config/Claude/claude_desktop_config.json)",
-                        "   → set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
-                    ],
+                    "error": "Could not connect to CockroachDB Cloud MCP",
+                    "detail": "Network error connecting to cockroachlabs.cloud",
+                    "url": url,
                 },
                 indent=2,
             )
@@ -2321,26 +2372,13 @@ def create_server(
                     {
                         "error": "Authentication required (401)",
                         "detail": "No valid auth provided to CockroachDB Cloud Managed MCP",
-                        "plan": "Basic (your cluster: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud)",
-                        "cluster_id": "9a423301-d502-42f4-a5e5-1e7664e4e025",
+                        "cluster_id": cluster_id,
                         "setup_steps": [
-                            "1. BASIC PLAN ONLY SUPPORTS OAUTH BROWSER FLOW — no API keys",
-                            "2. Open https://cockroachlabs.cloud/mcp in your browser",
-                            "3. Log in to CockroachDB Cloud",
-                            "4. Select your organization (if multiple)",
-                            "5. Click 'Authorize' to grant access to 'bastion-memory' cluster",
-                            "6. Choose: Read only, or Read + Write",
-                            "7. For MCP CLIENTS (Claude Desktop, Cursor, Cline): they handle this automatically",
-                            "   → Just add the MCP server config and click 'Authenticate' in the client",
-                            "8. FOR SERVER-SIDE CALLS (this tool): you must manually provide a token:",
-                            "   a. Complete OAuth in a browser-based MCP client first",
-                            "   b. Extract the access_token from the client's config file",
-                            "   c. Set COCKROACHDB_MCP_OAUTH_TOKEN=<token> in .env.local",
-                            "   d. Restart the MCP server",
-                            "9. Token expires ~1 hour — repeat when it fails again",
-                            "10. UPGRADE TO ADVANCED PLAN for API keys (service accounts) that don't expire",
+                            "1. Set COCKROACHDB_MCP_API_KEY (Advanced plan) or COCKROACHDB_MCP_OAUTH_TOKEN",
+                            "2. For OAuth: open https://cockroachlabs.cloud/mcp in browser, log in, authorize",
+                            "3. For API key: create service account in Cloud Console, copy secret key",
                         ],
-                        "docs": "https://www.cockroachlabs.com/docs/cockroachdb-cloud/mcp-server",
+                        "docs": "https://www.cockroachlabs.com/docs/cockroachcloud/connect-to-the-cockroachdb-cloud-mcp-server",
                     },
                     indent=2,
                 )
@@ -2352,8 +2390,6 @@ def create_server(
                 {
                     "error": f"Managed MCP returned {exc.response.status_code}",
                     "detail": detail,
-                    "hint": "If running on Basic plan, use OAuth browser flow (see steps above). "
-                    "API keys require Advanced plan.",
                 },
                 indent=2,
             )
@@ -2818,6 +2854,45 @@ def create_server(
             logger.exception("ccloud_exec REST fallback failed")
             return json.dumps({"backend": "rest_api", "error": "REST API fallback failed"}, indent=2)
 
+    # ── EU AI Act Compliance Tool ─────────────────────────────────────────
+
+    @mcp.tool(
+        name="compliance_report",
+        title="Generate EU AI Act Compliance Report",
+        description=(
+            "Generate an EU AI Act Article 12 compliance report for the current agent. "
+            "Audits the hash chain integrity, audit log completeness, and memory retention "
+            "against Article 12 requirements: automatic event logging, tamper-evident records, "
+            "traceability, and post-market monitoring. Optional date range filtering. "
+            "Returns structured JSON suitable for regulatory evidence."
+        ),
+        annotations=ToolAnnotations(
+            title="Generate EU AI Act Compliance Report",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def compliance_report(
+        ctx: Context,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> str:
+        """Generate an EU AI Act Article 12 compliance report.
+
+        Args:
+            start_date: Optional ISO 8601 start date (e.g., '2026-07-01T00:00:00Z')
+            end_date: Optional ISO 8601 end date (e.g., '2026-07-29T00:00:00Z')
+        """
+        mem = _resolve_memory(ctx)
+        from bastion.compliance import ComplianceReporter
+
+        reporter = ComplianceReporter(mem)
+        mem_agent = mem.agent_id
+        report = reporter.generate_report(mem_agent, start_date=start_date, end_date=end_date)
+        return json.dumps(report, indent=2, default=str)
+
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
     @mcp.custom_route("/.well-known/mcp-server.json", methods=["GET"])
@@ -2869,7 +2944,12 @@ def create_server(
             },
             {
                 "name": "a2a_bridge",
-                "description": "A2A Agent Card for inter-agent discovery",
+                "description": "A2A protocol bridge: discover agent cards or forward skill execution requests",
+                "read_only": True,
+            },
+            {
+                "name": "compliance_report",
+                "description": "EU AI Act Article 12 compliance report: hash chain, audit log, retention verification",
                 "read_only": True,
             },
             {
@@ -2895,6 +2975,11 @@ def create_server(
             {
                 "name": "memory_health",
                 "description": "Memory health metrics: count, freshness, pinned",
+                "read_only": True,
+            },
+            {
+                "name": "forensic_report",
+                "description": "Forensic integrity report: hash chain, audit trail, guard stats from live CRDB",
                 "read_only": True,
             },
             {

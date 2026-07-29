@@ -10,10 +10,11 @@
 |---------|-------------|
 | **SHA-256 Hash Chains** | Every memory is cryptographically linked to the previous — tamper-proof ledger |
 | **AS OF SYSTEM TIME** | Time-travel to any past moment using CockroachDB MVCC |
-| **OWASP ASI06 Guard** | 40+ pattern detectors block prompt injection before memory is stored (94% detection, ~32ms) |
+| **OWASP ASI06 Guard** | 40+ pattern detectors block prompt injection before memory is stored (95.8% TP, 0% FP, ~10ms avg, ~30ms p99) |
 | **C-SPANN Vector Search** | Distributed vector index for semantic similarity search across all memories |
+| **EU AI Act Compliance** | Article 12 tamper-evident logging out of the box — hash chains, append-only audit trails, compliance reporting |
 | **Groq LLM Reasoning** | Real LLM-powered analysis of incidents using historical memory context |
-| **MCP Server (33 tools)** | Model Context Protocol server for memory operations (store, search, heal, audit) |
+| **MCP Server (35 tools)** | Model Context Protocol server for memory + compliance operations |
 | **A2A Server (25 skills)** | Agent-to-Agent protocol for multi-agent coordination |
 | **Multi-Agent SOC** | Analyst + Responder agents collaborate via A2A to detect and heal poisoning attacks |
 
@@ -40,7 +41,7 @@
 │                                               │
 │  ┌──────────────────────────────────────┐    │
 │  │ Integration Points                   │    │
-│  │ AWS Bedrock (embeddings)             │    │
+│  │ all-MiniLM-L6-v2 (embeddings)        │    │
 │  │ AWS KMS (encryption)                 │    │
 │  │ Groq LLM (reasoning)                 │    │
 │  └──────────────────────────────────────┘    │
@@ -57,13 +58,32 @@
 | **Agent Skills** | 34 machine-executable skills from `cockroachlabs/cockroachdb-skills` |
 | **AS OF SYSTEM TIME** | MVCC time-travel for memory forensics |
 | **SERIALIZABLE Isolation** | Prevents hash chain forks in concurrent multi-agent scenarios |
-| **VECTOR Data Type** | Native 384-dim vector storage with cosine distance operator `<=>` |
+| **VECTOR Data Type** | Native 1024-dim vector storage with cosine distance operator `<=>` |
 
 ## AWS Services Used
 
-- **Amazon Bedrock** — Sentence embedding models (Titan V2, all-MiniLM-L6-v2)
+- **Sentence Transformers** — all-MiniLM-L6-v2 for local embedding generation
 - **AWS KMS** — Encryption key management for memory encryption
 - **Amazon EC2** — Production deployment target
+
+## EU AI Act Compliance
+
+Bastion provides **automatic, tamper-evident logging** that satisfies EU AI Act Article 12 record-keeping requirements — enforceable since **2 August 2026**.
+
+| Requirement | Bastion Feature |
+|---|---|
+| Automatic event recording | `agent_audit` table logs every memory operation |
+| Tamper-evident logs | SHA-256 hash chain — cryptographic proof of integrity |
+| Traceability | `forensic_report` and `compliance_report` MCP tools |
+| 6-month retention | CockroachDB durable storage with TTL |
+| Time-travel reconstruction | `AS OF SYSTEM TIME` queries |
+
+Generate a regulator-ready compliance report via the MCP tool:
+```
+compliance_report(start_date="2026-07-01T00:00:00Z")
+```
+
+See [docs/EU_AI_ACT.md](docs/EU_AI_ACT.md) for the full compliance mapping.
 
 ## Quick Start
 
@@ -116,8 +136,9 @@ Navigate to [http://localhost:3000](http://localhost:3000) and run the 19-step d
 | `/api/demo/chat` | Semantic vector search with cosine similarity |
 | `/api/demo/reason` | Groq LLM-powered reasoning chain with memory context |
 | `/api/soc` | Multi-agent orchestration (Analyst → Responder) |
-| `/api/mcp/*` | 33 MCP tools (memory_store, search, timetravel, etc.) |
+| `/api/mcp/*` | 35 MCP tools (memory_store, search, timetravel, compliance_report, etc.) |
 | `/api/a2a` | A2A agent card with 25 skills |
+| `/api/compliance/report` | EU AI Act Article 12 compliance report |
 | `/api/skills` | 34 CockroachDB Agent Skills |
 | `/api/ccloud` | ccloud CLI proxy (`cluster list`, `audit list`) |
 | `/api/official-mcp` | Official CockroachDB Managed MCP tool listing |

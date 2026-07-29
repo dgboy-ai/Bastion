@@ -371,6 +371,41 @@ def mock_correct_memory(agent_id: str, memory_id: str, new_content: str, metadat
         return None
 
 
+def mock_forensic_report(agent_id: str) -> dict:
+    with _lock:
+        records = _agent_data.get(agent_id, [])
+        audit_entries = [e for e in _audit_log if e["agent_id"] == agent_id]
+        now = datetime.now(UTC)
+        total = len(records)
+        oldest = min(
+            (datetime.fromisoformat(r["created_at"]) if isinstance(r["created_at"], str) else r["created_at"])
+            for r in records
+        ) if records else now
+        newest = max(
+            (datetime.fromisoformat(r["created_at"]) if isinstance(r["created_at"], str) else r["created_at"])
+            for r in records
+        ) if records else now
+        # Simulate hash chain check — count entries with hashes
+        hashed = sum(1 for r in records if r.get("cryptographic_hash"))
+        chain_intact = hashed == total if total > 0 else True
+        return {
+            "agent_id": agent_id,
+            "report_type": "forensic",
+            "hash_chain_status": "INTACT" if chain_intact else "BROKEN",
+            "hash_chain_verified": hashed,
+            "hash_chain_total": total,
+            "total_memories": total,
+            "oldest_memory": oldest.isoformat() if records else None,
+            "newest_memory": newest.isoformat() if records else None,
+            "audit_log_entries": len(audit_entries),
+            "asi06_blocked": sum(1 for r in records if "ASI06" in str(r.get("metadata", {}))),
+            "guard_blocked_attempts": 3,
+            "guard_total_checks": max(10, len(records)),
+            "guard_blocked_pct": round(3 / max(10, len(records)) * 100, 1),
+            "s3_export_url": f"s3://bastion-memory-archives/reports/{agent_id}.json",
+        }
+
+
 def mock_memory_health(agent_id: str) -> dict:
     with _lock:
         records = _agent_data.get(agent_id, [])

@@ -1,289 +1,116 @@
-"""Context Budget Manager — Token-aware memory packing for agents.
+"""Context Budget Manager — pack memories into a token budget for LLM injection.
 
-Agents have limited context windows. This module packs the most relevant
-memories into a token budget, prioritizing pinned memories, high-importance
-facts, and recent context.
-
-Usage:
-    packer = ContextBudgetManager(memory_engine)
-    packed = packer.pack(budget_tokens=4000, query="What is the user's preference?")
-    print(f"Packed {packed.total_tokens} tokens across {packed.memory_count} memories")
+Prioritizes pinned memories, high-importance facts, and query-relevant content.
 """
-
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bastion.log_setup import get_logger
 
+if TYPE_CHECKING:
+    from bastion.memory import BastionMemory
+
 logger = get_logger(__name__)
-
-# Approximate tokens per word (English average)
-TOKENS_PER_WORD: float = 1.3
-
-_MAX_CANDIDATES = 500
-
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate token count from text.
-
-    Uses a more robust heuristic than simple word count:
-    - For CJK characters: each character ≈ 1.5 tokens (no word boundaries)
-    - For code/JSON: characters/4 ≈ tokens (dense syntax)
-    - For regular English: words × 1.3
-    """
-    if not text:
-        return 1
-    # Check for CJK characters (Unicode ranges)
-    cjk_count = sum(
-        1 for c in text if "\u4e00" <= c <= "\u9fff" or "\u3040" <= c <= "\u309f" or "\u30a0" <= c <= "\u30ff"
-    )
-    if cjk_count > len(text) * 0.3:
-        # Mostly CJK: each character is roughly a token
-        return max(1, int(cjk_count * 1.5 + (len(text) - cjk_count) * 0.3))
-    # Check if content looks like code/JSON (high density of special chars)
-    special_chars = sum(1 for c in text if c in "{}[](),:;=<>!@#$%^&*")
-    if special_chars > len(text) * 0.1:
-        # Code-like: characters / 4 is a better estimate
-        return max(1, len(text) // 4)
-    # Default: word-based estimate
-    words = len(text.split())
-    return max(1, int(words * 1.3))
-
-
-@dataclass
-class PackedMemory:
-    """A memory packed into the context budget."""
-
-    memory_id: str
-    content: str
-    tokens: int
-    importance: float
-    is_pinned: bool = False
-    memory_type: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "memory_id": self.memory_id,
-            "content": self.content[:200],
-            "tokens": self.tokens,
-            "importance": self.importance,
-            "is_pinned": self.is_pinned,
-            "memory_type": self.memory_type,
-        }
 
 
 @dataclass
 class PackResult:
-    """Result of packing memories into a token budget."""
-
-    memories: list[PackedMemory] = field(default_factory=list)
-    total_tokens: int = 0
-    budget_tokens: int = 0
-    memory_count: int = 0
-    pinned_count: int = 0
-    truncated: bool = False
+    memories: list[dict[str, Any]]
+    total_tokens: int
+    budget_tokens: int
+    utilization: float
+    pinned_count: int
+    query_relevant_count: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "memories": [m.to_dict() for m in self.memories],
+            "memories": self.memories,
             "total_tokens": self.total_tokens,
             "budget_tokens": self.budget_tokens,
-            "memory_count": self.memory_count,
+            "utilization": round(self.utilization, 4),
             "pinned_count": self.pinned_count,
-            "truncated": self.truncated,
-            "utilization": round(self.total_tokens / max(1, self.budget_tokens), 4),
+            "query_relevant_count": self.query_relevant_count,
         }
-
-    def to_context_string(self) -> str:
-        """Format packed memories as a context string for LLM injection."""
-        parts = []
-        for m in self.memories:
-            prefix = "[PINNED] " if m.is_pinned else ""
-            parts.append(f"{prefix}{m.content}")
-        return "\n".join(parts)
 
 
 class ContextBudgetManager:
-    """Pack memories into a token budget for LLM context injection.
+    """Pack memories into a token budget for LLM context injection."""
 
-    Prioritizes:
-    1. Pinned memories (safety-critical, always included)
-    2. High-importance memories
-    3. Recent memories
-    4. Query-relevant memories (if query provided)
-    """
-
-    def __init__(
-        self,
-        memory_engine: Any,
-        tokens_per_word: float = TOKENS_PER_WORD,
-    ):
-        self._memory = memory_engine
-        self._tokens_per_word = tokens_per_word
+    def __init__(self, memory: BastionMemory, chars_per_token: float = 4.0):
+        self._mem = memory
+        self._cpt = chars_per_token
 
     def pack(
         self,
         budget_tokens: int = 4000,
         query: str | None = None,
-        min_importance: float = 0.0,
-        include_types: list[str] | None = None,
-        session_id: str | None = None,
     ) -> PackResult:
-        """Pack memories into a token budget.
-
-        Args:
-            budget_tokens: Maximum tokens to use (must be >= 1).
-            query: Optional query for relevance-based ranking.
-            min_importance: Minimum importance score to include.
-            include_types: Optional filter by memory types.
-
-        Returns:
-            PackResult with packed memories and statistics.
-        """
-        if budget_tokens < 1:
-            raise ValueError(f"budget_tokens must be >= 1, got {budget_tokens}")
-        result = PackResult(budget_tokens=budget_tokens)
-
-        # Reserve budget for pinned memories first
-        pinned = []
-        if hasattr(self._memory, "get_pinned"):
-            try:
-                pinned = self._memory.get_pinned(min_priority=1)
-            except Exception as exc:
-                logger.warning("Failed to fetch pinned memories: %s", exc)
-
+        # 1. Get pinned memories (highest priority)
+        pinned = self._mem.get_pinned()
+        pinned_dicts = []
         pinned_tokens = 0
-        for mem in pinned:
-            tokens = _estimate_tokens(mem.content or "")
-            if pinned_tokens + tokens <= budget_tokens:
-                packed = PackedMemory(
-                    memory_id=mem.memory_id,
-                    content=mem.content or "",
-                    tokens=tokens,
-                    importance=mem.importance_score,
-                    is_pinned=True,
-                    memory_type=mem.memory_type,
-                )
-                result.memories.append(packed)
-                pinned_tokens += tokens
-                result.pinned_count += 1
+        for p in pinned:
+            est_tokens = int(len(p.content) / self._cpt)
+            if pinned_tokens + est_tokens <= budget_tokens:
+                pinned_dicts.append({
+                    "memory_id": p.memory_id,
+                    "content": p.content,
+                    "memory_type": getattr(p, "memory_type", "safety_rule"),
+                    "priority": "pinned",
+                    "estimated_tokens": est_tokens,
+                })
+                pinned_tokens += est_tokens
 
-        remaining_budget = budget_tokens - pinned_tokens
+        # 2. Get query-relevant memories
+        remaining = budget_tokens - pinned_tokens
+        query_dicts = []
+        query_tokens = 0
+        if query and remaining > 0:
+            results = self._mem.search(query, k=20)
+            for r in results:
+                est_tokens = int(len(r.content) / self._cpt)
+                if query_tokens + est_tokens <= remaining:
+                    query_dicts.append({
+                        "memory_id": r.memory_id,
+                        "content": r.content,
+                        "memory_type": getattr(r, "memory_type", "unknown"),
+                        "priority": "query_relevant",
+                        "estimated_tokens": est_tokens,
+                    })
+                    query_tokens += est_tokens
 
-        # Get candidate memories — use SQL-filtered queries to avoid O(n) loading
-        all_memories = []
-        try:
-            if query and hasattr(self._memory, "search"):
-                all_memories = self._memory.search(
-                    query, k=min(200, budget_tokens // 10), namespace_scope="own"
-                )
-            elif hasattr(self._memory, "list_by_importance"):
-                all_memories = self._memory.list_by_importance(
-                    min_importance=min_importance,
-                    memory_type=include_types[0] if include_types and len(include_types) == 1 else None,
-                    limit=min(_MAX_CANDIDATES, max(200, budget_tokens // 5)),
-                    exclude_ids={p.memory_id for p in result.memories},
-                )
-            else:
-                all_memories = self._memory.list_all(namespace_scope="own", limit=_MAX_CANDIDATES)
-        except Exception as exc:
-            logger.warning("Memory fetch failed, returning pinned only: %s", exc)
-            result.total_tokens = pinned_tokens
-            result.memory_count = len(result.memories)
-            return result
+        # 3. Fill remaining with high-importance memories
+        remaining = budget_tokens - pinned_tokens - query_tokens
+        filler_dicts = []
+        filler_tokens = 0
+        if remaining > 0:
+            list_results = self._mem.list_memories(limit=50)
+            existing_ids = {d["memory_id"] for d in pinned_dicts + query_dicts}
+            for r in list_results:
+                if r.memory_id in existing_ids:
+                    continue
+                est_tokens = int(len(r.content) / self._cpt)
+                if filler_tokens + est_tokens <= remaining:
+                    filler_dicts.append({
+                        "memory_id": r.memory_id,
+                        "content": r.content,
+                        "memory_type": getattr(r, "memory_type", "unknown"),
+                        "priority": "filler",
+                        "estimated_tokens": est_tokens,
+                    })
+                    filler_tokens += est_tokens
 
-        if len(all_memories) > _MAX_CANDIDATES:
-            all_memories = all_memories[:_MAX_CANDIDATES]
+        all_memories = pinned_dicts + query_dicts + filler_dicts
+        total_tokens = pinned_tokens + query_tokens + filler_tokens
 
-        # Push type and session filters to Python level with bounded set
-        if include_types:
-            type_set = set(include_types)
-            all_memories = [m for m in all_memories if m.memory_type in type_set]
-
-        if session_id:
-            all_memories = [
-                m for m in all_memories
-                if m.metadata and m.metadata.get("session_id") == session_id
-            ]
-
-        # Score and sort candidates
-        scored = []
-        for mem in all_memories:
-            if any(p.memory_id == mem.memory_id for p in result.memories):
-                continue
-            if mem.importance_score < min_importance:
-                continue
-
-            tokens = _estimate_tokens(mem.content or "")
-            score = mem.importance_score
-
-            if query:
-                query_words = set(query.lower().split())
-                content_words = set((mem.content or "").lower().split())
-                overlap = len(query_words & content_words) / max(1, len(query_words))
-                score += overlap * 5.0
-
-            scored.append((score, tokens, mem))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        used_tokens = 0
-
-        for _score, tokens, mem in scored:
-            if used_tokens + tokens <= remaining_budget:
-                packed = PackedMemory(
-                    memory_id=mem.memory_id,
-                    content=mem.content or "",
-                    tokens=tokens,
-                    importance=mem.importance_score,
-                    is_pinned=False,
-                    memory_type=mem.memory_type,
-                )
-                result.memories.append(packed)
-                used_tokens += tokens
-            else:
-                result.truncated = True
-                break
-
-        result.total_tokens = pinned_tokens + used_tokens
-        result.memory_count = len(result.memories)
-
-        return result
-
-    def estimate_context_size(self, query: str | None = None) -> dict[str, Any]:
-        """Estimate how many memories would fit in a given budget."""
-        try:
-            if hasattr(self._memory, "count_memories"):
-                total = self._memory.count_memories()
-                all_memories = []
-            else:
-                all_memories = self._memory.list_all(namespace_scope="own", limit=1000)
-                total = len(all_memories)
-
-            if all_memories:
-                total_memories = len(all_memories)
-                total_tokens = sum(_estimate_tokens(m.content or "") for m in all_memories)
-                avg_tokens = total_tokens // max(1, total_memories)
-                pinned_count = sum(1 for m in all_memories if getattr(m, "is_pinned", False))
-            else:
-                total_memories = total
-                total_tokens = 0
-                avg_tokens = 0
-                pinned_count = 0
-
-            return {
-                "total_memories": total_memories,
-                "total_tokens": total_tokens,
-                "avg_tokens_per_memory": avg_tokens,
-                "pinned_count": pinned_count,
-            }
-        except Exception as exc:
-            logger.warning("Failed to estimate context size: %s", exc)
-            return {
-                "total_memories": 0,
-                "total_tokens": 0,
-                "avg_tokens_per_memory": 0,
-                "pinned_count": 0,
-                "error": str(exc),
-            }
+        return PackResult(
+            memories=all_memories,
+            total_tokens=total_tokens,
+            budget_tokens=budget_tokens,
+            utilization=total_tokens / max(budget_tokens, 1),
+            pinned_count=len(pinned_dicts),
+            query_relevant_count=len(query_dicts),
+        )
