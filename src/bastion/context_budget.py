@@ -5,7 +5,7 @@ Prioritizes pinned memories, high-importance facts, and query-relevant content.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from bastion.log_setup import get_logger
@@ -34,6 +34,14 @@ class PackResult:
             "pinned_count": self.pinned_count,
             "query_relevant_count": self.query_relevant_count,
         }
+
+
+# Module-level helper function for tests
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from character count (4 chars per token heuristic)."""
+    if not text:
+        return 1
+    return max(1, int(len(text) / 4.0))
 
 
 class ContextBudgetManager:

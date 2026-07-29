@@ -55,7 +55,27 @@
 | **Managed MCP Server** | Live SQL queries against CockroachDB Cloud via `cockroachlabs.cloud/mcp` |
 | **C-SPANN Vector Index** | Distributed vector index on `embedding_384` column for similarity search |
 | **ccloud CLI** | Cluster management, audit trail, SQL access — integrated in playground |
-| **Agent Skills** | 34 machine-executable skills from `cockroachlabs/cockroachdb-skills` |
+| **Agent Skills** | 34 machine-executable skills from `cockroachlabs/cockroachdb-skills` — invoked via MCP `invoke_agent_skill` tool with live SQL execution against the cluster |
+
+## Agent Skills Repo (Live Execution)
+
+34 skills from [cockroachlabs/cockroachdb-skills](https://github.com/cockroachlabs/cockroachdb-skills) installed. Invoked via MCP `invoke_agent_skill` tool — reads SKILL.md, extracts SQL, executes against the cluster:
+
+```bash
+# Via MCP: invoke_agent_skill("reviewing-cluster-health", execute=True)
+
+--- Cluster version ---
+('CockroachDB CCL v26.2.1 (x86_64-pc-linux-gnu, built 2026/05/21)')
+
+--- Memory count ---
+(1869,)
+
+--- Cluster settings ---
+('kv.rangefeed.enabled', 'true')
+('sql.stats.automatic_collection.enabled', 'true')
+```
+
+Skills cover health checks, performance triage, schema analysis, security audits, and migrations.
 | **AS OF SYSTEM TIME** | MVCC time-travel for memory forensics |
 | **SERIALIZABLE Isolation** | Prevents hash chain forks in concurrent multi-agent scenarios |
 | **VECTOR Data Type** | Native 1024-dim vector storage with cosine distance operator `<=>` |
@@ -65,6 +85,33 @@
 - **Sentence Transformers** — all-MiniLM-L6-v2 for local embedding generation
 - **AWS KMS** — Encryption key management for memory encryption
 - **Amazon EC2** — Production deployment target
+- **AWS Lambda** — CDC handler for hash chain verification + self-healing (via Terraform)
+- **Amazon S3** — Memory archives with Glacier lifecycle (via Terraform)
+
+## ccloud CLI (Authenticated — Live Cluster)
+
+```bash
+$ ccloud cluster list -o json
+[
+  {
+    "id": "<cluster-id>",
+    "name": "bastion-memory",
+    "cloud_provider": "AWS",
+    "plan": "SERVERLESS",
+    "cockroach_version": "v26.2.1",
+    "state": "CREATED",
+    "regions": [
+      {
+        "name": "ap-south-1",
+        "primary": true,
+        "sql_dns": "<sql-endpoint>"
+      }
+    ]
+  }
+]
+```
+
+Used in `dba.py` (`_run_ccloud`) for auto-scaling, SQL queries, cluster health checks, and in `mcp_server.py` (`ccloud_exec` MCP tool) for agent-driven cluster management.
 
 ## EU AI Act Compliance
 

@@ -163,8 +163,47 @@ class ObservationDetector:
 
     def _extract_entities(self, content: str) -> list[str]:
         entities = []
-        for match in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b", content):
+        # Match capitalized words (including mixed case like CockroachDB)
+        for match in re.finditer(r"\b([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)\b", content):
             entities.append(match.group(1))
         for match in re.finditer(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", content):
             entities.append(match.group(0))
         return entities
+
+# Module-level helper functions for tests
+def _extract_entities(content: str) -> list[str]:
+    """Extract capitalized entities and emails from text."""
+    entities = []
+    # Match capitalized words (including mixed case like CockroachDB) and acronyms
+    for match in re.finditer(r"\b([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)\b", content):
+        entities.append(match.group(1))
+    # Also match all-caps acronyms (2+ letters)
+    for match in re.finditer(r"\b([A-Z]{2,})\b", content):
+        entities.append(match.group(1))
+    for match in re.finditer(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", content):
+        entities.append(match.group(0))
+    return entities
+
+
+def _extract_ngrams(text: str, n: int = 2) -> list[str]:
+    """Extract n-grams from text, filtering stop words."""
+    stop_words = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "dare", "ought",
+        "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "as", "into", "through", "during", "before", "after", "above", "below",
+        "between", "out", "off", "over", "under", "again", "further", "then",
+        "once", "here", "there", "when", "where", "why", "how", "all", "both",
+        "each", "few", "more", "most", "other", "some", "such", "no", "nor",
+        "not", "only", "own", "same", "so", "than", "too", "very", "just",
+        "don", "now", "what", "which", "who", "whom", "this", "that", "these",
+        "those", "i", "me", "my", "we", "our", "you", "your", "he", "him",
+        "his", "she", "her", "it", "its", "they", "them", "their",
+    }
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    filtered = [w for w in words if w not in stop_words and len(w) > 2]
+    ngrams = []
+    for i in range(len(filtered) - n + 1):
+        ngrams.append(" ".join(filtered[i:i + n]))
+    return ngrams
