@@ -10,7 +10,7 @@ Bastion implements a **full MCP (Model Context Protocol) server** that exposes C
 
 ### How We Use It
 
-Our MCP server (`src/bastion/mcp_server.py`) provides **25 tools**, **4 resources**, and **3 prompts** that any MCP-compatible client can call:
+Our MCP server (`src/bastion/mcp_server.py`) provides **33 tools**, **4 resources**, and **3 prompts** that any MCP-compatible client can call:
 
 | MCP Tool | What It Does | CockroachDB Feature Used |
 |----------|-------------|-------------------------|

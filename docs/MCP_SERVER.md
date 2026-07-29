@@ -1,6 +1,6 @@
 # Bastion MCP Server — Model Context Protocol
 
-> Full MCP implementatio n with 25 tools, 4 resources, 3 prompts, and CockroachDB-backed persistent memory.
+> Full MCP implementation with 33 tools, 4 resources, 3 prompts, and CockroachDB-backed persistent memory.
 
 ---
 
@@ -9,7 +9,7 @@
 Bastion implements a **production-grade MCP (Model Context Protocol) server** that exposes CockroachDB as a persistent memory layer for AI agents. Any MCP-compatible client (Claude, Cursor, VS Code) can connect and execute memory operations.
 
 **Key Features:**
-- ✅ 25 tools (most comprehensive MCP memory server)
+- ✅ 33 tools (most comprehensive MCP memory server)
 - ✅ 4 resources (schema, config, stats, individual memories)
 - ✅ 3 prompts (analyze, conflict, audit)
 - ✅ SHA-256 hash chain integrity
@@ -33,7 +33,7 @@ Bastion implements a **production-grade MCP (Model Context Protocol) server** th
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   BASTION MCP SERVER                         │
-│              (FastMCP, 25 tools, 4 resources, 3 prompts)    │
+│              (FastMCP, 33 tools, 4 resources, 3 prompts)    │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Transport: stdio (local) or Streamable HTTP (remote)│   │

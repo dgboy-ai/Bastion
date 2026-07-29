@@ -257,11 +257,11 @@ class ConnectionPool:
 
         reset_ok = False
         try:
-            with conn.cursor() as cur:
-                with contextlib.suppress(Exception):
-                    cur.execute("ROLLBACK")
-                cur.execute("RESET ALL")
+            # Kill any implicit transaction before RESET ALL.
+            # autocommit=True ends any pending transaction cleanly.
             conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute("RESET ALL")
             reset_ok = True
         except Exception:
             logger.debug("RESET ALL failed during release — discarding connection")

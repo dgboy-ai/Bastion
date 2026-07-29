@@ -444,7 +444,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                 {[
                   { title: "SHA-256 Hash Chains", desc: "Every memory cryptographically linked to the previous — tamper-proof ledger", icon: "🔐", color: "#ff5e00", tag: "IMMUTABILITY" },
                   { title: "AS OF SYSTEM TIME", desc: "Time-travel to any past moment — CockroachDB MVCC", icon: "⏰", color: "#00e5ff", tag: "TEMPORAL QUERY" },
-                  { title: "MCP + A2A APIs", desc: "25 tools each — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: "#34d399", tag: "DUAL PROTOCOL" },
+                  { title: "MCP + A2A APIs", desc: "33 MCP tools + 25 A2A skills — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: "#34d399", tag: "DUAL PROTOCOL" },
                   { title: "OWASP ASI06 Guard", desc: "Blocks 9 injection patterns before memory is stored", icon: "🛡️", color: "#ef4444", tag: "SAFETY SHIELD" },
                 ].map((f, i) => (
                   <div 
