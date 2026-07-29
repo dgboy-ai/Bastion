@@ -6,6 +6,7 @@ and don't depend on core memory CRUD operations.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from bastion.config import ANOMALY_LIMIT
@@ -181,3 +182,125 @@ def diff_real(mem: BastionMemory, agent_id: str, timestamp_a: str, timestamp_b: 
         "count_a": len(state_a),
         "count_b": len(state_b),
     }
+
+
+def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
+    """Generate a forensic integrity report from live CockroachDB data.
+
+    Verifies hash chain integrity, counts audit entries, checks memory
+    distribution by type, and returns guard statistics — all from real
+    cluster queries, not mocks.
+    """
+    pool = mem.get_pool()
+    conn = pool.acquire(timeout=30.0)
+    try:
+        mem._set_rls_context(conn)
+        with conn.cursor() as cur:
+            # 1. Memory counts + hash chain
+            cur.execute(
+                "SELECT "
+                "  COUNT(*), "
+                "  COUNT(*) FILTER (WHERE cryptographic_hash IS NOT NULL), "
+                "  MIN(created_at), "
+                "  MAX(created_at), "
+                "  COUNT(*) FILTER (WHERE is_pinned), "
+                "  AVG(access_count), "
+                "  AVG(importance_score) "
+                "FROM agent_memory WHERE agent_id = %s",
+                (mem.agent_id,),
+            )
+            row = cur.fetchone()
+            total = row[0] or 0
+            hashed = row[1] or 0
+            oldest = row[2]
+            newest = row[3]
+            pinned = row[4] or 0
+            avg_access = float(row[5] or 0)
+            avg_importance = float(row[6] or 0)
+
+            # 2. Hash chain integrity: verify each hash links to previous
+            cur.execute(
+                "SELECT memory_id, previous_hash, cryptographic_hash "
+                "FROM agent_memory "
+                "WHERE agent_id = %s AND cryptographic_hash IS NOT NULL "
+                "ORDER BY created_at ASC",
+                (mem.agent_id,),
+            )
+            chain_rows = cur.fetchall()
+            chain_broken = False
+            broken_at = None
+            for i, (_, prev_hash, curr_hash) in enumerate(chain_rows):
+                if i == 0:
+                    continue  # first entry has no previous
+                expected_prev = chain_rows[i - 1][2]
+                if prev_hash != expected_prev:
+                    chain_broken = True
+                    broken_at = chain_rows[i][0]
+                    break
+
+            # 3. Memory type distribution
+            cur.execute(
+                "SELECT memory_type, COUNT(*) "
+                "FROM agent_memory WHERE agent_id = %s "
+                "GROUP BY memory_type ORDER BY COUNT(*) DESC",
+                (mem.agent_id,),
+            )
+            type_dist = {r[0]: r[1] for r in cur.fetchall()}
+
+            # 4. Audit log count
+            cur.execute(
+                "SELECT COUNT(*) FROM agent_audit WHERE agent_id = %s",
+                (mem.agent_id,),
+            )
+            audit_row = cur.fetchone()
+            audit_count = audit_row[0] if audit_row else 0
+
+            # 5. Poisoned / blocked count (ASI06 findings in metadata)
+            cur.execute(
+                "SELECT COUNT(*) FROM agent_memory "
+                "WHERE agent_id = %s AND metadata::text LIKE %s",
+                (mem.agent_id, "%ASI06%"),
+            )
+            poisoned_row = cur.fetchone()
+            poisoned_count = poisoned_row[0] if poisoned_row else 0
+
+        # 6. Guard stats from in-memory state (not CRDB — runtime counters)
+        guard_stats = mem._guard.get_stats() if hasattr(mem, "_guard") else {
+            "total_checks": 0,
+            "blocked_count": 0,
+            "blocked_pct": 0.0,
+        }
+
+        return {
+            "agent_id": mem.agent_id,
+            "report_type": "forensic",
+            "generated_at": datetime.now(UTC).isoformat(),
+            # Hash chain
+            "hash_chain_status": "BROKEN" if chain_broken else "INTACT",
+            "hash_chain_verified": hashed,
+            "hash_chain_total": total,
+            "hash_chain_broken_at_memory": broken_at,
+            # Memory stats
+            "total_memories": total,
+            "pinned_memories": pinned,
+            "oldest_memory": oldest.isoformat() if oldest else None,
+            "newest_memory": newest.isoformat() if newest else None,
+            "avg_access_count": round(avg_access, 2),
+            "avg_importance_score": round(avg_importance, 2),
+            # Type distribution
+            "memory_type_distribution": type_dist,
+            # Audit
+            "audit_log_entries": audit_count,
+            # Guard / poison
+            "asi06_poisoned_count": poisoned_count,
+            "guard_total_checks": guard_stats["total_checks"],
+            "guard_blocked_count": guard_stats["blocked_count"],
+            "guard_blocked_pct": guard_stats["blocked_pct"],
+            # S3 (placeholder — Lambda deployment pending)
+            "s3_export_url": None,
+        }
+    except Exception as e:
+        logger.exception("forensic_report failed for agent %s", mem.agent_id)
+        raise RuntimeError(f"Forensic report failed: {e}") from e
+    finally:
+        pool.release(conn)

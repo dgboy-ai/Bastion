@@ -153,13 +153,11 @@ class ComplianceReporter:
                 "status": "COMPLIANT" if audit_entries else "NO_DATA",
             },
             "art12_requirements": {
-                "automatic_event_recording": len(audit_entries) > 0,
-                "tamper_evident_logs": any(
-                    getattr(e, "action", "") in ("write", "hash_verify", "gdpr_art17_unlearn") for e in audit_entries
-                ),
+                "automatic_event_recording": total_operations > 0,
+                "tamper_evident_logs": self._check_hash_chain_integrity(),
                 "traceability": len(set(getattr(e, "action", "") for e in audit_entries)) >= 1,
                 "human_oversight_verification": any(
-                    getattr(e, "action", "") in ("override", "correction", "delete") for e in audit_entries
+                    getattr(e, "action", "") in ("memory_correct", "delete", "heal") for e in audit_entries
                 ),
                 "post_market_monitoring": total_operations > 0,
             },

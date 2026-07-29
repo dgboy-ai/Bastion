@@ -329,6 +329,15 @@ class BastionMemory:
             expires_in_seconds = _MEMORY_TTL_SECONDS[memory_type]
 
         _validate_expires_in(expires_in_seconds)
+
+        if self.compliance_mode == "eu_ai_act" and expires_in_seconds is not None and expires_in_seconds < 15552000:
+            logger.info(
+                "Compliance mode: overridden TTL to minimum 6 months (180 days)",
+                agent_id=self.agent_id,
+                original_ttl=expires_in_seconds,
+            )
+            expires_in_seconds = 15552000
+
         if region is not None and (not isinstance(region, str) or not region.strip()):
             raise ValueError(f"region must be a non-empty string when provided, got {region!r}")
 
@@ -613,6 +622,14 @@ class BastionMemory:
         from bastion.health import memory_health_real
 
         return memory_health_real(self)
+
+    def forensic_report(self) -> dict[str, Any]:
+        """Generate a forensic integrity report from live CockroachDB data."""
+        if self._mock:
+            return _mock.mock_forensic_report(self.agent_id)
+        from bastion.health import forensic_report_real
+
+        return forensic_report_real(self)
 
     def apply_patch(
         self,
@@ -1534,32 +1551,36 @@ class BastionMemory:
                 )
                 pruned = cur.rowcount
                 cur.execute(
-                    "SELECT memory_id, content, metadata, previous_hash "
-                    "FROM agent_memory WHERE agent_id = %s AND cryptographic_hash IS NULL "
+                    "SELECT memory_id, content, metadata, previous_hash, cryptographic_hash "
+                    "FROM agent_memory WHERE agent_id = %s "
                     "ORDER BY created_at ASC",
                     (agent_id,),
                 )
-                broken = cur.fetchall()
-                for mid, content, metadata, prev_hash in broken:
+                rows = cur.fetchall()
+                prev_hash_chain = None
+                for mid, content, metadata, stored_prev, stored_hash in rows:
                     meta_dict = dict(metadata) if metadata else {}
-                    new_hash = compute_hash(content, meta_dict, prev_hash)
-                    cur.execute(
-                        "UPDATE agent_memory SET cryptographic_hash = %s WHERE memory_id = %s",
-                        (new_hash, mid),
-                    )
-                    resealed += 1
-                    cur.execute(
-                        "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                        (
-                            agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
-                            json.dumps({"memory_id": mid, "content_snippet": (content or "")[:200]}),
-                        ),
-                    )
-                    logger.warning(
-                        "Hash chain repair: resealed memory %s for agent %s — may indicate tampering",
-                        mid,
-                        agent_id,
-                    )
+                    expected_hash = compute_hash(content, meta_dict, prev_hash_chain)
+                    expected_prev = prev_hash_chain or ""
+                    if stored_hash != expected_hash or stored_prev != expected_prev:
+                        cur.execute(
+                            "UPDATE agent_memory SET cryptographic_hash = %s, previous_hash = %s WHERE memory_id = %s",
+                            (expected_hash, expected_prev, mid),
+                        )
+                        resealed += 1
+                        cur.execute(
+                            "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
+                            (
+                                agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
+                                json.dumps({"memory_id": str(mid), "content_snippet": (content or "")[:200]}),
+                            ),
+                        )
+                        logger.warning(
+                            "Hash chain repair: resealed memory %s for agent %s",
+                            str(mid)[:12],
+                            agent_id,
+                        )
+                    prev_hash_chain = expected_hash
                 return {
                     "agent_id": agent_id,
                     "pruned": pruned,
@@ -1567,8 +1588,8 @@ class BastionMemory:
                     "status": "healed",
                 }
             return self._retry_write(conn, _op)
-        except Exception:
-            logger.exception("heal query failed", extra={"agent_id": agent_id})
+        except Exception as e:
+            logger.error("heal query failed: %s", str(e)[:200])
             return {"agent_id": agent_id, "pruned": 0, "resealed": 0, "status": "error"}
         finally:
             pool.release(conn)
@@ -1578,14 +1599,22 @@ class BastionMemory:
         for attempt in range(max_retries):
             pool = self.get_pool()
             conn = pool.acquire(timeout=30.0)
+            lock_id = None
             try:
                 self._set_rls_context(conn)
+                lock_resource = f"conflict:{hashlib.sha256((fact_a + fact_b).encode()).hexdigest()[:16]}"
                 with conn.cursor() as cur:
-                    lock_resource = f"conflict:{hashlib.sha256((fact_a + fact_b).encode()).hexdigest()[:16]}"
+                    cur.execute(
+                        "SELECT lock_id FROM agent_coordination WHERE agent_id = %s AND resource = %s",
+                        (self.agent_id, lock_resource),
+                    )
+                    existing = cur.fetchone()
+                    if existing:
+                        conn.rollback()
+                        continue
                     cur.execute(
                         "INSERT INTO agent_coordination (agent_id, resource, lock_type, payload) "
                         "VALUES (%s, %s, 'exclusive', %s) "
-                        "ON CONFLICT (agent_id, resource) DO NOTHING "
                         "RETURNING lock_id",
                         (self.agent_id, lock_resource, json.dumps({"status": "acquired"})),
                     )
@@ -1594,7 +1623,6 @@ class BastionMemory:
                     if not lock_id:
                         conn.rollback()
                         continue
-
                 conn.commit()
                 self._refresh_rls_context(conn)
 
@@ -1620,7 +1648,7 @@ class BastionMemory:
                         except Exception:
                             logger.warning("Failed to release coordination lock %s", lock_id)
             except Exception as e:
-                logger.exception("resolve_conflict failed")
+                logger.error("resolve_conflict failed: %s", str(e)[:200])
                 raise RuntimeError("Conflict resolution failed") from e
             finally:
                 pool.release(conn)
@@ -1640,6 +1668,17 @@ class BastionMemory:
 
             merged = groq_merge([fact_a, fact_b], context or "conflict_resolution")
             if merged and merged != fact_a:
+                replacements = {
+                    "\u2019": "'",
+                    "\u2018": "'",
+                    "\u201c": '"',
+                    "\u201d": '"',
+                    "\u2014": "-",
+                    "\u2013": "-",
+                }
+                for k, v in replacements.items():
+                    merged = merged.replace(k, v)
+                merged = merged.encode("ascii", "ignore").decode("ascii")
                 return merged
         except Exception:
             logger.debug("Groq merge unavailable, using heuristic fallback")
@@ -1651,14 +1690,14 @@ class BastionMemory:
         overlap = len(words_a & words_b) / max(1, len(words_a | words_b))
 
         if overlap > 0.7:
-            # Very similar — keep the longer/more detailed one
-            return fact_a if len(fact_a) >= len(fact_b) else fact_b
+            result = fact_a if len(fact_a) >= len(fact_b) else fact_b
         elif overlap > 0.3:
-            # Partially similar — combine with separator
-            return f"{fact_a}. Additionally: {fact_b}"
+            result = f"{fact_a}. Additionally: {fact_b}"
         else:
-            # Very different — keep both with context
-            return f"{fact_a} | {fact_b}"
+            result = f"{fact_a} | {fact_b}"
+
+        result = result.encode("ascii", "ignore").decode("ascii")
+        return result
 
     def _get_last_hash(self, conn=None) -> str | None:
         if conn is None:
