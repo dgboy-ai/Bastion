@@ -51,6 +51,20 @@ services:
         value: "false"
       - key: BASTION_A2A_PRIVATE_KEY
         generateValue: true
+      - key: PORT
+        value: "9998"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: "ap-south-1"
+      - key: BASTION_AWS_KMS_KEY_ARN
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        value: "https://bastion-self.vercel.app,http://localhost:3000"
+      - key: BASTION_DASHBOARD_URL
+        value: "https://bastion-self.vercel.app"
     healthCheckPath: /healthz
     autoDeploy: true
     plan: starter
