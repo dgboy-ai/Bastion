@@ -113,11 +113,10 @@ jobs:
           python-version: "3.12"
           cache: "pip"
       - name: Install dependencies
-        run: pip install -e ".[dev,all]" docker-compose --upgrade pip
+        run: pip install -e ".[dev,all]" --upgrade pip
       - name: Start CockroachDB
         run: |
           cat > docker-compose.crdb.yml << 'EOF'
-          version: "3.8"
           services:
             cockroachdb:
               image: cockroachdb/cockroach:v26.2.1
@@ -131,16 +130,16 @@ jobs:
                 retries: 20
                 start_period: 15s
           EOF
-          docker-compose -f docker-compose.crdb.yml up -d
+          docker compose -f docker-compose.crdb.yml up -d
           echo "Waiting for CockroachDB to be healthy..."
-          docker-compose -f docker-compose.crdb.yml up -d --wait
+          docker compose -f docker-compose.crdb.yml up -d --wait
           echo "CockroachDB is ready"
       - name: Create database and apply schema
         run: |
-          docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
+          docker compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS defaultdb"
           for f in $(ls schema/*.sql | sort); do
             echo "Applying $f..."
-            docker-compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues (may already exist)"
+            docker compose -f docker-compose.crdb.yml exec -T cockroachdb cockroach sql --insecure -d defaultdb < "$f" 2>&1 || echo "Note: $f had issues (may already exist)"
           done
           echo "Schema setup complete"
       - name: Run real CRDB integration tests
@@ -149,4 +148,4 @@ jobs:
           BASTION_CONN: "postgresql://root:@localhost:26257/defaultdb?sslmode=disable"
       - name: Cleanup
         if: always()
-        run: docker-compose -f docker-compose.crdb.yml down -v 2>/dev/null || true
+        run: docker compose -f docker-compose.crdb.yml down -v 2>/dev/null || true

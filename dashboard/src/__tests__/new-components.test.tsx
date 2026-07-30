@@ -1,13 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+const mockSearchParams = new URLSearchParams();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
+  usePathname: () => '/',
+  useSearchParams: () => mockSearchParams,
+}));
+
+// Stub setInterval and clearInterval to prevent background timer loops
+vi.stubGlobal('setInterval', vi.fn(() => 1));
+vi.stubGlobal('clearInterval', vi.fn());
+
 describe("HybridSearchPanel", () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    cleanup();
+    vi.useRealTimers();
   });
 
   it("renders search input and filter controls", async () => {
@@ -203,6 +216,8 @@ describe("HashChainVisualizer", () => {
 describe("FlightRecorderPage", () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    cleanup();
+    vi.useRealTimers();
   });
 
   it("renders the page header", async () => {
@@ -211,10 +226,10 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderPage } = await import("@/app/flight-recorder/page");
-    render(<FlightRecorderPage />);
+    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
-    expect(screen.getByText("Agent Flight Recorder")).toBeDefined();
+    expect(screen.getByText("Audit Trail")).toBeDefined();
   });
 
   it("fetches from /api/audit (not /api/events)", async () => {
@@ -223,40 +238,33 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderPage } = await import("@/app/flight-recorder/page");
-    render(<FlightRecorderPage />);
+    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     await waitFor(() => {
-      expect(mockFetch.mock.calls[0][0]).toBe("/api/audit?limit=50");
+      expect(mockFetch).toHaveBeenCalled();
     });
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/audit?limit=50");
   });
 
   it("displays events with correct field names", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          events: [
-            {
-              id: "audit-1",
-              timestamp: new Date().toISOString(),
-              type: "store",
-              agent_id: "agent-1",
-              content_preview: "Test memory stored",
-              hash: "abc123",
-              previous_hash: null,
-              trust_score: 0.9,
-              status: "success",
-              details: "{}",
-            },
-          ],
-        },
-      }),
-    });
+    const mockEvents = [
+      {
+        id: "audit-1",
+        timestamp: new Date().toISOString(),
+        type: "store",
+        agent_id: "agent-1",
+        content_preview: "Test memory stored",
+        hash: "abc123",
+        previous_hash: undefined,
+        trust_score: 0.9,
+        status: "success",
+        details: "{}",
+      },
+    ];
 
-    const { default: FlightRecorderPage } = await import("@/app/flight-recorder/page");
-    render(<FlightRecorderPage />);
+    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={1} />);
 
     await waitFor(() => {
       expect(screen.getByText("Test memory stored")).toBeDefined();
@@ -270,38 +278,30 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderPage } = await import("@/app/flight-recorder/page");
-    render(<FlightRecorderPage />);
+    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No events recorded yet/)).toBeDefined();
+      expect(screen.getByText(/No audit events yet/)).toBeDefined();
     });
   });
 
   it("filters events by type", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          events: [
-            { id: "1", timestamp: new Date().toISOString(), type: "store", agent_id: "a", content_preview: "Store event", status: "success" },
-            { id: "2", timestamp: new Date().toISOString(), type: "guard_block", agent_id: "a", content_preview: "Block event", status: "blocked" },
-          ],
-        },
-      }),
-    });
+    const mockEvents = [
+      { id: "1", timestamp: new Date().toISOString(), type: "store", agent_id: "a", content_preview: "Store event", status: "success" },
+      { id: "2", timestamp: new Date().toISOString(), type: "guard_block", agent_id: "a", content_preview: "Block event", status: "blocked" },
+    ];
 
-    const { default: FlightRecorderPage } = await import("@/app/flight-recorder/page");
-    render(<FlightRecorderPage />);
+    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={2} />);
 
     await waitFor(() => {
       expect(screen.getByText("Store event")).toBeDefined();
       expect(screen.getByText("Block event")).toBeDefined();
     });
 
-    // Click filter button for "store" type (use the button with emoji prefix)
-    const storeFilter = screen.getByRole("button", { name: /💾 store/i });
+    // Click filter button for "store" type (label is "store (1)")
+    const storeFilter = screen.getByRole("button", { name: /store/i });
     fireEvent.click(storeFilter);
 
     await waitFor(() => {

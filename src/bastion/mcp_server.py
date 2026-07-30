@@ -2062,7 +2062,7 @@ def create_server(
             return json.dumps({"error": f"DNS resolution failed for {hostname}"})
         resolved_ips: list[str] = []
         for _, _, _, _, sockaddr in addrinfo:
-            ip = sockaddr[0]
+            ip = str(sockaddr[0])
             try:
                 ip_addr = ipaddress.ip_address(ip)
             except ValueError:
@@ -2279,7 +2279,7 @@ def create_server(
     async def managed_mcp_call(
         ctx: Context,
         tool: str,
-        args: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> str:
         if not tool or not tool.strip():
             return json.dumps({"error": "tool name is required"})
@@ -2326,7 +2326,7 @@ def create_server(
             "method": "tools/call",
             "params": {
                 "name": tool,
-                "arguments": args or {},
+                "arguments": params or {},
             },
         }
         try:
@@ -2665,9 +2665,20 @@ def create_server(
         if args:
             full_cmd.extend(args)
 
-        # Ensure JSON output — strip any user-supplied --format first
-        full_cmd = [p for p in full_cmd if not p.startswith("--format")]
-        full_cmd.extend(["--format", "json"])
+        # Ensure JSON output — strip any user-supplied output flag first
+        filtered = []
+        skip_next = False
+        for p in full_cmd:
+            if skip_next:
+                skip_next = False
+                continue
+            if p in ("-o", "--output", "--format") or p.startswith("--output=") or p.startswith("--format="):
+                if "=" not in p:
+                    skip_next = True
+                continue
+            filtered.append(p)
+        full_cmd = filtered
+        full_cmd.extend(["-o", "json"])
 
         # Add cluster scoping if provided
         if cluster_id and "cluster" in cmd_parts[0]:
@@ -2688,6 +2699,8 @@ def create_server(
                 ["ccloud", "version"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
             )
             ccloud_available = result.returncode == 0
@@ -2700,6 +2713,8 @@ def create_server(
                     full_cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=timeout_seconds,
                 )
 
@@ -2808,7 +2823,6 @@ def create_server(
         url = f"{crdb_api}{url_path}"
 
         try:
-            import httpx
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 if method == "GET":
                     resp = await client.get(url, headers=headers)

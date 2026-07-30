@@ -12,7 +12,7 @@
 services:
   # ── TLS Certificate Initializer ──────────────────────────────────────────
   certs-init:
-    image: cockroachdb/cockroach:v24.3
+    image: cockroachdb/cockroach:v26.2.1
     volumes:
       - certs:/certs
       - ./scripts:/scripts:ro
@@ -21,7 +21,7 @@ services:
 
   # ── CockroachDB ──────────────────────────────────────────────────────────
   cockroachdb:
-    image: cockroachdb/cockroach:v24.3
+    image: cockroachdb/cockroach:v26.2.1
     depends_on:
       certs-init:
         condition: service_completed_successfully
@@ -49,7 +49,7 @@ services:
 
   # ── Schema Init ──────────────────────────────────────────────────────────
   schema-init:
-    image: cockroachdb/cockroach:v24.3
+    image: cockroachdb/cockroach:v26.2.1
     depends_on:
       cockroachdb:
         condition: service_healthy

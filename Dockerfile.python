@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
         "httpx>=0.27,<1" "anyio>=4.0,<5" "boto3>=1.34,<2" \
         "structlog>=24.1,<25" "pydantic>=2.0,<3" "pydantic-settings>=2.0,<3" \
         "fastapi>=0.115" "uvicorn>=0.32" "mcp>=1.0" \
+        "a2a-sdk>=1.1.0" \
         "cryptography>=42.0" "google-cloud-kms>=2.20" "groq>=0.12" \
         "sentence-transformers>=3.0,<4"
 
@@ -32,6 +33,32 @@ RUN curl -L https://binaries.cockroachdb.com/ccloud/ccloud_linux-amd64_0.6.12.ta
     | tar -xz -C /usr/local/bin/ && \
     chmod +x /usr/local/bin/ccloud
 
+# Runtime stage — minimal image
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Copy installed packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
 # Copy application code
 COPY src/ /app/src/
 COPY .agents/skills/ /app/.agents/skills/
+
+# Set Python path
+ENV PYTHONPATH=/app/src
+
+# Security: non-root user
+RUN groupadd -r bastion && useradd -r -g bastion -m bastion
+USER bastion
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9997/healthz')" || exit 1
+
+# Expose MCP + A2A server ports
+EXPOSE 9997 9998
+
+# Default entry point
+CMD ["python", "-m", "bastion.mcp_server", "--transport", "http", "--host", "0.0.0.0", "--port", "9997"]

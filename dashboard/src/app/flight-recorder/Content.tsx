@@ -33,6 +33,7 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
   const { isMock } = useConnection();
 
   const fetchData = useCallback(async () => {
+    console.log("DEBUG: fetchData called! selectedId =", selectedId);
     try {
       const res = await fetchWithTimeout("/api/audit?limit=50");
       if (res.ok) {
@@ -51,11 +52,15 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
   }, [fetchData, initialEvents.length]);
 
   const filtered = useMemo(() => {
-    return events.filter(e => {
+    const res = events.filter(e => {
       if (filter !== "all" && e.type !== filter) return false;
       if (search && !e.content_preview.toLowerCase().includes(search.toLowerCase()) && !e.agent_id.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
+    console.log("DEBUG: initialEvents:", initialEvents, "events:", events);
+    const err = new Error();
+    console.log("RENDER TRACE:", err.stack?.split("\n").slice(1, 4).join("\n"));
+    return res;
   }, [events, filter, search]);
 
   const visibleEvents = showAll ? filtered : filtered.slice(0, 9);

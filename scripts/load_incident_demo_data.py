@@ -210,7 +210,7 @@ def main():
     print("Loading Incident Responder Demo Data")
     print("=" * 60)
     print(f"Cluster: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud")
-    print(f"Cluster ID: 9a423301-d502-42f4-a5e5-1e7664e4e025")
+    print(f"Cluster ID: <your-cluster-id>")
     print()
 
     mem = BastionMemory("incident-responder-demo", connection_string=os.environ.get("BASTION_CONN"), mock=False)

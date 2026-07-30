@@ -220,7 +220,7 @@ class KnowledgeGraph:
 
                 anchor_filter = ""
                 recursive_filter = ""
-                sql_params = []
+                sql_params: list[Any] = []
 
                 sql_params.append(start_id)
                 sql_params.append(self.agent_id)

@@ -200,7 +200,7 @@ class SpendManager:
             return {cat: {"used": 0, "limit": lim, "remaining": lim} for cat, lim in _DEFAULT_LIMITS.items()}
 
         record = self._load_or_create_budget(agent_id)
-        usage = {}
+        usage: dict[str, Any] = {}
         for cat in _SPEND_CATEGORIES:
             current_key = f"daily_{cat}s"
             limit_key = f"hard_limit_{cat}s"
@@ -325,7 +325,7 @@ class SpendManager:
                 return record
         except Exception as exc:
             logger.error("Failed to load budget", extra={"agent_id": agent_id, "error": str(exc)})
-            result = {f"daily_{cat}s": 0 for cat in _SPEND_CATEGORIES}
+            result: dict[str, Any] = {f"daily_{cat}s": 0 for cat in _SPEND_CATEGORIES}
             result.update({f"hard_limit_{cat}s": _DEFAULT_LIMITS[cat] for cat in _SPEND_CATEGORIES})
             result.update({"is_suspended": False, "suspension_reason": None})
             return result
