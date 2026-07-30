@@ -70,7 +70,6 @@ test_advanced.ts
 test_full.py
 test_full_e2e.ts
 test_remaining.ts
-.agents/
 .claude/
 .vscode/
 # Dev/test scripts — not needed for production deployment
@@ -81,3 +80,5 @@ multiagent.md
 lambda/test_*
 lambda/check_*
 lambda/list_*
+
+# Render config — secrets should use sync: false (set in dashboard)
