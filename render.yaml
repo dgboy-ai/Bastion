@@ -17,6 +17,8 @@ services:
         value: "200"
       - key: BASTION_MCP_TIMEOUT
         value: "60"
+      - key: PORT
+        value: "9997"
       - key: CORS_ALLOW_ORIGINS
         value: "https://bastion-self.vercel.app,http://localhost:3000"
       - key: AWS_ACCESS_KEY_ID
