@@ -6,14 +6,7 @@
       "command": ["python", "run_mcp.py"],
       "enabled": true,
       "environment": {
-        "BASTION_CONN": "postgresql://among:CRDB_PASSWORD_REMOVED@bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=require",
-        "BASTION_API_KEY": "BASTION_API_KEY_REMOVED",
-        "BASTION_MCP_API_KEY": "BASTION_MCP_API_KEY_REMOVED",
-        "BASTION_A2A_PRIVATE_KEY": "A2A_PRIVATE_KEY_REMOVED=",
-        "CORS_ALLOW_ORIGINS": "http://localhost:3000",
-        "BASTION_MOCK": "false",
-        "BASTION_CRDB_REGION": "aws-ap-south-1",
-        "BASTION_GUARD_BLOCK_SEVERITY": "high"
+        "CORS_ALLOW_ORIGINS": "http://localhost:3000"
       }
     }
   }

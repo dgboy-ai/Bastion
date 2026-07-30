@@ -27,9 +27,9 @@ def check_security():
 
     # 2. Check for hardcoded credentials
     credential_patterns = [
-        "AWS_ACCESS_KEY_REMOVED",
-        "divyansh:7_GfcNnRnL6UaflljIzOIw",
-        "AWS_SECRET_KEY_REMOVED",
+        "AKIA____________________",
+        "divyansh:__________________",
+        "__________________________________",
     ]
     for pattern in credential_patterns:
         # Check .env files

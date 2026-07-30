@@ -10,7 +10,7 @@ Uses all 4 required CockroachDB tools in an agentic memory workflow:
 import json, os, sys, time, uuid, httpx, subprocess, shlex, datetime
 
 MCP_URL = "http://localhost:8005/mcp"
-API_KEY = os.environ.get("BASTION_API_KEY", "BASTION_API_KEY_REMOVED")
+API_KEY = os.environ.get("BASTION_API_KEY", "")
 C_G, C_R, C_C, C_M, C_B, C_N = "\033[92m", "\033[91m", "\033[96m", "\033[95m", "\033[1m", "\033[0m"
 
 PASS = 0; FAIL = 0; T0 = time.time()

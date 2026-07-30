@@ -2,8 +2,9 @@
 
 import os
 
-os.environ["AWS_ACCESS_KEY_ID"] = "AWS_ACCESS_KEY_REMOVED"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "AWS_SECRET_KEY_REMOVED"
+# Set via environment variables, not hardcoded
+# os.environ["AWS_ACCESS_KEY_ID"] = "AKIA..."
+# os.environ["AWS_SECRET_ACCESS_KEY"] = "..."
 os.environ["AWS_REGION"] = "ap-south-1"
 
 import boto3

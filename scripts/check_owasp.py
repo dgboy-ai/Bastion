@@ -1,8 +1,9 @@
 """Check OWASP data in database."""
 
+import os
 import psycopg
 
-CONN = "postgresql://among:CRDB_PASSWORD_REMOVED@bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=require"
+CONN = os.environ.get("BASTION_CONN", "")
 
 
 def main():

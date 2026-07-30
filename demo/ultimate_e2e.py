@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 MCP_URL = "http://localhost:8005/mcp"
 A2A_URL = "http://localhost:9998/"
-API_KEY = os.environ.get("BASTION_API_KEY", "BASTION_API_KEY_REMOVED")
+API_KEY = os.environ.get("BASTION_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 MOCK = not bool(GROQ_API_KEY)
 

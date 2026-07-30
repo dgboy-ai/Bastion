@@ -8,7 +8,7 @@ import json, os, uuid, httpx
 
 A2A_URL = "http://localhost:9998/"
 MCP_URL = "http://localhost:8005/mcp"
-API_KEY = os.environ.get("BASTION_API_KEY", "BASTION_API_KEY_REMOVED")
+API_KEY = os.environ.get("BASTION_API_KEY", "")
 
 C = {"g":"\033[92m","y":"\033[93m","r":"\033[91m","c":"\033[96m","m":"\033[95m","b":"\033[1m","n":"\033[0m"}
 PASS = 0; FAIL = 0

@@ -17,10 +17,7 @@ from bastion.dreaming import MemoryDreamer
 from bastion.ltm_gateway import LTMMemoryGateway
 from bastion.observations import ObservationDetector
 
-CONN = os.environ.get(
-    "BASTION_CONN",
-    "postgresql://divyansh:CHANGE_ME_ROTATE_CREDENTIALS@bastion-memory-28736.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full",
-)
+CONN = os.environ.get("BASTION_CONN", "")
 
 
 def _get_mem():

@@ -34,7 +34,7 @@ BASTION_A2A_URL = os.environ.get(
 )
 BASTION_API_KEY = os.environ.get(
     "BASTION_API_KEY",
-    "BASTION_API_KEY_REMOVED",
+    "",
 )
 
 # Agent B identity

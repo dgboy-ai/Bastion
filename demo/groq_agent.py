@@ -10,7 +10,7 @@ import httpx
 from typing import Any
 
 MCP_URL = "http://localhost:8005/mcp"
-GROQ_API_KEY = "GROQ_API_KEY_REMOVED"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = "qwen/qwen3.6-27b"
 AGENT_ID = f"groq-agent-{uuid.uuid4().hex[:6]}"
 

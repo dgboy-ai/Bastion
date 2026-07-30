@@ -11,7 +11,7 @@ http_headers = { "mcp-cluster-id" = "9a423301-d502-42f4-a5e5-1e7664e4e025" }
 # Bastion Memory MCP Server (31 tools) - runs locally on port 8000
 [mcp_servers.bastion-memory]
 url = "http://127.0.0.1:8000/mcp"
-http_headers = { "Authorization" = "Bearer BASTION_API_KEY_REMOVED" }
+# bearer_token_env_var = "BASTION_API_KEY"
 enabled = true
 startup_timeout_sec = 15
 tool_timeout_sec = 60
