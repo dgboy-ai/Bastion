@@ -3,16 +3,22 @@ import psycopg
 from dotenv import load_dotenv
 
 load_dotenv(".env.local")
-conn_str = os.environ.get("BASTION_CONN")
+conn_str = os.environ.get("BASTION_CONN", "")
+if not conn_str:
+    print("Error: BASTION_CONN environment variable not set")
+    import sys
+    sys.exit(1)
 print(f"Connecting to: {conn_str[:50]}...")
 
 try:
     with psycopg.connect(conn_str) as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM agent_entities")
-            entities = cur.fetchone()[0]
+            row_entities = cur.fetchone()
+            entities = row_entities[0] if row_entities else 0
             cur.execute("SELECT COUNT(*) FROM agent_relations")
-            relations = cur.fetchone()[0]
+            row_relations = cur.fetchone()
+            relations = row_relations[0] if row_relations else 0
             print(f"Entities: {entities}, Relations: {relations}")
             
             if entities > 0:

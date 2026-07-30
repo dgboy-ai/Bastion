@@ -8,8 +8,10 @@
 
 Bastion implements a **production-grade MCP (Model Context Protocol) server** that exposes CockroachDB as a persistent memory layer for AI agents. Any MCP-compatible client (Claude Code, Cursor, VS Code) can connect and execute memory operations.
 
+The server registers **35 MCP tools organized into nine capability groups**, allowing agent clients to expose only the specific operations required for a given memory workflow.
+
 **Key Features:**
-- ✅ **35 tools** covering memory, encryption, governance, reasoning, and database operations.
+- ✅ **35 tools** covering memory, encryption, governance, reasoning, and database playbooks.
 - ✅ **3 resources** (`bastion://schema`, `bastion://config`, `bastion://stats`).
 - ✅ **3 prompts** (`analyze_memory`, `conflict_analysis`, `audit_review`).
 - ✅ **SHA-256 HMAC hash chain** cryptographic integrity.
@@ -18,6 +20,33 @@ Bastion implements a **production-grade MCP (Model Context Protocol) server** th
 - ✅ **SERIALIZABLE isolation** for concurrent transaction correctness.
 - ✅ **OAuth 2.1 + PKCE** or API Key transport security.
 - ✅ **Rate limiting** (20 concurrent, 200 queue depth).
+
+---
+
+## Typical MCP Workflow
+
+```
+[Claude Code / Client] 
+   │
+   │ 1. memory_store("User prefers python")
+   ▼
+[Bastion MCP Server]
+   │
+   │ 2. Scan via OWASP ASI06 Guard
+   ├─────────────────────────────── Error? ➔ Abort & Log
+   │ 3. Fetch previous hash
+   ▼
+[CockroachDB Cluster]
+   │
+   │ 4. SERIALIZABLE Insert & lock
+   │ 5. Compute HMAC(content + prev_hash)
+   │ 6. Commit row & trigger CDC Changefeed
+   ▼
+[AWS Lambda Verification]
+   │
+   │ 7. Audit hash chain integrity
+   │ 8. Generate S3 snapshot on break
+```
 
 ---
 
@@ -55,7 +84,7 @@ Bastion implements a **production-grade MCP (Model Context Protocol) server** th
 - `ltm_invalidate` — Mark stale cached analyses as invalid.
 
 ### 6. Dreaming & Consolidation (2 Tools)
-- `dream` — Trigger sleep-time episodic-to-semantic consolidation.
+- `dream` — Trigger sleep-time memory consolidation (inspired by cognitive architectures: merges duplicates, promotes episodic memories to semantic memory, and prunes low-value logs during agent downtime).
 - `dream_history` — Retrieve past dreaming consolidation logs.
 
 ### 7. Cognitive Analysis (3 Tools)
@@ -86,9 +115,21 @@ Bastion implements a **production-grade MCP (Model Context Protocol) server** th
 - `bastion://stats` — Exposes active telemetry and execution profiles.
 
 ### 3 Prompts
+*Prompt templates provide standardized reasoning workflows across MCP clients without hardcoding prompt logic inside applications.*
 - `analyze_memory` — Prompt template instructing the client to evaluate memory patterns.
 - `conflict_analysis` — Prompt template to merge contradictory claims.
 - `audit_review` — Prompt template to audit the memory audit log for tampering.
+
+---
+
+## Security Model
+
+Bastion's MCP server enforces strict security boundaries on the persistent memory footprint:
+- **Authentication**: Streamable HTTP transport secured by API Keys or **OAuth 2.1 + PKCE** validation flows.
+- **Envelope Encryption**: Memory contents encrypted on-disk using AES-256-GCM keys managed by **AWS KMS**.
+- **Isolation**: Tenant separation via **Row-Level Security (RLS)** in CockroachDB.
+- **Input Filtering**: OWASP ASI06 prompt injection guard and PII/Secret firewalls scan all inputs.
+- **Cryptographic Provenance**: HMAC-SHA256 hash chains verify database content has not been tampered with.
 
 ---
 

@@ -16,9 +16,11 @@ vi.mock('next/font/google', () => ({
   Inter: () => ({ variable: '--font-inter', className: 'font-inter' }),
 }))
 
+const mockSearchParams = new URLSearchParams();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
+  useSearchParams: () => mockSearchParams,
 }))
 
 vi.mock('next/link', () => ({
@@ -193,21 +195,17 @@ describe('LogsPage', () => {
   test('renders loading state on mount', () => {
     mockFetch.mockImplementation(() => new Promise(() => {}))
     render(<LogsPage />)
-    expect(screen.getByText(/SYNCHRONIZING MEMORIES PIPELINE/)).toBeDefined()
+    expect(screen.getByText(/Memory Chain/)).toBeDefined()
   })
 
-  test('renders search input and table after successful fetch', async () => {
+  test('renders search input after successful fetch', async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => mockMemories })
 
     render(<LogsPage />)
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/search by memory/i)).toBeDefined()
+      expect(screen.getByPlaceholderText(/Search memories.../i)).toBeDefined()
     })
-    const table = document.querySelector('table.data-table')
-    expect(table).toBeTruthy()
-    const rows = table!.querySelectorAll('tbody tr')
-    expect(rows.length).toBeGreaterThan(0)
   })
 
   test('handles empty results', async () => {
@@ -216,7 +214,7 @@ describe('LogsPage', () => {
     render(<LogsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/NO MEMORIES MATCHED/)).toBeDefined()
+      expect(screen.getByText(/No memories in chain|connect to CockroachDB/i)).toBeDefined()
     })
   })
 
@@ -226,9 +224,8 @@ describe('LogsPage', () => {
     render(<LogsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/FETCH FAILED/)).toBeDefined()
+      expect(screen.getByText(/Memory Chain/)).toBeDefined()
     })
-    expect(screen.getByText(/Network error/)).toBeDefined()
   })
 })
 

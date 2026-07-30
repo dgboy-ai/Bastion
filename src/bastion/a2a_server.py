@@ -1179,7 +1179,7 @@ def create_a2a_server(
             if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
             else (request.client.host if request.client else "unknown")
         )
-        if request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith(
+        if request.url.path not in ("/healthz", "/readyz") and not request.url.path.startswith(
             "/.well-known/"
         ):
             if _check_brute_force(client_ip):

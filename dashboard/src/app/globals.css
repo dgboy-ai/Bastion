@@ -19,6 +19,7 @@
   margin-bottom: 8px;
   background: linear-gradient(135deg, var(--ink), var(--accent-breeze));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .welcome-subtitle { font-size: 14px; color: var(--body); max-width: 600px; }

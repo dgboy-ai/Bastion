@@ -65,18 +65,19 @@ def configure_logging() -> None:
     level = _LOG_LEVELS.get(level_name, logging.INFO)
 
     if HAS_STRUCTLOG:
+        processors: list[Any] = [
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            _redact_secrets,
+            structlog.processors.JSONRenderer(),
+        ]
         structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.UnicodeDecoder(),
-                _redact_secrets,  # type: ignore[list-item]
-                structlog.processors.JSONRenderer(),
-            ],
+            processors=processors,
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,

@@ -34,11 +34,14 @@ resource "cockroachlabs_cockroachcloud_cluster" "bastion" {
   cloud_provider = "AWS"
   plan           = var.cockroach_plan
 
-  # Use STANDARD plan for C-SPANN vector index support
-  dedicated_config {
-    region_nodes = {
-      "${var.aws_region}" = {
-        node_count = 3
+  # Use dedicated config only for STANDARD/ADVANCED plans
+  dynamic "dedicated_config" {
+    for_each = var.cockroach_plan != "BASIC" ? [1] : []
+    content {
+      region_nodes = {
+        "${var.aws_region}" = {
+          node_count = 3
+        }
       }
     }
   }

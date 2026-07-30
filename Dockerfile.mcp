@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir -r requirements.lock 2>/dev/null || \
         "fastapi>=0.115" \
         "uvicorn>=0.32" \
         "mcp>=1.0" \
+        "a2a-sdk>=1.1.0" \
         "cryptography>=42.0" \
         "google-cloud-kms>=2.20" \
         "groq>=0.12" \

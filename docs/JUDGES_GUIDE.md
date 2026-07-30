@@ -16,6 +16,50 @@ Welcome, Hackathon Judges! This document provides a step-by-step technical guide
 
 ---
 
+## 🔒 Prevention vs. Detection vs. Prediction (The Autonomous Self-Defense Loop)
+
+Unlike basic memory stores that only act as passive repositories, Bastion implements a three-layered defensive loop that moves from passive observation to **autonomous self-defense**:
+
+```
+                  ┌──────────────────────────────┐
+                  │    1. PREVENTION (Inbound)   │
+                  │    Blocks injections & PII   │
+                  └──────────────┬───────────────┘
+                                 ▼
+                  ┌──────────────────────────────┐
+                  │     2. DETECTION (Storage)   │
+                  │    CDC monitors HMAC breaks  │
+                  └──────────────┬───────────────┘
+                                 ▼
+                  ┌──────────────────────────────┐
+                  │    3. PREDICTION (Proactive) │
+                  │   Forecasts decay & behavior │
+                  └──────────────┬───────────────┘
+                                 ▼
+                  ┌──────────────────────────────┐
+                  │      4. AUTONOMOUS DEFENSE   │
+                  │   Self-Heal MVCC & Isolation │
+                  └──────────────────────────────┘
+```
+
+### 1. Inbound Prevention (Pre-Commit)
+The **OWASP ASI06 Guard** checks memories *before* they are written to CockroachDB, actively blocking prompt injection strings, exposed secrets, and raw PII.
+
+### 2. Storage Detection (CDC Real-Time)
+The **Lambda CDC Handler** monitors changefeeds in real-time. By verifying the cryptographic **HMAC-SHA256 hash chain** of new memory commits, it detects any out-of-band database-level modifications.
+
+### 3. Proactive Prediction (Drift & Decay Modeling)
+- **Decay Projections**: Bastion predicts which critical instructions are "at risk" of decaying below the retention threshold based on age and recall stats.
+- **Behavioral Drift Forecasting**: Monitors divergence across 6 key dimensions (semantic topic shifts, execution ratios, conflict rates), forecasting when an agent is starting to drift from safe operating limits.
+
+### ⚡ How We Leverage This for God-Tier Autonomous Defense
+Instead of just logging alerts, Bastion leverages these insights to execute autonomous mitigations:
+- **Self-Healing Time-Travel (CDC Rollback)**: If the CDC handler detects a hash chain break (tampering), it automatically executes a self-healing routine. The system queries the operational DB `AS OF SYSTEM TIME` to retrieve the last verified Merkle root and restores database state without human intervention.
+- **Dynamic Policy Quarantine (Isolation)**: When the drift engine forecasts a `CRITICAL` drift score (indicating the agent is hijacked or stuck in an infinite instruction loop), the middleware automatically alters the agent's Row-Level Security (RLS) context or revokes its OAuth token. This immediately quarantines the agent into a read-only state until an administrator audits the forensics.
+- **Cognitive Dream Consolidation (Auto-Reinforce)**: When the decay engine predicts that key operational rules are at risk of decaying, the background **Memory Consolidator (Dreaming)** automatically reinforces them during downtime, ensuring vital agent context is never lost.
+
+---
+
 ## 1. Agentic Memory Design
 
 ### Does CockroachDB play a meaningful, production-grade role?
@@ -48,7 +92,7 @@ Welcome, Hackathon Judges! This document provides a step-by-step technical guide
 ### Does the agent use the tools correctly and safely?
 
 **Yes.** Safety is built-in:
-- **OWASP ASI06 prompt injection guard** (40+ pattern scanners).
+- **OWASP ASI06 prompt injection guard** (40+ scanners).
 - **PII detection & redaction** (SSNs, emails, phones, API keys).
 - **Row-Level Security (RLS)** with tenant separation.
 - **AES-256-GCM envelope encryption** via AWS KMS.

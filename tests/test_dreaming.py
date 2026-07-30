@@ -59,6 +59,9 @@ class FakeDreamMemoryEngine:
         self._deleted.append(memory_id)
         self._memories = [m for m in self._memories if m.memory_id != memory_id]
 
+    def delete_memory(self, memory_id: str):
+        return self._delete_by_id(memory_id)
+
     def store(self, memory_type: str, content: str, metadata: dict | None = None, **kwargs):
         mem = _make_memory(
             content=content,
