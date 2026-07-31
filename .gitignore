@@ -82,3 +82,4 @@ lambda/check_*
 lambda/list_*
 
 # Render config — secrets should use sync: false (set in dashboard)
+AGENTS.md
