@@ -823,10 +823,10 @@ def create_server(
         title="Store Encrypted Agent Memory",
         description=(
             "Store a memory encrypted with AWS KMS AES-256-GCM envelope encryption. "
-            "Content is encrypted before storage using the BastionEncryption KMS key. "
+            "Content is encrypted before storage using the configured BastionEncryption KMS key. "
             "Embedding is computed on plaintext before encryption, so vector similarity "
             "search still works. Decryption happens transparently on retrieval. "
-            "Uses ARN: arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3"
+            "The KMS key is configured via the BASTION_AWS_KMS_KEY_ARN environment variable."
         ),
         annotations=ToolAnnotations(
             title="Store Encrypted Agent Memory",
