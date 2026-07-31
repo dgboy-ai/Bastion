@@ -106,7 +106,7 @@ def run():
     head("4. AWS KMS ENCRYPTED MEMORY")
     try:
         r = mcp.call("memory_store_encrypted", {
-            "content":"SECRET: AWS KMS key ARN is arn:aws:kms:ap-south-1:600929977979:key/cd7692b4-b38e-47ee-abae-eed566c0b6d3",
+            "content":"AWS KMS encrypted memory for compliance audit trail",
             "memory_type":"security","metadata":{"classification":"secret"}
         })
         assert "memory_id" in r

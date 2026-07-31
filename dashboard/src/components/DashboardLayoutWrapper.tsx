@@ -164,9 +164,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             position: "sticky", 
             top: 0, 
             zIndex: 40,
-            background: pathname === "/playground" ? "transparent" : "rgba(10, 6, 14, 0.85)",
-            backdropFilter: pathname === "/playground" ? "none" : "blur(20px)",
-            borderBottom: pathname === "/playground" ? "none" : "1px solid rgba(255, 94, 0, 0.12)",
+            background: pathname === "/playground" ? "transparent" : "var(--canvas-sidebar)",
+            backdropFilter: "none",
+            borderBottom: pathname === "/playground" ? "none" : "3px solid #000000",
             display: "flex",
             justifyContent: "flex-end",
             padding: pathname === "/playground" ? "20px 32px 0 32px" : "14px 32px"
@@ -179,40 +179,31 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   alignItems: "center", 
                   gap: "10px", 
                   fontSize: "12.5px", 
-                  fontWeight: 700,
+                  fontWeight: 800,
                   padding: "8px 20px", 
-                  background: isMock ? "rgba(255, 94, 0, 0.08)" : "rgba(0, 255, 136, 0.08)",
-                  border: isMock ? "1px solid rgba(255, 94, 0, 0.35)" : "1px solid rgba(0, 255, 136, 0.35)", 
-                  borderRadius: "9999px",
+                  background: isMock ? "var(--accent-breeze)" : "var(--accent-emerald)",
+                  border: "2.5px solid #000000", 
+                  borderRadius: "var(--radius-sm)",
                   cursor: "pointer",
-                  color: isMock ? "#ff9100" : "#00ff88",
+                  color: "#000000",
                   fontFamily: "'Space Grotesk', sans-serif",
-                  boxShadow: isMock ? "0 0 20px rgba(255, 94, 0, 0.2)" : "0 0 20px rgba(0, 255, 136, 0.2)",
-                  transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+                  boxShadow: "2px 2px 0px 0px #000000",
+                  transition: "all 0.1s ease"
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.transform = "translateY(-2px) scale(1.02)";
-                  e.currentTarget.style.boxShadow = isMock 
-                    ? "0 0 35px rgba(255, 94, 0, 0.45)" 
-                    : "0 0 35px rgba(0, 255, 136, 0.45)";
-                  e.currentTarget.style.borderColor = isMock ? "#ff5e00" : "#00ff88";
+                  e.currentTarget.style.transform = "translate(-1px, -1px)";
+                  e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000";
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = "none";
-                  e.currentTarget.style.boxShadow = isMock 
-                    ? "0 0 20px rgba(255, 94, 0, 0.2)" 
-                    : "0 0 20px rgba(0, 255, 136, 0.2)";
-                  e.currentTarget.style.borderColor = isMock 
-                    ? "rgba(255, 94, 0, 0.35)" 
-                    : "rgba(0, 255, 136, 0.35)";
+                  e.currentTarget.style.boxShadow = "2px 2px 0px 0px #000000";
                 }}
               >
                 <span style={{ 
                   width: "7px", 
                   height: "7px", 
-                  background: isMock ? "#ff5e00" : "#00ff88", 
+                  background: isMock ? "#000000" : "#000000", 
                   borderRadius: "50%", 
-                  boxShadow: isMock ? "0 0 10px #ff5e00" : "0 0 10px #00ff88",
                   animation: "pulse 1.5s infinite"
                 }} />
                 <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -233,12 +224,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 </span>
                 {isMock && (
                   <span style={{
-                    background: "linear-gradient(135deg, #ff5e00, #ff8800)",
+                    background: "#000000",
                     color: "#ffffff",
                     fontSize: "9px",
-                    fontWeight: 800,
+                    fontWeight: 900,
                     padding: "3px 8px",
-                    borderRadius: "4px",
+                    borderRadius: "2px",
                     letterSpacing: "1px",
                     marginLeft: "6px"
                   }}>
@@ -261,11 +252,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 bottom: "24px",
                 right: "24px",
                 width: "360px",
-                background: "rgba(27, 10, 20, 0.95)",
-                border: "1px solid #ff5e00",
-                borderRadius: "12px",
+                background: "#ffffff",
+                border: "3px solid #000000",
+                borderRadius: "var(--radius-lg)",
                 padding: "24px",
-                boxShadow: "0 20px 50px rgba(0,0,0,0.6), 0 0 25px rgba(255,94,0,0.15)",
+                boxShadow: "var(--shadow-lg)",
                 zIndex: 1000,
                 backdropFilter: "blur(12px)",
                 animation: "slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)"
@@ -306,14 +297,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   <button 
                     onClick={handleNextTourStep}
                     style={{
-                      background: "linear-gradient(135deg, #ff5e00, #ff8c00)",
-                      border: "none",
+                      background: "#000000",
+                      border: "2px solid #000000",
                       color: "#fff",
                       fontSize: "12px",
                       fontWeight: 700,
                       padding: "8px 16px",
-                      borderRadius: "4px",
-                      cursor: "pointer"
+                      borderRadius: "2px",
+                      cursor: "pointer",
+                      boxShadow: "1px 1px 0px 0px #000000"
                     }}
                   >
                     {tourStep === 4 ? "Complete Tour" : "Next View →"}
@@ -331,8 +323,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         <div style={{
           position: "fixed",
           inset: 0,
-          background: "rgba(0, 0, 0, 0.8)",
-          backdropFilter: "blur(8px)",
+          background: "rgba(0, 0, 0, 0.6)",
+          backdropFilter: "blur(6px)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -340,27 +332,27 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           animation: "fadeIn 0.2s ease-out"
         }}>
           <div style={{
-            background: "rgba(20, 10, 15, 0.95)",
-            border: "1px solid #ff5e00",
-            borderRadius: "16px",
+            background: "#ffffff",
+            border: "3.5px solid #000000",
+            borderRadius: "var(--radius-sm)",
             padding: "36px",
             maxWidth: "550px",
             width: "90%",
-            boxShadow: "0 25px 60px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 94, 0, 0.15)",
+            boxShadow: "6px 6px 0px 0px #000000",
             animation: "slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ fontSize: "20px", fontWeight: 800, color: "#fff", margin: 0, fontFamily: "'Space Grotesk', sans-serif" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#000000", margin: 0, fontFamily: "'Space Grotesk', sans-serif", textTransform: "uppercase", letterSpacing: "1px" }}>
                   Connect CockroachDB Cluster
                 </h2>
-                <p style={{ fontSize: "13px", color: "#7a6265", margin: "4px 0 0 0" }}>
+                <p style={{ fontSize: "13px", color: "#374151", fontWeight: 700, margin: "6px 0 0 0" }}>
                   Configure your private database instance to verify live memory commits.
                 </p>
               </div>
               <button 
                 onClick={() => { setIsModalOpen(false); setConnError(""); }}
-                style={{ background: "none", border: "none", color: "#7a6265", fontSize: "20px", cursor: "pointer" }}
+                style={{ background: "none", border: "none", color: "#000000", fontSize: "24px", fontWeight: 900, cursor: "pointer" }}
               >
                 &times;
               </button>
@@ -368,7 +360,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
             <form onSubmit={handleSaveConnection} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "11px", color: "#b0a899", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" }}>
+                <label style={{ fontSize: "11px", color: "#000000", fontFamily: "var(--font-sans)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>
                   Connection String (URI)
                 </label>
                 <input 
@@ -377,18 +369,19 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   onChange={(e) => setDbConnInput(e.target.value)}
                   placeholder="postgresql://username:password@host:26257/defaultdb?sslmode=verify-full"
                   style={{
-                    background: "rgba(255, 255, 255, 0.02)",
-                    border: "1px solid rgba(255, 60, 0, 0.15)",
-                    borderRadius: "6px",
+                    background: "#ffffff",
+                    border: "2.5px solid #000000",
+                    borderRadius: "var(--radius-sm)",
                     padding: "12px 14px",
-                    color: "#fff",
+                    color: "#000000",
                     fontSize: "13px",
                     fontFamily: "'JetBrains Mono', monospace",
                     width: "100%",
-                    outline: "none"
+                    outline: "none",
+                    boxShadow: "inset 1px 1px 0px rgba(0,0,0,0.1)"
                   }}
                 />
-                <span style={{ fontSize: "11px", color: "#7a6265", lineHeight: "1.4" }}>
+                <span style={{ fontSize: "11px", color: "#374151", fontWeight: 700, lineHeight: "1.4" }}>
                   Credentials are saved locally in your browser and never transit outside your Next.js application deployment context.
                 </span>
               </div>
@@ -396,10 +389,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
               {connError && (
                 <div style={{
                   padding: "12px",
-                  borderRadius: "6px",
-                  background: "rgba(255, 60, 0, 0.08)",
-                  border: "1px solid rgba(255, 60, 0, 0.25)",
-                  color: "#ff9100",
+                  borderRadius: "var(--radius-sm)",
+                  background: "#fef2f2",
+                  border: "2px solid #b91c1c",
+                  color: "#b91c1c",
+                  fontWeight: 800,
                   fontSize: "12.5px"
                 }}>
                   {connError}
@@ -412,34 +406,36 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     type="button"
                     onClick={handleClearConnection}
                     style={{
-                      background: "transparent",
-                      border: "1px solid rgba(255, 60, 0, 0.2)",
-                      color: "#ff5e00",
+                      background: "#ffffff",
+                      border: "2.5px solid #000000",
+                      color: "#000000",
                       fontSize: "13px",
-                      fontWeight: 600,
+                      fontWeight: 900,
                       padding: "10px 18px",
-                      borderRadius: "4px",
-                      cursor: "pointer"
+                      borderRadius: "var(--radius-sm)",
+                      cursor: "pointer",
+                      boxShadow: "2.5px 2.5px 0px #000000",
+                      fontFamily: "var(--font-sans)"
                     }}
                   >
                     Disconnect
                   </button>
                 )}
-                
                 <button 
                   type="submit"
                   disabled={testingConn}
                   style={{
-                    background: "linear-gradient(135deg, #ff5e00, #ff8c00)",
-                    border: "none",
-                    color: "#fff",
+                    background: "var(--accent-breeze)",
+                    border: "2.5px solid #000000",
+                    color: "#000000",
                     fontSize: "13px",
-                    fontWeight: 700,
+                    fontWeight: 900,
                     padding: "10px 24px",
-                    borderRadius: "4px",
+                    borderRadius: "var(--radius-sm)",
                     cursor: "pointer",
-                    boxShadow: "0 0 15px rgba(255, 94, 0, 0.2)",
-                    opacity: testingConn ? 0.6 : 1
+                    boxShadow: "2.5px 2.5px 0px #000000",
+                    opacity: testingConn ? 0.6 : 1,
+                    fontFamily: "var(--font-sans)"
                   }}
                 >
                   {testingConn ? "Verifying..." : "Connect Cluster"}

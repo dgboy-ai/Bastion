@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       'auth status',
     ];
 
-    const isAllowed = allowedCommands.some((cmd) => command.startsWith(cmd));
+    const isAllowed = allowedCommands.some((cmd) => command === cmd || command.startsWith(cmd + " "));
     if (!isAllowed) {
       return NextResponse.json(
         {

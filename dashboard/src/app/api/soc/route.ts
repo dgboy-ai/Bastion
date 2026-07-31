@@ -156,6 +156,12 @@ async function stepAnalyst(alert: {
     );
   } catch (err) {
     console.error("[SOC] Failed to store memory:", err);
+    return {
+      step: "analyst",
+      timestamp: new Date().toISOString(),
+      error: "Failed to store memory in CockroachDB",
+      details: err instanceof Error ? err.message : "Unknown error",
+    };
   }
 
   // A2A escalation

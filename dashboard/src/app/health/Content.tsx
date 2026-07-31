@@ -108,7 +108,7 @@ export default function HealthPage() {
       {/* Row 2: Insights — full width */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
         {[
-          { title: "Memory Growth", value: `+${health?.memories_last_7_days ?? 0} this week`, desc: health?.memories_last_7_days ?? 0 > 0 ? "Active memory ingestion detected" : "No new memories in 7 days", color: (health?.memories_last_7_days ?? 0) > 0 ? "#34d399" : "#ff5e00", icon: "📈" },
+          { title: "Memory Growth", value: `+${health?.memories_last_7_days ?? 0} this week`, desc: (health?.memories_last_7_days ?? 0) > 0 ? "Active memory ingestion detected" : "No new memories in 7 days", color: (health?.memories_last_7_days ?? 0) > 0 ? "#34d399" : "#ff5e00", icon: "📈" },
           { title: "Safety Pinned", value: `${health?.pinned_memories ?? 0} pinned`, desc: (health?.pinned_memories ?? 0) > 0 ? "Safety-critical memories protected" : "No pinned safety memories", color: (health?.pinned_memories ?? 0) > 0 ? "#ef4444" : "#c0b8cc", icon: "📌" },
           { title: "Memory Quality", value: `${(health?.avg_importance_score ?? 0).toFixed(1)}/10`, desc: (health?.avg_importance_score ?? 0) >= 5 ? "Well-maintained memory store" : "Consider reinforcing key memories", color: "#00e5ff", icon: "⭐" },
           { title: "Recall Rate", value: `${(health?.avg_access_count ?? 0).toFixed(1)}× avg`, desc: (health?.avg_access_count ?? 0) > 0 ? "Memories actively recalled by agents" : "No recall patterns yet", color: "#a78bfa", icon: "🔄" },

@@ -41,10 +41,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body style={{
-        color: "#ffffff",
-        fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
+        color: "var(--body)",
+        fontFamily: "var(--font-sans)",
         margin: 0, minHeight: "100vh", overflowY: "auto",
-        background: "#0a0508",
+        background: "var(--canvas-bg)",
       }}>
 
         <GlobalErrorHandler />

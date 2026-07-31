@@ -1,52 +1,52 @@
-/* ── Bastion Signature Amber-Orange & Obsidian Design Tokens ── */
+/* ── Neo-Brutalist High-Contrast Styling Tokens ── */
 :root {
   /* Fonts */
-  --font-sans: 'Inter', 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
   --font-sg: 'Space Grotesk', sans-serif;
 
-  /* Canvas — Deep Amber Obsidian */
-  --canvas-bg: #09070a;
-  --canvas-sidebar: #0f0b12;
-  --canvas-card: #16101a;
-  --canvas-elevated: #1e1624;
+  /* Canvas — Neo-Brutalist Light Warm Cream */
+  --canvas-bg: #f4f3ef;
+  --canvas-sidebar: #ffffff;
+  --canvas-card: #ffffff;
+  --canvas-elevated: #f9f9f7;
 
-  /* Accent Palette — Bastion Flame Orange & Cyber Emerald */
-  --accent-breeze: #ff5e00;
-  --accent-breeze-glow: rgba(255, 94, 0, 0.35);
-  --accent-emerald: #00ff88;
-  --accent-emerald-glow: rgba(0, 255, 136, 0.3);
-  --accent-sunset: #ff3300;
-  --accent-sunset-glow: rgba(255, 51, 0, 0.3);
-  --accent-magenta: #ff00aa;
-  --accent-dusk: #ff5e00;
-  --accent-gold: #ffaa00;
-  --accent-lava: #ff7700;
+  /* Accent Palette — Flat Primary Colors */
+  --accent-breeze: #facc15; /* Retro Yellow Gold */
+  --accent-breeze-glow: rgba(250, 204, 21, 0.2);
+  --accent-emerald: #10b981; /* High-Contrast Emerald */
+  --accent-emerald-glow: rgba(16, 185, 129, 0.2);
+  --accent-sunset: #ef4444; /* Retro Red Alert */
+  --accent-sunset-glow: rgba(239, 68, 68, 0.2);
+  --accent-magenta: #ec4899;
+  --accent-dusk: #e2e8f0;
+  --accent-gold: #facc15;
+  --accent-lava: #f97316;
 
   /* Text Colors */
-  --ink: #ffffff;
-  --body: #e5dbde;
-  --mute: #a09298;
-  --faint: #625258;
+  --ink: #000000;
+  --body: #1c1917;
+  --mute: #4b5563;
+  --faint: #e5e7eb;
 
-  /* Glassmorphism — Warm Amber Tint */
-  --glass-border: rgba(255, 94, 0, 0.16);
-  --glass-bg: rgba(18, 12, 20, 0.88);
-  --glass-highlight: rgba(255, 255, 255, 0.08);
+  /* Borders — Thick Black Ink */
+  --glass-border: #000000;
+  --glass-bg: #ffffff;
+  --glass-highlight: rgba(0, 0, 0, 0.05);
 
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* Radius — Sharp Corners */
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
 
-  /* Shadows & Glows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.8);
-  --shadow-glow-breeze: 0 0 20px rgba(255, 94, 0, 0.25);
-  --shadow-glow-emerald: 0 0 20px rgba(0, 255, 136, 0.25);
-  --shadow-glow-sunset: 0 0 20px rgba(255, 51, 0, 0.25);
+  /* Shadows — Sharp Offsets without blur */
+  --shadow-sm: 2px 2px 0px 0px #000000;
+  --shadow-md: 4px 4px 0px 0px #000000;
+  --shadow-lg: 6px 6px 0px 0px #000000;
+  --shadow-glow-breeze: 3px 3px 0px 0px #000000;
+  --shadow-glow-emerald: 3px 3px 0px 0px #000000;
+  --shadow-glow-sunset: 3px 3px 0px 0px #000000;
 
   /* Transitions */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

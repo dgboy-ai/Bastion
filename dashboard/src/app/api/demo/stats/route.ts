@@ -1,5 +1,5 @@
 import { safeQuery, isMockMode } from "@/lib/db";
-import { apiSuccess } from "@/lib/api-response";
+import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function GET() {
   if (isMockMode()) {
@@ -19,7 +19,7 @@ export async function GET() {
       auditLogs: parseInt(String(auditRes.rows[0]?.cnt ?? "0"), 10),
       regions: 1,
     }, "dynamic");
-  } catch {
-    return apiSuccess({ memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 1, error: true }, "dynamic");
+  } catch (err) {
+    return apiError("Database unavailable", 503);
   }
 }

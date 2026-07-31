@@ -22,7 +22,7 @@ const NavBar = memo(function NavBar() {
       href: "/playground",
       label: "Live Demo",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polygon points="5 3 19 12 5 21 5 3" />
         </svg>
       )
@@ -31,7 +31,7 @@ const NavBar = memo(function NavBar() {
       href: "/dashboard",
       label: "Dashboard",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="7" height="9" />
           <rect x="14" y="3" width="7" height="5" />
           <rect x="14" y="12" width="7" height="9" />
@@ -43,7 +43,7 @@ const NavBar = memo(function NavBar() {
       href: "/flight-recorder",
       label: "Audit Trail",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
         </svg>
       )
@@ -52,7 +52,7 @@ const NavBar = memo(function NavBar() {
       href: "/graph",
       label: "Knowledge Graph",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="18" cy="5" r="3" />
           <circle cx="6" cy="12" r="3" />
           <circle cx="18" cy="19" r="3" />
@@ -65,7 +65,7 @@ const NavBar = memo(function NavBar() {
       href: "/logs",
       label: "Memory Logs",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <ellipse cx="12" cy="5" rx="9" ry="3" />
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
@@ -76,7 +76,7 @@ const NavBar = memo(function NavBar() {
       href: "/health",
       label: "Health",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
         </svg>
       )
@@ -85,7 +85,7 @@ const NavBar = memo(function NavBar() {
       href: "/compliance",
       label: "Compliance",
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           <polyline points="9 11 11 13 15 9" />
         </svg>
@@ -95,11 +95,10 @@ const NavBar = memo(function NavBar() {
 
   return (
     <aside className="sidebar" style={{ 
-      background: "rgba(8, 4, 12, 0.96)", 
-      backdropFilter: "blur(20px)",
-      borderRight: "1px solid rgba(255, 94, 0, 0.12)",
-      boxShadow: "10px 0 35px rgba(0,0,0,0.6)",
-      transition: "all 0.3s ease"
+      background: "var(--canvas-sidebar)", 
+      borderRight: "3px solid #000000",
+      boxShadow: "none",
+      transition: "all 0.15s ease"
     }}>
       <div className="sidebar-top">
         {/* Brand Header */}
@@ -108,23 +107,22 @@ const NavBar = memo(function NavBar() {
             <div style={{
               width: "40px",
               height: "40px",
-              borderRadius: "12px",
-              background: "linear-gradient(135deg, rgba(255, 94, 0, 0.18) 0%, rgba(22, 12, 28, 0.8) 100%)",
-              border: "1.5px solid #ff5e00",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--accent-breeze)",
+              border: "2.5px solid #000000",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 0 25px rgba(255, 94, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.1)",
+              boxShadow: "2px 2px 0px #000000",
               flexShrink: 0,
-              animation: "pulse 2s infinite"
             }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff5e00" strokeWidth="2.5">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="2.5">
                 <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/>
               </svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 900, fontSize: "19px", letterSpacing: "2.5px", color: "#fff", fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1.2, textShadow: "0 0 15px rgba(255,94,0,0.2)" }}>BASTION</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "8.5px", color: "#ff9100", letterSpacing: "1.5px", marginTop: "2px", whiteSpace: "nowrap", fontWeight: 800 }}>MEMORY FACTORY</div>
+              <div style={{ fontWeight: 900, fontSize: "19px", letterSpacing: "2.5px", color: "#000000", fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1.2 }}>BASTION</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "8.5px", color: "#000000", letterSpacing: "1.5px", marginTop: "2px", whiteSpace: "nowrap", fontWeight: 900 }}>MEMORY FACTORY</div>
             </div>
           </div>
         </Link>
@@ -143,30 +141,30 @@ const NavBar = memo(function NavBar() {
                   alignItems: "center",
                   gap: "14px",
                   padding: "12px 16px",
-                  borderRadius: "8px",
+                  borderRadius: "var(--radius-sm)",
                   fontSize: "14px",
-                  fontWeight: isActive ? 700 : 500,
-                  color: isActive ? "#fff" : "#a0a0b0",
-                  background: isActive ? "linear-gradient(90deg, rgba(255, 94, 0, 0.12), rgba(255, 94, 0, 0.02))" : "transparent",
-                  borderLeft: isActive ? "3px solid #ff5e00" : "3px solid transparent",
-                  transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                  fontWeight: 800,
+                  color: isActive ? "#000000" : "var(--mute)",
+                  background: isActive ? "var(--accent-breeze)" : "transparent",
+                  border: isActive ? "2.5px solid #000000" : "2.5px solid transparent",
+                  boxShadow: isActive ? "3px 3px 0px #000000" : "none",
+                  transition: "all 0.1s ease",
                   textDecoration: "none",
-                  boxShadow: isActive ? "0 4px 12px rgba(255,94,0,0.05)" : "none"
                 }}
                 onMouseEnter={e => {
                   if (!isActive) {
-                    e.currentTarget.style.background = "rgba(255, 94, 0, 0.05)";
-                    e.currentTarget.style.color = "#fff";
-                    e.currentTarget.style.transform = "translateX(5px)";
-                    e.currentTarget.style.borderLeft = "3px solid rgba(255, 94, 0, 0.3)";
+                    e.currentTarget.style.background = "#f4f3ef";
+                    e.currentTarget.style.color = "#000000";
+                    e.currentTarget.style.border = "2.5px solid #000000";
+                    e.currentTarget.style.boxShadow = "2px 2px 0px #000000";
                   }
                 }}
                 onMouseLeave={e => {
                   if (!isActive) {
                     e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = "#a0a0b0";
-                    e.currentTarget.style.transform = "none";
-                    e.currentTarget.style.borderLeft = "3px solid transparent";
+                    e.currentTarget.style.color = "var(--mute)";
+                    e.currentTarget.style.border = "2.5px solid transparent";
+                    e.currentTarget.style.boxShadow = "none";
                   }
                 }}
               >
@@ -175,9 +173,8 @@ const NavBar = memo(function NavBar() {
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "16px", 
-                  color: isActive ? "#ff5e00" : "inherit",
-                  filter: isActive ? "drop-shadow(0 0 8px rgba(255, 94, 0, 0.6))" : "none",
-                  transition: "all 0.2s"
+                  color: "inherit",
+                  transition: "all 0.1s"
                 }}>{link.icon}</span>
                 <span style={{ flex: 1, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "0.2px" }}>{link.label}</span>
               </Link>
@@ -189,27 +186,27 @@ const NavBar = memo(function NavBar() {
       {/* Sidebar Footer */}
       <div className="sidebar-footer" style={{ 
         padding: "16px 20px", 
-        borderTop: "1px solid rgba(255, 94, 0, 0.12)",
-        background: "rgba(8, 4, 12, 0.7)",
-        backdropFilter: "blur(10px)"
+        borderTop: "3px solid #000000",
+        background: "var(--canvas-sidebar)",
       }}>
         <div className="profile-avatar" style={{ 
-          background: "linear-gradient(135deg, #ff5e00, #ff9100)",
-          boxShadow: "0 0 15px rgba(255, 94, 0, 0.35)",
-          fontWeight: 800,
-          color: "#fff"
+          background: "var(--accent-breeze)",
+          border: "2px solid #000000",
+          boxShadow: "1px 1px 0px #000000",
+          borderRadius: "4px",
+          fontWeight: 900,
+          color: "#000000"
         }}>BA</div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: "12.5px", fontWeight: 800, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Space Grotesk', sans-serif" }}>Bastion Agent</div>
+          <div style={{ fontSize: "12.5px", fontWeight: 900, color: "#000000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'Space Grotesk', sans-serif" }}>Bastion Agent</div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "2px" }}>
             <CockroachIcon size={11} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "9.5px", fontFamily: "'JetBrains Mono', monospace", color: "#a0a0b0" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "9.5px", fontFamily: "'JetBrains Mono', monospace", color: "var(--mute)" }}>
               <span style={{
                 width: "6px", height: "6px", borderRadius: "50%",
-                background: isMock ? "#71717a" : "#00ff88",
-                boxShadow: isMock ? "none" : "0 0 8px #00ff88",
+                background: isMock ? "#71717a" : "#047857",
+                border: "1.5px solid #000000",
                 display: "inline-block",
-                animation: isMock ? "none" : "pulse 1.5s infinite"
               }} />
               {isMock ? "Mock" : "Live"} &middot; {dbName}
             </span>

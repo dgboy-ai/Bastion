@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     const countParams = search ? [`%${search}%`] : [];
 
     dataParams.push(limit, offset);
-    const dataSql = `SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, created_at, expires_at, access_count FROM agent_memory${whereClause} ORDER BY created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`;
+    const dataSql = `SELECT memory_id, agent_id, memory_type, content, metadata, previous_hash, cryptographic_hash, importance_score, trust_level, created_at, expires_at, access_count FROM agent_memory${whereClause} ORDER BY created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`;
 
     const [countRes, dataRes] = await Promise.all([
       safeQuery(countSql, countParams),
@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       previousHash: row.previous_hash as string,
       cryptographicHash: row.cryptographic_hash as string,
       importanceScore: (row.importance_score as number) ?? 5.0,
+      trustLevel: (row.trust_level as number) ?? null,
       createdAt: row.created_at as string,
       expiresAt: row.expires_at as string,
       accessCount: (row.access_count as number) ?? 0,

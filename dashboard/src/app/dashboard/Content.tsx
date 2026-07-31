@@ -7,22 +7,21 @@ import { useConnection } from "@/components/DashboardLayoutWrapper";
 import dynamic from "next/dynamic";
 
 const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false });
-const DriftChart = dynamic(() => import("@/components/DriftChart"), { ssr: false });
 
 /* ── Design Tokens ─────────────────────────────────────────── */
 const C = {
-  canvas: "#06030a",
-  glass: "rgba(14, 8, 18, 0.72)",
-  glassBright: "rgba(22, 12, 28, 0.88)",
-  border: "rgba(255, 94, 0, 0.14)",
-  borderHot: "rgba(255, 94, 0, 0.45)",
-  ink: "#ffffff",
-  body: "#d4cce0",
-  mute: "#a8a0b4",
-  cyan: "#00e5ff",
-  green: "#34d399",
-  orange: "#ff5e00",
-  red: "#ef4444",
+  canvas: "var(--canvas-bg)",
+  glass: "var(--glass-bg)",
+  glassBright: "var(--canvas-elevated)",
+  border: "var(--glass-border)",
+  borderHot: "var(--glass-border)",
+  ink: "#000000",
+  body: "#000000",
+  mute: "#374151",
+  cyan: "#000000",
+  green: "#047857",
+  orange: "#b45309",
+  red: "#b91c1c",
 };
 
 /* ── Interfaces ────────────────────────────────────────────── */
@@ -38,27 +37,32 @@ interface Stats {
   topRecalls: Array<{ rank: number; text: string; count: number }>;
   cacheHitPct: string;
   recentAudits: Array<{ id: string; action: string; recordedAt: string; details: Record<string, unknown> }>;
+  agents?: Array<{ agent_id: string; memory_count: number }>;
 }
 
 /* ── Tiny reusable atoms ───────────────────────────────────── */
 function Dot({ color, pulse = false }: { color: string; pulse?: boolean }) {
   return (
     <span style={{
-      display: "inline-block", width: "7px", height: "7px", borderRadius: "50%",
-      background: color, boxShadow: `0 0 8px ${color}`,
+      display: "inline-block", width: "10px", height: "10px", borderRadius: "50%",
+      background: color, border: "2px solid #000000",
       animation: pulse ? "bastionPulse 1.6s ease-in-out infinite" : "none",
       flexShrink: 0,
     }} />
   );
 }
 
-function Tag({ children, color = C.cyan }: { children: React.ReactNode; color?: string }) {
+function Tag({ children, color = "#ffffff" }: { children: React.ReactNode; color?: string }) {
+  const isYellow = color === "var(--accent-breeze)" || color === "#eab308" || color === "#facc15";
   return (
     <span style={{
-      display: "inline-flex", alignItems: "center", padding: "3px 9px",
-      borderRadius: "999px", fontSize: "12px", fontWeight: 700,
-      fontFamily: "var(--font-mono)", letterSpacing: "0.5px",
-      background: `${color}18`, color, border: `1px solid ${color}28`,
+      display: "inline-flex", alignItems: "center", padding: "4px 10px",
+      borderRadius: "var(--radius-sm)", fontSize: "12px", fontWeight: 800,
+      fontFamily: "var(--font-sans)", letterSpacing: "0.5px",
+      background: isYellow ? "var(--accent-breeze)" : "#ffffff",
+      color: "#000000",
+      border: "2px solid #000000",
+      boxShadow: "1.5px 1.5px 0px #000000",
     }}>
       {children}
     </span>
@@ -69,12 +73,12 @@ function Tag({ children, color = C.cyan }: { children: React.ReactNode; color?: 
 function TrendArrow({ value, label }: { value: number; label?: string }) {
   const isUp = value > 0;
   const isDown = value < 0;
-  const color = isUp ? C.green : isDown ? C.red : C.mute;
+  const color = isUp ? "#047857" : isDown ? "#b91c1c" : "#374151";
   const arrow = isUp ? "↑" : isDown ? "↓" : "→";
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: "3px",
-      fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)", color
+      fontSize: "12px", fontWeight: 800, fontFamily: "var(--font-sans)", color
     }}>
       {arrow} {Math.abs(value)}%{label ? ` ${label}` : ""}
     </span>
@@ -88,7 +92,7 @@ function ExecutiveSummary({
   memories: number; threats: number; trustScore: number; driftScore: number; isHealthy: boolean
 }) {
   const statusColor = isHealthy ? C.green : threats > 0 ? C.red : C.orange;
-  const statusText = isHealthy ? "SYSTEM HEALTHY" : threats > 0 ? "THREATS DETECTED" : "CHECKING...";
+  const statusText = isHealthy ? "SYSTEM HEALTHY" : threats > 0 ? "DEFENSE ACTIVE" : "CHECKING...";
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", width: "100%" }}>
       {/* Status Card */}
@@ -112,17 +116,17 @@ function ExecutiveSummary({
 
       {/* Threats Card */}
       <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>ACTIVE THREATS</div>
-        <div style={{ fontSize: "24px", fontWeight: 950, color: threats > 0 ? C.red : C.green, fontFamily: "'Space Grotesk', sans-serif" }}>
+        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>THREATS BLOCKED</div>
+        <div style={{ fontSize: "24px", fontWeight: 950, color: C.green, fontFamily: "'Space Grotesk', sans-serif" }}>
           {threats}
         </div>
       </div>
 
       {/* Trust Score Card */}
       <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>TRUST SCORE</div>
-        <div style={{ fontSize: "24px", fontWeight: 950, color: C.orange, fontFamily: "'Space Grotesk', sans-serif" }}>
-          {trustScore}%
+        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>AVG IMPORTANCE</div>
+        <div style={{ fontSize: "24px", fontWeight: 950, color: C.cyan, fontFamily: "'Space Grotesk', sans-serif" }}>
+          {trustScore}
         </div>
       </div>
     </div>
@@ -202,34 +206,37 @@ function LiveFeed({ entries }: { entries: FeedEntry[] }) {
   }, [entries]);
 
   return (
-    <div ref={ref} style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+    <div ref={ref} style={{ overflowY: "auto", display: "flex", flexDirection: "column" }}>
       {entries.slice(0, 12).map((entry, i) => {
         const isSelect = entry.text.includes("SELECT");
-        const isOk = entry.isReal && (isSelect || entry.text.includes("OK"));
-        const borderColor = entry.isReal
-          ? (isSelect ? `${C.cyan}60` : `${C.green}50`)
-          : "rgba(255,255,255,0.06)";
-        const textColor = entry.isReal
-          ? (isSelect ? C.cyan : C.green)
-          : "#7a7086";
         return (
           <div key={i} style={{
-            display: "flex", alignItems: "flex-start", gap: "8px",
-            padding: "8px 10px",
-            background: i === 0 ? "rgba(255, 94, 0, 0.07)" : i % 2 === 0 ? "rgba(255,255,255,0.012)" : "transparent",
-            border: `1px solid ${i === 0 ? "rgba(255,94,0,0.18)" : "rgba(255,255,255,0.03)"}`,
-            borderRadius: "8px",
-            transition: "background 0.4s",
-          }}>
+            display: "flex", alignItems: "center", gap: "12px",
+            padding: "10px 14px",
+            background: i === 0 ? "var(--accent-breeze)" : "transparent",
+            borderBottom: "2px solid #000000",
+            transition: "all 0.15s ease",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--accent-breeze)";
+            e.currentTarget.style.transform = "translateX(4px)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = i === 0 ? "var(--accent-breeze)" : "transparent";
+            e.currentTarget.style.transform = "translateX(0)";
+          }}
+          >
             {/* type badge */}
-            <div style={{ flexShrink: 0, marginTop: "1px" }}>
+            <div style={{ flexShrink: 0 }}>
               <span style={{
-                display: "inline-block", fontSize: "11px", fontWeight: 800,
-                fontFamily: "var(--font-mono)", letterSpacing: "0.8px",
-                padding: "2px 5px", borderRadius: "4px",
-                background: entry.isReal ? (isSelect ? `${C.cyan}18` : `${C.green}15`) : "rgba(255,255,255,0.04)",
-                color: entry.isReal ? (isSelect ? C.cyan : C.green) : C.mute,
-                border: `1px solid ${borderColor}`,
+                display: "inline-block", fontSize: "11px", fontWeight: 900,
+                fontFamily: "var(--font-sans)", letterSpacing: "0.8px",
+                padding: "2px 6px", borderRadius: "2px",
+                background: "#ffffff",
+                color: "#000000",
+                border: "2px solid #000000",
+                boxShadow: "1px 1px 0px #000000"
               }}>
                 {entry.isReal ? (isSelect ? "SQL" : "DB") : "SYS"}
               </span>
@@ -237,22 +244,21 @@ function LiveFeed({ entries }: { entries: FeedEntry[] }) {
             {/* content */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: i === 0 ? "12px" : "11px",
-                fontFamily: "var(--font-mono)",
-                color: textColor,
-                lineHeight: "1.45",
+                fontSize: "13px",
+                fontFamily: "var(--font-sans)",
+                color: "#000000",
+                lineHeight: "1.4",
                 wordBreak: "break-word",
-                fontWeight: i === 0 ? 600 : 400,
+                fontWeight: 700,
               }}>
                 {entry.text.replace(/^\[.*?\]\s*/, "")}
               </div>
-            </div>
-            {/* timestamp */}
-            <div style={{
-              flexShrink: 0, fontSize: "11px", color: C.mute,
-              fontFamily: "var(--font-mono)", marginTop: "2px", whiteSpace: "nowrap"
-            }}>
-              {entry.ts}
+              <div style={{
+                fontSize: "11px", color: "#374151",
+                fontFamily: "var(--font-sans)", fontWeight: 800, marginTop: "2px"
+              }}>
+                {entry.ts}
+              </div>
             </div>
           </div>
         );
@@ -286,7 +292,7 @@ function Sparkline({ data, color, height = 48 }: { data: number[]; color: string
 
 /* ── Security Events Feed ───────────────────────────────────── */
 function SecurityFeed({ blockedCount }: { blockedCount: number }) {
-  const [events, setEvents] = useState<{type: string; msg: string; time: string; color: string}[]>([]);
+  const [events, setEvents] = useState<{ type: string; msg: string; time: string; color: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -355,13 +361,15 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
 
 /* ── Blockchain Timeline ─────────────────────────────────────── */
 function BlockchainTimeline({ live }: { live: boolean }) {
-  const [blocks, setBlocks] = useState<{h: number; action: string; hash: string; status: string; ms: number}[]>([]);
+  const [blocks, setBlocks] = useState<{ h: number; action: string; hash: string; status: string; ms: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const t0 = performance.now();
     fetchWithTimeout("/api/audit?limit=5")
       .then(r => r.json())
       .then(d => {
+        const latency = Math.round(performance.now() - t0);
         const rows = d?.data?.events || d?.data?.rows || d?.data || [];
         if (Array.isArray(rows) && rows.length > 0) {
           setBlocks(rows.map((r: any, i: number) => {
@@ -373,7 +381,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
               action: action.replace(/_/g, " "),
               hash: hash.slice(0, 5) + "…" + hash.slice(-5),
               status: status === "BLOCKED" || status === "FAILED" ? "FAILED" : "SUCCESS",
-              ms: Math.floor(Math.random() * 25) + 5,
+              ms: i === 0 ? latency : Math.max(1, Math.round(latency * (1 - i * 0.15))),
             };
           }));
         }
@@ -409,37 +417,48 @@ function BlockchainTimeline({ live }: { live: boolean }) {
           {/* vertical connector */}
           {i < blocks.length - 1 && (
             <div style={{
-              position: "absolute", left: "11px", top: "36px",
-              width: "1.5px", height: "calc(100% - 4px)",
-              background: `linear-gradient(180deg, ${b.status === "SUCCESS" ? C.green : C.red}40, transparent)`,
+              position: "absolute", left: "10px", top: "36px",
+              width: "2px", height: "calc(100% - 4px)",
+              background: "#000000",
             }} />
           )}
           <div style={{ flexShrink: 0 }}>
             <div style={{
               width: "22px", height: "22px", borderRadius: "50%",
-              background: b.status === "SUCCESS" ? `${C.green}20` : `${C.red}20`,
-              border: `1.5px solid ${b.status === "SUCCESS" ? C.green : C.red}`,
+              background: b.status === "SUCCESS" ? C.green : C.red,
+              border: "2px solid #000000",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "11px", color: b.status === "SUCCESS" ? C.green : C.red,
-              boxShadow: i === 0 ? `0 0 10px ${b.status === "SUCCESS" ? C.green : C.red}50` : "none",
+              fontSize: "11px", color: "#000000", fontWeight: 900,
+              boxShadow: "1px 1px 0px #000000",
             }}>
               {b.status === "SUCCESS" ? "✓" : "✕"}
             </div>
           </div>
           <div style={{
             flex: 1, padding: "10px 14px", marginBottom: "8px",
-            background: i === 0 ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.015)",
-            border: `1px solid ${i === 0 ? C.border : "rgba(255,255,255,0.05)"}`,
-            borderRadius: "10px",
-            transition: "all 0.3s",
-          }}>
+            background: "#ffffff",
+            border: "2px solid #000000",
+            borderRadius: "var(--radius-sm)",
+            boxShadow: "2.5px 2.5px 0px #000000",
+            transition: "all 0.15s ease",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translate(-2px, -2px)";
+            e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translate(0, 0)";
+            e.currentTarget.style.boxShadow = "2.5px 2.5px 0px #000000";
+          }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12.5px", fontWeight: 700, color: C.ink }}>{b.action}</span>
-              <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)" }}>{b.ms}ms</span>
+              <span style={{ fontSize: "12.5px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{b.action}</span>
+              <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-mono)" }}>{b.ms}ms</span>
             </div>
             <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
-              <span style={{ fontSize: "12px", color: C.mute, fontFamily: "var(--font-mono)" }}>#{b.h}</span>
-              <span style={{ fontSize: "12px", color: C.orange, fontFamily: "var(--font-mono)" }}>{b.hash}</span>
+              <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-mono)" }}>#{b.h}</span>
+              <span style={{ fontSize: "11px", color: "#ff5e00", fontWeight: 900, fontFamily: "var(--font-mono)" }}>{b.hash}</span>
             </div>
           </div>
         </div>
@@ -453,7 +472,7 @@ function MemoryHeatmap({ hourly }: { hourly: number[] }) {
   const data = useMemo(() =>
     hourly.length > 0 ? hourly : Array.from({ length: 24 }, (_, i) =>
       30 + Math.floor(Math.sin(i * 0.5) * 20 + ((i * 7 + 13) % 25))),
-  [hourly]);
+    [hourly]);
   const max = Math.max(...data, 1);
   const hours = ["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"];
 
@@ -462,21 +481,21 @@ function MemoryHeatmap({ hourly }: { hourly: number[] }) {
       <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "64px" }}>
         {data.map((v, i) => {
           const pct = v / max;
-          const bgGradient = pct === 0 ? "rgba(255,255,255,0.03)" : pct > 0.75 
-            ? "linear-gradient(180deg, #ff5e00 0%, rgba(255,94,0,0.1) 100%)" 
-            : pct > 0.4 
-            ? "linear-gradient(180deg, #f97316 0%, rgba(249,115,22,0.1) 100%)"
-            : "linear-gradient(180deg, #00e5ff 0%, rgba(0,229,255,0.1) 100%)";
-          const borderColor = pct === 0 ? "rgba(255,255,255,0.05)" : pct > 0.75 
-            ? "rgba(255,94,0,0.4)" 
-            : pct > 0.4 
-            ? "rgba(249,115,22,0.3)"
-            : "rgba(0,229,255,0.3)";
+          const bgGradient = pct === 0 ? "rgba(255,255,255,0.03)" : pct > 0.75
+            ? "linear-gradient(180deg, #ff5e00 0%, rgba(255,94,0,0.1) 100%)"
+            : pct > 0.4
+              ? "linear-gradient(180deg, #f97316 0%, rgba(249,115,22,0.1) 100%)"
+              : "linear-gradient(180deg, #00e5ff 0%, rgba(0,229,255,0.1) 100%)";
+          const borderColor = pct === 0 ? "rgba(255,255,255,0.05)" : pct > 0.75
+            ? "rgba(255,94,0,0.4)"
+            : pct > 0.4
+              ? "rgba(249,115,22,0.3)"
+              : "rgba(0,229,255,0.3)";
           return (
             <div key={i} title={`${v} ops`} style={{
-              flex: 1, 
+              flex: 1,
               background: bgGradient,
-              borderRadius: "4px 4px 0 0", 
+              borderRadius: "4px 4px 0 0",
               height: `${Math.max(4, pct * 64)}px`,
               transition: "all 0.5s cubic-bezier(0.16,1,0.3,1)",
               cursor: "pointer",
@@ -505,10 +524,10 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
   const glowColor = danger > 0 ? "rgba(239, 68, 68, 0.4)" : pct > 85 ? "rgba(16, 185, 129, 0.4)" : "rgba(249, 115, 22, 0.4)";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "14px" }}>
       {/* Ring */}
-      <div style={{ position: "relative", width: "160px", height: "160px", flexShrink: 0 }}>
-        <svg width="160" height="160" viewBox="0 0 124 124" style={{ transform: "rotate(-90deg)", overflow: "visible" }}>
+      <div style={{ position: "relative", width: "130px", height: "130px", flexShrink: 0 }}>
+        <svg width="130" height="130" viewBox="0 0 124 124" style={{ transform: "rotate(-90deg)", overflow: "visible" }}>
           <defs>
             <linearGradient id="trustGaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor={strokeColor} stopOpacity="1" />
@@ -525,21 +544,21 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
 
           {/* Outer Track border ring */}
           <circle cx="62" cy="62" r={r + 6} fill="none" stroke="rgba(255, 255, 255, 0.02)" strokeWidth="1.5" />
-          
+
           {/* Main Track Background */}
           <circle cx="62" cy="62" r={r} fill="none" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="7.5" />
-          
+
           {/* Dynamic Active Progress Ring */}
-          <circle cx="62" cy="62" r={r} fill="none" 
-            stroke="url(#trustGaugeGradient)" 
+          <circle cx="62" cy="62" r={r} fill="none"
+            stroke="url(#trustGaugeGradient)"
             strokeWidth="7.5"
-            strokeDasharray={circ} 
-            strokeDashoffset={offset} 
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
             strokeLinecap="round"
             filter="url(#trustRingGlow)"
             style={{
               transition: "stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)",
-            }} 
+            }}
           />
 
           {/* Dotted Inner Ring for High-Tech feel */}
@@ -551,15 +570,15 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
         }}>
           <div style={{ display: "flex", alignItems: "baseline" }}>
             <span style={{
-              fontSize: "36px", fontWeight: 900, color: strokeColor, fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: "32px", fontWeight: 900, color: strokeColor, fontFamily: "'Space Grotesk', sans-serif",
               lineHeight: 1, textShadow: `0 0 15px ${glowColor}`
             }}>{pct}</span>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: strokeColor, marginLeft: "2px" }}>%</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: strokeColor, marginLeft: "2px" }}>%</span>
           </div>
           <span style={{
-            fontSize: "9px", color: C.mute, fontWeight: 800, letterSpacing: "2px",
+            fontSize: "8px", color: "#000000", fontWeight: 900, letterSpacing: "1.5px",
             textTransform: "uppercase", marginTop: "4px", fontFamily: "'JetBrains Mono', monospace"
-          }}>TRUST IDX</span>
+          }}>CHAIN INTEGRITY</span>
         </div>
       </div>
 
@@ -728,7 +747,7 @@ export default function DashboardPage() {
         const dObj = dr.data || dr;
         setDriftScore(dObj.latest?.overall_drift_score ?? 0.18);
         if (dObj.timeSeries && dObj.timeSeries.length >= 2) {
-          const sortedPoints = [...dObj.timeSeries].sort((a: any, b: any) => 
+          const sortedPoints = [...dObj.timeSeries].sort((a: any, b: any) =>
             new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
           );
           setDriftPoints(sortedPoints);
@@ -906,33 +925,41 @@ export default function DashboardPage() {
           background: rgba(255, 94, 0, 0.45);
         }
 
+        .bento-kpi {
+          background: var(--canvas-card) !important;
+          border: 3px solid #000000 !important;
+          border-radius: var(--radius-md) !important;
+          box-shadow: var(--shadow-sm) !important;
+          transition: all 0.15s ease !important;
+        }
         .bento-kpi:hover {
-          transform: translateY(-4px);
-          border-color: rgba(255, 94, 0, 0.4) !important;
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(255, 94, 0, 0.1);
+          transform: translate(-1.5px, -1.5px) !important;
+          border-color: #000000 !important;
+          box-shadow: var(--shadow-md) !important;
         }
         .bento-panel {
-          background: ${C.glass};
-          border: 1px solid ${C.border};
-          border-radius: 20px;
+          background: var(--canvas-card);
+          border: 3px solid #000000;
+          border-radius: var(--radius-lg);
           padding: 22px 24px;
           position: relative;
           overflow: hidden;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          animation: slideInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+          transition: all 0.15s ease;
+          box-shadow: var(--shadow-md);
+          animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         .bento-panel:hover {
-          transform: translateY(-5px);
-          border-color: rgba(255, 94, 0, 0.45);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 35px rgba(255, 94, 0, 0.12);
+          transform: translate(-2px, -2px);
+          border-color: #000000;
+          box-shadow: 5px 5px 0px 0px #000000;
         }
         .panel-label {
           font-size: 11.5px;
           text-transform: uppercase;
           letter-spacing: 1.5px;
-          font-weight: 800;
+          font-weight: 900;
           font-family: 'Space Grotesk', sans-serif;
-          color: #a090b0;
+          color: #000000;
           margin-bottom: 12px;
           display: flex;
           align-items: center;
@@ -1077,10 +1104,10 @@ export default function DashboardPage() {
         )}
 
         {/* ── UNIFIED BENTO: LEFT KPI COLUMN + CENTER GAUGES + RIGHT LIVE FEED ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 360px", gap: "12px", alignItems: "stretch" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 360px", gap: "20px", alignItems: "stretch" }}>
 
           {/* LEFT: Independent bento cards */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div className="bento-panel" style={{ padding: 0, overflow: "hidden" }}>
               {/* section header */}
               <div style={{
@@ -1090,90 +1117,93 @@ export default function DashboardPage() {
                 <Dot color={C.orange} pulse />
                 <span style={{
                   fontSize: "12px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                  color: C.mute, textTransform: "uppercase", letterSpacing: "1.5px"
+                  color: "#000000", textTransform: "uppercase", letterSpacing: "1.5px"
                 }}>Metrics</span>
               </div>
-              <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(255, 94, 0, 0.35) 0%, transparent 100%)" }} />
+              <div style={{ height: "3px", background: "#000000" }} />
 
               {/* MEMORIES */}
               <div style={{
-                padding: "13px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                padding: "13px 16px", borderBottom: "2px solid #000000",
                 display: "flex", alignItems: "center", gap: "10px"
               }}>
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "8px", flexShrink: 0,
-                  background: `${C.cyan}12`, border: `1px solid ${C.cyan}22`,
-                  display: "flex", alignItems: "center", justifyContent: "center", color: C.cyan
+                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                  background: "var(--accent-breeze)", border: "2px solid #000000",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                  boxShadow: "1px 1px 0px #000000"
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" /></svg>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
+                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
+                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
                   }}>Memories</div>
                   <div style={{
-                    fontSize: "22px", fontWeight: 950, color: C.cyan,
-                    fontFamily: "var(--font-sg)", lineHeight: 1
+                    fontSize: "24px", fontWeight: 950, color: "#000000",
+                    fontFamily: "var(--font-sans)", lineHeight: 1
                   }}>
                     {displayedMem > 0 ? displayedMem.toLocaleString() : (stats?.memories ?? "—")}
                   </div>
                 </div>
-                <span style={{ fontSize: "11px", color: C.green, fontWeight: 700 }}>↑</span>
+                <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
               </div>
 
               {/* ENTITIES */}
               <div style={{
-                padding: "13px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                padding: "13px 16px", borderBottom: "2px solid #000000",
                 display: "flex", alignItems: "center", gap: "10px"
               }}>
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "8px", flexShrink: 0,
-                  background: `${C.orange}12`, border: `1px solid ${C.orange}22`,
-                  display: "flex", alignItems: "center", justifyContent: "center", color: C.orange
+                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                  background: "var(--accent-breeze)", border: "2px solid #000000",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                  boxShadow: "1px 1px 0px #000000"
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" /></svg>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
+                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
+                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
                   }}>Entities</div>
                   <div style={{
-                    fontSize: "22px", fontWeight: 950, color: C.orange,
-                    fontFamily: "var(--font-sg)", lineHeight: 1
+                    fontSize: "24px", fontWeight: 950, color: "#000000",
+                    fontFamily: "var(--font-sans)", lineHeight: 1
                   }}>
                     {displayedEnt > 0 ? displayedEnt.toLocaleString() : (stats?.entities ?? "—")}
                   </div>
                 </div>
-                <span style={{ fontSize: "11px", color: C.green, fontWeight: 700 }}>↑</span>
+                <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
               </div>
 
               {/* RELATIONS */}
               <div style={{
-                padding: "13px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)",
+                padding: "13px 16px", borderBottom: "2px solid #000000",
                 display: "flex", alignItems: "center", gap: "10px"
               }}>
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "8px", flexShrink: 0,
-                  background: `${C.green}12`, border: `1px solid ${C.green}22`,
-                  display: "flex", alignItems: "center", justifyContent: "center", color: C.green
+                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                  background: "var(--accent-breeze)", border: "2px solid #000000",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                  boxShadow: "1px 1px 0px #000000"
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
+                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
+                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
                   }}>Relations</div>
                   <div style={{
-                    fontSize: "22px", fontWeight: 950, color: C.green,
-                    fontFamily: "var(--font-sg)", lineHeight: 1
+                    fontSize: "24px", fontWeight: 950, color: "#000000",
+                    fontFamily: "var(--font-sans)", lineHeight: 1
                   }}>
                     {displayedRel > 0 ? displayedRel.toLocaleString() : (stats?.relations ?? "—")}
                   </div>
                 </div>
-                <span style={{ fontSize: "11px", color: C.mute, fontWeight: 700 }}>→</span>
+                <span style={{ fontSize: "12px", color: "#374151", fontWeight: 900 }}>→</span>
               </div>
 
               {/* BLOCKED */}
@@ -1182,40 +1212,41 @@ export default function DashboardPage() {
                 display: "flex", alignItems: "center", gap: "10px"
               }}>
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "8px", flexShrink: 0,
-                  background: `${C.red}12`, border: `1px solid ${C.red}22`,
-                  display: "flex", alignItems: "center", justifyContent: "center", color: C.red
+                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                  background: "var(--accent-breeze)", border: "2px solid #000000",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                  boxShadow: "1px 1px 0px #000000"
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></svg>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "2px"
+                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
+                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
                   }}>Blocked</div>
                   <div style={{
-                    fontSize: "22px", fontWeight: 950, color: activeBlockedCount > 0 ? C.red : C.green,
-                    fontFamily: "var(--font-sg)", lineHeight: 1
+                    fontSize: "24px", fontWeight: 950, color: activeBlockedCount > 0 ? "#b91c1c" : "#000000",
+                    fontFamily: "var(--font-sans)", lineHeight: 1
                   }}>
                     {activeBlockedCount.toLocaleString()}
                   </div>
                 </div>
-                <span style={{ fontSize: "11px", color: C.red, fontWeight: 700 }}>↓</span>
               </div>
             </div>
 
             {/* TRUST INDEX CARD */}
-            <div className="bento-panel" style={{ padding: "18px 20px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div className="bento-panel" style={{ padding: "18px 20px" }}>
               <div>
                 <div style={{
-                  fontSize: "11.5px", color: C.mute, textTransform: "uppercase",
-                  letterSpacing: "1.5px", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: "14px", color: "#000000", textTransform: "uppercase",
+                  letterSpacing: "2px", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 900,
                   display: "flex", alignItems: "center", gap: "8px"
                 }}>
                   <Dot color={C.green} pulse />
                   Trust Index
                 </div>
-                <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(52, 211, 153, 0.35) 0%, transparent 100%)", marginBottom: "16px" }} />
+                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
                 <TrustGauge score={trustSummary.score} danger={trustSummary.danger} total={trustSummary.total} />
               </div>
               <div style={{
@@ -1230,103 +1261,166 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* CENTER: Drift Chart + unique system vitals split */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {/* Agent Stability Card */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
+          {/* CENTER: Multi-Agent Architecture + System Vitals */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Multi-Agent Architecture Card */}
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
               {/* header */}
               <div style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                paddingBottom: "10px"
+                display: "flex", alignItems: "center", gap: "10px",
+                paddingBottom: "14px"
               }}>
-                <Dot color={C.cyan} pulse />
+                <Dot color={C.green} pulse />
                 <span style={{
-                  fontSize: "11.5px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                  letterSpacing: "1.5px", color: "#8abac5", textTransform: "uppercase"
+                  fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: "2px", color: "#000000", textTransform: "uppercase"
                 }}>
-                  Agent Stability
+                  Multi-Agent Architecture
                 </span>
                 <span style={{
-                  marginLeft: "auto", fontSize: "11px", background: `${C.cyan}15`,
-                  color: C.cyan, border: `1px solid ${C.cyan}30`, padding: "2px 7px",
-                  borderRadius: "4px", fontWeight: 800, fontFamily: "'JetBrains Mono', monospace"
-                }}>BEHAVIORAL</span>
+                  marginLeft: "auto", fontSize: "11px", background: C.green,
+                  color: "#ffffff", border: "2px solid #000000", padding: "4px 12px",
+                  borderRadius: "2px", fontWeight: 900, fontFamily: "'JetBrains Mono', monospace",
+                  boxShadow: "1px 1px 0px #000000"
+                }}>3 AGENTS ACTIVE</span>
               </div>
-              <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(0, 229, 255, 0.35) 0%, transparent 100%)", marginBottom: "14px" }} />
+              <div style={{ height: "3px", background: "#000000", marginBottom: "20px" }} />
 
-              {/* drift chart */}
-              <div style={{ minHeight: "200px" }}>
-                <DriftChart
-                  timeSeries={driftTimeSeries}
-                  overallScore={driftScore}
-                  status={driftScore > 0.6 ? "CRITICAL" : driftScore > 0.3 ? "DRIFTING" : "HEALTHY"}
-                  topSignals={driftSignals}
-                  recommendation={driftRecommendation}
-                  loading={false}
-                />
+              {/* Agent cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px", marginBottom: "20px" }}>
+                {[
+                  { name: "mcp-agent", type: "MCP Server", desc: "35 tools · Claude/Cursor/VS Code", memories: 110, color: "#047857", icon: "🔧" },
+                  { name: "bastion-a2a", type: "A2A Bridge", desc: "25 skills · Google A2A protocol", memories: 107, color: "#000000", icon: "🤝" },
+                  { name: "bastion-agent", type: "Core Agent", desc: "Forensic memory · Hash chains", memories: 30, color: "#b45309", icon: "🛡️" },
+                ].map((a, i) => (
+                  <div key={i} style={{
+                    padding: "20px", background: "#ffffff", border: "3px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                      <span style={{ fontSize: "20px" }}>{a.icon}</span>
+                      <Dot color={a.color} />
+                      <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{a.name}</span>
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)", marginBottom: "6px" }}>{a.type}</div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600, fontFamily: "var(--font-sans)", marginBottom: "12px" }}>{a.desc}</div>
+                    <div style={{
+                      fontSize: "28px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>{a.memories} <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>memories</span></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Protocol badges */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
+                {[
+                  { label: "MCP", desc: "35 tools", icon: "🔧", color: "#047857" },
+                  { label: "A2A", desc: "25 skills", icon: "🤝", color: "#000000" },
+                  { label: "SERIALIZABLE", desc: "Isolation", icon: "🔒", color: "#b45309" },
+                  { label: "AS OF SYSTEM TIME", desc: "Time-travel", icon: "⏱️", color: "#b91c1c" },
+                ].map((p, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "14px 16px", background: "var(--accent-breeze)", border: "2px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "1.5px 1.5px 0px #000000"
+                  }}>
+                    <span style={{ fontSize: "18px" }}>{p.icon}</span>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{p.label}</div>
+                      <div style={{ fontSize: "11px", color: "#374151", fontWeight: 700 }}>{p.desc}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* System Vitals Card */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "space-between" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", paddingBottom: "10px" }}>
-                  <Dot color={C.cyan} pulse />
-                  <span style={{
-                    fontSize: "11.5px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                    letterSpacing: "1.5px", color: "#8abac5", textTransform: "uppercase"
-                  }}>System Vitals</span>
-                </div>
-                <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(0, 229, 255, 0.35) 0%, transparent 100%)", marginBottom: "14px" }} />
+            {/* CockroachDB Features */}
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                <Dot color={C.cyan} pulse />
+                <span style={{
+                  fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: "2px", color: "#000000"
+                }}>CockroachDB Features</span>
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
                 {[
-                  { label: "Memory Utilization", value: stats?.memories ?? 0, max: 5000, color: C.cyan },
-                  { label: "Entity Index Capacity", value: stats?.entities ?? 0, max: 1000, color: C.orange },
-                  { label: "Relation Graph Edges", value: stats?.relations ?? 0, max: 1000, color: C.green },
-                  { label: "Audit Log Entries", value: stats?.auditLogs ?? 0, max: 1000, color: C.orange },
-                  { label: "Shield Coverage", value: Math.min(100, 100 - activeBlockedCount), max: 100, color: activeBlockedCount > 0 ? C.red : C.green },
-                ].map((v, i) => {
-                  const pct = Math.min(100, Math.round((v.value / v.max) * 100));
-                  return (
-                    <div key={i} style={{
-                      padding: "8px 0",
-                      borderBottom: i < 4 ? "1px solid rgba(255,255,255,0.04)" : "none",
-                    }}>
-                      <div style={{
-                        display: "flex", justifyContent: "space-between",
-                        alignItems: "center", marginBottom: "5px"
-                      }}>
+                  { feature: "SERIALIZABLE", desc: "Strongest isolation — prevents agentic stampedes", status: "Active", icon: "🔒" },
+                  { feature: "Row-Level TTL", desc: "Auto-expires old memories — manages token costs", status: "Active", icon: "⏱️" },
+                  { feature: "C-SPANN Vectors", desc: "1024-dim embeddings stored IN the database", status: "Active", icon: "🔍" },
+                  { feature: "AS OF SYSTEM TIME", desc: "Time-travel queries for forensic investigation", status: "Active", icon: "🕐" },
+                  { feature: "CDC Changelog", desc: "Real-time change streaming for event-driven agents", status: "Active", icon: "📡" },
+                  { feature: "REGIONAL BY ROW", desc: "Multi-region data locality — speed of light matters", status: "Active", icon: "🌍" },
+                ].map((f, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "flex-start", gap: "12px",
+                    padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000"
+                  }}>
+                    <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</div>
                         <span style={{
-                          fontSize: "12px", color: "#b0a8bc",
-                          fontFamily: "'JetBrains Mono', monospace"
-                        }}>{v.label}</span>
-                        <span style={{
-                          fontSize: "11px", fontWeight: 700, color: v.color,
-                          fontFamily: "'Space Grotesk', sans-serif"
-                        }}>
-                          {typeof v.value === "number" ? v.value.toLocaleString() : v.value}
-                        </span>
+                          fontSize: "9px", fontWeight: 900, fontFamily: "var(--font-sans)",
+                          background: "#047857", color: "#ffffff", border: "1px solid #000000",
+                          padding: "2px 6px", borderRadius: "2px"
+                        }}>{f.status}</span>
                       </div>
-                      <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{
-                          height: "100%", width: `${pct}%`,
-                          background: `linear-gradient(90deg, ${v.color}90, ${v.color})`,
-                          borderRadius: "2px",
-                          transition: "width 0.8s cubic-bezier(0.16,1,0.3,1)",
-                          boxShadow: `0 0 6px ${v.color}60`,
-                        }} />
-                      </div>
+                      <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, lineHeight: 1.4 }}>{f.desc}</div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Why Bastion */}
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                <Dot color={C.orange} pulse />
+                <span style={{
+                  fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: "2px", color: "#000000"
+                }}>Why Bastion</span>
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+              <div style={{
+                padding: "16px 20px", background: "var(--accent-breeze)", border: "2px solid #000000",
+                borderRadius: "var(--radius-sm)", marginBottom: "16px",
+                boxShadow: "1.5px 1.5px 0px #000000"
+              }}>
+                <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.5 }}>
+                  Memory that proves itself — forensic, tamper-proof, and self-healing.
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {[
+                  { title: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
+                  { title: "OWASP ASI06", desc: "Memory poisoning detection and defense", icon: "🛡️" },
+                  { title: "Time-Travel", desc: "Investigate past agent state with AS OF SYSTEM TIME", icon: "⏱️" },
+                  { title: "Self-Healing", desc: "Automatic detection and recovery from attacks", icon: "🔧" },
+                ].map((f, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "flex-start", gap: "12px",
+                    padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000"
+                  }}>
+                    <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.title}</div>
+                      <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, marginTop: "4px", lineHeight: 1.4 }}>{f.desc}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-
-          {/* RIGHT: Premium Live Feed */}
           <div className="bento-panel" style={{
             display: "flex", flexDirection: "column",
-            background: "rgba(4, 2, 7, 0.97)", position: "relative",
-            height: "610px"
+            background: "var(--canvas-card)", position: "relative",
+            height: "790px"
           }}>
             {/* top glow line */}
             <div style={{
@@ -1342,8 +1436,8 @@ export default function DashboardPage() {
             }}>
               <Dot color={C.green} pulse />
               <span style={{
-                fontSize: "11.5px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                letterSpacing: "1.5px", color: "#9acb9a", textTransform: "uppercase"
+                fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                letterSpacing: "1.5px", color: "#000000", textTransform: "uppercase"
               }}>
                 Live DB Feed
               </span>
@@ -1358,7 +1452,7 @@ export default function DashboardPage() {
                 }}>● LIVE</span>
               </div>
             </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(52, 211, 153, 0.35) 0%, transparent 100%)", marginBottom: "10px" }} />
+            <div style={{ height: "3px", background: "#000000", marginBottom: "10px" }} />
 
             {/* legend: real vs simulated */}
             <div style={{ display: "flex", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
@@ -1395,70 +1489,112 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── ROW 3: HEATMAP + BLOCKCHAIN TIMELINE + SECURITY FEED ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px 320px", gap: "12px", alignItems: "start" }}>
+        {/* ── ROW 3: TELEMETRY & EVENT FEED ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px 320px", gap: "20px", alignItems: "stretch" }}>
 
-          {/* Memory Activity Heatmap + real stats */}
-          <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              paddingBottom: "10px"
-            }}>
-              <Dot color={C.orange} />
-              <span style={{
-                fontSize: "11.5px", fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif",
-                color: "#baaa8a", textTransform: "uppercase", letterSpacing: "1.5px"
+          {/* COLUMN 1: Memory Ingestion & Recent Audits Stack */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Memory Ingestion Panel */}
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                paddingBottom: "10px"
               }}>
-                Memory Ingestion
-              </span>
-              <span style={{
-                marginLeft: "auto", fontSize: "11px", color: C.mute,
-                fontFamily: "'JetBrains Mono', monospace"
-              }}>24h activity</span>
-            </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(255, 94, 0, 0.35) 0%, transparent 100%)", marginBottom: "14px" }} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-              <MemoryHeatmap hourly={hourlyData} />
-            </div>
-            {/* ── divider ── */}
-            <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "16px 0" }} />
-            {/* real stats row */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
-              {[
-                { label: "Cache Hit", value: `${stats?.cacheHitPct ?? "—"}%`, color: C.cyan },
-                { label: "Importance", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), color: C.orange },
-                { label: "Drift Index", value: driftScore.toFixed(3), color: driftScore > 0.3 ? C.red : C.green },
-              ].map((m, i) => (
-                <div key={i} style={{
-                  textAlign: "center", padding: "8px 0",
-                  borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                <Dot color={C.orange} />
+                <span style={{
+                  fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  color: "#000000", textTransform: "uppercase", letterSpacing: "1.5px"
                 }}>
-                  <div style={{
-                    fontSize: "11px", color: C.mute, textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-mono)", marginBottom: "4px"
-                  }}>{m.label}</div>
-                  <div style={{
-                    fontSize: "18px", fontWeight: 800, color: m.color,
-                    fontFamily: "var(--font-sg)"
-                  }}>{m.value}</div>
-                </div>
-              ))}
+                  Memory Ingestion
+                </span>
+                <span style={{
+                  marginLeft: "auto", fontSize: "11px", color: C.mute,
+                  fontFamily: "'JetBrains Mono', monospace"
+                }}>24h activity</span>
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                <MemoryHeatmap hourly={hourlyData} />
+              </div>
+              {/* divider */}
+              <div style={{ height: "2px", background: "#000000", margin: "16px 0" }} />
+              {/* real stats row */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
+                {[
+                  { label: "Cache Hit", value: `${stats?.cacheHitPct ?? "—"}%`, color: C.cyan },
+                  { label: "Importance", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), color: C.orange },
+                  { label: "Drift Index", value: driftScore.toFixed(3), color: driftScore > 0.3 ? C.red : C.green },
+                ].map((m, i) => (
+                  <div key={i} style={{
+                    textAlign: "center", padding: "8px 0",
+                    borderLeft: i > 0 ? "2px solid #000000" : "none",
+                  }}>
+                    <div style={{
+                      fontSize: "11px", color: "#374151", textTransform: "uppercase",
+                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 800, marginBottom: "4px"
+                    }}>{m.label}</div>
+                    <div style={{
+                      fontSize: "18px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)"
+                    }}>{m.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Audit Events Card */}
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
+              <div className="panel-label" style={{ marginBottom: "10px" }}>
+                <Dot color={C.cyan} />
+                RECENT AUDIT EVENTS
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+                {((stats?.recentAudits?.slice(0, 5) ?? [
+                  { id: "a1", action: "MEMORY_WRITE", recordedAt: "2m ago", details: {} },
+                  { id: "a2", action: "TRUST_SCAN", recordedAt: "5m ago", details: {} },
+                  { id: "a3", action: "ENTITY_INDEX", recordedAt: "8m ago", details: {} },
+                  { id: "a4", action: "DRIFT_CHECK", recordedAt: "12m ago", details: {} },
+                  { id: "a5", action: "CACHE_EVICT", recordedAt: "18m ago", details: {} },
+                ]) as Array<{ id: string; action: string; recordedAt: string; details: Record<string, unknown> }>).map((audit, i) => {
+                  const col = audit.action.includes("BLOCK") || audit.action.includes("THREAT") ? C.red
+                    : audit.action.includes("WRITE") || audit.action.includes("INDEX") ? C.green : C.cyan;
+                  return (
+                    <div key={audit.id} style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "10px 0", borderBottom: i === 4 ? "none" : "1.5px solid #000000"
+                    }}>
+                      <Dot color={col} />
+                      <span style={{
+                        fontSize: "12.5px", color: "#000000", flex: 1,
+                        fontFamily: "var(--font-sans)", fontWeight: 900
+                      }}>{audit.action}</span>
+                      <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-sans)" }}>{audit.recordedAt}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <Link href="/compliance" style={{ textDecoration: "none", marginTop: "12px" }}>
+                <button className="btn btn-outline" style={{ width: "100%", justifyContent: "center" }}>
+                  View Full Audit Log →
+                </button>
+              </Link>
             </div>
           </div>
 
-          {/* Blockchain Timeline */}
+          {/* COLUMN 2: Blockchain Timeline */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
             <div className="panel-label" style={{ marginBottom: "10px" }}>
               <Dot color={C.orange} pulse />
               Audit Trail
             </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(255, 94, 0, 0.35) 0%, transparent 100%)", marginBottom: "12px" }} />
+            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
             <div style={{ flex: 1, marginTop: "12px", overflowY: "auto" }}>
               <BlockchainTimeline live={!isMock} />
             </div>
           </div>
 
-          {/* Security Events */}
+          {/* COLUMN 3: Security Events */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
             <div className="panel-label" style={{ marginBottom: "10px" }}>
               <Dot color={C.red} pulse />
@@ -1467,103 +1603,98 @@ export default function DashboardPage() {
                 <Tag color={C.red}>{activeBlockedCount} BLOCKED</Tag>
               </span>
             </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(239, 68, 68, 0.35) 0%, transparent 100%)", marginBottom: "12px" }} />
+            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
             <div style={{ flex: 1, marginTop: "12px", overflowY: "auto" }}>
               <SecurityFeed blockedCount={activeBlockedCount} />
             </div>
           </div>
         </div>
 
-        {/* ── ROW 4: TOP RECALLS + AUDIT LOG ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "12px" }}>
+        {/* ── ROW 4: CRDB TOOLS + AWS SERVICES (FULL WIDTH) ── */}
+        <div style={{ width: "100%" }}>
+          <div className="bento-panel" style={{ width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+              <Dot color={C.green} />
+              <span style={{ fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                COCKROACHDB TOOLS & AWS SERVICES
+              </span>
+            </div>
+            <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
 
-          {/* Top Recalls */}
-          <div className="bento-panel">
-            <div className="panel-label" style={{ marginBottom: "10px" }}>
-              <Dot color={C.cyan} />
-              TOP MEMORY RECALL PATTERNS & DB DIAGNOSTICS
-            </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(0, 229, 255, 0.35) 0%, transparent 100%)", marginBottom: "16px" }} />
-            
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-              <div>
-                <div style={{ fontSize: "11px", color: C.mute, textTransform: "uppercase", letterSpacing: "1px", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>Most Recalled Content</div>
-                <RecallsTable recalls={recalls} />
-              </div>
-              <div style={{ paddingLeft: "24px", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontSize: "11px", color: C.mute, textTransform: "uppercase", letterSpacing: "1px", fontFamily: "'JetBrains Mono', monospace", marginBottom: "12px" }}>System Capabilities & Flags</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {[
-                    { flag: "Row-Level Security (RLS)", value: "Hardened", desc: "Enforces strict tenant isolation policies", color: "#10b981" },
-                    { flag: "CDC Notifications", value: "Push Active", desc: "Triggers webhooks on memory writes", color: "#10b981" },
-                    { flag: "Provenance Indexing", value: "SHA-256 Chains", desc: "Validates integrity of audit records", color: "#00e5ff" },
-                    { flag: "Memory Compaction", value: "Automatic", desc: "Prunes redundant historical state logs", color: "#f97316" },
-                    { flag: "Agent Keys Vault", value: "HMAC-SHA256", desc: "Authenticates multi-agent queries", color: "#10b981" },
-                  ].map((f, idx) => (
-                    <div key={idx} style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)",
-                      borderRadius: "8px", fontSize: "12px"
-                    }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: "'Space Grotesk', sans-serif", color: "#fff", fontWeight: 700, fontSize: "12px" }}>{f.flag}</div>
-                        <div style={{ fontSize: "10px", color: C.mute, marginTop: "1px" }}>{f.desc}</div>
-                      </div>
-                      <div style={{ textAlign: "right", marginLeft: "12px" }}>
-                        <span style={{
-                          display: "inline-block", fontSize: "10px", fontWeight: 800,
-                          fontFamily: "'JetBrains Mono', monospace", background: `${f.color}15`,
-                          color: f.color, border: `1px solid ${f.color}35`,
-                          padding: "2px 7px", borderRadius: "5px", whiteSpace: "nowrap"
-                        }}>
-                          {f.value}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Audit Quick-Log */}
-          <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
-            <div className="panel-label" style={{ marginBottom: "10px" }}>
-              <Dot color={C.cyan} />
-              RECENT AUDIT EVENTS
-            </div>
-            <div style={{ height: "1px", background: "linear-gradient(90deg, rgba(0, 229, 255, 0.35) 0%, transparent 100%)", marginBottom: "12px" }} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
-              {(stats?.recentAudits?.slice(0, 5) ?? [
-                { id: "a1", action: "MEMORY_WRITE", recordedAt: "2m ago", details: {} },
-                { id: "a2", action: "TRUST_SCAN", recordedAt: "5m ago", details: {} },
-                { id: "a3", action: "ENTITY_INDEX", recordedAt: "8m ago", details: {} },
-                { id: "a4", action: "DRIFT_CHECK", recordedAt: "12m ago", details: {} },
-                { id: "a5", action: "CACHE_EVICT", recordedAt: "18m ago", details: {} },
-              ]).map((audit: { id: string; action: string; recordedAt: string; details: Record<string, unknown> }, i: number) => {
-                const col = audit.action.includes("BLOCK") || audit.action.includes("THREAT") ? C.red
-                  : audit.action.includes("WRITE") || audit.action.includes("INDEX") ? C.green : C.cyan;
-                return (
-                  <div key={audit.id} style={{
-                    display: "flex", alignItems: "center", gap: "10px",
-                    padding: "8px 12px", borderRadius: "8px",
-                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)"
-                  }}>
-                    <Dot color={col} />
+            {/* Tools Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "20px" }}>
+              {[
+                { name: "Managed MCP Server", desc: "35 tools · Claude/Cursor/VS Code native", badge: "MCP", badgeColor: "#047857" },
+                { name: "Distributed Vector Indexing", desc: "C-SPANN · 1024-dim embeddings · cosine search", badge: "Vector", badgeColor: "#000000" },
+                { name: "ccloud CLI", desc: "Cluster management · audit logs · backups", badge: "CLI", badgeColor: "#b45309" },
+                { name: "Agent Skills Repo", desc: "35+ skills · onboarding/security/performance", badge: "Skills", badgeColor: "#047857" },
+                { name: "AWS KMS", desc: "AES-256-GCM envelope encryption for memories", badge: "KMS", badgeColor: "#b45309" },
+                { name: "AWS ap-south-1", desc: "CockroachDB cluster deployed in Mumbai region", badge: "Region", badgeColor: "#b91c1c" },
+              ].map((t, i) => (
+                <div key={i} style={{
+                  padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
+                  borderRadius: "var(--radius-sm)", boxShadow: "1.5px 1.5px 0px #000000",
+                  transition: "all 0.15s ease", cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translate(-2px, -2px)";
+                  e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translate(0, 0)";
+                  e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000";
+                }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{t.name}</span>
                     <span style={{
-                      fontSize: "11.5px", color: C.body, flex: 1,
-                      fontFamily: "var(--font-mono)"
-                    }}>{audit.action}</span>
-                    <span style={{ fontSize: "12px", color: C.mute }}>{audit.recordedAt}</span>
+                      fontSize: "10px", fontWeight: 900, fontFamily: "var(--font-sans)",
+                      background: t.badgeColor, color: "#ffffff",
+                      border: "1.5px solid #000000", padding: "2px 8px",
+                      borderRadius: "2px", whiteSpace: "nowrap",
+                      boxShadow: "1px 1px 0px #000000"
+                    }}>{t.badge}</span>
                   </div>
-                );
-              })}
+                  <div style={{ fontSize: "11px", color: "#374151", fontWeight: 700, lineHeight: 1.4 }}>{t.desc}</div>
+                </div>
+              ))}
             </div>
-            <Link href="/compliance" style={{ textDecoration: "none", marginTop: "12px" }}>
-              <button className="cmd-bar-btn" style={{ width: "100%", justifyContent: "center" }}>
-                View Full Audit Log →
-              </button>
-            </Link>
+
+            {/* Unique Features */}
+            <div style={{ height: "2px", background: "#000000", marginBottom: "16px" }} />
+            <div style={{ fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "1.5px", color: "#000000", marginBottom: "12px" }}>
+              UNIQUE FEATURES (NOBODY ELSE HAS)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px" }}>
+              {[
+                { feature: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
+                { feature: "OWASP ASI06", desc: "Industry standard memory poisoning defense", icon: "🛡️" },
+                { feature: "Time-Travel", desc: "AS OF SYSTEM TIME for investigation", icon: "⏱️" },
+                { feature: "Self-Healing", desc: "Detect + recover from poisoning automatically", icon: "🔧" },
+                { feature: "Hash Chains", desc: "Cryptographic proof of memory integrity", icon: "🔗" },
+              ].map((f, i) => (
+                <div key={i} style={{
+                  padding: "12px 14px", background: "var(--accent-breeze)", border: "2px solid #000000",
+                  borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000",
+                  transition: "all 0.15s ease", cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translate(-1.5px, -1.5px)";
+                  e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translate(0, 0)";
+                  e.currentTarget.style.boxShadow = "1px 1px 0px #000000";
+                }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "14px" }}>{f.icon}</span>
+                    <span style={{ fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</span>
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#374151", fontWeight: 700, lineHeight: 1.4 }}>{f.desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

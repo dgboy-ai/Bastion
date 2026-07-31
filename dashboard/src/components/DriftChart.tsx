@@ -277,7 +277,7 @@ export default function DriftChart({ timeSeries, overallScore, status, topSignal
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "18px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: statusColor }}>
-            {(overallScore * 100).toFixed(0)}
+            {(overallScore * 100).toFixed(0)}%
           </span>
           <span style={{ fontSize: "9px", fontFamily: "'JetBrains Mono', monospace", color: statusColor, fontWeight: 600 }}>
             {status}
