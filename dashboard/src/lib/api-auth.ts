@@ -247,6 +247,11 @@ export function requireAuth(request: Request): NextResponse | null {
     return null;
   }
 
+  // Allow disabling auth via env var (for public demo deployments)
+  if (process.env.BASTION_DISABLE_AUTH === "true") {
+    return null;
+  }
+
   return NextResponse.json(
     {
       error: "Authentication required. Log in at /login or provide a valid API key.",
