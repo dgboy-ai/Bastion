@@ -59,7 +59,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Explicit mock mode: only bypass auth when BASTION_MOCK is explicitly set
-  if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
+  if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1" || process.env.BASTION_DISABLE_AUTH === "true") {
     return NextResponse.next();
   }
 
