@@ -31,7 +31,7 @@ export default function IntroductionPage() {
           AI agents in production face a silent crisis: <strong style={{ color: "#fff" }}>memory corruption</strong>. Prompts containing malicious overrides or PII leaks get ingested, leading to behavioral drift. Agents forget critical context between sessions. There&apos;s no audit trail when something goes wrong.
         </p>
         <p style={{ marginBottom: "20px" }}>
-          Bastion was built to fix this. We combined CockroachDB&apos;s distributed SQL with AWS Bedrock embeddings to create a memory layer that is simultaneously <strong style={{ color: "#fff" }}>durable, queryable, and cryptographically verifiable</strong>.
+          Bastion was built to fix this. We combined CockroachDB&apos;s distributed SQL with a resilient 1024-dim embedding pipeline (HuggingFace → local MiniLM → hash fallback) to create a memory layer that is simultaneously <strong style={{ color: "#fff" }}>durable, queryable, and cryptographically verifiable</strong>.
         </p>
 
         <h2 style={{ fontSize: "24px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "40px 0 16px", paddingBottom: "12px", borderBottom: "1px solid rgba(255,170,0,.2)" }}>The Impact</h2>

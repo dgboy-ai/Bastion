@@ -14,19 +14,19 @@ interface TrustRingProps {
 }
 
 const TRUST_COLORS: Record<number, string> = {
-  0: "#ff3333",
-  1: "#ff6600",
-  2: "#ffcc00",
-  3: "#66ff33",
-  4: "#00ff88",
+  0: "#ef4444", // Critical: Red
+  1: "#f97316", // High: Orange
+  2: "#d97706", // Medium: Dark Amber (for readability)
+  3: "#2563eb", // Low: Blue
+  4: "#16a34a", // None: Green
 };
 
 const TRUST_LABELS: Record<number, string> = {
-  0: "CRITICAL",
-  1: "HIGH",
-  2: "MEDIUM",
-  3: "LOW",
-  4: "NONE",
+  0: "CRITICAL THREAT",
+  1: "HIGH RISK",
+  2: "CAUTION",
+  3: "SECURE (LOW DRIFT)",
+  4: "SECURE",
 };
 
 export default function TrustRing({ trustLevelDistribution, avgTrustScore, totalMemories, dangerousMemories }: TrustRingProps) {
@@ -40,8 +40,8 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
     const height = 240;
     const cx = width / 2;
     const cy = height / 2;
-    const outerR = 92;
-    const innerR = 68;
+    const outerR = 90;
+    const innerR = 66;
 
     const arcs: { level: number; count: number; color: string }[] = [];
     for (let lvl = 0; lvl <= 4; lvl++) {
@@ -54,101 +54,68 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
     const sel = select(svg);
     sel.selectAll("g.trust-ring-group").remove();
 
-    const existingDefs = sel.select<SVGDefsElement>("defs");
-    const defs = existingDefs.empty() ? sel.append("defs") : existingDefs;
-    if (!existingDefs.empty()) {
-      existingDefs.selectAll("*").remove();
-    }
-
-    const glowFilter = defs.append("filter").attr("id", "trust-ring-glow").attr("x", "-20%").attr("y", "-20%").attr("width", "140%").attr("height", "140%");
-    glowFilter.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "blur");
-    const glowMerge = glowFilter.append("feMerge");
-    glowMerge.append("feMergeNode").attr("in", "blur");
-    glowMerge.append("feMergeNode").attr("in", "SourceGraphic");
-
-    const textGlow = defs.append("filter").attr("id", "trust-text-glow").attr("x", "-50%").attr("y", "-50%").attr("width", "200%").attr("height", "200%");
-    textGlow.append("feGaussianBlur").attr("stdDeviation", "2.5").attr("result", "blur");
-    const textMerge = textGlow.append("feMerge");
-    textMerge.append("feMergeNode").attr("in", "blur");
-    textMerge.append("feMergeNode").attr("in", "SourceGraphic");
-
     const group = sel.append("g").attr("class", "trust-ring-group").attr("transform", `translate(${cx},${cy})`);
 
     const pie = d3Pie<{ level: number; count: number; color: string }>().value((d) => d.count).sort(null);
-    const arcGen = d3Arc<PieArcDatum<{ level: number; count: number; color: string }>>().innerRadius(innerR).outerRadius(outerR).cornerRadius(2);
+    const arcGen = d3Arc<PieArcDatum<{ level: number; count: number; color: string }>>().innerRadius(innerR).outerRadius(outerR).cornerRadius(4);
 
     const segments = group.selectAll("path").data(pie(arcs)).enter().append("path")
       .attr("d", arcGen as unknown as string)
       .attr("fill", (d: PieArcDatum<{ level: number; count: number; color: string }>) => d.data.color)
-      .attr("opacity", 0.85)
-      .attr("stroke", "#020305")
-      .attr("stroke-width", 1.5)
-      .attr("filter", "url(#trust-ring-glow)")
+      .attr("opacity", 0.9)
+      .attr("stroke", "#000000")
+      .attr("stroke-width", 2.5)
       .style("cursor", "pointer")
-      .style("transition", "opacity 0.2s")
+      .style("transition", "all 0.15s ease")
       .on("mouseenter", function (this: SVGPathElement, _event: unknown, d: PieArcDatum<{ level: number; count: number; color: string }>) {
-        select(this).attr("opacity", 1);
+        select(this).attr("opacity", 1).attr("stroke-width", 3.5);
         setHovered({ label: TRUST_LABELS[d.data.level], value: d.data.count, color: d.data.color });
       })
       .on("mouseleave", function (this: SVGPathElement) {
-        select(this).attr("opacity", 0.85);
+        select(this).attr("opacity", 0.9).attr("stroke-width", 2.5);
         setHovered(null);
       });
 
-    segments.transition()
-      .duration(800)
-      .attrTween("d", function (d: PieArcDatum<{ level: number; count: number; color: string }>) {
-        const interp = interpolate({ startAngle: 0, endAngle: 0 }, d);
-        return (t: number) => arcGen(interp(t)) as string;
-      });
 
     const safeScore = avgTrustScore ?? 0;
-    const scoreColor = safeScore >= 0.8 ? "#00ff88" : safeScore >= 0.5 ? "#ffcc00" : safeScore >= 0.2 ? "#ff6600" : "#ff3333";
+    
+    // Text is drawn in high contrast black
     group.append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "0.1em")
-      .attr("fill", scoreColor)
-      .attr("font-family", "'JetBrains Mono', monospace")
-      .attr("font-size", "56px")
-      .attr("font-weight", "900")
-      .attr("filter", "url(#trust-text-glow)")
+      .attr("fill", "#000000")
+      .attr("font-family", "'Space Grotesk', sans-serif")
+      .attr("font-size", "46px")
+      .attr("font-weight", "950")
       .text((safeScore * 100).toFixed(0));
 
-    // Add SECURE / DANGER label below number
-    const statusLabel = safeScore >= 0.7 ? "SECURE" : safeScore >= 0.4 ? "CAUTION" : "DANGER";
+    const statusLabel = safeScore >= 0.7 ? "SECURE" : safeScore >= 0.4 ? "CAUTION" : "RISK DETECTED";
+    const labelColor = safeScore >= 0.7 ? "#16a34a" : safeScore >= 0.4 ? "#d97706" : "#ef4444";
+    
     group.append("text")
       .attr("text-anchor", "middle")
       .attr("dy", "2.8em")
-      .attr("fill", scoreColor)
-      .attr("font-family", "'JetBrains Mono', monospace")
+      .attr("fill", labelColor)
+      .attr("font-family", "'Space Grotesk', sans-serif")
       .attr("font-size", "11px")
-      .attr("font-weight", "700")
-      .attr("letter-spacing", "3")
-      .attr("opacity", 0.8)
+      .attr("font-weight", "900")
+      .attr("letter-spacing", "1.5")
       .text(statusLabel);
   }, [trustLevelDistribution, avgTrustScore, totalMemories]);
 
   if (totalMemories === 0) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "160px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", height: "160px", color: "var(--mute)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
         NO TRUST DATA
       </div>
     );
   }
 
-  const dangerColor = dangerousMemories > 0 ? "var(--accent-sunset)" : "var(--accent-emerald)";
+  const dangerColor = dangerousMemories > 0 ? "#ef4444" : "#16a34a";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-        {/* Radial glow behind ring */}
-        <div style={{
-          position: "absolute",
-          inset: 0,
-          borderRadius: "50%",
-          background: `radial-gradient(circle, ${dangerousMemories > 0 ? "rgba(255,85,0,0.08)" : "rgba(0,255,136,0.06)"} 0%, transparent 70%)`,
-          pointerEvents: "none",
-        }} />
         <svg ref={svgRef} width="240" height="240" viewBox="0 0 240 240" style={{ overflow: "visible" }} />
         {hovered && (
           <div style={{
@@ -156,17 +123,18 @@ export default function TrustRing({ trustLevelDistribution, avgTrustScore, total
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -60px)",
-            background: "rgba(2, 3, 8, 0.92)",
-            border: `1px solid ${hovered.color}`,
+            background: "#ffffff",
+            border: `2px solid #000000`,
+            boxShadow: "3px 3px 0px #000000",
             borderRadius: "6px",
-            padding: "6px 10px",
+            padding: "8px 12px",
             zIndex: 10,
             textAlign: "center",
             pointerEvents: "none",
             whiteSpace: "nowrap",
           }}>
-            <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: hovered.color, fontWeight: 600 }}>{hovered.label}</div>
-            <div style={{ fontSize: "11px", color: "#fff", marginTop: "2px" }}>{hovered.value} memories</div>
+            <div style={{ fontSize: "10px", fontFamily: "var(--font-sans)", color: hovered.color, fontWeight: 900 }}>{hovered.label}</div>
+            <div style={{ fontSize: "12px", color: "#000000", fontWeight: 800, marginTop: "4px" }}>{hovered.value} memories</div>
           </div>
         )}
       </div>

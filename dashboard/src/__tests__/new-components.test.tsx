@@ -316,7 +316,7 @@ describe("FaultToleranceVisualizer", () => {
     const { default: FaultToleranceVisualizer } = await import("@/components/FaultToleranceVisualizer");
     render(<FaultToleranceVisualizer />);
     expect(screen.getByText("Fault Tolerance")).toBeDefined();
-    expect(screen.getByText("Amazon Bedrock")).toBeDefined();
+    expect(screen.getByText("HuggingFace")).toBeDefined();
     expect(screen.getByText("all-MiniLM-L6-v2")).toBeDefined();
     expect(screen.getByText("Hash Fallback")).toBeDefined();
   });
@@ -327,14 +327,14 @@ describe("FaultToleranceVisualizer", () => {
     expect(screen.getByText("Circuit: CLOSED")).toBeDefined();
   });
 
-  it("simulates Bedrock failure", async () => {
+  it("simulates embedding failure", async () => {
     vi.useFakeTimers();
     const { default: FaultToleranceVisualizer } = await import("@/components/FaultToleranceVisualizer");
     render(<FaultToleranceVisualizer />);
 
     // Click failure button 5 times to open circuit
     for (let i = 0; i < 5; i++) {
-      fireEvent.click(screen.getByText("Simulate Bedrock Failure"));
+      fireEvent.click(screen.getByText("Simulate HuggingFace Failure"));
     }
 
     expect(screen.getByText("Circuit: OPEN")).toBeDefined();

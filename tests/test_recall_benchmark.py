@@ -51,7 +51,7 @@ TEST_MEMORIES = [
     ("m5", "CockroachDB cluster deployed in us-east1 and us-west1", 6.0),
     ("m6", "Security audit completed with zero critical findings", 8.0),
     ("m7", "Lambda cold start mitigation via EventBridge keep-alive", 5.0),
-    ("m8", "Vector embeddings use AWS Bedrock Titan V2 with 1024 dimensions", 6.0),
+    ("m8", "Vector embeddings use 1024-dim embedding chain with C-SPANN indexing", 6.0),
     ("m9", "Monthly infrastructure cost is approximately 340 dollars", 5.0),
     ("m10", "Team decided to adopt Rust for high-performance ingestion", 7.0),
 ]

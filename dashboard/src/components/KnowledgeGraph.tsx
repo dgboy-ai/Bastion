@@ -10,6 +10,7 @@ import {
   forceSimulation,
   select,
   zoom as d3Zoom,
+  zoomIdentity,
 } from "d3";
 import type {
   D3DragEvent,
@@ -43,7 +44,27 @@ interface KnowledgeGraphProps {
 export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const onNodeClickRef = useRef(onNodeClick);
+  const zoomBehaviorRef = useRef<any>(null);
+
   useEffect(() => { onNodeClickRef.current = onNodeClick; });
+
+  const zoomIn = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return;
+    select(svgRef.current).transition().duration(250).call(zoomBehaviorRef.current.scaleBy as any, 1.3);
+  };
+
+  const zoomOut = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return;
+    select(svgRef.current).transition().duration(250).call(zoomBehaviorRef.current.scaleBy as any, 0.75);
+  };
+
+  const resetZoom = () => {
+    if (!svgRef.current || !zoomBehaviorRef.current) return;
+    select(svgRef.current).transition().duration(350).call(
+      zoomBehaviorRef.current.transform as any,
+      zoomIdentity
+    );
+  };
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -120,6 +141,7 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
         container.attr("transform", event.transform);
       });
     svg.call(zoomBehavior);
+    zoomBehaviorRef.current = zoomBehavior;
 
     // Filter valid links where both source and target nodes exist in the dataset
     const nodeIds = new Set(nodes.map((n) => n.id));
@@ -137,10 +159,10 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
 
     // Dynamic layout constraints
     const simulation = forceSimulation<Node>(nodes)
-      .force("link", forceLink<Node, Link>(validLinks).id(d => d.id).distance(240))
-      .force("charge", forceManyBody().strength(-850))
+      .force("link", forceLink<Node, Link>(validLinks).id(d => d.id).distance(140))
+      .force("charge", forceManyBody().strength(-320))
       .force("center", forceCenter(width / 2, height / 2))
-      .force("collision", forceCollide().radius(85));
+      .force("collision", forceCollide().radius(75));
 
     // Render connection edges (links)
     const linkGroup = container.append("g").attr("class", "links");
@@ -152,12 +174,9 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
       .enter()
       .append("path")
       .attr("fill", "none")
-      .attr("stroke", (d) => {
-        if (d.type === "works_on" || d.type === "building") return "rgba(0, 240, 255, 0.15)";
-        if (d.type === "collaborates" || d.type === "loves") return "rgba(255, 115, 0, 0.15)";
-        return "rgba(139, 92, 246, 0.15)";
-      })
-      .attr("stroke-width", 2)
+      .attr("stroke", "#4b5563")
+      .attr("stroke-width", 1.5)
+      .attr("opacity", 0.5)
       .attr("marker-end", (d) => {
         if (d.type === "works_on" || d.type === "building") return "url(#arrow-breeze)";
         if (d.type === "collaborates" || d.type === "loves") return "url(#arrow-sunset)";
@@ -190,55 +209,38 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
         }
       });
 
-    // Node glows (Outer bounds)
+    // Main neo-brutalist solid circle node
     node.append("circle")
-      .attr("r", 42)
+      .attr("r", 15)
       .attr("fill", (d) => {
-        if (d.type === "person" || d.type === "user") return "url(#radial-breeze)";
-        if (d.type === "technology" || d.type === "project") return "url(#radial-sunset)";
-        return "url(#radial-dusk)";
+        if (d.type === "person" || d.type === "user") return "#fcd34d"; // Yellow
+        if (d.type === "technology" || d.type === "project") return "#a78bfa"; // Purple
+        return "#34d399"; // Green
       })
-      .attr("opacity", 0.4);
-
-    // Distinct thin outer rim circle
-    node.append("circle")
-      .attr("r", 22)
-      .attr("fill", "none")
-      .attr("stroke", (d) => {
-        if (d.type === "person" || d.type === "user") return "var(--accent-breeze)";
-        if (d.type === "technology" || d.type === "project") return "var(--accent-sunset)";
-        return "var(--accent-dusk)";
-      })
-      .attr("stroke-width", 1.25)
-      .attr("opacity", 0.45);
-
-    // Inner core circle for depth
-    node.append("circle")
-      .attr("r", 12)
-      .attr("fill", (d) => {
-        if (d.type === "person" || d.type === "user") return "rgba(0, 240, 255, 0.95)";
-        if (d.type === "technology" || d.type === "project") return "rgba(255, 106, 0, 0.95)";
-        return "rgba(139, 92, 246, 0.95)";
-      })
-      .attr("stroke", "#020305")
-      .attr("stroke-width", 2)
+      .attr("stroke", "#000000")
+      .attr("stroke-width", 2.5)
       .style("cursor", "pointer");
 
-    // Sleek display labels below nodes
+    // Clean text label below node
     node.append("text")
-      .attr("dy", 38)
+      .attr("dy", 32)
       .attr("text-anchor", "middle")
-      .attr("fill", "var(--ink)")
+      .attr("fill", "#000000")
       .attr("font-family", "var(--font-sans)")
-      .attr("font-size", "12px")
-      .attr("font-weight", "600")
-      .attr("letter-spacing", "-0.2px")
+      .attr("font-size", "11.5px")
+      .attr("font-weight", "900")
       .style("pointer-events", "none")
-      .style("text-shadow", "0 2px 4px rgba(0,0,0,0.8)")
       .text(d => d.name);
 
     // Intersecting link mapping & position calculation
     simulation.on("tick", () => {
+      // Keep nodes bounded inside container viewport margins to prevent off-screen scatter
+      nodes.forEach((n) => {
+        const margin = 48; // Buffer to prevent label and glow clipping
+        n.x = Math.max(margin, Math.min(width - margin, n.x || 0));
+        n.y = Math.max(margin, Math.min(height - margin, n.y || 0));
+      });
+
       // Calculate arc curves for link elements
       link.attr("d", (d) => {
         const s = d.source as unknown as Node;
@@ -280,5 +282,57 @@ export default function KnowledgeGraph({ nodes, links, onNodeClick }: KnowledgeG
     };
   }, [nodes, links]);
 
-  return <svg ref={svgRef} className="graph-container" style={{ width: "100%", height: "100%" }} />;
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <svg ref={svgRef} className="graph-container" style={{ width: "100%", height: "100%" }} />
+      <div style={{
+        position: "absolute",
+        bottom: "85px",
+        right: "16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        zIndex: 20
+      }}>
+        {[
+          { label: "➕", onClick: zoomIn, title: "Zoom In" },
+          { label: "➖", onClick: zoomOut, title: "Zoom Out" },
+          { label: "⟲", onClick: resetZoom, title: "Recenter" },
+        ].map((btn, idx) => (
+          <button
+            key={idx}
+            onClick={btn.onClick}
+            title={btn.title}
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "6px",
+              border: "2px solid #000000",
+              background: "#ffffff",
+              color: "#000000",
+              fontWeight: "bold",
+              fontSize: "14px",
+              cursor: "pointer",
+              boxShadow: "2px 2px 0px #000000",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.1s ease",
+              outline: "none"
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = "translate(-1px, -1px)";
+              e.currentTarget.style.boxShadow = "3px 3px 0px #000000";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = "translate(0, 0)";
+              e.currentTarget.style.boxShadow = "2px 2px 0px #000000";
+            }}
+          >
+            {btn.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }

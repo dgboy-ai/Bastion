@@ -33,7 +33,7 @@ print("=" * 60)
 print("\n[1] Config")
 check("Connection string loads", bool(settings.connection_string))
 check("Mock mode is false", settings.mock is False)
-check("Embed model set", "titan" in settings.bedrock_model_id.lower())
+check("Embed model set", "bge-large" in settings.embed_model_id.lower())
 
 # 2. Database
 print("\n[2] Database")

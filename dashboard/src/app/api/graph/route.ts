@@ -33,20 +33,51 @@ export async function GET(request: Request) {
 
     type EntityRow = Record<string, unknown>;
     type RelationRow = Record<string, unknown>;
-    const nodes = entitiesRes.rows.map((row: EntityRow) => ({
+    const rawNodes = entitiesRes.rows.map((row: EntityRow) => ({
       id: row.entity_id as string,
       name: row.name as string,
       type: row.entity_type as string,
       attributes: (row.attributes as Record<string, unknown>) || {},
     }));
 
-    const links = relationsRes.rows.map((row: RelationRow) => ({
+    const rawLinks = relationsRes.rows.map((row: RelationRow) => ({
       id: row.relation_id as string,
       source: row.source_entity_id as string,
       target: row.target_entity_id as string,
       type: row.relation_type as string,
       confidence: (row.confidence as number) || 1.0,
     }));
+
+    // Deduplicate nodes by name to avoid duplicate nodes on the graph screen
+    const uniqueNodesMap = new Map<string, typeof rawNodes[0]>();
+    rawNodes.forEach(n => {
+      if (!n.name) return;
+      const lowerName = n.name.toLowerCase();
+      // Keep the first instance or merge attributes if needed
+      if (!uniqueNodesMap.has(lowerName)) {
+        uniqueNodesMap.set(lowerName, n);
+      }
+    });
+    const nodes = Array.from(uniqueNodesMap.values());
+
+    // Map old entity UUIDs to the new grouped entity UUID
+    const idMap = new Map<string, string>();
+    rawNodes.forEach(n => {
+      if (!n.name) return;
+      const uniqueNode = uniqueNodesMap.get(n.name.toLowerCase());
+      if (uniqueNode) {
+        idMap.set(n.id, uniqueNode.id);
+      }
+    });
+
+    // Remap links to point to the grouped unique nodes, and filter out self-loops
+    const links = rawLinks
+      .map(l => ({
+        ...l,
+        source: idMap.get(l.source) || l.source,
+        target: idMap.get(l.target) || l.target,
+      }))
+      .filter(l => l.source !== l.target);
 
     return apiSuccess({ nodes, links }, 'short');
   } catch (error) {

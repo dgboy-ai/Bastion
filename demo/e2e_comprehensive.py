@@ -19,7 +19,7 @@ def det(m):   print(f"      {C['y']}->{C['n']} {m}")
 class MCP:
     def __init__(self):
         self.key = os.environ.get("BASTION_API_KEY","")
-        self.http = httpx.Client(timeout=60.0); self.sid = None
+        self.http = httpx.Client(timeout=180.0); self.sid = None
 
     def _post(self, body, retry=True):
         if not self.sid:

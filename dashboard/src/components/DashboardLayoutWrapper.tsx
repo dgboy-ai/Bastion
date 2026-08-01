@@ -53,7 +53,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         const mockActive = json.meta?.mock === true;
         setIsMock(mockActive);
         
-        const currentConn = localStorage.getItem("bastion_db_conn");
+        const currentConn = sessionStorage.getItem("bastion_db_conn");
         if (!mockActive && currentConn) {
           try {
             const urlStr = currentConn.replace("postgresql://", "http://");
@@ -78,12 +78,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     checkConnectionStatus();
     
     try {
-      const saved = localStorage.getItem("bastion_db_conn");
+      const saved = sessionStorage.getItem("bastion_db_conn");
       if (saved) {
         setDbConnInput(saved);
         setHasSavedConn(true);
       }
-    } catch {} // localStorage unavailable in private browsing
+    } catch {} // sessionStorage unavailable in private browsing
   }, []);
 
   const handleSaveConnection = async (e: React.FormEvent) => {
@@ -92,7 +92,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     setConnError("");
 
     if (!dbConnInput.trim()) {
-      try { localStorage.removeItem("bastion_db_conn"); } catch {}
+      try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
       setTestingConn(false);
       setIsModalOpen(false);
       window.location.reload();
@@ -106,20 +106,23 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      localStorage.setItem("bastion_db_conn", dbConnInput.trim());
-      setHasSavedConn(true);
       const res = await fetchWithTimeout("/api/health");
       const json = await res.json();
 
+      if (!res.ok || json.success === false) {
+        throw new Error(json.error || "Connection rejected by server — check credentials");
+      }
       if (json.meta?.mock) {
         throw new Error("API fallback to mock data — connection string invalid or unreachable");
       }
 
+      sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+      setHasSavedConn(true);
       setTestingConn(false);
       setIsModalOpen(false);
       window.location.reload();
     } catch (err: unknown) {
-      try { localStorage.removeItem("bastion_db_conn"); } catch {}
+      try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
       setHasSavedConn(false);
       setConnError(err instanceof Error ? err.message : "Connection failed");
       setTestingConn(false);
@@ -127,7 +130,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   const handleClearConnection = () => {
-    try { localStorage.removeItem("bastion_db_conn"); } catch {}
+    try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
     setHasSavedConn(false);
     setDbConnInput("");
     setIsModalOpen(false);
@@ -164,13 +167,69 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             position: "sticky", 
             top: 0, 
             zIndex: 40,
-            background: pathname === "/playground" ? "transparent" : "var(--canvas-sidebar)",
+            background: "var(--canvas-sidebar)",
             backdropFilter: "none",
-            borderBottom: pathname === "/playground" ? "none" : "3px solid #000000",
+            borderBottom: "3px solid #000000",
             display: "flex",
-            justifyContent: "flex-end",
-            padding: pathname === "/playground" ? "20px 32px 0 32px" : "14px 32px"
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "14px 32px"
           }}>
+            {/* Left: Hackathon Branding */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes purpleGlow {
+                  0% { box-shadow: 2px 2px 0px #000000, 0 0 6px rgba(124, 58, 237, 0.4); }
+                  50% { box-shadow: 2px 2px 0px #000000, 0 0 16px rgba(124, 58, 237, 0.8); }
+                  100% { box-shadow: 2px 2px 0px #000000, 0 0 6px rgba(124, 58, 237, 0.4); }
+                }
+                @keyframes glint {
+                  0% { transform: translateX(-150%) skewX(-25deg); }
+                  25% { transform: translateX(150%) skewX(-25deg); }
+                  100% { transform: translateX(150%) skewX(-25deg); }
+                }
+                .purple-glow-badge {
+                  position: relative;
+                  overflow: hidden;
+                  animation: purpleGlow 2.5s infinite ease-in-out;
+                  border: 2px solid #000000 !important;
+                }
+                .purple-glow-badge::after {
+                  content: '';
+                  position: absolute;
+                  top: 0; left: 0; width: 100%; height: 100%;
+                  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+                  animation: glint 3.5s infinite ease-in-out;
+                }
+              `}} />
+              <span className="purple-glow-badge" style={{
+                fontSize: "12px",
+                fontWeight: 900,
+                fontFamily: "'Space Grotesk', sans-serif",
+                color: "#ffffff",
+                background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                padding: "5px 12px",
+                borderRadius: "6px",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                display: "inline-block"
+              }}>
+                CockroachDB × AWS Hackathon
+              </span>
+              <span style={{
+                fontSize: "11px",
+                fontWeight: 800,
+                color: "#374151",
+                fontFamily: "var(--font-mono)",
+                background: "#f3f4f6",
+                border: "1.5px solid #000000",
+                padding: "3px 8px",
+                borderRadius: "4px"
+              }}>
+                Memory Integrity Shield
+              </span>
+            </div>
+
             <div className="header-actions">
               <button 
                 onClick={() => setIsModalOpen(true)}

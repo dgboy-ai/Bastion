@@ -10,7 +10,7 @@ export function getMockMemories() {
       "Team decided to use CockroachDB Serverless for production",
       "Schema migration v3 applied successfully",
       "Agent memory retention policy set to 90 days",
-      "AWS Bedrock Titan embeddings configured for semantic search",
+      "AWS KMS encrypted memory storage configured for sensitive records",
       "C-SPANN vector index created on agent_memory table",
       "CDC changefeed enabled for real-time audit streaming",
       "Multi-agent coordination tested with CRDT merge semantics",
@@ -21,7 +21,7 @@ export function getMockMemories() {
       "A2A protocol handshake validated between agent-1 and agent-2",
       "MCP server health check passed — 6 tools registered",
       "Saga transaction rolled back after timeout on node failure",
-      "Circuit breaker tripped on Bedrock API — recovering",
+      "Circuit breaker tripped on HuggingFace API — recovering",
       "Namespace isolation verified — agent-3 cannot see agent-1 data",
       "Connection pool statistics: 4 active / 10 max connections",
     ][i % 20],
@@ -117,7 +117,7 @@ export function getMockGraph() {
   return {
     nodes: [
       { id: "ent-001", name: "production-db", type: "infrastructure" },
-      { id: "ent-002", name: "bedrock-service", type: "service" },
+      { id: "ent-002", name: "embedding-service", type: "service" },
       { id: "ent-003", name: "deploy-pipeline", type: "workflow" },
       { id: "ent-004", name: "memory-store", type: "component" },
       { id: "ent-005", name: "auth-service", type: "service" },
@@ -125,7 +125,7 @@ export function getMockGraph() {
     links: [
       { source: "production-db", target: "memory-store", relation: "depends_on", confidence: 0.95 },
       { source: "deploy-pipeline", target: "production-db", relation: "deploys_to", confidence: 0.90 },
-      { source: "bedrock-service", target: "memory-store", relation: "embeds_for", confidence: 0.85 },
+      { source: "embedding-service", target: "memory-store", relation: "embeds_for", confidence: 0.85 },
       { source: "auth-service", target: "production-db", relation: "reads_from", confidence: 0.92 },
       { source: "deploy-pipeline", target: "auth-service", relation: "configures", confidence: 0.78 },
     ],

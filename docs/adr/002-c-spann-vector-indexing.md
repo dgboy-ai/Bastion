@@ -23,7 +23,7 @@ CREATE INVERTED INDEX idx_memory_embedding
   ON agent_memory USING INVERTED (embedding) WITH (dim=1024);
 ```
 
-Embeddings are generated via Amazon Bedrock Titan V2 (1024-dim) and stored directly in the `agent_memory` table alongside transactional fields.
+Embeddings are generated via the 1024-dim embedding chain (HuggingFace BAAI/bge-large-en-v1.5 → local all-MiniLM-L6-v2 → SHA-256 hash fallback) and stored directly in the `agent_memory` table alongside transactional fields.
 
 ## Consequences
 

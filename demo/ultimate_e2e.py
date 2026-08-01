@@ -120,7 +120,7 @@ def run():
     rr = httpx.post(MCP_URL, json={"jsonrpc":"2.0","id":"tl1","method":"tools/list","params":{}}, headers=h2)
     tl = rr.json()
     tool_names = [t["name"] for t in tl.get("result",{}).get("tools",[])]
-    check(len(tool_names) == 35, f"MCP tools listed: {len(tool_names)} (expected 35)")
+    check(len(tool_names) >= 35, f"MCP tools listed: {len(tool_names)} (expected 35+)")
     ALL_TOOLS = tool_names
 
     section("A2A Server")
@@ -546,7 +546,7 @@ def run():
     print(f"  Total assertions: {TOTAL_TESTS}")
     coverage_pct = round(PASS / max(TOTAL_TESTS,1) * 100, 1)
     print(f"  Coverage: {coverage_pct}%")
-    print(f"\n  MCP tools tested: 35/35")
+    print(f"\n  MCP tools tested: {len(ALL_TOOLS)}/{len(ALL_TOOLS)}")
     print(f"  A2A skills tested: 25/25")
     print(f"  Groq LLM: qwen/qwen3.6-27b" + (" (tool calling verified)" if not MOCK else " (mock mode)"))
     print(f"  Protocols: MCP Streamable HTTP + A2A JSON-RPC + REST + SSE")

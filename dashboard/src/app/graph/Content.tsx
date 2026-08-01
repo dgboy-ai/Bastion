@@ -193,10 +193,25 @@ export default function GraphPage() {
   const activeInterval = INTERVALS[sliderVal];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
       <div>
         <div className="welcome-title">Temporal Graph Explorer</div>
         <div className="welcome-subtitle">Interactive visualization of the agent&apos;s memory graph. Click nodes to inspect local connections and blockchain cryptographic history.</div>
+      </div>
+
+      {/* Context Section — explains what this page is */}
+      <div style={{ 
+        padding: "18px 24px", borderRadius: "var(--radius-sm)", 
+        background: "#ffffff", border: "2.5px solid #000000",
+        boxShadow: "3px 3px 0px #000000"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+          <span style={{ fontSize: "16px" }}>🕸️</span>
+          <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'Space Grotesk', sans-serif" }}>What is this?</span>
+        </div>
+        <div style={{ fontSize: "14px", color: "#374151", fontWeight: 700, lineHeight: "1.6" }}>
+          This interface visualizes the semantic entity-relationship graph constructed dynamically from the agent's long-term memory in CockroachDB. You can slide the time travel controller to query the database <strong>AS OF SYSTEM TIME</strong> and inspect past graph configurations. Click any node to audit its cryptographic ledger blocks, real-time trust index, and vector drift.
+        </div>
       </div>
 
       {selectedNode && <PoisoningAlerts alerts={trustAlerts} />}
@@ -256,9 +271,15 @@ export default function GraphPage() {
           </div>
 
           {/* Temporal Time-Travel Slider */}
-          <div className="graph-slider-panel" style={{ position: "absolute", bottom: "16px", left: "16px", right: "16px", zIndex: 10, background: "rgba(10,10,10,0.85)", padding: "12px", borderRadius: "8px", border: "1px solid var(--glass-border)", backdropFilter: "blur(8px)" }}>
-            <div className="slider-row">
-              <span className="slider-label">AS OF SYSTEM TIME</span>
+          <div className="graph-slider-panel" style={{
+            position: "absolute", bottom: "16px", left: "16px", right: "16px", zIndex: 10,
+            background: "#ffffff", padding: "12px 20px", borderRadius: "8px",
+            border: "2.5px solid #000000", boxShadow: "2px 2px 0px #000000"
+          }}>
+            <div className="slider-row" style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <span className="slider-label" style={{
+                fontFamily: "var(--font-mono)", fontSize: "11px", fontWeight: 900, color: "#000000"
+              }}>AS OF SYSTEM TIME</span>
               <input
                 type="range"
                 className="time-slider"
@@ -266,8 +287,14 @@ export default function GraphPage() {
                 max={INTERVALS.length - 1}
                 value={sliderVal}
                 onChange={(e) => setSliderVal(parseInt(e.target.value, 10))}
+                style={{ flex: 1, accentColor: "#000000" }}
               />
-              <span className="badge-mono" style={{ minWidth: "140px", textAlign: "center", fontSize: "10px" }}>
+              <span style={{
+                minWidth: "140px", textAlign: "center", fontSize: "11px", fontWeight: 900,
+                fontFamily: "var(--font-mono)", color: "#000000", background: "#f3f4f6",
+                border: "1.5px solid #000000", padding: "4px 10px", borderRadius: "4px",
+                boxShadow: "1px 1px 0px #000000"
+              }}>
                 {activeInterval.label}
               </span>
             </div>

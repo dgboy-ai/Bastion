@@ -12,7 +12,7 @@ interface FallbackTier {
 export default function FaultToleranceVisualizer() {
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [tiers, setTiers] = useState<FallbackTier[]>([
-    { name: "Amazon Bedrock", status: "active", latency: "~120ms", description: "Titan V2 embeddings (1024-dim)" },
+    { name: "HuggingFace", status: "active", latency: "~120ms", description: "BAAI/bge-large-en-v1.5 (1024-dim)" },
     { name: "all-MiniLM-L6-v2", status: "standby", latency: "~45ms", description: "Local model (384-dim, padded)" },
     { name: "Hash Fallback", status: "standby", latency: "<1ms", description: "SHA-256 deterministic embedding" },
   ]);
@@ -35,8 +35,7 @@ export default function FaultToleranceVisualizer() {
     timeoutsRef.current.push(id);
   };
 
-  const simulateBedrockFailure = () => {
-    const newCount = failureCount + 1;
+  const simulateEmbeddingFailure = () => {    const newCount = failureCount + 1;
     setFailureCount(newCount);
 
     if (newCount >= 5) {
@@ -84,7 +83,7 @@ export default function FaultToleranceVisualizer() {
     setCircuitState("closed");
     setFailureCount(0);
     setTiers([
-      { name: "Amazon Bedrock", status: "active", latency: "~120ms", description: "Titan V2 embeddings (1024-dim)" },
+      { name: "HuggingFace", status: "active", latency: "~120ms", description: "BAAI/bge-large-en-v1.5 (1024-dim)" },
       { name: "all-MiniLM-L6-v2", status: "standby", latency: "~45ms", description: "Local model (384-dim, padded)" },
       { name: "Hash Fallback", status: "standby", latency: "<1ms", description: "SHA-256 deterministic embedding" },
     ]);
@@ -191,7 +190,7 @@ export default function FaultToleranceVisualizer() {
 
       {/* Arrow indicators */}
       <div className="flex items-center justify-center gap-2 text-gray-500 text-sm mb-6">
-        <span>Bedrock fails</span>
+        <span>HuggingFace fails</span>
         <span>→</span>
         <span>MiniLM activates</span>
         <span>→</span>
@@ -203,11 +202,11 @@ export default function FaultToleranceVisualizer() {
       {/* Controls */}
       <div className="flex gap-3">
         <button
-          onClick={simulateBedrockFailure}
+          onClick={simulateEmbeddingFailure}
           disabled={circuitState === "open"}
           className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition"
         >
-          {circuitState === "open" ? "Circuit Open — Recovering..." : "Simulate Bedrock Failure"}
+          {circuitState === "open" ? "Circuit Open — Recovering..." : "Simulate HuggingFace Failure"}
         </button>
         <button
           onClick={resetSimulation}

@@ -73,7 +73,7 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
   const types = [...new Set(events.map(e => e.type))];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "1400px", margin: "0 auto", animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%", animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
@@ -192,9 +192,9 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
       </div>
 
       {/* 2-Column: Events Grid + Detail */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "14px", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "24px", flex: 1, minHeight: 0 }}>
         {/* Events Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "10px", alignContent: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "18px", alignContent: "start" }}>
           {loading ? (
             Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ padding: "16px", borderRadius: "var(--radius-sm)", background: "#ffffff", border: "2px solid #000000", boxShadow: "2px 2px 0px #000000" }}>
@@ -222,7 +222,7 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
                   key={e.id} 
                   onClick={() => setSelectedId(e.id)} 
                   style={{
-                    padding: "16px", borderRadius: "var(--radius-sm)", cursor: "pointer",
+                    padding: "20px", borderRadius: "var(--radius-sm)", cursor: "pointer",
                     background: isSelected ? "var(--accent-breeze)" : "#ffffff",
                     border: "2.5px solid #000000",
                     boxShadow: "3px 3px 0px #000000",
@@ -243,7 +243,17 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
                       {e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : ""}
                     </span>
                   </div>
-                  <div style={{ fontSize: "14px", color: "#000000", lineHeight: "1.5", marginBottom: "12px", fontWeight: 900, fontFamily: "var(--font-sans)", wordBreak: "break-word" }}>
+                  <div style={{
+                    fontSize: "12px", fontWeight: 550, color: "#374151",
+                    fontFamily: "var(--font-mono)",
+                    background: "#f9f9f7",
+                    border: "2px solid #000000",
+                    padding: "10px 14px",
+                    borderRadius: "6px",
+                    wordBreak: "break-all",
+                    lineHeight: "1.5",
+                    marginBottom: "12px"
+                  }}>
                     {e.content_preview}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "11px", color: "#374151", fontWeight: 800, borderTop: "1px solid #000000", paddingTop: "8px" }}>
@@ -290,9 +300,9 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
               <div style={{ marginBottom: "14px" }}>
                 <div style={{ fontSize: "10px", color: "#374151", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Content</div>
                 <div style={{ 
-                  fontSize: "13px", color: "#000000", fontWeight: 800, lineHeight: "1.6", 
+                  fontSize: "12.5px", color: "#374151", fontWeight: 550, lineHeight: "1.6", 
                   background: "#f9f9f7", padding: "12px", borderRadius: "var(--radius-sm)", 
-                  border: "2px solid #000000", wordBreak: "break-word"
+                  border: "2px solid #000000", wordBreak: "break-word", fontFamily: "var(--font-mono)"
                 }}>{selected.content_preview}</div>
               </div>
 

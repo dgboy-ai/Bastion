@@ -23,7 +23,7 @@ export default function ArchitecturePage() {
             {[
               { t: "Agent sends memory", c: C.cyan, bg: "rgba(0,229,255,.06)" },
               { t: "↓ OWASP ASI06 Guard (7-stage scan)", c: C.lava, bg: "transparent" },
-              { t: "↓ AWS Bedrock Titan V2 (1024-dim embedding)", c: C.gold, bg: "rgba(255,200,0,.06)" },
+              { t: "↓ 1024-dim embedding (HuggingFace → MiniLM → hash)", c: C.gold, bg: "rgba(255,200,0,.06)" },
               { t: "↓ SHA-256 Hash Chain (link to previous block)", c: C.magma, bg: "transparent" },
               { t: "↓ CockroachDB SERIALIZABLE commit", c: C.cyan, bg: "rgba(0,229,255,.06)" },
             ].map((s, i) => (

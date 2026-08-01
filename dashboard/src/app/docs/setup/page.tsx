@@ -37,7 +37,7 @@ export default function SetupPage() {
 
       <div style={{ fontSize: "16px", lineHeight: 1.8, color: C.body, fontFamily: "var(--font-inter)" }}>
         <p style={{ marginBottom: "20px" }}>
-          Complete setup guide for deploying Bastion in production with <strong style={{ color: "#fff" }}>CockroachDB</strong>, <strong style={{ color: "#fff" }}>AWS Bedrock</strong>, and <strong style={{ color: "#fff" }}>MCP/A2A servers</strong>.
+          Complete setup guide for deploying Bastion in production with <strong style={{ color: "#fff" }}>CockroachDB</strong>, <strong style={{ color: "#fff" }}>MCP/A2A servers</strong>, and a resilient embedding chain.
         </p>
 
         <h2 style={{ fontSize: "22px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "36px 0 12px" }}>Prerequisites</h2>
@@ -45,7 +45,7 @@ export default function SetupPage() {
           {[
             "Python 3.11+",
             "CockroachDB cluster (Serverless or Dedicated)",
-            "AWS account with Bedrock access (Titan V2 model enabled)",
+            "(Optional) HF_TOKEN for HuggingFace embedding API",
             "Node.js 18+ (for dashboard)",
           ].map((p, i) => (
             <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center", fontSize: "14px" }}>
@@ -70,8 +70,8 @@ export default function SetupPage() {
                 ["BASTION_MOCK", "true", "Enable mock mode (no DB)"],
                 ["BASTION_API_KEY", "—", "API key for authentication"],
                 ["BASTION_A2A_PRIVATE_KEY", "—", "Ed25519 key for agent signing"],
-                ["AWS_ACCESS_KEY_ID", "—", "AWS credentials for Bedrock"],
-                ["AWS_SECRET_ACCESS_KEY", "—", "AWS credentials for Bedrock"],
+                ["HF_TOKEN", "—", "(Optional) HuggingFace token for embedding API"],
+                ["BASTION_AWS_KMS_KEY_ARN", "—", "AWS KMS key ARN for encrypted memory"],
               ].map(([v, d, p], i) => (
                 <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,.04)" }}>
                   <td style={{ padding: "8px 14px", fontFamily: "var(--font-mono)", fontSize: "12px", color: C.cyan }}>{v}</td>

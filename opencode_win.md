@@ -25,7 +25,7 @@ All 4 tools are already implemented. The video must explicitly show **2+** in ac
 
 | Service | Bastion uses it? | How |
 |---------|-----------------|-----|
-| **Amazon Bedrock** | ✅ | Titan V2 embeddings (1024-dim), circuit breaker fallback — used in vector search |
+| **Embedding Chain** | ✅ | 1024-dim: HuggingFace bge-large-en-v1.5 → MiniLM → hash fallback — used in vector search |
 | **AWS Lambda** | ✅ | CDC handler + webhook dispatcher — shown in architecture diagram |
 | **Amazon S3** | ✅ | Memory archives + backups — shown in architecture diagram |
 | **AWS KMS** | ✅ | AES-256-GCM envelope encryption |
@@ -110,7 +110,7 @@ A playground with 3 buttons is surface-level. **Deep integration** means:
                      AWS (us-east-1)
 ┌──────────────────────────────────────────────────────────────────┐
 │  Services:                                                       │
-│  ├─ Amazon Bedrock → Titan V2 embeddings (1024-dim)             │
+│  ├─ Embedding Chain → 1024-dim (HF→MiniLM→hash)                 │
 │  ├─ AWS Lambda     → CDC handler + webhook dispatcher           │
 │  ├─ Amazon S3      → Memory archives + backups                  │
 │  ├─ AWS KMS        → Envelope encryption (AES-256-GCM)          │

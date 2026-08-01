@@ -59,11 +59,11 @@ class BastionSettings(BaseSettings):
             return v
         return os.environ.get("BASTION_CONN", "")
 
-    bedrock_model_id: str = "amazon.titan-embed-text-v2:0"
+    embed_model_id: str = "BAAI/bge-large-en-v1.5"
     embed_dim: int = 1024
     aws_region: str = os.environ.get("AWS_REGION", "us-east-1")
-    bedrock_read_timeout: int = 10
-    bedrock_connect_timeout: int = 10
+    embed_read_timeout: int = 30
+    embed_connect_timeout: int = 10
     pool_min_size: int = 5
     pool_max_size: int = 20
     pool_max_idle_seconds: int = 300

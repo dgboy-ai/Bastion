@@ -43,28 +43,46 @@ def memory_health_real(mem: BastionMemory) -> dict[str, Any]:
             avg_access = float(row[4] or 0)
             avg_importance = float(row[5] or 0)
             freshness = week / max(total, 1)
-            # Check vector index health: verify C-SPANN index exists and is operational
+            # Check vector index health: detect the live vector column state and
+            # upsert a record so the vector_health monitor table stays populated.
             vector_healthy = False
             vector_dim = None
             try:
+                # 1. Detect the vector column dimension from information_schema
                 cur.execute(
-                    "SELECT index_type, is_operational, dimension "
-                    "FROM vector_health WHERE agent_id = %s ORDER BY last_check_at DESC LIMIT 1",
+                    "SELECT data_type, character_maximum_length FROM information_schema.columns "
+                    "WHERE table_name = 'agent_memory' AND column_name = 'embedding'"
+                )
+                vcol = cur.fetchone()
+                if vcol and vcol[0].lower() in ("user-defined", "vector"):
+                    vector_dim = vcol[1]
+                # 2. Count memories that actually carry embeddings
+                cur.execute(
+                    "SELECT COUNT(*) FROM agent_memory WHERE agent_id = %s AND embedding IS NOT NULL",
                     (mem.agent_id,),
                 )
-                vh_row = cur.fetchone()
-                if vh_row:
-                    vector_healthy = vh_row[1]
-                    vector_dim = vh_row[2]
-                else:
-                    # Fallback: check if the vector index exists via SHOW INDEXES
+                embedded = cur.fetchone()[0] or 0
+                # 3. Confirm the C-SPANN index exists
+                index_exists = False
+                try:
                     cur.execute(
-                        "SELECT index_type FROM vector_health "
-                        "WHERE index_name = 'idx_memory_embedding' ORDER BY last_check_at DESC LIMIT 1"
+                        "SELECT index_name FROM [SHOW INDEXES FROM agent_memory] "
+                        "WHERE index_name = 'idx_memory_embedding' OR index_name = 'embedding_custom_ops'"
                     )
-                    index_row = cur.fetchone()
-                    if index_row:
-                        vector_healthy = True
+                    index_exists = cur.fetchone() is not None
+                except Exception:
+                    index_exists = embedded > 0
+                vector_healthy = index_exists and embedded > 0
+                if vector_dim is None:
+                    vector_dim = 1024
+                # 4. Persist a health snapshot (keeps the monitor table fresh)
+                cur.execute(
+                    "UPSERT INTO vector_health "
+                    "(agent_id, index_name, index_type, is_operational, dimension, total_vectors, "
+                    "last_check_at, error_message) "
+                    "VALUES (%s, 'idx_memory_embedding', 'C-SPANN', %s, %s, %s, now(), NULL)",
+                    (mem.agent_id, vector_healthy, vector_dim, embedded),
+                )
             except Exception:
                 logger.debug("Vector health check skipped (table/index may not exist)")
             return {

@@ -22,11 +22,11 @@ class TestBastionSettings:
         settings = BastionSettings()
         assert settings.connection_string == ""
         assert settings.mock is False
-        assert settings.bedrock_model_id == "amazon.titan-embed-text-v2:0"
+        assert settings.embed_model_id == "BAAI/bge-large-en-v1.5"
         assert settings.embed_dim == 1024
         assert settings.aws_region in ("us-east-1", "ap-south-1")  # depends on env
-        assert settings.bedrock_read_timeout == 10
-        assert settings.bedrock_connect_timeout == 10
+        assert settings.embed_read_timeout == 30
+        assert settings.embed_connect_timeout == 10
         assert settings.pool_min_size == 5
         assert settings.pool_max_size == 20
         assert settings.pool_max_idle_seconds == 300
@@ -133,7 +133,7 @@ class TestEnvVarMapping:
         [
             ("BASTION_CONNECTION_STRING", "connection_string", "test-conn"),
             ("BASTION_MOCK", "mock", True),
-            ("BASTION_BEDROCK_MODEL_ID", "bedrock_model_id", "test-model"),
+            ("BASTION_EMBED_MODEL_ID", "embed_model_id", "test-model"),
             ("BASTION_EMBED_DIM", "embed_dim", 256),
             ("BASTION_AWS_REGION", "aws_region", "eu-west-1"),
             ("BASTION_POOL_MIN_SIZE", "pool_min_size", 4),

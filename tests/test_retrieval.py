@@ -157,7 +157,7 @@ class TestRecallBenchmark:
             _mem("CockroachDB cluster deployed in us-east1 and us-west1", memory_id="m5", importance=6.0),
             _mem("Security audit completed with zero critical findings", memory_id="m6", importance=8.0),
             _mem("Lambda cold start mitigation via EventBridge keep-alive", memory_id="m7", importance=5.0),
-            _mem("Vector embeddings use AWS Bedrock Titan V2 with 1024 dimensions", memory_id="m8", importance=6.0),
+            _mem("Vector embeddings use 1024-dim embedding chain with C-SPANN indexing", memory_id="m8", importance=6.0),
             _mem("Monthly infrastructure cost is approximately 340 dollars", memory_id="m9", importance=5.0),
             _mem("Team decided to adopt Rust for high-performance ingestion", memory_id="m10", importance=7.0),
         ]

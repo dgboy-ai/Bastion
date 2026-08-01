@@ -2,16 +2,17 @@ export default function PlaygroundLoading() {
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      minHeight: "60vh", gap: "16px", background: "#0a0508",
+      minHeight: "75vh", gap: "16px", background: "transparent",
     }}>
       <div style={{
-        width: "48px", height: "48px", border: "3px solid rgba(255,170,0,.15)",
-        borderTop: "3px solid #ffaa00", borderRadius: "50%",
+        width: "48px", height: "48px", border: "4px solid #000000",
+        borderTop: "4px solid #ff5e00", borderRadius: "50%",
         animation: "spin 0.8s linear infinite",
+        boxShadow: "2px 2px 0px #000000"
       }} />
       <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "12px",
-        color: "#8a8290", letterSpacing: "2px", textTransform: "uppercase",
+        fontFamily: "'Space Grotesk', sans-serif", fontSize: "13px", fontWeight: 900,
+        color: "#000000", letterSpacing: "1.5px", textTransform: "uppercase",
       }}>
         Loading Live Demo...
       </div>

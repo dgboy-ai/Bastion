@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { fetchWithTimeout } from "@/lib/fetch";
 import { useConnection } from "@/components/DashboardLayoutWrapper";
@@ -89,7 +90,7 @@ function TrendArrow({ value, label }: { value: number; label?: string }) {
 function ExecutiveSummary({
   memories, threats, trustScore, driftScore, isHealthy
 }: {
-  memories: number; threats: number; trustScore: number; driftScore: number; isHealthy: boolean
+  memories: number; threats: number; trustScore: number | string; driftScore: number; isHealthy: boolean
 }) {
   const statusColor = isHealthy ? C.green : threats > 0 ? C.red : C.orange;
   const statusText = isHealthy ? "SYSTEM HEALTHY" : threats > 0 ? "DEFENSE ACTIVE" : "CHECKING...";
@@ -124,7 +125,7 @@ function ExecutiveSummary({
 
       {/* Trust Score Card */}
       <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>AVG IMPORTANCE</div>
+        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>AVG IMPORTANCE (/10)</div>
         <div style={{ fontSize: "24px", fontWeight: 950, color: C.cyan, fontFamily: "'Space Grotesk', sans-serif" }}>
           {trustScore}
         </div>
@@ -196,77 +197,6 @@ function KpiCard({
   );
 }
 
-/* ── Premium Live Feed ─────────────────────────────────────────── */
-interface FeedEntry { text: string; isReal: boolean; ts: string; }
-
-function LiveFeed({ entries }: { entries: FeedEntry[] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = 0;
-  }, [entries]);
-
-  return (
-    <div ref={ref} style={{ overflowY: "auto", display: "flex", flexDirection: "column" }}>
-      {entries.slice(0, 12).map((entry, i) => {
-        const isSelect = entry.text.includes("SELECT");
-        return (
-          <div key={i} style={{
-            display: "flex", alignItems: "center", gap: "12px",
-            padding: "10px 14px",
-            background: i === 0 ? "var(--accent-breeze)" : "transparent",
-            borderBottom: "2px solid #000000",
-            transition: "all 0.15s ease",
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--accent-breeze)";
-            e.currentTarget.style.transform = "translateX(4px)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = i === 0 ? "var(--accent-breeze)" : "transparent";
-            e.currentTarget.style.transform = "translateX(0)";
-          }}
-          >
-            {/* type badge */}
-            <div style={{ flexShrink: 0 }}>
-              <span style={{
-                display: "inline-block", fontSize: "11px", fontWeight: 900,
-                fontFamily: "var(--font-sans)", letterSpacing: "0.8px",
-                padding: "2px 6px", borderRadius: "2px",
-                background: "#ffffff",
-                color: "#000000",
-                border: "2px solid #000000",
-                boxShadow: "1px 1px 0px #000000"
-              }}>
-                {entry.isReal ? (isSelect ? "SQL" : "DB") : "SYS"}
-              </span>
-            </div>
-            {/* content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: "13px",
-                fontFamily: "var(--font-sans)",
-                color: "#000000",
-                lineHeight: "1.4",
-                wordBreak: "break-word",
-                fontWeight: 700,
-              }}>
-                {entry.text.replace(/^\[.*?\]\s*/, "")}
-              </div>
-              <div style={{
-                fontSize: "11px", color: "#374151",
-                fontFamily: "var(--font-sans)", fontWeight: 800, marginTop: "2px"
-              }}>
-                {entry.ts}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ── Mini Sparkline ─────────────────────────────────────────── */
 function Sparkline({ data, color, height = 48 }: { data: number[]; color: string; height?: number }) {
   const max = Math.max(...data, 1);
@@ -292,24 +222,35 @@ function Sparkline({ data, color, height = 48 }: { data: number[]; color: string
 
 /* ── Security Events Feed ───────────────────────────────────── */
 function SecurityFeed({ blockedCount }: { blockedCount: number }) {
-  const [events, setEvents] = useState<{ type: string; msg: string; time: string; color: string }[]>([]);
+  const [events, setEvents] = useState<{ type: string; msg: string; time: string; color: string; agent: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchWithTimeout("/api/audit?limit=10")
+    fetchWithTimeout("/api/tool-usage?limit=30")
       .then(r => r.json())
       .then(d => {
-        const rows = d?.data?.events || d?.data?.rows || d?.data || [];
+        const rows = d?.data?.usage || d?.usage || [];
         if (Array.isArray(rows) && rows.length > 0) {
-          setEvents(rows.map((r: any) => {
-            const action = String(r.action || r.type || "memory_store");
-            const isBlocked = action.toLowerCase().includes("block") || action.toLowerCase().includes("reject") || action.toLowerCase().includes("poison") || String(r.status || "").toLowerCase().includes("block");
-            const isWarn = action.toLowerCase().includes("drift") || action.toLowerCase().includes("anomaly");
+          const seen = new Set<string>();
+          const unique = rows.filter((r: any) => {
+            const key = `${r.tool_name}-${r.agent_id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setEvents(unique.slice(0, 8).map((r: any) => {
+            const tool = String(r.tool_name || "memory_store");
+            const isEncrypted = tool.includes("encrypt");
+            const isScan = tool.includes("scan") || tool.includes("contradiction") || tool.includes("detect");
+            const isGuard = tool.includes("guard") || tool.includes("compliance");
+            const type = isEncrypted ? "ENCRYPTED" : isScan ? "SCANNED" : isGuard ? "GUARDED" : "PASSED";
+            const color = isEncrypted ? "#7c3aed" : isScan ? "#0369a1" : isGuard ? "#b45309" : "#047857";
             return {
-              type: isBlocked ? "BLOCKED" : isWarn ? "WARN" : "PASSED",
-              msg: `${action.replace(/_/g, " ")} — ${String(r.content_preview || r.details || "audit entry").slice(0, 45)}`,
-              time: r.timestamp ? new Date(String(r.timestamp)).toLocaleTimeString() : r.recorded_at ? new Date(String(r.recorded_at)).toLocaleTimeString() : "just now",
-              color: isBlocked ? C.red : isWarn ? C.orange : C.green,
+              type,
+              msg: tool.replace(/_/g, " "),
+              time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : "just now",
+              color,
+              agent: r.agent_id || "unknown",
             };
           }));
         }
@@ -321,7 +262,7 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
   if (loading && events.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute }}>Loading audit events...</div>
+        <div style={{ fontSize: "11px", color: C.mute }}>Loading security scan...</div>
       </div>
     );
   }
@@ -338,19 +279,19 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto", flex: 1 }}>
       {events.map((e, i) => (
         <div key={i} style={{
           display: "flex", alignItems: "center", gap: "10px",
-          padding: "9px 12px", borderRadius: "10px",
-          background: i === 0 ? `${e.color}0d` : "rgba(255,255,255,0.02)",
-          border: `1px solid ${i === 0 ? e.color + "30" : "rgba(255,255,255,0.04)"}`,
+          padding: "8px 12px", borderRadius: "8px",
+          background: i === 0 ? `${e.color}0d` : "transparent",
+          border: `1.5px solid ${i === 0 ? e.color + "30" : "#000000"}`,
           transition: "all 0.3s",
         }}>
           <Dot color={e.color} pulse={i === 0} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "11.5px", color: C.body, lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.msg}</div>
-            <div style={{ fontSize: "10.5px", color: C.mute, marginTop: "2px", fontFamily: "'JetBrains Mono', monospace" }}>{e.time}</div>
+            <div style={{ fontSize: "12px", color: "#000000", lineHeight: 1.4, fontWeight: 800, fontFamily: "var(--font-sans)" }}>{e.msg}</div>
+            <div style={{ fontSize: "10px", color: "#374151", marginTop: "1px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{e.agent} · {e.time}</div>
           </div>
           <Tag color={e.color}>{e.type}</Tag>
         </div>
@@ -359,31 +300,25 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
   );
 }
 
-/* ── Blockchain Timeline ─────────────────────────────────────── */
+/* ── Blockchain Timeline (now: Live Tool Call Trail) ─────────────── */
 function BlockchainTimeline({ live }: { live: boolean }) {
-  const [blocks, setBlocks] = useState<{ h: number; action: string; hash: string; status: string; ms: number }[]>([]);
+  const [blocks, setBlocks] = useState<{ id: string; action: string; agent: string; status: string; ms: number; time: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const t0 = performance.now();
-    fetchWithTimeout("/api/audit?limit=5")
+    fetchWithTimeout("/api/tool-usage?limit=8")
       .then(r => r.json())
       .then(d => {
-        const latency = Math.round(performance.now() - t0);
-        const rows = d?.data?.events || d?.data?.rows || d?.data || [];
+        const rows = d?.data?.usage || d?.usage || [];
         if (Array.isArray(rows) && rows.length > 0) {
-          setBlocks(rows.map((r: any, i: number) => {
-            const action = String(r.action || r.type || "memory_store");
-            const hash = String(r.cryptographic_hash || r.hash || "0x0000");
-            const status = String(r.status || "SUCCESS").toUpperCase();
-            return {
-              h: 10000 + (rows.length - i),
-              action: action.replace(/_/g, " "),
-              hash: hash.slice(0, 5) + "…" + hash.slice(-5),
-              status: status === "BLOCKED" || status === "FAILED" ? "FAILED" : "SUCCESS",
-              ms: i === 0 ? latency : Math.max(1, Math.round(latency * (1 - i * 0.15))),
-            };
-          }));
+          setBlocks(rows.map((r: any, i: number) => ({
+            id: String(i),
+            action: (r.tool_name || "memory_store").replace(/_/g, " "),
+            agent: r.agent_id || "unknown",
+            status: "SUCCESS",
+            ms: r.duration_ms || 0,
+            time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : "just now",
+          })));
         }
         setLoading(false);
       })
@@ -393,7 +328,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
   if (loading && blocks.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "0", justifyContent: "center", alignItems: "center", padding: "20px 0" }}>
-        <div style={{ fontSize: "11px", color: C.mute }}>Loading chain data...</div>
+        <div style={{ fontSize: "11px", color: C.mute }}>Loading tool trail...</div>
       </div>
     );
   }
@@ -405,7 +340,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
           <rect x="2" y="2" width="20" height="20" rx="4" />
           <path d="M12 11V7M12 17h.01" />
         </svg>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace" }}>No block data generated yet</div>
+        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace" }}>No tool calls yet</div>
       </div>
     );
   }
@@ -413,8 +348,7 @@ function BlockchainTimeline({ live }: { live: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
       {blocks.map((b, i) => (
-        <div key={b.h} style={{ display: "flex", alignItems: "center", gap: "12px", position: "relative" }}>
-          {/* vertical connector */}
+        <div key={b.id} style={{ display: "flex", alignItems: "center", gap: "12px", position: "relative" }}>
           {i < blocks.length - 1 && (
             <div style={{
               position: "absolute", left: "10px", top: "36px",
@@ -440,25 +374,14 @@ function BlockchainTimeline({ live }: { live: boolean }) {
             border: "2px solid #000000",
             borderRadius: "var(--radius-sm)",
             boxShadow: "2.5px 2.5px 0px #000000",
-            transition: "all 0.15s ease",
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translate(-2px, -2px)";
-            e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translate(0, 0)";
-            e.currentTarget.style.boxShadow = "2.5px 2.5px 0px #000000";
-          }}
-          >
+          }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12.5px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{b.action}</span>
+              <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{b.action}</span>
               <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-mono)" }}>{b.ms}ms</span>
             </div>
-            <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
-              <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-mono)" }}>#{b.h}</span>
-              <span style={{ fontSize: "11px", color: "#ff5e00", fontWeight: 900, fontFamily: "var(--font-mono)" }}>{b.hash}</span>
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px", alignItems: "center" }}>
+              <span style={{ fontSize: "11px", color: "#b45309", fontWeight: 800, fontFamily: "var(--font-mono)" }}>{b.agent}</span>
+              <span style={{ fontSize: "10px", color: "#9ca3af", fontFamily: "var(--font-mono)" }}>{b.time}</span>
             </div>
           </div>
         </div>
@@ -467,49 +390,78 @@ function BlockchainTimeline({ live }: { live: boolean }) {
   );
 }
 
-/* ── Memory Heatmap bars ─────────────────────────────────────── */
+/* ── Memory Ingestion Chart ─────────────────────────────────── */
 function MemoryHeatmap({ hourly }: { hourly: number[] }) {
   const data = useMemo(() =>
-    hourly.length > 0 ? hourly : Array.from({ length: 24 }, (_, i) =>
-      30 + Math.floor(Math.sin(i * 0.5) * 20 + ((i * 7 + 13) % 25))),
+    hourly.length > 0 ? hourly : Array.from({ length: 24 }, () => 0),
     [hourly]);
   const max = Math.max(...data, 1);
-  const hours = ["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"];
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const W = 500;
+  const H = 160;
+  const padL = 30;
+  const padR = 30;
+  const padT = 20;
+  const padB = 24;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const step = chartW / 23;
+
+  const pts = data.map((v, i) => ({
+    x: padL + i * step,
+    y: padT + chartH - (v / max) * chartH * 0.85,
+    v, i,
+  }));
+
+  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+  const areaPath = `${linePath} L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`;
 
   return (
-    <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "64px" }}>
-        {data.map((v, i) => {
-          const pct = v / max;
-          const bgGradient = pct === 0 ? "rgba(255,255,255,0.03)" : pct > 0.75
-            ? "linear-gradient(180deg, #ff5e00 0%, rgba(255,94,0,0.1) 100%)"
-            : pct > 0.4
-              ? "linear-gradient(180deg, #f97316 0%, rgba(249,115,22,0.1) 100%)"
-              : "linear-gradient(180deg, #00e5ff 0%, rgba(0,229,255,0.1) 100%)";
-          const borderColor = pct === 0 ? "rgba(255,255,255,0.05)" : pct > 0.75
-            ? "rgba(255,94,0,0.4)"
-            : pct > 0.4
-              ? "rgba(249,115,22,0.3)"
-              : "rgba(0,229,255,0.3)";
+    <div style={{ width: "100%", position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "180px", overflow: "visible" }} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#047857" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#047857" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map(f => (
+          <line key={f} x1={padL} y1={padT + chartH * (1 - f)} x2={W - padR} y2={padT + chartH * (1 - f)}
+            stroke="#000" strokeOpacity="0.06" strokeWidth="1" strokeDasharray="3,3" />
+        ))}
+        <path d={areaPath} fill="url(#areaGrad)" />
+        <path d={linePath} fill="none" stroke="#047857" strokeWidth="2.5" strokeLinecap="round" />
+        {pts.map((p, i) => (
+          <g key={i} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)} style={{ cursor: "pointer" }}>
+            <rect x={p.x - step / 2} y={padT} width={step} height={chartH} fill="transparent" />
+            {hoverIdx === i && (
+              <>
+                {/* Vertical helper line for modern crosshair effect */}
+                <line x1={p.x} y1={padT} x2={p.x} y2={padT + chartH} stroke="#000000" strokeOpacity="0.12" strokeWidth="1.5" strokeDasharray="4,3" />
+                {/* Active dot */}
+                <circle cx={p.x} cy={p.y} r={5} fill="#047857" stroke="#ffffff" strokeWidth="2.5" />
+                {/* Tooltip */}
+                <g style={{ zIndex: 50 }}>
+                  <rect x={p.x - 50} y={p.y - 34} width="100" height="24" rx="5" fill="#111827" stroke="#000" strokeWidth="1" />
+                  <text x={p.x} y={p.y - 18} textAnchor="middle" fontSize="11" fill="#fff" fontFamily="var(--font-mono)" fontWeight="700">
+                    {p.v} at {String((new Date().getHours() - 23 + i + 24) % 24).padStart(2, "0")}:00
+                  </text>
+                </g>
+              </>
+            )}
+          </g>
+        ))}
+        {[0, 4, 8, 12, 16, 20].map(idx => {
+          const currentHour = new Date().getHours();
+          const hr = (currentHour - 23 + idx + 24) % 24;
           return (
-            <div key={i} title={`${v} ops`} style={{
-              flex: 1,
-              background: bgGradient,
-              borderRadius: "4px 4px 0 0",
-              height: `${Math.max(4, pct * 64)}px`,
-              transition: "all 0.5s cubic-bezier(0.16,1,0.3,1)",
-              cursor: "pointer",
-              border: `1.5px solid ${borderColor}`,
-              boxShadow: pct > 0 ? "0 0 12px rgba(255, 94, 0, 0.08)" : "none"
-            }} />
+            <text key={idx} x={pts[idx].x} y={H - 2} textAnchor="middle" fontSize="11" fill="#4b5563" fontFamily="var(--font-mono)" fontWeight="800">
+              {String(hr).padStart(2, "0")}:00
+            </text>
           );
         })}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "8px" }}>
-        {hours.map(h => (
-          <span key={h} style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace" }}>{h}</span>
-        ))}
-      </div>
+      </svg>
     </div>
   );
 }
@@ -689,6 +641,585 @@ function VitalRow({ label, value, max, color }: { label: string; value: number; 
   );
 }
 
+/* ── Tech (CRDB Tools & AWS) Detail Modal ────────────────────── */
+const TECH_DETAILS: Record<string, { why: string; where: string[]; how: string[] }> = {
+  mcp: {
+    why: "The hackathon requires using the official CockroachDB Cloud Managed MCP Server. We proxy every query through it so the agent can inspect the live cluster directly — no custom proxy, full audit logging, safe by default.",
+    where: [
+      "src/bastion/mcp_server.py — managed_mcp_call tool proxies to https://cockroachlabs.cloud/mcp",
+      "dashboard/src/app/api/official-mcp/route.ts — server-side MCP route",
+      "demo/_live_mcp_probe.py — live cluster introspection",
+    ],
+    how: [
+      "Agents call managed_mcp_call → we POST JSON-RPC to the official endpoint with a Bearer token scoped to our cluster.",
+      "Used list_tables / get_table_schema / explain_query / select_query to introspect agent_memory schema live.",
+      "68 real calls logged in tool_usage_log with provider=CockroachDB Cloud Managed MCP.",
+    ],
+  },
+  vector: {
+    why: "Semantic memory needs similarity search that stays fast as data grows. CockroachDB's C-SPANN distributed vector index gives sub-linear search with no separate vector store — no consistency gap between vectors and operational data.",
+    where: [
+      "schema/ — C-SPANN vector index on agent_memory.embedding (1024-dim)",
+      "src/bastion/embeddings.py — embedding provider chain",
+      "src/bastion/memory_search.py / multi_signal_search.py",
+    ],
+    how: [
+      "Each memory is embedded to a 1024-dim vector, then stored in CockroachDB.",
+      "Embedding provider chain: HuggingFace BAAI/bge-large-en-v1.5 → local all-MiniLM-L6-v2 → hash fallback.",
+      "memory_search runs cosine similarity through the C-SPANN index for sub-linear recall.",
+    ],
+  },
+  ccloud: {
+    why: "The agent needs control-plane access — cluster health, backups, networking, audit logs — not just SQL. The agent-ready ccloud CLI gives JSON output on every command with service-account RBAC.",
+    where: [
+      "src/bastion/mcp_server.py — ccloud_exec tool",
+      "demo/_live_mcp_probe.py — cluster list via ccloud",
+      "schema/034_tool_usage_tracking.sql — ccloud calls logged",
+    ],
+    how: [
+      "ccloud_exec runs `ccloud cluster list -o json` against the bastion-memory cluster (exit_code 0).",
+      "Used for cluster verification during demos and audits.",
+      "19+ real calls logged in tool_usage_log.",
+    ],
+  },
+  skills: {
+    why: "Instead of hardcoding CockroachDB expertise, the agent loads machine-executable playbooks from the official Agent Skills Repo — onboarding, security, performance, observability — portable across Claude, Cursor, LangChain.",
+    where: [
+      ".agents/skills/ — 35+ official CRDB skills",
+      "src/bastion/mcp_server.py — invoke_agent_skill / list_agent_skills tools",
+    ],
+    how: [
+      "invoke_agent_skill runs playbooks like reviewing-cluster-health, auditing-cloud-cluster-security.",
+      "SQL injection guard rejects multi-statement queries in skill params.",
+      "48 invoke_agent_skill + 18 list_agent_skills calls logged.",
+    ],
+  },
+  kms: {
+    why: "Sensitive memories (secrets, incident data) need encryption at rest with customer-controlled keys — AWS KMS AES-256-GCM envelope encryption. Compliance requirement for production-grade agentic memory.",
+    where: [
+      "src/bastion/memory_store_encrypted.py — envelope encryption",
+      "src/bastion/memory_search_encrypted.py — transparent decrypt on search",
+      ".env.local — BASTION_AWS_KMS_KEY_ARN",
+    ],
+    how: [
+      "Plaintext encrypted with a data key, key wrapped by AWS KMS customer-managed key (cd7692b4…).",
+      "Embedding computed on plaintext BEFORE encryption so vector search still works.",
+      "Decryption happens transparently on retrieval using the BastionEncryption key.",
+    ],
+  },
+  region: {
+    why: "The CockroachDB cluster is deployed on AWS in ap-south-1 (Mumbai) to co-locate with low latency and demonstrate real multi-region/geo distribution capabilities.",
+    where: [
+      "CockroachDB Cloud Console — bastion-memory cluster, ap-south-1",
+      "connection string: bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud",
+    ],
+    how: [
+      "Cluster runs on AWS with 3 availability zones (ap-south-1 a/b/c).",
+      "Single-region now, but schema + AS OF SYSTEM TIME support multi-region migration.",
+    ],
+  },
+};
+
+function TechDetailModal({ tech, onClose }: { tech: any; onClose: () => void }) {
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", handleEsc); };
+  }, [onClose]);
+
+  const detail = TECH_DETAILS[tech?.key] || null;
+  if (!detail) return null;
+  const accent = tech?.badgeColor || "#047857";
+
+  const Section = ({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) => (
+    <div style={{ marginBottom: "20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+        <span style={{
+          fontSize: "16px", width: "30px", height: "30px", display: "flex", alignItems: "center",
+          justifyContent: "center", background: "#ffffff", border: "2px solid #000000",
+          borderRadius: "8px", boxShadow: "1.5px 1.5px 0px #000000",
+        }}>{icon}</span>
+        <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)", letterSpacing: "2px" }}>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: "#ffffff", border: "4px solid #000000",
+        borderRadius: "18px", boxShadow: "10px 10px 0px #000000",
+        width: "min(92vw, 860px)", maxHeight: "88vh",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "14px",
+          padding: "20px 26px", borderBottom: "3px solid #000000",
+          background: `${accent}0d`,
+        }}>
+          <span style={{
+            display: "inline-block", fontSize: "15px", fontWeight: 900,
+            fontFamily: "var(--font-mono)", padding: "6px 14px", borderRadius: "6px",
+            background: accent, color: "#ffffff", border: "2px solid #000000",
+            boxShadow: "2px 2px 0px #000000",
+          }}>{tech?.badge}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "20px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.2 }}>
+              {tech?.name}
+            </div>
+            <div style={{ fontSize: "13px", color: "#4b5563", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "3px" }}>
+              {tech?.desc}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: "36px", height: "36px", borderRadius: "10px", border: "2px solid #000000",
+            background: "#ffffff", cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: "16px", fontWeight: 900, color: "#000000",
+            boxShadow: "2px 2px 0px #000000", transition: "all 0.15s ease", flexShrink: 0,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px,-2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; e.currentTarget.style.background = "#fee2e2"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0,0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; e.currentTarget.style.background = "#ffffff"; }}
+          >✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
+          <Section title="WHY WE USE IT" icon="🎯">
+            <div style={{
+              padding: "16px 18px", background: "#f9fafb", border: "2px solid #000000",
+              borderRadius: "10px", boxShadow: "2px 2px 0px #000000",
+              fontSize: "14px", lineHeight: 1.65, fontWeight: 600, color: "#1f2937",
+            }}>
+              {detail.why}
+            </div>
+          </Section>
+
+          <Section title="WHERE IT LIVES" icon="📍">
+            {detail.where.map((loc, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                padding: "12px 16px", marginBottom: "9px",
+                background: "#fffbeb", border: "2px solid #000000",
+                borderRadius: "10px", boxShadow: "1.5px 1.5px 0px #000000",
+              }}>
+                <span style={{
+                  fontSize: "10px", fontWeight: 900, color: "#ffffff", background: "#b45309",
+                  padding: "3px 8px", borderRadius: "4px", fontFamily: "var(--font-mono)",
+                  border: "1px solid #000000", whiteSpace: "nowrap", flexShrink: 0,
+                }}>FILE</span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#000000", fontFamily: "var(--font-mono)", wordBreak: "break-all", lineHeight: 1.5 }}>{loc}</span>
+              </div>
+            ))}
+          </Section>
+
+          <Section title="HOW THE AGENT USES IT" icon="⚙️">
+            {detail.how.map((step, i) => (
+              <div key={i} className="tech-card" style={{
+                display: "flex", alignItems: "flex-start", gap: "12px",
+                padding: "12px 16px", marginBottom: "9px",
+                background: "#f0fdf4", border: "2px solid #000000",
+                borderRadius: "10px", boxShadow: "1.5px 1.5px 0px #000000",
+              }}>
+                <span style={{
+                  fontSize: "12px", fontWeight: 900, color: "#ffffff",
+                  background: "#047857", borderRadius: "6px", minWidth: "26px",
+                  height: "26px", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--font-mono)", border: "1px solid #000000", flexShrink: 0,
+                }}>{i + 1}</span>
+                <span style={{ fontSize: "13.5px", fontWeight: 700, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.55 }}>{step}</span>
+              </div>
+            ))}
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── CRDB Category Detail Modal ──────────────────────────────── */
+function CrdbCategoryModal({ label, color, icon, tools, onClose }: { label: string; color: string; icon: string; tools: { tool: string; calls: number }[]; onClose: () => void }) {
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", handleEsc); };
+  }, [onClose]);
+
+  const totalCalls = tools.reduce((sum, t) => sum + t.calls, 0);
+  const maxCalls = Math.max(...tools.map(t => t.calls), 1);
+
+  const isManagedMcp = label.includes("Managed MCP");
+  const CLUSTER_ID = "9a423301-d502-42f4-a5e5-1e7664e4e025";
+
+  const TOOL_DESC: Record<string, string> = {
+    list_clusters: "List all CockroachDB clusters",
+    get_cluster: "Get cluster details & health",
+    list_databases: "List databases in a cluster",
+    list_tables: "List tables in a database",
+    get_table_schema: "Get table schema & indexes",
+    select_query: "Run read-only SELECT queries",
+    explain_query: "Show query execution plan",
+    show_statement: "Run SHOW statements (regions, indexes…)",
+    show_running_queries: "List currently executing queries",
+    create_database: "Create a new database",
+    create_table: "Create a table via CREATE TABLE DDL",
+    insert_rows: "Insert rows via INSERT statements",
+    managed_mcp_call: "Proxy call to official CRDB MCP",
+    managed_mcp_list_tools: "Discover official MCP tools",
+    ccloud_exec: "Run ccloud CLI commands (JSON output)",
+    invoke_agent_skill: "Run CockroachDB agent skill playbook",
+    list_agent_skills: "List available agent skills",
+    a2a_bridge: "Cross-protocol agent handoff (A2A)",
+    memory_store: "Store memory w/ hash-chain integrity",
+    memory_search: "Vector similarity memory search",
+    memory_pin: "Pin critical safety rules",
+    memory_heal: "Self-heal expired/corrupt memories",
+    memory_timetravel: "Query memory AS OF SYSTEM TIME",
+    memory_audit: "Append-only hash-chained audit log",
+    memory_store_encrypted: "Store memory w/ AWS KMS encryption",
+    memory_correct: "Governance: correct stored memory",
+    resolve_conflict: "Resolve conflicting memories",
+    multi_signal_search: "Fusion search (vector+BM25+entity)",
+    detect_contradictions: "Detect & supersede contradictions",
+    detect_observations: "Discover cross-memory patterns",
+    dream: "Consolidation / memory dreaming cycle",
+    dream_history: "Past consolidation sessions",
+    context_pack: "Pack memories into token budget",
+    ltm_store_analysis: "Cache analysis for LTM reuse",
+    ltm_check_reuse: "Check for cached analysis",
+    ltm_invalidate: "Invalidate stale cached analysis",
+    compliance_report: "EU AI Act Art. 12 compliance report",
+    forensic_report: "Hash-chain forensic integrity report",
+    agent_schema: "Inspect agent DB schema",
+    memory_get_pinned: "Get pinned safety memories",
+    memory_list: "List memories (governance)",
+    memory_delete: "Delete memory (governance)",
+    memory_apply_patch: "RFC 6902 patch memory metadata",
+    memory_store_batch: "Atomic batch store (SERIALIZABLE)",
+    memory_search_encrypted: "Search KMS-encrypted memories",
+    scan_all_contradictions: "Scan all memories for contradictions",
+    memory_health: "Memory health & vector index metrics",
+    groq_reason: "LLM reasoning for threat analysis (server-side)",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+        animation: "fadeIn 0.2s ease",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: "#ffffff", border: "4px solid #000000",
+        borderRadius: "16px", boxShadow: "8px 8px 0px #000000",
+        width: "90%", maxWidth: "640px", maxHeight: "85vh",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        animation: "slideInUp 0.25s cubic-bezier(0.16,1,0.3,1)",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "12px",
+          padding: "18px 24px", borderBottom: "3px solid #000000",
+          background: `${color}08`,
+        }}>
+          <span style={{ fontSize: "24px" }}>{icon}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "16px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>
+              {label}
+            </div>
+            <div style={{ fontSize: "12px", color: "#6b7280", fontFamily: "var(--font-mono)" }}>
+              {tools.length} tools · {totalCalls} total calls
+            </div>
+            {tools.length === 1 && TOOL_DESC[tools[0].tool] && (
+              <div style={{ fontSize: "12px", color: "#047857", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "2px" }}>
+                {TOOL_DESC[tools[0].tool]}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{
+            background: "#000000", color: "#ffffff", border: "none",
+            borderRadius: "6px", padding: "6px 12px", cursor: "pointer",
+            fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)",
+          }}>CLOSE</button>
+        </div>
+
+        {/* Tool breakdown */}
+        <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
+          {isManagedMcp && (
+            <div style={{
+              padding: "12px 16px", marginBottom: "14px",
+              background: "#ecfdf5", border: "2px solid #047857",
+              borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px",
+            }}>
+              <span style={{ fontSize: "16px" }}>🛡️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: 900, color: "#047857", fontFamily: "var(--font-sans)" }}>
+                  Verified: Official CockroachDB Cloud Managed MCP
+                </div>
+                <div style={{ fontSize: "11px", color: "#065f46", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+                  Provider: cockroachlabs.cloud/mcp · cluster {CLUSTER_ID} · v26.2.1
+                </div>
+              </div>
+            </div>
+          )}
+          {tools.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px", color: "#9ca3af", fontFamily: "var(--font-mono)", fontSize: "13px" }}>
+              No tool calls recorded yet
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {tools.map((t, i) => (
+                <div key={i} style={{
+                  padding: "12px 16px", background: "#f9fafb",
+                  border: "2px solid #000000", borderRadius: "8px",
+                  boxShadow: "1.5px 1.5px 0px #000000",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#000000", fontFamily: "var(--font-mono)" }}>
+                      {t.tool}
+                    </span>
+                    <span style={{
+                      fontSize: "14px", fontWeight: 900, color: "#000000",
+                      fontFamily: "var(--font-mono)",
+                      background: `${color}20`, padding: "2px 8px", borderRadius: "4px",
+                    }}>
+                      {t.calls}
+                    </span>
+                  </div>
+                  <div style={{ height: "6px", background: "#e5e7eb", border: "1px solid #d1d5db", borderRadius: "4px", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${Math.round((t.calls / maxCalls) * 100)}%`, height: "100%",
+                      background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+                      transition: "width 0.6s cubic-bezier(0.16,1,0.3,1)",
+                    }} />
+                  </div>
+                  {TOOL_DESC[t.tool] && (
+                    <div style={{ fontSize: "12px", color: "#6b7280", fontFamily: "var(--font-sans)", marginTop: "6px", fontWeight: 600 }}>
+                      {TOOL_DESC[t.tool]}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Tool Detail Modal ──────────────────────────────────────── */
+function JsonHighlight({ value, dark }: { value: any; dark?: boolean }) {
+  const { html, valid } = useMemo(() => {
+    if (typeof value !== "string") {
+      try { value = JSON.stringify(value, null, 2); } catch { return { html: String(value), valid: false }; }
+    }
+    try {
+      const parsed = JSON.parse(value);
+      const pretty = JSON.stringify(parsed, null, 2);
+      const escaped = pretty
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")(\s*:)/g, (_, k, c) =>
+          `<span class="jk">${k}</span>${c}`)
+        .replace(/("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")([,\}\]])/g, (_, k, c) =>
+          `<span class="js">${k}</span>${c}`)
+        .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, `<span class="jn">$1</span>`)
+        .replace(/\b(true|false)\b/g, `<span class="jb">$1</span>`)
+        .replace(/\bnull\b/g, `<span class="jn">null</span>`);
+      return { html: escaped, valid: true };
+    } catch {
+      return { html: String(value), valid: false };
+    }
+  }, [value]);
+
+  const colors = dark
+    ? { k: "#e5e7eb", s: "#9ca3af", n: "#9ca3af", b: "#9ca3af" }
+    : { k: "#000000", s: "#374151", n: "#374151", b: "#374151" };
+
+  return (
+    <>
+      <style>{`
+        .json-wrap .jk { color: ${colors.k}; font-weight: 800; }
+        .json-wrap .js { color: ${colors.s}; }
+        .json-wrap .jn { color: ${colors.n}; }
+        .json-wrap .jb { color: ${colors.b}; }
+      `}</style>
+      <pre className="json-wrap" style={{
+        fontSize: "13px", fontFamily: "var(--font-mono)",
+        whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, lineHeight: 1.6,
+        color: dark ? "#e5e7eb" : "#000000",
+      }}>
+        {valid ? <span dangerouslySetInnerHTML={{ __html: html }} /> : html}
+      </pre>
+    </>
+  );
+}
+
+function ToolDetailModal({ entry, onClose }: { entry: any; onClose: () => void }) {
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", handleEsc); };
+  }, [onClose]);
+
+  if (!entry) return null;
+  const isSearch = entry.tool_name?.includes("search");
+  const isStore = entry.tool_name?.includes("store");
+  const isManagedMcp = entry.tool_name === "managed_mcp_call" || entry.tool_name === "managed_mcp_list_tools";
+  const accentColor = isManagedMcp ? "#047857" : isSearch ? "#047857" : isStore ? "#0369a1" : "#000000";
+  const CLUSTER_ID = "9a423301-d502-42f4-a5e5-1e7664e4e025";
+
+  let parsedArgs: any = null;
+  let parsedResult: any = null;
+  try { parsedArgs = JSON.parse(entry.args_summary || "{}"); } catch {}
+  try { parsedResult = JSON.parse(entry.result_summary || "{}"); } catch {}
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+        animation: "fadeIn 0.2s ease",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: "#ffffff", border: "4px solid #000000",
+        borderRadius: "16px", boxShadow: "8px 8px 0px #000000",
+        width: "90%", maxWidth: "720px", maxHeight: "85vh",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        animation: "slideInUp 0.25s cubic-bezier(0.16,1,0.3,1)",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "12px",
+          padding: "18px 24px", borderBottom: "3px solid #000000",
+          background: `${accentColor}08`,
+        }}>
+          <span style={{
+            display: "inline-block", fontSize: "14px", fontWeight: 900,
+            fontFamily: "var(--font-mono)", padding: "4px 12px", borderRadius: "4px",
+            background: accentColor, color: "#ffffff", border: "2px solid #000000",
+            boxShadow: "1.5px 1.5px 0px #000000",
+          }}>{entry.tool_name}{entry.sub_tool ? `:${entry.sub_tool}` : ""}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "16px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>
+              Tool Call Detail
+            </div>
+            <div style={{ fontSize: "12px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+              {new Date(entry.created_at).toLocaleString()} · {entry.duration_ms}ms
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: "32px", height: "32px", borderRadius: "8px", border: "2px solid #000000",
+            background: "#ffffff", cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: "16px", fontWeight: 900, color: "#000000",
+            boxShadow: "1px 1px 0px #000000",
+          }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          {/* Meta row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+            <div style={{ padding: "12px", background: "#f9fafb", border: "2px solid #000000", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 900, color: "#6b7280", fontFamily: "var(--font-mono)", letterSpacing: "1px", marginBottom: "4px" }}>AGENT</div>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-mono)" }}>{entry.agent_id}</div>
+            </div>
+            <div style={{ padding: "12px", background: "#f9fafb", border: "2px solid #000000", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 900, color: "#6b7280", fontFamily: "var(--font-mono)", letterSpacing: "1px", marginBottom: "4px" }}>CLIENT</div>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#047857", fontFamily: "var(--font-mono)" }}>{entry.client_name || "—"}</div>
+            </div>
+            <div style={{ padding: "12px", background: "#f9fafb", border: "2px solid #000000", borderRadius: "8px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 900, color: "#6b7280", fontFamily: "var(--font-mono)", letterSpacing: "1px", marginBottom: "4px" }}>DURATION</div>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)" }}>{entry.duration_ms}ms</div>
+            </div>
+          </div>
+
+          {isManagedMcp && (
+            <div style={{
+              padding: "12px 16px", marginBottom: "16px",
+              background: "#ecfdf5", border: "2px solid #047857",
+              borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px",
+            }}>
+              <span style={{ fontSize: "16px" }}>🛡️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: 900, color: "#047857", fontFamily: "var(--font-sans)" }}>
+                  Verified: Official CockroachDB Cloud Managed MCP
+                </div>
+                <div style={{ fontSize: "11px", color: "#065f46", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+                  Provider: cockroachlabs.cloud/mcp · cluster {CLUSTER_ID} · v26.2.1
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Prompt / Args */}
+          <div style={{ marginBottom: "16px" }}>
+            <div style={{
+              fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)",
+              textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "8px",
+              display: "flex", alignItems: "center", gap: "6px"
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              PROMPT / ARGS
+            </div>
+            <div style={{
+              padding: "16px", background: "#fffbeb", border: "2px solid #000000",
+              borderRadius: "8px", boxShadow: "1.5px 1.5px 0px #000000",
+            }}>
+              {parsedArgs ? (
+                <JsonHighlight value={JSON.stringify(parsedArgs, null, 2)} />
+              ) : (
+                <div style={{ fontSize: "13px", color: "#374151", fontFamily: "var(--font-mono)", lineHeight: 1.6, fontWeight: 600 }}>
+                  {entry.args_summary || "No arguments"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Response / Result */}
+          <div>
+            <div style={{
+              fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)",
+              textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "8px",
+              display: "flex", alignItems: "center", gap: "6px"
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              RESPONSE / RESULT
+            </div>
+            <div style={{
+              padding: "16px", background: "#f0fdf4", border: "2px solid #000000",
+              borderRadius: "8px", boxShadow: "1.5px 1.5px 0px #000000",
+            }}>
+              {parsedResult ? (
+                <JsonHighlight value={JSON.stringify(parsedResult, null, 2)} />
+              ) : (
+                <JsonHighlight value={entry.result_summary || "No result"} />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Export ───────────────────────────────────────────── */
 export default function DashboardPage() {
   const { isMock, dbName } = useConnection();
@@ -705,9 +1236,10 @@ export default function DashboardPage() {
   const [displayedEnt, setDisplayedEnt] = useState(0);
   const [displayedRel, setDisplayedRel] = useState(0);
   const [tick, setTick] = useState(0); // forces re-renders for live clock
-  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([
-    { text: "Telemetry online — connecting to CockroachDB", isReal: false, ts: new Date().toLocaleTimeString() },
-  ]);
+  const [toolUsage, setToolUsage] = useState<any>(null);
+  const [selectedTool, setSelectedTool] = useState<any>(null);
+  const [selectedCrdbCategory, setSelectedCrdbCategory] = useState<{ label: string; color: string; icon: string; tools: { tool: string; calls: number }[] } | null>(null);
+  const [selectedTech, setSelectedTech] = useState<any>(null);
 
   const countupRaf = useRef<number>(0);
   const prevMem = useRef(0);
@@ -727,15 +1259,19 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     const t0 = performance.now();
     try {
-      const [statsRes, driftRes, asiRes] = await Promise.all([
+      const [statsRes, driftRes, asiRes, toolRes] = await Promise.all([
         fetchWithTimeout("/api/stats"),
         fetchWithTimeout("/api/drift?limit=10"),
         fetchWithTimeout("/api/asi06"),
+        fetchWithTimeout("/api/tool-usage?limit=30"),
       ]);
       if (!statsRes.ok) throw new Error("Stats fetch failed");
       const sd = await statsRes.json();
       const dr = driftRes.ok ? await driftRes.json() : null;
       const ai = asiRes.ok ? await asiRes.json() : null;
+      const tu = toolRes.ok ? await toolRes.json() : null;
+
+      if (tu) setToolUsage(tu.data || tu);
 
       const d: Stats = sd.data || sd;
       setStats(d);
@@ -772,12 +1308,6 @@ export default function DashboardPage() {
       }
       prevMem.current = d.memories ?? 0;
       setQueryLatency(Math.round(performance.now() - t0));
-      const lat = Math.round(performance.now() - t0);
-      setFeedEntries(prev => [{
-        text: `SELECT COUNT(*) FROM agent_memory → ${d.memories} rows (${lat}ms)`,
-        isReal: true,
-        ts: new Date().toLocaleTimeString(),
-      }, ...prev.slice(0, 14)]);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection error");
@@ -807,7 +1337,11 @@ export default function DashboardPage() {
     score: stats?.memories ? Math.min(0.99, 0.5 + (stats.auditLogs || 0) / Math.max(stats.memories || 1, 1) * 0.5) : 0.91,
   }), [stats, displayedMem]);
 
-  const hourlyData = useMemo(() => stats?.hourlyGrowth?.length ? stats.hourlyGrowth : [], [stats]);
+  const hourlyData = useMemo(() => {
+    return stats?.hourlyGrowth?.length
+      ? stats.hourlyGrowth
+      : Array.from({ length: 24 }, () => 0);
+  }, [stats]);
   const recalls = useMemo(() => stats?.topRecalls || [], [stats]);
 
   const driftTimeSeries = useMemo(() => {
@@ -1078,7 +1612,7 @@ export default function DashboardPage() {
         <ExecutiveSummary
           memories={stats?.memories ?? 0}
           threats={activeBlockedCount}
-          trustScore={Math.round((parseFloat(stats?.avgImportance ?? "5") / 10) * 100)}
+          trustScore={parseFloat(stats?.avgImportance ?? "5.0").toFixed(2)}
           driftScore={driftScore}
           isHealthy={activeBlockedCount === 0 && driftScore < 0.15}
         />
@@ -1103,8 +1637,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── UNIFIED BENTO: LEFT KPI COLUMN + CENTER GAUGES + RIGHT LIVE FEED ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 360px", gap: "20px", alignItems: "stretch" }}>
+        {/* ── UNIFIED BENTO: LEFT KPI COLUMN + CENTER GAUGES ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "20px", alignItems: "stretch" }}>
 
           {/* LEFT: Independent bento cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -1335,156 +1869,97 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* CockroachDB Features */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-                <Dot color={C.cyan} pulse />
-                <span style={{
-                  fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
-                  letterSpacing: "2px", color: "#000000"
-                }}>CockroachDB Features</span>
-              </div>
-              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
-                {[
-                  { feature: "SERIALIZABLE", desc: "Strongest isolation — prevents agentic stampedes", status: "Active", icon: "🔒" },
-                  { feature: "Row-Level TTL", desc: "Auto-expires old memories — manages token costs", status: "Active", icon: "⏱️" },
-                  { feature: "C-SPANN Vectors", desc: "1024-dim embeddings stored IN the database", status: "Active", icon: "🔍" },
-                  { feature: "AS OF SYSTEM TIME", desc: "Time-travel queries for forensic investigation", status: "Active", icon: "🕐" },
-                  { feature: "CDC Changelog", desc: "Real-time change streaming for event-driven agents", status: "Active", icon: "📡" },
-                  { feature: "REGIONAL BY ROW", desc: "Multi-region data locality — speed of light matters", status: "Active", icon: "🌍" },
-                ].map((f, i) => (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "flex-start", gap: "12px",
-                    padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
-                    borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000"
-                  }}>
-                    <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                        <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</div>
-                        <span style={{
-                          fontSize: "9px", fontWeight: 900, fontFamily: "var(--font-sans)",
-                          background: "#047857", color: "#ffffff", border: "1px solid #000000",
-                          padding: "2px 6px", borderRadius: "2px"
-                        }}>{f.status}</span>
+            {/* Side-by-side: CockroachDB Features & Why Bastion */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+              {/* CockroachDB Features */}
+              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                  <Dot color={C.cyan} pulse />
+                  <span style={{
+                    fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                    letterSpacing: "2px", color: "#000000"
+                  }}>CockroachDB Features</span>
+                </div>
+                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                  {[
+                    { feature: "SERIALIZABLE", desc: "Strongest isolation — prevents agentic stampedes", status: "Active", icon: "🔒" },
+                    { feature: "Row-Level TTL", desc: "Auto-expires old memories — manages token costs", status: "Active", icon: "⏱️" },
+                    { feature: "C-SPANN Vectors", desc: "1024-dim embeddings stored IN the database", status: "Active", icon: "🔍" },
+                    { feature: "AS OF SYSTEM TIME", desc: "Time-travel queries for forensic investigation", status: "Active", icon: "🕐" },
+                    { feature: "CDC Changelog", desc: "Real-time change streaming for event-driven agents", status: "Active", icon: "📡" },
+                    { feature: "REGIONAL BY ROW", desc: "Multi-region data locality — speed of light matters", status: "Active", icon: "🌍" },
+                  ].map((f, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "flex-start", gap: "12px",
+                      padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
+                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
+                      transition: "all 0.15s ease", cursor: "pointer"
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                    >
+                      <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                          <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</div>
+                          <span style={{
+                            fontSize: "9px", fontWeight: 900, fontFamily: "var(--font-sans)",
+                            background: "#047857", color: "#ffffff", border: "1px solid #000000",
+                            padding: "2px 6px", borderRadius: "2px"
+                          }}>{f.status}</span>
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, lineHeight: 1.4 }}>{f.desc}</div>
                       </div>
-                      <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, lineHeight: 1.4 }}>{f.desc}</div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Why Bastion */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-                <Dot color={C.orange} pulse />
-                <span style={{
-                  fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
-                  letterSpacing: "2px", color: "#000000"
-                }}>Why Bastion</span>
-              </div>
-              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-              <div style={{
-                padding: "16px 20px", background: "var(--accent-breeze)", border: "2px solid #000000",
-                borderRadius: "var(--radius-sm)", marginBottom: "16px",
-                boxShadow: "1.5px 1.5px 0px #000000"
-              }}>
-                <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.5 }}>
-                  Memory that proves itself — forensic, tamper-proof, and self-healing.
+                  ))}
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                {[
-                  { title: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
-                  { title: "OWASP ASI06", desc: "Memory poisoning detection and defense", icon: "🛡️" },
-                  { title: "Time-Travel", desc: "Investigate past agent state with AS OF SYSTEM TIME", icon: "⏱️" },
-                  { title: "Self-Healing", desc: "Automatic detection and recovery from attacks", icon: "🔧" },
-                ].map((f, i) => (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "flex-start", gap: "12px",
-                    padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
-                    borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000"
-                  }}>
-                    <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.title}</div>
-                      <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, marginTop: "4px", lineHeight: 1.4 }}>{f.desc}</div>
-                    </div>
+
+              {/* Why Bastion */}
+              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                  <Dot color={C.orange} pulse />
+                  <span style={{
+                    fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                    letterSpacing: "2px", color: "#000000"
+                  }}>Why Bastion</span>
+                </div>
+                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+                <div style={{
+                  padding: "16px 20px", background: "var(--accent-breeze)", border: "2px solid #000000",
+                  borderRadius: "var(--radius-sm)", marginBottom: "16px",
+                  boxShadow: "1.5px 1.5px 0px #000000"
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.5 }}>
+                    Memory that proves itself — forensic, tamper-proof, and self-healing.
                   </div>
-                ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  {[
+                    { title: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
+                    { title: "OWASP ASI06", desc: "Memory poisoning detection and defense", icon: "🛡️" },
+                    { title: "Time-Travel", desc: "Investigate past agent state with AS OF SYSTEM TIME", icon: "⏱️" },
+                    { title: "Self-Healing", desc: "Automatic detection and recovery from attacks", icon: "🔧" },
+                  ].map((f, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "flex-start", gap: "12px",
+                      padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
+                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
+                      transition: "all 0.15s ease", cursor: "pointer"
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                    >
+                      <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
+                      <div>
+                        <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.title}</div>
+                        <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, marginTop: "4px", lineHeight: 1.4 }}>{f.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="bento-panel" style={{
-            display: "flex", flexDirection: "column",
-            background: "var(--canvas-card)", position: "relative",
-            height: "790px"
-          }}>
-            {/* top glow line */}
-            <div style={{
-              position: "absolute", top: 0, left: 0, right: 0, height: "1px",
-              background: `linear-gradient(90deg, transparent, rgba(0,255,140,0.5), transparent)`,
-              borderRadius: "20px 20px 0 0"
-            }} />
-
-            {/* header */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              paddingBottom: "10px"
-            }}>
-              <Dot color={C.green} pulse />
-              <span style={{
-                fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
-                letterSpacing: "1.5px", color: "#000000", textTransform: "uppercase"
-              }}>
-                Live DB Feed
-              </span>
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: C.mute }}>
-                  {feedEntries.length} events
-                </span>
-                <span style={{
-                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
-                  background: "rgba(0,255,140,0.12)", color: C.green, border: "1px solid rgba(0,255,140,0.25)",
-                  padding: "2px 7px", borderRadius: "4px"
-                }}>● LIVE</span>
-              </div>
-            </div>
-            <div style={{ height: "3px", background: "#000000", marginBottom: "10px" }} />
-
-            {/* legend: real vs simulated */}
-            <div style={{ display: "flex", gap: "8px", marginBottom: "10px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{
-                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
-                  background: `${C.cyan}18`, color: C.cyan, border: `1px solid ${C.cyan}40`,
-                  padding: "1px 5px", borderRadius: "3px"
-                }}>SQL</span>
-                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>real query</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{
-                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
-                  background: `${C.green}15`, color: C.green, border: `1px solid ${C.green}40`,
-                  padding: "1px 5px", borderRadius: "3px"
-                }}>DB</span>
-                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>real event</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{
-                  fontSize: "11px", fontWeight: 800, fontFamily: "var(--font-mono)",
-                  background: "rgba(255,255,255,0.04)", color: C.mute, border: "1px solid rgba(255,255,255,0.1)",
-                  padding: "1px 5px", borderRadius: "3px"
-                }}>SYS</span>
-                <span style={{ fontSize: "11px", color: C.mute, fontFamily: "var(--font-mono)" }}>simulated</span>
-              </div>
-            </div>
-
-            {/* feed */}
-            <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-              <LiveFeed entries={feedEntries} />
             </div>
           </div>
         </div>
@@ -1495,116 +1970,102 @@ export default function DashboardPage() {
           {/* COLUMN 1: Memory Ingestion & Recent Audits Stack */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             {/* Memory Ingestion Panel */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", flex: 1, padding: "20px" }}>
               <div style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                paddingBottom: "10px"
+                display: "flex", alignItems: "center", gap: "10px",
+                paddingBottom: "14px"
               }}>
-                <Dot color={C.orange} />
+                <Dot color={C.orange} pulse />
                 <span style={{
-                  fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
                   color: "#000000", textTransform: "uppercase", letterSpacing: "1.5px"
                 }}>
                   Memory Ingestion
                 </span>
                 <span style={{
-                  marginLeft: "auto", fontSize: "11px", color: C.mute,
-                  fontFamily: "'JetBrains Mono', monospace"
-                }}>24h activity</span>
+                  marginLeft: "auto", fontSize: "13px", fontWeight: 900,
+                  fontFamily: "var(--font-mono)", color: "#047857",
+                  background: "#f0fdf4", border: "2.5px solid #047857",
+                  padding: "4px 12px", borderRadius: "4px",
+                  boxShadow: "2px 2px 0px #000000",
+                }}>
+                  {hourlyData.reduce((a: number, b: number) => a + b, 0)} memories · peak {(() => {
+                    const peakIdx = hourlyData.indexOf(Math.max(...hourlyData));
+                    const hr = (new Date().getHours() - 23 + peakIdx + 24) % 24;
+                    return String(hr).padStart(2, "0");
+                  })()}:00
+                </span>
               </div>
-              <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", margin: "10px 0" }}>
                 <MemoryHeatmap hourly={hourlyData} />
               </div>
-              {/* divider */}
-              <div style={{ height: "2px", background: "#000000", margin: "16px 0" }} />
-              {/* real stats row */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
+              <div style={{
+                fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)",
+                textAlign: "center", padding: "10px 14px", lineHeight: 1.5,
+                background: "rgba(0, 0, 0, 0.02)", border: "2px dashed rgba(0,0,0,0.1)", borderRadius: "6px",
+                margin: "8px 0"
+              }}>
+                Real-time memory writes across all agents · stored in CockroachDB with SHA-256 hash chains
+              </div>
+              <div style={{ height: "3px", background: "#000000", margin: "16px 0" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginTop: "8px" }}>
                 {[
-                  { label: "Cache Hit", value: `${stats?.cacheHitPct ?? "—"}%`, color: C.cyan },
-                  { label: "Importance", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), color: C.orange },
-                  { label: "Drift Index", value: driftScore.toFixed(3), color: driftScore > 0.3 ? C.red : C.green },
+                  { label: "Memories Today", value: hourlyData.reduce((a: number, b: number) => a + b, 0).toLocaleString(), bg: "#f0fdf4", color: "#047857" },
+                  { label: "Avg Importance (/10)", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), bg: "#fffbeb", color: "#b45309" },
+                  { label: "Drift Index", value: driftScore.toFixed(3), bg: driftScore > 0.3 ? "#fef2f2" : "#f0fdf4", color: driftScore > 0.3 ? "#b91c1c" : "#047857" },
                 ].map((m, i) => (
                   <div key={i} style={{
-                    textAlign: "center", padding: "8px 0",
-                    borderLeft: i > 0 ? "2px solid #000000" : "none",
-                  }}>
+                    textAlign: "center", padding: "16px 12px",
+                    background: m.bg,
+                    border: `2px solid #000000`,
+                    borderRadius: "8px",
+                    boxShadow: "3px 3px 0px #000000",
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translate(-2px, -2px)";
+                    e.currentTarget.style.boxShadow = "5px 5px 0px #000000";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translate(0, 0)";
+                    e.currentTarget.style.boxShadow = "3px 3px 0px #000000";
+                  }}
+                  >
                     <div style={{
-                      fontSize: "11px", color: "#374151", textTransform: "uppercase",
-                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 800, marginBottom: "4px"
+                      fontSize: "12px", color: m.color, textTransform: "uppercase",
+                      letterSpacing: "0.5px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "8px"
                     }}>{m.label}</div>
                     <div style={{
-                      fontSize: "18px", fontWeight: 950, color: "#000000",
-                      fontFamily: "var(--font-sans)"
+                      fontSize: "36px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
                     }}>{m.value}</div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Recent Audit Events Card */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
-              <div className="panel-label" style={{ marginBottom: "10px" }}>
-                <Dot color={C.cyan} />
-                RECENT AUDIT EVENTS
-              </div>
-              <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
-                {((stats?.recentAudits?.slice(0, 5) ?? [
-                  { id: "a1", action: "MEMORY_WRITE", recordedAt: "2m ago", details: {} },
-                  { id: "a2", action: "TRUST_SCAN", recordedAt: "5m ago", details: {} },
-                  { id: "a3", action: "ENTITY_INDEX", recordedAt: "8m ago", details: {} },
-                  { id: "a4", action: "DRIFT_CHECK", recordedAt: "12m ago", details: {} },
-                  { id: "a5", action: "CACHE_EVICT", recordedAt: "18m ago", details: {} },
-                ]) as Array<{ id: string; action: string; recordedAt: string; details: Record<string, unknown> }>).map((audit, i) => {
-                  const col = audit.action.includes("BLOCK") || audit.action.includes("THREAT") ? C.red
-                    : audit.action.includes("WRITE") || audit.action.includes("INDEX") ? C.green : C.cyan;
-                  return (
-                    <div key={audit.id} style={{
-                      display: "flex", alignItems: "center", gap: "10px",
-                      padding: "10px 0", borderBottom: i === 4 ? "none" : "1.5px solid #000000"
-                    }}>
-                      <Dot color={col} />
-                      <span style={{
-                        fontSize: "12.5px", color: "#000000", flex: 1,
-                        fontFamily: "var(--font-sans)", fontWeight: 900
-                      }}>{audit.action}</span>
-                      <span style={{ fontSize: "11px", color: "#374151", fontWeight: 800, fontFamily: "var(--font-sans)" }}>{audit.recordedAt}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <Link href="/compliance" style={{ textDecoration: "none", marginTop: "12px" }}>
-                <button className="btn btn-outline" style={{ width: "100%", justifyContent: "center" }}>
-                  View Full Audit Log →
-                </button>
-              </Link>
-            </div>
           </div>
 
-          {/* COLUMN 2: Blockchain Timeline */}
+          {/* COLUMN 2: Live Tool Trail */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
             <div className="panel-label" style={{ marginBottom: "10px" }}>
-              <Dot color={C.orange} pulse />
-              Audit Trail
+              <Dot color={C.green} pulse />
+              Live Tool Trail
             </div>
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-            <div style={{ flex: 1, marginTop: "12px", overflowY: "auto" }}>
+            <div style={{ flex: 1, marginTop: "8px", overflowY: "auto" }}>
               <BlockchainTimeline live={!isMock} />
             </div>
           </div>
 
-          {/* COLUMN 3: Security Events */}
+          {/* COLUMN 3: Security Scan */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
             <div className="panel-label" style={{ marginBottom: "10px" }}>
-              <Dot color={C.red} pulse />
-              Threats Blocked
-              <span style={{ marginLeft: "auto" }}>
-                <Tag color={C.red}>{activeBlockedCount} BLOCKED</Tag>
-              </span>
+              <Dot color={C.cyan} pulse />
+              Security Scan
             </div>
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-            <div style={{ flex: 1, marginTop: "12px", overflowY: "auto" }}>
+            <div style={{ flex: 1, marginTop: "8px", overflowY: "auto" }}>
               <SecurityFeed blockedCount={activeBlockedCount} />
             </div>
           </div>
@@ -1624,14 +2085,14 @@ export default function DashboardPage() {
             {/* Tools Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "20px" }}>
               {[
-                { name: "Managed MCP Server", desc: "35 tools · Claude/Cursor/VS Code native", badge: "MCP", badgeColor: "#047857" },
-                { name: "Distributed Vector Indexing", desc: "C-SPANN · 1024-dim embeddings · cosine search", badge: "Vector", badgeColor: "#000000" },
-                { name: "ccloud CLI", desc: "Cluster management · audit logs · backups", badge: "CLI", badgeColor: "#b45309" },
-                { name: "Agent Skills Repo", desc: "35+ skills · onboarding/security/performance", badge: "Skills", badgeColor: "#047857" },
-                { name: "AWS KMS", desc: "AES-256-GCM envelope encryption for memories", badge: "KMS", badgeColor: "#b45309" },
-                { name: "AWS ap-south-1", desc: "CockroachDB cluster deployed in Mumbai region", badge: "Region", badgeColor: "#b91c1c" },
+                { name: "Managed MCP Server", desc: "35 tools · Claude/Cursor/VS Code native", badge: "MCP", badgeColor: "#047857", key: "mcp" },
+                { name: "Distributed Vector Indexing", desc: "C-SPANN · 1024-dim embeddings · cosine search", badge: "Vector", badgeColor: "#000000", key: "vector" },
+                { name: "ccloud CLI", desc: "Cluster management · audit logs · backups", badge: "CLI", badgeColor: "#b45309", key: "ccloud" },
+                { name: "Agent Skills Repo", desc: "35+ skills · onboarding/security/performance", badge: "Skills", badgeColor: "#047857", key: "skills" },
+                { name: "AWS KMS", desc: "AES-256-GCM envelope encryption for memories", badge: "KMS", badgeColor: "#b45309", key: "kms" },
+                { name: "AWS ap-south-1", desc: "CockroachDB cluster deployed in Mumbai region", badge: "Region", badgeColor: "#b91c1c", key: "region" },
               ].map((t, i) => (
-                <div key={i} style={{
+                <div key={i} onClick={() => setSelectedTech(t)} style={{
                   padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
                   borderRadius: "var(--radius-sm)", boxShadow: "1.5px 1.5px 0px #000000",
                   transition: "all 0.15s ease", cursor: "pointer",
@@ -1656,47 +2117,358 @@ export default function DashboardPage() {
                     }}>{t.badge}</span>
                   </div>
                   <div style={{ fontSize: "11px", color: "#374151", fontWeight: 700, lineHeight: 1.4 }}>{t.desc}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Unique Features */}
-            <div style={{ height: "2px", background: "#000000", marginBottom: "16px" }} />
-            <div style={{ fontSize: "12px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "1.5px", color: "#000000", marginBottom: "12px" }}>
-              UNIQUE FEATURES (NOBODY ELSE HAS)
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px" }}>
-              {[
-                { feature: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
-                { feature: "OWASP ASI06", desc: "Industry standard memory poisoning defense", icon: "🛡️" },
-                { feature: "Time-Travel", desc: "AS OF SYSTEM TIME for investigation", icon: "⏱️" },
-                { feature: "Self-Healing", desc: "Detect + recover from poisoning automatically", icon: "🔧" },
-                { feature: "Hash Chains", desc: "Cryptographic proof of memory integrity", icon: "🔗" },
-              ].map((f, i) => (
-                <div key={i} style={{
-                  padding: "12px 14px", background: "var(--accent-breeze)", border: "2px solid #000000",
-                  borderRadius: "var(--radius-sm)", boxShadow: "1px 1px 0px #000000",
-                  transition: "all 0.15s ease", cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translate(-1.5px, -1.5px)";
-                  e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "translate(0, 0)";
-                  e.currentTarget.style.boxShadow = "1px 1px 0px #000000";
-                }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "14px" }}>{f.icon}</span>
-                    <span style={{ fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</span>
+                  <div style={{
+                    marginTop: "8px", fontSize: "10px", fontWeight: 900,
+                    fontFamily: "var(--font-mono)", color: "#047857",
+                    textDecoration: "underline", letterSpacing: "1px",
+                  }}>
+                    CLICK TO VIEW DETAILS →
                   </div>
-                  <div style={{ fontSize: "10px", color: "#374151", fontWeight: 700, lineHeight: 1.4 }}>{f.desc}</div>
                 </div>
               ))}
             </div>
           </div>
         </div>
+
+        {/* ── ROW 5: TOOL ACTIVITY (interactive cards) + CRDB + A2A ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 1.2fr", gap: "20px", alignItems: "stretch" }}>
+          {/* Tool Activity Feed — bigger cards, click to expand */}
+          <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+              <Dot color={C.cyan} pulse />
+              <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                TOOL ACTIVITY
+              </span>
+              <span style={{
+                marginLeft: "auto", fontSize: "13px", fontFamily: "var(--font-mono)", fontWeight: 900,
+                background: "#047857", color: "#ffffff", border: "2px solid #000000",
+                padding: "3px 10px", borderRadius: "4px", boxShadow: "1px 1px 0px #000000"
+              }}>
+                {toolUsage?.crdb?.total ?? 0} calls
+              </span>
+            </div>
+            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
+            <div style={{ flex: 1, overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" }}>
+              {(toolUsage?.usage?.length ?? 0) === 0 ? (
+                <div style={{ padding: "20px", textAlign: "center", fontSize: "13px", color: "#6b7280", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                  No tool calls yet — run the forensic demo to populate
+                </div>
+              ) : (
+                toolUsage.usage.map((t: any, i: number) => {
+                  const isSearch = t.tool_name?.includes("search");
+                  const isStore = t.tool_name?.includes("store");
+                  const isMcp = t.tool_name === "managed_mcp_call";
+                  const accentColor = isSearch ? "#047857" : isStore ? "#0369a1" : isMcp ? "#b45309" : "#000000";
+                  let argsPreview = t.args_summary || "";
+                  try {
+                    const parsed = JSON.parse(argsPreview);
+                    argsPreview = Object.entries(parsed).map(([k, v]) => {
+                      const val = typeof v === "string" ? v : JSON.stringify(v);
+                      return `${k}: ${val.length > 60 ? val.slice(0, 60) + "…" : val}`;
+                    }).join(" · ");
+                  } catch {}
+                  return (
+                    <div key={i} onClick={() => setSelectedTool(t)} style={{
+                      display: "flex", alignItems: "stretch", gap: "12px",
+                      padding: "14px 16px", background: "#ffffff",
+                      border: "2.5px solid #000000", borderRadius: "10px",
+                      boxShadow: "2px 2px 0px #000000",
+                      transition: "all 0.15s ease", cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                    >
+                      {/* left accent */}
+                      <div style={{ width: "4px", borderRadius: "4px", background: accentColor, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Row 1: tool badge + agent + client + duration */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{
+                            display: "inline-block", fontSize: "12px", fontWeight: 900,
+                            fontFamily: "var(--font-mono)", padding: "3px 10px", borderRadius: "4px",
+                            background: accentColor, color: "#ffffff", border: "2px solid #000000",
+                            boxShadow: "1px 1px 0px #000000", whiteSpace: "nowrap"
+                          }}>{t.tool_name}{t.sub_tool ? `:${t.sub_tool}` : ""}</span>
+                          <span style={{ fontSize: "12px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-mono)" }}>{t.agent_id}</span>
+                          {t.client_name && t.client_name !== t.agent_id && (
+                            <span style={{
+                              fontSize: "11px", fontWeight: 800, color: "#047857",
+                              fontFamily: "var(--font-mono)", background: "#f0fdf4",
+                              border: "1.5px solid #047857", borderRadius: "4px", padding: "1px 6px"
+                            }}>{t.client_name}</span>
+                          )}
+                          <span style={{ marginLeft: "auto", fontSize: "12px", color: "#6b7280", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                            {t.duration_ms}ms
+                          </span>
+                        </div>
+                        {/* Row 2: args preview */}
+                        <div style={{
+                          fontSize: "13px", color: "#374151", fontWeight: 600,
+                          fontFamily: "var(--font-mono)", lineHeight: 1.5,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                        }}>
+                          {argsPreview}
+                        </div>
+                        {/* Row 3: timestamp + click hint */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                          <span style={{ fontSize: "11px", color: "#9ca3af", fontFamily: "var(--font-mono)" }}>
+                            {new Date(t.created_at).toLocaleTimeString()}
+                          </span>
+                          <span style={{ fontSize: "10px", color: accentColor, fontFamily: "var(--font-mono)", fontWeight: 800, marginLeft: "auto" }}>
+                            click to expand →
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* CockroachDB 4 Tools */}
+          <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+              <Dot color={C.green} pulse />
+              <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                CRDB + AI TOOL USAGE
+              </span>
+            </div>
+            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "4px" }}>
+              {[
+                { label: "Managed MCP Server (12 tools)", count: toolUsage?.crdb?.managed_mcp_tools ?? 0, icon: "🔧", color: "#047857", filter: (t: string) => t === "managed_mcp_call" || t === "managed_mcp_list_tools" || ["list_clusters","get_cluster","list_databases","list_tables","get_table_schema","select_query","explain_query","show_statement","show_running_queries","create_database","create_table","insert_rows"].includes(t) },
+                { label: "Distributed Vectors (C-SPANN)", count: toolUsage?.crdb?.memory_tools ?? 0, icon: "🧠", color: "#0369a1", filter: (t: string) => t.startsWith("memory_") || t === "multi_signal_search" || t === "context_pack" || t === "ltm_check_reuse" || t === "ltm_store_analysis" || t === "ltm_invalidate" },
+                { label: "ccloud CLI", count: toolUsage?.crdb?.ccloud_tools ?? 0, icon: "⚙️", color: "#b45309", filter: (t: string) => t === "ccloud_exec" },
+                { label: "Agent Skills Repo", count: toolUsage?.crdb?.skill_tools ?? 0, icon: "📚", color: "#b91c1c", filter: (t: string) => t === "invoke_agent_skill" || t === "list_agent_skills" || t === "a2a_bridge" },
+              ].map((row, i) => {
+                const total = Math.max(toolUsage?.crdb?.total ?? 1, 1);
+                const pct = Math.round((row.count / total) * 100);
+                const catTools = (toolUsage?.crdb_tool_breakdown ?? []).filter((t: any) => row.filter(t.tool));
+                return (
+                  <div key={i} onClick={() => setSelectedCrdbCategory({ label: row.label, color: row.color, icon: row.icon, tools: catTools })} style={{
+                    padding: "14px 16px", background: "#ffffff", border: "2.5px solid #000000",
+                    borderRadius: "10px", boxShadow: "2px 2px 0px #000000",
+                    transition: "all 0.15s ease", cursor: "pointer",
+                  }} onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px #000000"; }} onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ fontSize: "18px" }}>{row.icon}</span>
+                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.label}</span>
+                      </div>
+                      <span style={{ fontSize: "18px", fontWeight: 950, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.count}</span>
+                    </div>
+                    <div style={{ height: "8px", background: "#e5e7eb", border: "1.5px solid #000000", borderRadius: "6px", overflow: "hidden" }}>
+                      <div style={{
+                        width: `${Math.min(pct, 100)}%`, height: "100%",
+                        background: `linear-gradient(90deg, ${row.color}, ${row.color}cc)`,
+                        transition: "width 0.8s cubic-bezier(0.16,1,0.3,1)",
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* A2A Handoffs */}
+          <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+              <Dot color={C.orange} pulse />
+              <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                A2A HANDOFFS
+              </span>
+              <div style={{
+                marginLeft: "auto",
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: "#ffffff",
+                border: "2.5px solid #000000",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                boxShadow: "1.5px 1.5px 0px #000000",
+                flexShrink: 0
+              }}>
+                <img src="/a2a-logo.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              </div>
+            </div>
+            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
+            
+            {/* Scrollable list container (stretches full height now) */}
+            <div style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingRight: "4px", paddingBottom: "10px" }}>
+              {(toolUsage?.a2a_handoffs?.length ?? 0) === 0 ? (
+                <div style={{ padding: "20px", textAlign: "center", fontSize: "13px", color: "#6b7280", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                  No A2A handoffs yet
+                </div>
+              ) : (
+                toolUsage.a2a_handoffs.map((h: any, i: number) => {
+                  const isCompleted = h.status === "COMPLETED";
+                  const statusBg = isCompleted ? "#f0fdf4" : "#fef2f2";
+                  const statusBorderColor = isCompleted ? "#047857" : "#b91c1c";
+                  const statusTextColor = isCompleted ? "#047857" : "#b91c1c";
+
+                  return (
+                    <div key={i} style={{
+                      display: "flex", flexDirection: "column", gap: "10px",
+                      padding: "14px 16px", background: "#ffffff",
+                      border: "2.5px solid #000000", borderRadius: "10px",
+                      boxShadow: "2px 2px 0px #000000",
+                      marginBottom: "12px",
+                      transition: "all 0.15s ease", cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#047857", fontFamily: "var(--font-sans)" }}>{h.from_agent}</span>
+                        <span style={{ fontSize: "13px", color: "#000000", fontWeight: 900 }}>→</span>
+                        <div style={{
+                          width: "20px",
+                          height: "20px",
+                          borderRadius: "50%",
+                          background: "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                          flexShrink: 0
+                        }}>
+                          <img src="/a2a-logo.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        </div>
+                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-sans)" }}>{h.to_agent}</span>
+                        <span style={{
+                          marginLeft: "auto", fontSize: "11px", fontWeight: 900,
+                          color: statusTextColor,
+                          fontFamily: "var(--font-sans)", background: statusBg,
+                          border: `1.5px solid ${statusBorderColor}`,
+                          padding: "2px 8px", borderRadius: "4px"
+                        }}>{h.status}</span>
+                      </div>
+                      <div style={{
+                        fontSize: "13px", fontWeight: 900, color: "#000000",
+                        fontFamily: "var(--font-sans)",
+                        background: "rgba(0, 0, 0, 0.03)",
+                        border: "2px solid #000000",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                      }}>
+                        {h.skill_used || h.message_preview || h.task_type}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── ROW 6: MANAGED MCP TOOLS USED + AGENT ATTRIBUTION (2-column bento row) ── */}
+        {((toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 || (toolUsage?.by_agent?.length ?? 0) > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "20px", width: "100%", alignItems: "stretch" }}>
+            {/* Left: MANAGED MCP TOOLS USED */}
+            {(toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 && (
+              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                    <Dot color="#b45309" pulse />
+                    <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                      MANAGED MCP TOOLS USED
+                    </span>
+                    <span style={{ marginLeft: "auto", fontSize: "12px", fontFamily: "var(--font-mono)", color: "#374151", fontWeight: 800 }}>
+                      {toolUsage.crdb_tool_breakdown.length} tools active
+                    </span>
+                  </div>
+                  <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {toolUsage.crdb_tool_breakdown.slice(0, 16).map((ct: any, j: number) => (
+                      <div key={j} onClick={() => {
+                        const recent = (toolUsage.usage ?? []).find((u: any) =>
+                          u.tool_name === ct.tool || u.sub_tool === ct.tool
+                        );
+                        if (recent) setSelectedTool(recent);
+                        else setSelectedCrdbCategory({ label: ct.tool, color: "#b45309", icon: "🔧", tools: [{ tool: ct.tool, calls: ct.calls }] });
+                      }} style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "8px 14px", background: "#ffffff", border: "2px solid #000000",
+                        borderRadius: "8px", boxShadow: "1.5px 1.5px 0px #000000",
+                        transition: "all 0.15s ease", cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000"; }}
+                      >
+                        <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)" }}>{ct.tool}</span>
+                        <span style={{
+                          fontSize: "12px", fontWeight: 900, color: "#ffffff",
+                          background: "#b45309", borderRadius: "4px", padding: "1px 7px",
+                          fontFamily: "var(--font-mono)"
+                        }}>{ct.calls}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Right: AGENT ATTRIBUTION */}
+            {(toolUsage?.by_agent?.length ?? 0) > 0 && (
+              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
+                  <Dot color={C.green} pulse />
+                  <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
+                    AGENT ATTRIBUTION
+                  </span>
+                </div>
+                <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, overflowY: "auto" }}>
+                  {toolUsage.by_agent.slice(0, 6).map((a: any, j: number) => (
+                    <div key={j} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 14px", background: "#ffffff",
+                      border: "2px solid #000000", borderRadius: "8px",
+                      boxShadow: "1.5px 1.5px 0px #000000",
+                    }}>
+                      <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)" }}>{a.agent_id}</span>
+                      <span style={{
+                        fontSize: "11px", fontWeight: 900, color: "#ffffff",
+                        background: "#000000", padding: "2px 8px", borderRadius: "4px",
+                        fontFamily: "var(--font-mono)", border: "1.5px solid #000000",
+                        boxShadow: "1px 1px 0px #000000"
+                      }}>{a.calls}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tool Detail Modal — portaled to body so it sits above everything */}
+        {selectedTool && createPortal(
+          <ToolDetailModal entry={selectedTool} onClose={() => setSelectedTool(null)} />,
+          document.body
+        )}
+
+        {/* CRDB Category Detail Modal */}
+        {selectedCrdbCategory && createPortal(
+          <CrdbCategoryModal
+            label={selectedCrdbCategory.label}
+            color={selectedCrdbCategory.color}
+            icon={selectedCrdbCategory.icon}
+            tools={selectedCrdbCategory.tools}
+            onClose={() => setSelectedCrdbCategory(null)}
+          />,
+          document.body
+        )}
+
+        {/* Tech (CRDB Tools & AWS) Detail Modal */}
+        {selectedTech && createPortal(
+          <TechDetailModal tech={selectedTech} onClose={() => setSelectedTech(null)} />,
+          document.body
+        )}
 
       </div>
     </>

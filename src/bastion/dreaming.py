@@ -349,7 +349,7 @@ class MemoryDreamer:
         """Extract a durable lesson or fact from an episodic memory.
 
         This is a rule-based extraction. In a production system,
-        you'd use an LLM call here (via Bedrock or Groq).
+        you'd use an LLM call here (via Groq or another provider).
         """
         content = record.content or ""
         meta = record.metadata or {}

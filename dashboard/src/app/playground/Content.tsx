@@ -444,8 +444,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                 {[
                   { title: "SHA-256 Hash Chains", desc: "Every memory cryptographically linked to the previous — tamper-proof ledger", icon: "🔐", color: "#ff5e00", tag: "IMMUTABILITY" },
                   { title: "AS OF SYSTEM TIME", desc: "Time-travel to any past moment — CockroachDB MVCC", icon: "⏰", color: "#00e5ff", tag: "TEMPORAL QUERY" },
-                  { title: "MCP + A2A APIs", desc: "33 MCP tools + 25 A2A skills — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: "#34d399", tag: "DUAL PROTOCOL" },
-                  { title: "OWASP ASI06 Guard", desc: "Blocks 9 injection patterns before memory is stored", icon: "🛡️", color: "#ef4444", tag: "SAFETY SHIELD" },
+                  { title: "MCP + A2A APIs", desc: "35 MCP tools + 25 A2A skills — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: "#34d399", tag: "DUAL PROTOCOL" },
+                  { title: "OWASP ASI06 Guard", desc: "Blocks 46 injection patterns before memory is stored", icon: "🛡️", color: "#ef4444", tag: "SAFETY SHIELD" },
                 ].map((f, i) => (
                   <div
                     key={i}
@@ -772,14 +772,14 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
                         <div style={{ fontSize: "16px", color: "#d1d1e2", lineHeight: "1.7", marginBottom: "28px", maxWidth: "680px", fontFamily: "'Inter', sans-serif" }}>
                           An attacker attempts to inject a <span style={{ color: "#ff5555", fontWeight: 700, background: "rgba(255,68,68,0.15)", padding: "2px 8px", borderRadius: "6px", border: "1px solid rgba(255,68,68,0.25)" }}>malicious memory</span> payload.
-                          Bastion's <span style={{ fontWeight: 700, color: "#fff" }}>OWASP ASI06 Guard</span> scans incoming writes with 40+ pattern detectors (94% detection in ~32ms) and optional Groq LLM classification, while the SQL <span style={{ color: "#ff9100", fontWeight: 700 }}>SHA-256 hash chain</span> seals the ledger.
+                          Bastion's <span style={{ fontWeight: 700, color: "#fff" }}>OWASP ASI06 Guard</span> scans incoming writes with 46 pattern detectors (sub‑ms latency) and optional Groq LLM classification, while the SQL <span style={{ color: "#ff9100", fontWeight: 700 }}>SHA-256 hash chain</span> seals the ledger.
                         </div>
 
                         {/* Attack flow diagram — High Fidelity Module Cards */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1.1fr auto 1fr", gap: "12px", alignItems: "center", marginBottom: "28px" }}>
                           {[
                             { title: "ATTACKER", label: "Poisoned prompt", emoji: "💀", color: "#ef4444", bg: "rgba(239,68,68,0.03)" },
-                            { title: "OWASP GUARD", label: "40+ patterns", emoji: "🛡️", color: "#ff8c00", bg: "rgba(255,140,0,0.03)" },
+                            { title: "OWASP GUARD", label: "46 patterns", emoji: "🛡️", color: "#ff8c00", bg: "rgba(255,140,0,0.03)" },
                             { title: "COCKROACHDB", label: "Hash chain sealed", emoji: "🔒", color: "#22c55e", bg: "rgba(34,197,94,0.03)" }
                           ].map((node, idx) => (
                             <React.Fragment key={idx}>
@@ -2027,7 +2027,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                           {[
                             { num: 1, label: "Query agent memory state", sql: "SELECT * FROM agent_memory WHERE agent_id = 'soc-analyst' ORDER BY created_at DESC" },
                             { num: 2, label: "Store clean alert in CockroachDB", sql: "INSERT INTO agent_memory (agent_id, memory_type, content, trust_level) VALUES ('soc-analyst', 'alert', $1, 4)" },
-                            { num: 3, label: "OWASP ASI06 guard scan", sql: "MemoryGuard.check(content) → 40+ patterns (94% detection, ~32ms)" },
+                            { num: 3, label: "OWASP ASI06 guard scan", sql: "MemoryGuard.check(content) → 46 patterns (sub‑ms latency)" },
                           ].map((s, i) => i < anim11.visibleCount ? (
                             <SqlStep key={s.num} num={s.num} label={s.label} sql={s.sql} status={i < anim11.visibleCount - 1 ? "done" : i === anim11.runningIdx ? "running" : "done"} />
                           ) : null)}

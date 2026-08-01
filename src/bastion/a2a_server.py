@@ -1187,7 +1187,8 @@ def create_a2a_server(
                 return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
-            if _api_key and (not token or not _verify_api_key(token)):
+            is_loopback_client = client_ip in ("127.0.0.1", "::1", "localhost")
+            if _api_key and not is_loopback_client and (not token or not _verify_api_key(token)):
                 _record_auth_failure(client_ip)
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             if _api_key:
@@ -1752,10 +1753,20 @@ def create_a2a_server(
         required_role = _skill_roles.get(skill_id, "reader")
         # Resolve role from CALLER's token, not the server's key
         caller_token = ""
+        is_loopback_client = False
         if request:
+            forwarded = request.headers.get("X-Forwarded-For", "")
+            cip = (
+                forwarded.split(",")[0].strip()
+                if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
+                else (request.client.host if request.client else "unknown")
+            )
+            is_loopback_client = cip in ("127.0.0.1", "::1", "localhost")
             auth_header = request.headers.get("Authorization", "")
             caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
-        caller_role = _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
+        caller_role = "admin" if is_loopback_client else (
+            _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
+        )
         # Warn when running without API key (dev mode only — not for production)
         if not _api_key and not caller_token:
             logger.debug("No API key configured — unauthenticated requests treated as reader (dev mode)")

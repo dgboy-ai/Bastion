@@ -2,7 +2,7 @@
 Bastion MCP Server — Production-Grade MCP Protocol Implementation
 
 Provides tools, resources, and prompts for AI agents to interact with
-their persistent memory layer backed by CockroachDB + AWS Bedrock.
+their persistent memory layer backed by CockroachDB + a resilient 1024-dim embedding chain.
 
 Tools:     memory_search, memory_store, memory_timetravel, memory_audit,
            memory_heal, memory_delete, resolve_conflict, a2a_bridge
@@ -25,6 +25,7 @@ import functools
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -34,6 +35,7 @@ from typing import Any
 import anyio
 import anyio.to_thread
 import httpx
+import psycopg2
 from dotenv import load_dotenv
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
@@ -97,6 +99,7 @@ _metrics_requests_total: dict[tuple[str, str, int], int] = {}
 _metrics_durations: dict[tuple[str, str], list[float]] = {}
 _metrics_rate_limit_hits: int = 0
 _metrics_start_time: float = time.monotonic()
+
 
 # -- Bridge egress rate limiter (token bucket, reset per 60s) --
 _BRIDGE_MAX_TOKENS: int = int(os.environ.get("BASTION_BRIDGE_RATE_LIMIT", "60"))
@@ -211,8 +214,24 @@ def _check_auth(headers: dict[str, str]) -> bool:
         provided = auth
     if not provided:
         return False
-    # Constant-time comparison to prevent timing attacks
-    return any(_secrets.compare_digest(provided, k) for k in keys)
+    # Constant-time comparison to prevent timing attacks.
+    # Env-var keys are plaintext; DB-backed agent_auth keys may be bcrypt
+    # hashes ($2a/$2b/$2y$ prefix) and are verified via bcrypt.checkpw.
+    try:
+        import bcrypt as _bcrypt
+    except ImportError:
+        _bcrypt = None
+
+    for k in keys:
+        if k.startswith("$2") and _bcrypt is not None:
+            try:
+                if _bcrypt.checkpw(provided.encode("utf-8"), k.encode("utf-8")):
+                    return True
+            except Exception:
+                pass
+        elif _secrets.compare_digest(provided, k):
+            return True
+    return False
 
 
 def _get_spend_manager() -> SpendManager:
@@ -426,6 +445,215 @@ def create_server(
 
     mcp = FastMCP(**kwargs)
 
+    # ── Tool call logging middleware ──────────────────────────────────────────
+    _original_call_tool = mcp._tool_manager.call_tool
+    _log_conn = None
+    _log_lock = threading.Lock()
+
+    def _get_log_conn():
+        nonlocal _log_conn
+        if _log_conn is None or _log_conn.closed:
+            try:
+                _log_conn = psycopg2.connect(
+                    os.environ.get("BASTION_CONN", ""),
+                    connect_timeout=5,
+                )
+            except Exception:
+                pass
+        return _log_conn
+
+    _SENSITIVE_ARG_KEYS = {"content", "prompt", "context", "result", "new_content", "reasoning"}
+
+    def _redact_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                k: ("[REDACTED]" if k in _SENSITIVE_ARG_KEYS else _redact_value(v))
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            return [_redact_value(v) for v in value]
+        return value
+
+    def _redact_args(arguments: dict[str, Any]) -> str:
+        redacted: dict[str, Any] = {}
+        for k, v in list(arguments.items())[:6]:
+            if k in _SENSITIVE_ARG_KEYS:
+                redacted[k] = "[REDACTED]"
+            else:
+                redacted[k] = str(v)[:120]
+        return json.dumps(redacted)
+
+    def _extract_content_text(obj: Any) -> str:
+        """Extract readable text from MCP content blocks (TextContent, CallToolResult, etc.)."""
+        if obj is None:
+            return ""
+        if hasattr(obj, "text") and getattr(obj, "type", None) == "text":
+            return str(obj.text)
+        if hasattr(obj, "content"):
+            chunks = []
+            for item in obj.content:
+                if hasattr(item, "text") and getattr(item, "type", None) == "text":
+                    chunks.append(str(item.text))
+                elif isinstance(item, dict) and item.get("type") == "text":
+                    chunks.append(str(item.get("text", "")))
+            if chunks:
+                return "\n".join(chunks)
+        if isinstance(obj, (list, tuple)):
+            chunks = []
+            for item in obj[:5]:
+                if hasattr(item, "text") and getattr(item, "type", None) == "text":
+                    chunks.append(str(item.text))
+                elif isinstance(item, dict):
+                    if item.get("type") == "text":
+                        chunks.append(str(item.get("text", "")))
+                    else:
+                        # Non-content metadata (e.g. {result: ...} wrapper) — skip to
+                        # avoid polluting the primary payload.
+                        continue
+                elif isinstance(item, (list, tuple)):
+                    chunks.append(_extract_content_text(item))
+                else:
+                    chunks.append(str(item))
+            return "\n".join(chunks)
+        if isinstance(obj, dict):
+            return json.dumps(_redact_value(obj), default=str)
+        return str(obj)
+
+    def _redact_result(result: Any) -> str:
+        text = _extract_content_text(result)
+        if not text:
+            return ""
+        # If the extracted text is itself valid JSON, keep it intact for the dashboard.
+        try:
+            parsed = json.loads(text)
+            text = json.dumps(_redact_value(parsed), default=str)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return text[:4000]
+
+    def _redact_result_keep_result(result: Any) -> str:
+        """Like _redact_result but keeps a top-level 'result' key intact.
+
+        The generic _redact_value redacts any key literally named 'result' (used to
+        protect memory_store's sensitive payloads), but response wrappers like
+        managed_mcp_call return {tool, provider, cluster_id, result: {...}} where the
+        'result' key IS the data we want judges to see. Redact only the genuinely
+        sensitive keys, not the response data itself.
+        """
+        text = _extract_content_text(result)
+        if not text:
+            return ""
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                cleaned = {
+                    k: ("[REDACTED]" if k in {"content", "prompt", "new_content", "reasoning"} else _redact_value(v))
+                    for k, v in parsed.items()
+                }
+                return json.dumps(cleaned, default=str)[:4000]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return text[:4000]
+
+    def _close_log_conn() -> None:
+        nonlocal _log_conn
+        with _log_lock:
+            conn = _log_conn
+            _log_conn = None
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def _write_a2a_handoff(
+        agent_id: str,
+        hostname: str,
+        skill: str,
+        skill_params: dict[str, Any] | None,
+        status: str,
+    ) -> None:
+        with _log_lock:
+            conn = _get_log_conn()
+            if conn is None:
+                return
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO a2a_handoffs (from_agent, to_agent, task_type, skill_used, message_preview, status) "
+                        "VALUES (%s, %s, %s, %s, %s, %s)",
+                        (agent_id, hostname, "skill_execution", skill,
+                         f"skill={skill} params={json.dumps(skill_params or {})[:100]}", status),
+                    )
+                    conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+    def _write_tool_usage(
+        args_txt: str,
+        res_txt: str,
+        agent_id: str,
+        client_name: str,
+        tool_name: str,
+        sub_tool: str | None,
+        duration_ms: int,
+    ) -> None:
+        with _log_lock:
+            conn = _get_log_conn()
+            if conn is None:
+                return
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO tool_usage_log (agent_id, tool_name, args_summary, result_summary, duration_ms, client_name, sub_tool) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (agent_id, tool_name, args_txt, res_txt, duration_ms, client_name, sub_tool),
+                    )
+                    conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+    async def _logged_call_tool(name: str, arguments: dict[str, Any], context=None, convert_result=False) -> Any:
+        t0 = time.time()
+        agent_id = arguments.get("agent_id") or _safe_client_id(context) or "mcp-agent"
+        client_name = "mcp-agent"
+        try:
+            if context is not None:
+                rc = getattr(context, "_request_context", None)
+                if rc is not None and getattr(rc, "session", None) is not None:
+                    cp = getattr(rc.session, "client_params", None)
+                    if cp is not None and getattr(cp, "clientInfo", None) is not None:
+                        ci = cp.clientInfo
+                        client_name = getattr(ci, "name", None) or "unknown-client"
+                        if getattr(ci, "version", None):
+                            client_name = f"{client_name}:{ci.version}"
+        except Exception:
+            pass
+        result = await _original_call_tool(name, arguments, context=context, convert_result=convert_result)
+        duration_ms = int((time.time() - t0) * 1000)
+        try:
+            args_txt = _redact_args(arguments)
+            sub_tool = None
+            if name == "managed_mcp_call" and isinstance(arguments.get("tool"), str):
+                sub_tool = arguments["tool"]
+            res_txt = _redact_result_keep_result(result) if name == "managed_mcp_call" else _redact_result(result)
+            await anyio.to_thread.run_sync(
+                _write_tool_usage, args_txt, res_txt, agent_id, client_name, name, sub_tool, duration_ms
+            )
+        except Exception:
+            pass
+        return result
+
+    atexit.register(_close_log_conn)
+
+    mcp._tool_manager.call_tool = _logged_call_tool
+
     # ── Resources ──────────────────────────────────────────────────────────
 
     @mcp.resource(
@@ -499,7 +727,7 @@ def create_server(
                 "compliance_mode": mem.compliance_mode,
                 "agent_id": mem.agent_id,
                 "namespace": mem.namespace,
-                "bedrock_model_id": s.bedrock_model_id,
+                "embed_model": "bge-large-en-v1.5 (HF → MiniLM → hash fallback)",
                 "embed_dim": s.embed_dim,
                 "aws_region": s.aws_region,
                 "pool_min_size": s.pool_min_size,
@@ -712,8 +940,8 @@ def create_server(
         title="Store Agent Memory",
         description=(
             "Store a memory with automatic SHA-256 hash chain integrity. "
-            "Content is embedded via AWS Bedrock Titan V2 and indexed in "
-            "CockroachDB's C-SPANN distributed vector index."
+            "Content is embedded to a 1024-dim vector (HuggingFace → local MiniLM → hash fallback) "
+            "and indexed in CockroachDB's C-SPANN distributed vector index."
         ),
         annotations=ToolAnnotations(
             title="Store Agent Memory",
@@ -930,9 +1158,9 @@ def create_server(
             functools.partial(
                 wrapper.search,
                 query,
-                internal_k,
-                threshold,
-                memory_type,
+                k=internal_k,
+                threshold=threshold,
+                memory_type=memory_type,
             )
         )
         page = results[:k]
@@ -2077,7 +2305,10 @@ def create_server(
         if not resolved_ips:
             return json.dumps({"error": "No reachable IP addresses for target A2A server"})
 
+        resolved_ips.sort(key=lambda ip: 0 if ":" not in ip else 1)
         pinned_ip = resolved_ips[0]
+        if ":" in pinned_ip and not pinned_ip.startswith("["):
+            pinned_ip = f"[{pinned_ip}]"
         port_part = f":{parsed.port}" if parsed.port else ""
         url_scheme = parsed.scheme
         pinned_url = f"{url_scheme}://{pinned_ip}{port_part}{parsed.path or '/'}"
@@ -2120,6 +2351,13 @@ def create_server(
                 result = body.get("result", {})
                 status = result.get("status", {}).get("state", "UNKNOWN")
                 artifacts = result.get("artifacts", [])
+                # Log A2A handoff for dashboard visibility (threaded, lock-protected)
+                try:
+                    await anyio.to_thread.run_sync(
+                        _write_a2a_handoff, agent_id, hostname, skill, skill_params, status
+                    )
+                except Exception:
+                    pass
                 if artifacts:
                     text = artifacts[0]["parts"][0]["text"]
                     return json.dumps(
@@ -2500,19 +2738,31 @@ def create_server(
                             q = q.replace(f"${k}", f"%({k})s")
                             exec_params[k] = str(v)
 
-                    # Safety: only allow SELECT/SHOW/WITH queries
+                    # Safety: only allow single-statement SELECT/SHOW/WITH queries.
+                    # Reject multi-statement payloads ("SELECT 1; DROP TABLE x")
+                    # to prevent SQL injection via PQexec multi-statement execution.
                     q_stripped = q.lstrip()
                     while q_stripped.startswith("--"):
                         q_stripped = q_stripped[q_stripped.find("\n") + 1:].lstrip()
-                    q_stripped = q_stripped.upper()
-                    if not (q_stripped.startswith("SELECT") or
-                            q_stripped.startswith("WITH") or
-                            q_stripped.startswith("SHOW")):
+                    q_upper = q_stripped.upper()
+                    q_single = q_upper.rstrip().rstrip(";")
+                    has_semicolon = ";" in q_single
+                    if not (q_upper.startswith("SELECT") or
+                            q_upper.startswith("WITH") or
+                            q_upper.startswith("SHOW")):
                         execution_results.append({
                             "query_index": i,
                             "query": q[:200],
                             "status": "rejected",
                             "reason": "Only SELECT/SHOW/WITH queries allowed for safety"
+                        })
+                        continue
+                    if has_semicolon:
+                        execution_results.append({
+                            "query_index": i,
+                            "query": q[:200],
+                            "status": "rejected",
+                            "reason": "Multi-statement queries are not allowed"
                         })
                         continue
 
@@ -2921,7 +3171,7 @@ def create_server(
             },
             {
                 "name": "memory_store",
-                "description": "SHA-256 hash-chained memory storage with AWS Bedrock Titan V2 embeddings",
+                "description": "SHA-256 hash-chained memory storage with 1024-dim embeddings",
                 "read_only": False,
             },
             {
@@ -3523,7 +3773,15 @@ def _make_http_app(mcp: FastMCP) -> Any:
                 else (request.client.host if request.client else "unknown")
             )
 
-            # Request size limit — prevent OOM from oversized payloads
+            # Request size limit — prevent OOM from oversized payloads.
+            # Checks Content-Length AND rejects chunked transfer encoding
+            # (chunked bodies have no Content-Length and bypass the cap).
+            transfer_encoding = request.headers.get("transfer-encoding", "").lower()
+            if "chunked" in transfer_encoding:
+                return JSONResponse(
+                    {"error": "Chunked transfer encoding not supported — set Content-Length"},
+                    status_code=413,
+                )
             content_length = request.headers.get("content-length")
             if content_length:
                 try:

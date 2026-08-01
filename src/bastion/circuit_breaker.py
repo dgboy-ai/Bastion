@@ -1,6 +1,6 @@
 """Circuit Breaker Pattern.
 
-Prevents cascade failures when downstream services (Bedrock, CRDB) are down.
+Prevents cascade failures when downstream services (embedding APIs, CRDB) are down.
 Three states: CLOSED (normal), OPEN (failing fast), HALF_OPEN (testing recovery).
 """
 

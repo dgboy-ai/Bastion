@@ -59,6 +59,10 @@ Bastion manages encryption keys to perform zero-knowledge memory storage.
 
 ---
 
-## 6. Amazon Bedrock (Model Configuration Support)
-- Bastion is configured with Bedrock Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`) configuration parameters to map text into 1024-dimensional space.
-- Includes a robust circuit-breaker-backed fallback system. If Bedrock requests throttle or timeout under high concurrency, Bastion automatically downgrades to local Sentence Transformers (`all-MiniLM-L6-v2`) to maintain continuous uptime.
+## 6. Embedding Pipeline (1024-dim Semantic Search)
+- Bastion maps memory text into 1024-dimensional vectors using a resilient three-tier embedding chain:
+  1. **HuggingFace Inference API** (`BAAI/bge-large-en-v1.5`) — primary, when `HF_TOKEN` is set.
+  2. **Local sentence-transformers** (`all-MiniLM-L6-v2`, padded to 1024-dim) — no API key required.
+  3. **Deterministic SHA-256 hash embedding** — last-resort fallback so search never stops.
+- Includes a robust circuit-breaker-backed fallback system. If the HuggingFace API throttles or times out under high concurrency, Bastion automatically downgrades to the local model to maintain continuous uptime.
+- All vectors are stored in CockroachDB and searched via its C-SPANN distributed vector index.

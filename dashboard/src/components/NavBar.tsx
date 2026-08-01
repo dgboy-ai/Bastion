@@ -108,12 +108,12 @@ const NavBar = memo(function NavBar() {
               width: "40px",
               height: "40px",
               borderRadius: "var(--radius-sm)",
-              background: "var(--accent-breeze)",
-              border: "2.5px solid #000000",
+              background: "#f97316",
+              border: "3px solid #000000",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "2px 2px 0px #000000",
+              boxShadow: "3px 3px 0px #000000",
               flexShrink: 0,
             }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="2.5">
@@ -121,8 +121,7 @@ const NavBar = memo(function NavBar() {
               </svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 900, fontSize: "19px", letterSpacing: "2.5px", color: "#000000", fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1.2 }}>BASTION</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "8.5px", color: "#000000", letterSpacing: "1.5px", marginTop: "2px", whiteSpace: "nowrap", fontWeight: 900 }}>MEMORY FACTORY</div>
+              <div style={{ fontWeight: 900, fontSize: "19px", letterSpacing: "2.5px", color: "#000000", fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1 }}>BASTION</div>
             </div>
           </div>
         </Link>
@@ -144,10 +143,10 @@ const NavBar = memo(function NavBar() {
                   borderRadius: "var(--radius-sm)",
                   fontSize: "14px",
                   fontWeight: 800,
-                  color: isActive ? "#000000" : "var(--mute)",
+                  color: isActive ? "#000000" : "#374151",
                   background: isActive ? "var(--accent-breeze)" : "transparent",
-                  border: isActive ? "2.5px solid #000000" : "2.5px solid transparent",
-                  boxShadow: isActive ? "3px 3px 0px #000000" : "none",
+                  border: isActive ? "3px solid #000000" : "3px solid transparent",
+                  boxShadow: isActive ? "4px 4px 0px #000000" : "none",
                   transition: "all 0.1s ease",
                   textDecoration: "none",
                 }}
@@ -155,15 +154,15 @@ const NavBar = memo(function NavBar() {
                   if (!isActive) {
                     e.currentTarget.style.background = "#f4f3ef";
                     e.currentTarget.style.color = "#000000";
-                    e.currentTarget.style.border = "2.5px solid #000000";
-                    e.currentTarget.style.boxShadow = "2px 2px 0px #000000";
+                    e.currentTarget.style.border = "3px solid #000000";
+                    e.currentTarget.style.boxShadow = "3px 3px 0px #000000";
                   }
                 }}
                 onMouseLeave={e => {
                   if (!isActive) {
                     e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = "var(--mute)";
-                    e.currentTarget.style.border = "2.5px solid transparent";
+                    e.currentTarget.style.color = "#374151";
+                    e.currentTarget.style.border = "3px solid transparent";
                     e.currentTarget.style.boxShadow = "none";
                   }
                 }}
@@ -191,9 +190,9 @@ const NavBar = memo(function NavBar() {
       }}>
         <div className="profile-avatar" style={{ 
           background: "var(--accent-breeze)",
-          border: "2px solid #000000",
-          boxShadow: "1px 1px 0px #000000",
-          borderRadius: "4px",
+          border: "3px solid #000000",
+          boxShadow: "2px 2px 0px #000000",
+          borderRadius: "6px",
           fontWeight: 900,
           color: "#000000"
         }}>BA</div>

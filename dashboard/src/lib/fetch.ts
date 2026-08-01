@@ -18,7 +18,7 @@ export async function fetchWithTimeout(
 
   if (typeof window !== "undefined") {
     try {
-      const savedConn = localStorage.getItem("bastion_db_conn");
+      const savedConn = sessionStorage.getItem("bastion_db_conn");
       if (savedConn && !headers.has("x-bastion-conn")) {
         headers.set("x-bastion-conn", savedConn);
       }

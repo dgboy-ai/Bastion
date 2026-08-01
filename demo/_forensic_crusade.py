@@ -181,7 +181,7 @@ r = mcp.call("memory_store", {"content": f"FINDING: {reason1}", "memory_type": "
                  "timestamp":datetime.datetime.now(datetime.timezone.utc).isoformat()}})
 mid1 = r.get("memory_id","") if isinstance(r, dict) else ""
 v = verdict(bool(mid1), f"Memory stored: id={mid1[:16]}... → embedding=384dim vector")
-why("Stored in CockroachDB with C-SPANN distributed vector index. Embeddings computed via AWS Bedrock Titan.")
+why("Stored in CockroachDB with C-SPANN distributed vector index. Embeddings computed via 1024-dim embedding chain (HuggingFace → MiniLM → hash).")
 
 # ── Step 6: Semantic search for similar incidents ──────────────────────────
 step(7); info("Dr. Eris performs semantic search for similar breach patterns"
