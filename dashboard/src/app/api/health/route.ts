@@ -13,6 +13,8 @@ const defaultHealth = {
 };
 
 export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   if (isMockMode()) {
     return apiSuccess(defaultHealth, "short", { mock: true });
