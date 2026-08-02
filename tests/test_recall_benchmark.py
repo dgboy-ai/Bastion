@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from bastion.retrieval import MultiSignalRetriever
+from bastion.retrieval import MultiSignalRetriever, _extract_entities, _tokenize
 
 
 def _mem(content: str, memory_id: str = "m1", importance: float = 5.0, metadata: dict | None = None):
@@ -39,6 +39,22 @@ class FakeEngine:
 
     def list_all(self, namespace_scope="own", memory_type=None):
         return list(self._memories)
+
+    def search(self, query: str, k: int = 10, memory_type: str | None = None):
+        """Mimic BastionMemory.search: return a scored candidate pool."""
+        if not query:
+            return []
+        toks = set(_tokenize(query))
+        ents = set(_extract_entities(query))
+        scored = []
+        for m in self._memories:
+            content = m.content.lower()
+            kw = sum(1 for t in toks if t in content) / max(len(toks), 1) if toks else 0.0
+            ent = sum(1 for e in ents if e in content) / max(len(ents), 1) if ents else 0.0
+            m.score = 0.3 + 0.4 * kw + 0.3 * ent
+            scored.append((m.score, m))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [m for _s, m in scored[:k]]
 
 
 # ── Test Dataset ─────────────────────────────────────────────────────────────
@@ -85,7 +101,7 @@ class TestRecallBenchmark:
         correct = 0
         for query, expected_id, _signal_type in TEST_QUERIES:
             results = self.retriever.search(query, k=5)
-            retrieved_ids = [r.memory.memory_id for r in results]
+            retrieved_ids = [r.memory_id for r in results]
             if expected_id in retrieved_ids:
                 correct += 1
 
@@ -98,26 +114,26 @@ class TestRecallBenchmark:
     def test_keyword_signal_finds_deployment_memory(self):
         """BM25 keyword matching should find 'deployment' in content."""
         results = self.retriever.search("deployment pipeline GitHub Actions", k=5)
-        ids = [r.memory.memory_id for r in results]
+        ids = [r.memory_id for r in results]
         assert "m3" in ids, f"Keyword signal should find m3, got {ids}"
 
     def test_entity_signal_finds_cockroachdb_memory(self):
         """Entity matching should find 'CockroachDB' in content."""
         results = self.retriever.search("CockroachDB multi-region", k=5)
-        ids = [r.memory.memory_id for r in results]
+        ids = [r.memory_id for r in results]
         assert "m5" in ids, f"Entity signal should find m5, got {ids}"
 
     def test_vector_signal_finds_revenue_memory(self):
         """Vector similarity should find revenue-related content."""
         results = self.retriever.search("Q2 revenue growth", k=5)
-        ids = [r.memory.memory_id for r in results]
+        ids = [r.memory_id for r in results]
         assert "m1" in ids, f"Vector signal should find m1, got {ids}"
 
     def test_fusion_ranks_relevant_memory_higher(self):
         """Multi-signal fusion should rank the most relevant memory first."""
         results = self.retriever.search("Q2 revenue growth", k=5)
         # m1 should be in the results (may not be first due to importance proxy)
-        ids = [r.memory.memory_id for r in results]
+        ids = [r.memory_id for r in results]
         assert "m1" in ids
 
     def test_empty_query_returns_empty(self):
@@ -136,6 +152,6 @@ class TestRecallBenchmark:
             # Use first few words as query
             query = " ".join(content.split()[:4])
             results = self.retriever.search(query, k=10)
-            retrieved_ids = [r.memory.memory_id for r in results]
+            retrieved_ids = [r.memory_id for r in results]
             # The memory should appear somewhere in the results
             assert mid in retrieved_ids, f"Memory {mid} ('{content[:50]}...') not found with query '{query}'"

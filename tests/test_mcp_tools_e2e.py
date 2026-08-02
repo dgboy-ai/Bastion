@@ -151,7 +151,7 @@ async def test_memory_list_returns_all_memories(mcp):
 
     result = await mcp.call_tool("memory_list", {})
     data = json.loads(result[0][0].text)
-    assert len(data) == 6
+    assert len(data["results"]) == 6
 
 
 @pytest.mark.asyncio
@@ -162,8 +162,8 @@ async def test_memory_list_filters_by_type(mcp):
 
     result = await mcp.call_tool("memory_list", {"memory_type": "fact"})
     data = json.loads(result[0][0].text)
-    assert len(data) == 2
-    assert all(r["memory_type"] == "fact" for r in data)
+    assert len(data["results"]) == 2
+    assert all(r["memory_type"] == "fact" for r in data["results"])
 
 
 @pytest.mark.asyncio
@@ -171,21 +171,21 @@ async def test_memory_list_pagination(mcp):
     for i in range(10):
         await _store(mcp, f"item {i}")
 
-    page1 = await mcp.call_tool("memory_list", {"limit": 3, "offset": 0})
+    page1 = await mcp.call_tool("memory_list", {"limit": 3})
     d1 = json.loads(page1[0][0].text)
-    assert len(d1) == 3
+    assert len(d1["results"]) == 3
 
-    page2 = await mcp.call_tool("memory_list", {"limit": 3, "offset": 3})
+    page2 = await mcp.call_tool("memory_list", {"limit": 3, "cursor": d1["next_cursor"]})
     d2 = json.loads(page2[0][0].text)
-    assert len(d2) == 3
-    assert d1[0]["memory_id"] != d2[0]["memory_id"]
+    assert len(d2["results"]) == 3
+    assert d1["results"][0]["memory_id"] != d2["results"][0]["memory_id"]
 
 
 @pytest.mark.asyncio
 async def test_memory_list_empty_store(mcp):
     result = await mcp.call_tool("memory_list", {})
     data = json.loads(result[0][0].text)
-    assert data == []
+    assert data["results"] == []
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -586,7 +586,8 @@ async def test_context_pack_empty(mcp):
     result = await mcp.call_tool("context_pack", {"budget_tokens": 4000})
     data = json.loads(result[0][0].text)
     assert data["total_tokens"] == 0
-    assert data["memory_count"] == 0
+    assert data["memories"] == []
+    assert data["pinned_count"] == 0
     assert data["budget_tokens"] == 4000
 
 
@@ -598,7 +599,7 @@ async def test_context_pack_with_memories(mcp):
 
     result = await mcp.call_tool("context_pack", {"budget_tokens": 4000})
     data = json.loads(result[0][0].text)
-    assert data["memory_count"] > 0
+    assert len(data["memories"]) > 0
     assert data["pinned_count"] >= 1
     assert data["total_tokens"] > 0
     assert "utilization" in data
@@ -611,8 +612,9 @@ async def test_context_pack_respects_budget(mcp):
 
     result = await mcp.call_tool("context_pack", {"budget_tokens": 50})
     data = json.loads(result[0][0].text)
-    assert data["total_tokens"] <= 50 + 20  # small tolerance for token estimation
-    assert data["truncated"] is True
+    assert data["total_tokens"] <= 50
+    assert data["utilization"] <= 1.0
+    assert len(data["memories"]) < 20  # budget-limited packing excludes most memories
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -714,7 +716,7 @@ async def test_workflow_pin_get_pinned_list(mcp):
     # list should also show it
     lst = await mcp.call_tool("memory_list", {})
     lstdata = json.loads(lst[0][0].text)
-    assert any(r["memory_id"] == pdata["memory_id"] for r in lstdata)
+    assert any(r["memory_id"] == pdata["memory_id"] for r in lstdata["results"])
 
 
 @pytest.mark.asyncio
@@ -795,6 +797,6 @@ async def test_workflow_patch_then_apply(mcp):
     # Verify via list
     lst = await mcp.call_tool("memory_list", {})
     lstdata = json.loads(lst[0][0].text)
-    target = [r for r in lstdata if r["memory_id"] == mid][0]
+    target = [r for r in lstdata["results"] if r["memory_id"] == mid][0]
     assert target["metadata"]["count"] == 5
     assert "v2" in target["metadata"]["tags"]

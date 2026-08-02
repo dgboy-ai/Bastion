@@ -66,6 +66,41 @@ _CORE_MEMORY_COLS = (
     "trust_level, source_provenance, overwrite_count"
 )
 
+# ── Hybrid search: keyword signal fused into the SQL ranking ────────────────
+_KEYWORD_WEIGHT = 2.0  # weight of the keyword (BM25-like) signal vs vector
+_HYBRID_STOPWORDS = {
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "dare", "ought", "used",
+    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
+    "through", "during", "before", "after", "above", "below", "between", "out",
+    "off", "over", "under", "again", "further", "then", "once", "here", "there",
+    "when", "where", "why", "how", "all", "both", "each", "few", "more", "most",
+    "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so",
+    "than", "too", "very", "just", "now", "what", "which", "who", "whom", "this",
+    "that", "these", "those", "i", "me", "my", "we", "our", "you", "your", "he",
+    "him", "his", "she", "her", "it", "its", "they", "them", "their",
+}
+
+
+def _hybrid_keywords(query: str, limit: int = 5) -> list[str]:
+    """Extract non-stopword keywords for the SQL keyword-boost signal."""
+    words = re.findall(r"[a-z0-9]+", query.lower())
+    return [w for w in words if w not in _HYBRID_STOPWORDS and len(w) > 2][:limit]
+
+
+def _keyword_boost_sql(terms: list[str]) -> tuple[str, list[str]]:
+    """Build the keyword-boost SQL fragment and its parameter list."""
+    if not terms:
+        return "", []
+    cases = " + ".join(
+        "(CASE WHEN lower(content) LIKE '%%' || %s || '%%' THEN 1.0 ELSE 0.0 END)"
+        for _ in terms
+    )
+    # kw signal = fraction of query keywords present in content, in [0, 1]
+    return f" + {_KEYWORD_WEIGHT} * (({cases}) / {len(terms)})::FLOAT8", terms
+
+
 _MAX_CONTENT_LENGTH = 100_000
 _MAX_AGENT_ID_LENGTH = 255
 _MAX_MEMORY_TYPE_LENGTH = 100
@@ -598,8 +633,21 @@ class BastionMemory:
             List of MemoryRecord, may include an extra item to indicate has_more.
         """
         if self._mock:
-            return _mock.mock_list_memories(self.agent_id, memory_type, limit, cursor or "0")
-        return self._list_memories_real(memory_type, limit, cursor)
+            return _mock.mock_list_memories(self.agent_id, memory_type, limit, self._decode_cursor(cursor))
+        return self._list_memories_real(memory_type, limit, self._decode_cursor(cursor))
+
+    @staticmethod
+    def _decode_cursor(cursor: str | None) -> str | None:
+        """Decode a base64 cursor into a raw ISO created_at timestamp."""
+        if not cursor or cursor == "0":
+            return None
+        import base64
+
+        try:
+            decoded = base64.b64decode(cursor).decode("ascii")
+            return decoded if decoded else None
+        except Exception:
+            return cursor
 
     def correct_memory(
         self,
@@ -1118,28 +1166,33 @@ class BastionMemory:
                     raise ValueError(f"Unexpected region_clause: {region_clause}")
                 region_param = [region_filter]
 
+            # Hybrid signal: fuse keyword (BM25-like) boost into the vector ranking
+            kw_sql, kw_terms = _keyword_boost_sql(_hybrid_keywords(query))
+
             with conn.cursor() as cur:
                 if memory_type:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS}, "
-                        "(1.0 - (embedding <=> %s::vector)) * importance_score / "
-                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                        "(1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
+                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) "
+                        f"{kw_sql} AS decay_score "
                         "FROM agent_memory "
                         f"WHERE {agent_filter} AND memory_type = %s {region_clause} "
                         "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        [query_vector_str, decay_rate, agent_param, memory_type, *region_param, k],
+                        [query_vector_str, decay_rate, *kw_terms, agent_param, memory_type, *region_param, k],
                     )
                 else:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS}, "
-                        "(1.0 - (embedding <=> %s::vector)) * importance_score / "
-                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score "
+                        "(1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
+                        "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) "
+                        f"{kw_sql} AS decay_score "
                         "FROM agent_memory "
                         f"WHERE {agent_filter} {region_clause} "
                         "AND (expires_at IS NULL OR expires_at > now()) "
                         "ORDER BY decay_score DESC LIMIT %s",
-                        [query_vector_str, decay_rate, agent_param, *region_param, k],
+                        [query_vector_str, decay_rate, *kw_terms, agent_param, *region_param, k],
                     )
                 rows = cur.fetchall()
                 results = []

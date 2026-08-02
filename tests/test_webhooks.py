@@ -118,9 +118,9 @@ class TestWebhookNotifier:
                 "os.environ",
                 env,
             ),
-            mock.patch("urllib.request.urlopen") as mock_urlopen,
+            mock.patch("httpx.Client") as mock_client,
         ):
-            mock_urlopen.return_value.__enter__.return_value.status = 200
+            mock_client.return_value.__enter__.return_value.post.return_value.status_code = 200
             n = WebhookNotifier()
             n._send_sync(sample_event)
             stats = n.get_stats()

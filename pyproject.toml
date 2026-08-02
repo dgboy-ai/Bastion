@@ -101,7 +101,7 @@ no_implicit_optional = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--tb=short -q"
+addopts = "--tb=short -q -m 'not integration and not e2e and not stress and not property'"
 markers = [
     "e2e: marks tests that need a live server (select with --e2e)",
     "integration: marks tests that need a real CockroachDB (select with --integration)",

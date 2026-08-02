@@ -319,9 +319,20 @@ def mock_list_memories(
         if cursor:
             try:
                 cursor_dt = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
-                filtered = [r for r in filtered if r.get("created_at", datetime.min.replace(tzinfo=UTC)) < cursor_dt]
             except Exception:
-                pass
+                cursor_dt = None
+            if cursor_dt is not None:
+                parsed = []
+                for r in filtered:
+                    created = r.get("created_at", datetime.min.replace(tzinfo=UTC))
+                    if isinstance(created, str):
+                        try:
+                            created = datetime.fromisoformat(created)
+                        except Exception:
+                            continue
+                    if created < cursor_dt:
+                        parsed.append(r)
+                filtered = parsed
         page = filtered[:limit]
         return [
             MemoryRecord(

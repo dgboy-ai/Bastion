@@ -305,13 +305,19 @@ class TestMemoryList:
         assert len(results) <= 2
 
     def test_list_respects_offset(self, mem):
-        """offset parameter skips the first N results."""
+        """Cursor-based pagination returns a disjoint next page."""
         records = []
         for i in range(5):
             records.append(mem.store("fact", f"Offset item {i}"))
-        all_results = mem.list_memories(limit=50)
-        offset_results = mem.list_memories(limit=50, offset=2)
-        assert len(offset_results) == len(all_results) - 2
+        first_page = mem.list_memories(limit=2)
+        assert len(first_page) == 2
+        last_created = first_page[-1].created_at
+        import base64
+
+        cursor = base64.b64encode(last_created.isoformat().encode()).decode()
+        next_page = mem.list_memories(limit=50, cursor=cursor)
+        first_ids = {r.memory_id for r in first_page}
+        assert all(r.memory_id not in first_ids for r in next_page)
 
 
 # ── memory_correct ────────────────────────────────────────────────────────────

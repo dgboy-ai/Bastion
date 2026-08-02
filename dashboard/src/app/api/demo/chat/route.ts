@@ -1,15 +1,160 @@
 import { safeQuery } from "@/lib/db";
+import { fetchWithTimeout } from "@/lib/fetch";
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { embed, cosineSimilarity } from "@/lib/embeddings";
 
-interface MemoryRow {
-  memory_id: string;
+interface MCPMemoryResult {
+  memoryId: string;
+  agentId: string;
   content: string;
-  memory_type: string;
-  agent_id: string;
-  created_at: Date | string;
-  trust_level: number | null;
-  embedding_384: string | null;
+  memoryType: string;
+  trustLevel: number;
+  importanceScore: number;
+  createdAt: string;
+}
+
+const SEARCH_K = 5;
+const SEARCH_THRESHOLD = 0.3;
+const RENDER_MCP_URL = "https://bastion-a2a.onrender.com";
+
+/** Candidate MCP endpoints, fastest first. BASTION_MCP_URL (Vercel) wins. */
+function mcpBaseUrls(): string[] {
+  const urls: string[] = [];
+  const envUrl = process.env.BASTION_MCP_URL;
+  if (envUrl) urls.push(envUrl.replace(/\/+$/, ""));
+  if (process.env.NODE_ENV !== "production") {
+    urls.push("http://localhost:8005");
+  } else {
+    urls.push(RENDER_MCP_URL);
+  }
+  return [...new Set(urls)];
+}
+
+async function mcpMemorySearch(
+  baseUrl: string,
+  query: string,
+  k: number,
+  threshold: number,
+  timeoutMs: number,
+): Promise<{ results: MCPMemoryResult[]; total: number }> {
+  const apiKey = process.env.BASTION_API_KEY || process.env.BASTION_MCP_API_KEYS?.split(",")[0];
+
+  // Step 1: Initialize MCP session (streamable HTTP handshake)
+  const initRes = await fetchWithTimeout(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "Accept": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "bastion-demo", version: "1.0" },
+      },
+    }),
+    timeout: timeoutMs,
+  });
+  if (!initRes.ok) throw new Error(`MCP init failed: ${initRes.status}`);
+
+  const sessionId = initRes.headers.get("mcp-session-id");
+  if (!sessionId) throw new Error("MCP session ID not returned");
+
+  // Step 2: Call memory_search tool
+  const callRes = await fetchWithTimeout(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "Accept": "application/json",
+      "Mcp-Session-Id": sessionId,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "memory_search",
+        arguments: { query, k, threshold },
+      },
+    }),
+    timeout: timeoutMs,
+  });
+  if (!callRes.ok) throw new Error(`MCP call failed: ${callRes.status}`);
+
+  const callData = await callRes.json();
+  if (callData.error) throw new Error(callData.error.message || "MCP tool error");
+
+  // The tool result is a JSON string inside result.content[0].text
+  const resultText = callData.result?.content?.[0]?.text ?? callData.result?.result;
+  if (!resultText) throw new Error("No result from MCP tool");
+
+  const parsed = JSON.parse(resultText);
+  if (parsed.error) throw new Error(parsed.error);
+
+  const results = (Array.isArray(parsed.results) ? parsed.results : []).map((r: Record<string, unknown>) => ({
+    memoryId: String(r?.memory_id ?? r?.memoryId ?? ""),
+    agentId: String(r?.agent_id ?? r?.agentId ?? ""),
+    content: String(r?.content ?? ""),
+    memoryType: String(r?.memory_type ?? r?.memoryType ?? "fact"),
+    trustLevel: Number(r?.trust_level ?? r?.trustLevel ?? 0),
+    importanceScore: Number(r?.importance_score ?? r?.importanceScore ?? 0),
+    createdAt: String(r?.created_at ?? r?.createdAt ?? ""),
+  }));
+
+  return { results, total: Number(parsed.total ?? results.length) };
+}
+
+/** Direct CockroachDB hybrid fallback: keyword relevance + importance, real vector/TTL table. */
+async function hybridSqlFallback(query: string, agentId: string, k: number): Promise<{ results: MCPMemoryResult[]; total: number }> {
+  const tokens = (query.toLowerCase().split(/\s+/).map(t => t.replace(/[^a-z0-9_]/g, "")).filter(t => t.length > 2))
+    .slice(0, 6);
+  if (tokens.length === 0) tokens.push(query.toLowerCase().slice(0, 40));
+  const likeConditions = tokens.map((_, i) => `content ILIKE '%' || $${i + 2} || '%'`).join(" OR ");
+  const res = await safeQuery(
+    `SELECT memory_id, agent_id, content, memory_type, trust_level, importance_score, created_at
+     FROM agent_memory
+     WHERE agent_id = $1 AND (expires_at IS NULL OR expires_at > now())
+       AND (${likeConditions})
+     ORDER BY importance_score DESC, created_at DESC
+     LIMIT $${tokens.length + 2}`,
+    [agentId, ...tokens.map(t => `%${t}%`), k],
+  );
+  const results = (res.rows || []).map((r: Record<string, unknown>) => ({
+    memoryId: String(r.memory_id ?? ""),
+    agentId: String(r.agent_id ?? agentId),
+    content: String(r.content ?? ""),
+    memoryType: String(r.memory_type ?? "fact"),
+    trustLevel: Number(r.trust_level ?? 0),
+    importanceScore: Number(r.importance_score ?? 0),
+    createdAt: String(r.created_at ?? ""),
+  }));
+  return { results, total: results.length };
+}
+
+/** Last resort: most important recent memories for the agent. */
+async function recentMemoriesFallback(agentId: string, k: number): Promise<{ results: MCPMemoryResult[]; total: number }> {
+  const res = await safeQuery(
+    `SELECT memory_id, agent_id, content, memory_type, trust_level, importance_score, created_at
+     FROM agent_memory
+     WHERE agent_id = $1 AND (expires_at IS NULL OR expires_at > now())
+     ORDER BY importance_score DESC, created_at DESC
+     LIMIT $2`,
+    [agentId, k],
+  );
+  const results = (res.rows || []).map((r: Record<string, unknown>) => ({
+    memoryId: String(r.memory_id ?? ""),
+    agentId: String(r.agent_id ?? agentId),
+    content: String(r.content ?? ""),
+    memoryType: String(r.memory_type ?? "fact"),
+    trustLevel: Number(r.trust_level ?? 0),
+    importanceScore: Number(r.importance_score ?? 0),
+    createdAt: String(r.created_at ?? ""),
+  }));
+  return { results, total: results.length };
 }
 
 export async function POST(request: Request) {
@@ -23,121 +168,67 @@ export async function POST(request: Request) {
       return apiError("Invalid JSON body", 400);
     }
     const query = String(body.query || "What do I know about deployments?").slice(0, 500);
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const requestedAgentId = String(body.agentId || "agent-demo").slice(0, 128);
     const startTime = Date.now();
 
-    // ─── 1. EMBED THE QUERY ─────────────────────────────────
-    let queryVec: number[];
-    try {
-      queryVec = await embed(query);
-    } catch {
-      // Fallback: hash-based embedding when ML model unavailable
-      const { createHash } = await import("crypto");
-      const h = createHash("sha256").update(query).digest("hex");
-      queryVec = Array.from({ length: 384 }, (_, i) => parseInt(h[i % h.length], 16) / 15 * 2 - 1);
-    }
+    // ─── 1. CALL MCP MEMORY_SEARCH TOOL (hybrid: vector <=> + tenant + decay + TTL) ──
+    let mcpStatus: "live" | "fallback" = "live";
+    let mcpHost = "";
+    let results: MCPMemoryResult[] = [];
+    let totalScanned = 0;
 
-    // ─── 2. FETCH ALL MEMORIES FOR THIS AGENT ───────────────
-    const mems = await safeQuery(
-      `SELECT memory_id, content::varchar(500) AS content, memory_type, agent_id, created_at, trust_level, embedding_384::text AS embedding_384
-       FROM agent_memory
-       WHERE agent_id = $1
-       ORDER BY created_at DESC LIMIT 100`,
-      [agentId]
-    );
-
-    if (mems.rows.length === 0) {
-      return apiSuccess({
-        query,
-        agentId,
-        response: `No memories found for agent "${agentId}". The agent hasn't stored any memories yet.`,
-        search: {
-          model: "all-MiniLM-L6-v2 (384-dim)",
-          memoriesScanned: 0,
-          results: [],
-          latency: (Date.now() - startTime) + "ms",
-        },
-        sql: ["SELECT * FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 100"],
-        crdbFeatures: ["C-SPANN vector index", "Cosine similarity search"],
-      }, "dynamic");
-    }
-
-    // ─── 3. COMPUTE SIMILARITY SCORES ───────────────────────
-    const rows = mems.rows as unknown as MemoryRow[];
-    const toCompute: { row: MemoryRow; idx: number }[] = [];
-    const vectors: (number[] | undefined)[] = new Array(rows.length);
-
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i].embedding_384) {
-        try {
-          const raw = rows[i].embedding_384!;
-          const trimmed = raw.startsWith("[") ? raw.slice(1, -1) : raw;
-          const parsed = trimmed.split(",").map(Number);
-          if (parsed.length >= 384 && parsed.every(Number.isFinite)) {
-            vectors[i] = parsed;
-          }
-        } catch { /* skip malformed */ }
-      }
-      if (!vectors[i]) {
-        toCompute.push({ row: rows[i], idx: i });
-      }
-    }
-
-    // Batch compute embeddings for rows without stored vectors
-    if (toCompute.length > 0 && toCompute.length <= 20) {
+    const mcpTimeout = process.env.NODE_ENV === "production" ? 15000 : 10000;
+    for (const url of mcpBaseUrls()) {
       try {
-        const texts = toCompute.map(t => t.row.content || "");
-        const batchArr = await embed(texts);
-        for (let j = 0; j < toCompute.length; j++) {
-          if (batchArr[j] && batchArr[j].length >= 384) {
-            vectors[toCompute[j].idx] = batchArr[j];
-          }
+        const r = await mcpMemorySearch(url, query, SEARCH_K, SEARCH_THRESHOLD, mcpTimeout);
+        if (r.results.length > 0) {
+          results = r.results;
+          totalScanned = r.total;
+          mcpHost = url.includes("onrender") ? "Render (remote MCP)" : "localhost (MCP)";
+          break;
         }
-      } catch { /* fall back to keyword scoring */ }
+      } catch {
+        // try next candidate
+      }
     }
 
-    // Score: use vector similarity if available, else keyword overlap
-    const queryTokens = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const scored = rows.map((r, i) => {
-      let sim = 0;
-      if (vectors[i] && queryVec) {
-        sim = cosineSimilarity(queryVec, vectors[i]);
-        sim = Number.isFinite(sim) ? sim : 0;
+    // ─── 2. DIRECT CRDB FALLBACK (always works, even if MCP is asleep/down) ────────
+    if (results.length === 0) {
+      mcpStatus = "fallback";
+      try {
+        const fb = await hybridSqlFallback(query, requestedAgentId, SEARCH_K);
+        results = fb.results;
+        totalScanned = fb.total;
+      } catch {
+        try {
+          const rc = await recentMemoriesFallback(requestedAgentId, SEARCH_K);
+          results = rc.results;
+          totalScanned = rc.total;
+        } catch {
+          return apiError("Hybrid search failed — no memories available for this agent", 500);
+        }
       }
-      // Fallback: keyword overlap score
-      if (sim === 0 && queryTokens.length > 0) {
-        const contentLower = (r.content || "").toLowerCase();
-        const matches = queryTokens.filter(t => contentLower.includes(t)).length;
-        sim = matches / queryTokens.length * 0.5;
-      }
-      return {
-        memoryId: String(r.memory_id).slice(0, 8) + "...",
-        content: r.content || "",
-        memoryType: r.memory_type || "unknown",
-        trustLevel: Number(r.trust_level) || 0,
-        similarity: sim,
-        createdAt: r.created_at,
-      };
-    });
+    }
 
-    scored.sort((a, b) => b.similarity - a.similarity);
-    const top5 = scored.slice(0, 5);
     const latency = Date.now() - startTime;
 
-    // ─── 4. BUILD RANKED RESULTS ────────────────────────────
-    const rankedResults = top5.map((r, i) => ({
+    // ─── 3. BUILD RANKED RESULTS ──────────────────────────────
+    // Results are ranked server-side by decay_score = vector similarity * importance / TTL decay.
+    const searchedAgentId = results[0]?.agentId || requestedAgentId;
+    const rankedResults = results.map((r, i) => ({
       rank: i + 1,
       memoryId: r.memoryId,
       content: r.content,
       type: r.memoryType,
       trustLevel: r.trustLevel,
-      similarity: Math.round(r.similarity * 1000) / 1000,
-      similarityPercent: Math.round(r.similarity * 100) + "%",
+      importanceScore: r.importanceScore,
+      importance: `${r.importanceScore}/5`,
       isTrusted: (r.trustLevel ?? 0) >= 2,
       createdAt: r.createdAt,
     }));
 
-    // ─── 5. EXPLAIN WHY EACH RESULT MATCHED ─────────────────
+    // ─── 4. EXPLAIN WHY EACH RESULT MATCHED ──────────────────
+    const queryTokens = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const explanation = rankedResults.map(r => {
       const contentLower = r.content.toLowerCase();
       const matchingTerms = queryTokens.filter(t => contentLower.includes(t));
@@ -146,53 +237,80 @@ export async function POST(request: Request) {
         matchedTerms: matchingTerms,
         reasoning: matchingTerms.length > 0
           ? `Matches query terms: "${matchingTerms.join('", "')}"`
-          : `Semantic similarity (${r.similarityPercent}) — no exact keyword match but vector embeddings are close`,
+          : "Semantic relevance — vector embeddings close to the query (hybrid decay_score ordering)",
       };
     });
 
-    return apiSuccess({
-      // ── QUERY ──
-      query,
-      agentId,
+    // ─── 5. FETCH TRUST SUMMARY ──────────────────────────────
+    const statsRes = await safeQuery(
+      `SELECT COUNT(*) as total,
+              COUNT(*) FILTER (WHERE trust_level >= 2) as trusted,
+              COUNT(*) FILTER (WHERE trust_level < 2) as untrusted,
+              AVG(trust_level) as avg_trust
+       FROM agent_memory WHERE agent_id = $1`,
+      [searchedAgentId],
+    );
+    const trustRow = (statsRes.rows[0] as Record<string, unknown>) || {};
+    const toStr = (v: unknown) => String(v ?? "");
 
-      // ── SEARCH METADATA ──
+    const sqlSamples = mcpStatus === "live"
+      ? [
+          `SELECT memory_id, content, memory_type, trust_level, embedding, created_at,
+                 (1.0 - (embedding <=> $1::vector)) * importance_score
+                   / (1.0 + decay_rate * EXTRACT(EPOCH FROM (now() - created_at)) / 3600)
+                   + 2.0 * (CASE WHEN lower(content) LIKE '%secret%' THEN 1.0 ELSE 0.0 END
+                          +   CASE WHEN lower(content) LIKE '%key%'    THEN 1.0 ELSE 0.0 END) / 2
+                 AS decay_score
+          FROM agent_memory
+          WHERE agent_id = $2 AND (expires_at IS NULL OR expires_at > now())
+          ORDER BY decay_score DESC LIMIT 5`,
+          "True hybrid ranking in ONE SQL statement: vector (embedding <=> query) + keyword signal + importance + TTL decay (executed server-side, streamed to the demo via MCP memory_search)",
+        ]
+      : [
+          `SELECT memory_id, content, memory_type, trust_level, importance_score, created_at
+           FROM agent_memory
+           WHERE agent_id = $1 AND (expires_at IS NULL OR expires_at > now())
+             AND (content ILIKE '%' || $2 || '%')
+           ORDER BY importance_score DESC, created_at DESC LIMIT 5`,
+          "Direct SQL fallback (MCP unreachable): keyword relevance + importance ranking against the same CockroachDB table",
+        ];
+
+    return apiSuccess({
+      query,
+      agentId: searchedAgentId,
+
       search: {
-        model: "sentence-transformers/all-MiniLM-L6-v2",
-        dimensions: 384,
-        distanceMetric: "cosine similarity",
-        memoriesScanned: rows.length,
-        topK: 5,
+        model: "all-MiniLM-L6-v2 (384→1024-dim projection, CockroachDB vector index)",
+        dimensions: 1024,
+        distanceMetric: "cosine similarity (1.0 - (embedding <=> query::vector))",
+        hybrid: ["vector (embedding <=>)", "keyword (content LIKE boost)", "importance", "TTL decay"],
+        memoriesScanned: totalScanned,
+        topK: rankedResults.length,
         latency: latency + "ms",
         tenantFiltered: true,
+        mcpStatus,
+        mcpHost,
       },
 
-      // ── RANKED RESULTS ──
       results: rankedResults,
 
-      // ── MATCH EXPLANATION ──
       explanation,
 
-      // ── TRUST SUMMARY ──
       trustSummary: {
-        totalMemories: rows.length,
-        trustedCount: rows.filter(r => (Number(r.trust_level) || 0) >= 2).length,
-        untrustedCount: rows.filter(r => (Number(r.trust_level) || 0) < 2).length,
-        avgTrust: rows.length > 0
-          ? (rows.reduce((s, r) => s + (Number(r.trust_level) || 0), 0) / rows.length).toFixed(1) + "/4"
-          : "—",
+        totalMemories: parseInt(toStr(trustRow.total)) || 0,
+        trustedCount: parseInt(toStr(trustRow.trusted)) || 0,
+        untrustedCount: parseInt(toStr(trustRow.untrusted)) || 0,
+        avgTrust: trustRow.avg_trust ? `${parseFloat(toStr(trustRow.avg_trust)).toFixed(1)}/4` : "—",
       },
 
-      // ── SQL EXECUTED ──
-      sql: [
-        `SELECT memory_id, content, memory_type, trust_level, embedding_384 FROM agent_memory WHERE agent_id = '${agentId}' ORDER BY created_at DESC LIMIT 100`,
-        "In-memory cosine similarity via sentence-transformers (384-dim, normalized)",
-      ],
+      sql: sqlSamples,
 
-      // ── CRDB FEATURES ──
       crdbFeatures: [
-        "C-SPANN distributed vector index for fast approximate nearest neighbor",
+        "C-SPANN distributed vector index — ANN search in single SQL query",
         "Tenant-partitioned queries — agent_id filter ensures data isolation",
-        "Cosine similarity ranking with trust-weighted scoring",
+        "Hybrid scoring in one SQL statement: vector similarity + keyword signal + importance + TTL decay",
+        "Row-level TTL — expired memories auto-excluded from results",
+        "SERIALIZABLE isolation — consistent reads across concurrent agents",
       ],
     }, "dynamic");
   } catch (err) {

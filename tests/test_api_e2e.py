@@ -9,6 +9,11 @@ from urllib.parse import urljoin
 import pytest
 import requests
 
+# These tests boot a real A2A server on :9998 and make live HTTP calls.
+# They need a fast local boot and are excluded from the default `pytest` run.
+# Run explicitly with: pytest tests/test_api_e2e.py -m e2e
+pytestmark = pytest.mark.e2e
+
 # These tests run against a running server instance
 # Configure via env vars: BASTION_TEST_BASE_URL, BASTION_API_KEY
 BASE_URL = "http://localhost:9998"

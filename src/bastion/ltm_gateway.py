@@ -200,17 +200,28 @@ class LTMMemoryGateway:
         if best is None:
             return None
 
-        # Compute similarity score from content overlap (not importance_score)
-        # Use word-level Jaccard similarity for actual semantic relevance
+        # Compute similarity from how much of the query the stored analysis covers.
+        # Overlap coefficient (|Q ∩ C| / |Q|) rather than Jaccard: a long stored
+        # analysis that fully covers a short query is a reuse candidate, not a mismatch.
+        meta = best.metadata or {}
         query_words = set(query.lower().split())
         content_words = set((best.content or "").lower().split())
         if query_words and content_words:
-            jaccard = len(query_words & content_words) / max(1, len(query_words | content_words))
+            content_overlap = len(query_words & content_words) / len(query_words)
         else:
-            jaccard = 0.0
+            content_overlap = 0.0
+        # Also compare against the stored original query (metadata["original_query"]),
+        # which captures intent even when the stored result content is long.
+        orig_overlap = 0.0
+        orig_q = meta.get("original_query") or ""
+        if orig_q:
+            orig_words = set(str(orig_q).lower().split())
+            if query_words and orig_words:
+                orig_overlap = len(query_words & orig_words) / len(query_words)
+        best_overlap = max(content_overlap, orig_overlap)
         # Blend with importance as a secondary signal (importance boosts confidence)
         importance_signal = min(1.0, max(0.0, best.importance_score / 10.0))
-        similarity = min(1.0, jaccard * 0.7 + importance_signal * 0.3)
+        similarity = min(1.0, best_overlap * 0.7 + importance_signal * 0.3)
 
         if similarity < threshold:
             return None
