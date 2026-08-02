@@ -295,22 +295,78 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
   const isWelcome = tourStep === 0;
 
+  // Design system style primitives (map to globals.css variables)
+  const styles = {
+    // Layout
+    page: { background: "var(--canvas-bg)", minHeight: "100vh", position: "relative", overflow: "auto", color: "var(--ink)" } as React.CSSProperties,
+    wrapper: { position: "relative", zIndex: 1, padding: "20px 32px", maxWidth: "1400px", margin: "0 auto" } as React.CSSProperties,
+    
+    // Cards & Surfaces
+    card: { background: "var(--canvas-card)", border: "2px solid var(--glass-border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-sm)" } as React.CSSProperties,
+    cardElevated: { background: "var(--canvas-elevated)", border: "2px solid var(--glass-border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-md)" } as React.CSSProperties,
+    cardHover: { background: "var(--canvas-elevated)", border: "2px solid var(--glass-border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-md)", transition: "transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out)" } as React.CSSProperties,
+    
+    // Text
+    textPrimary: { color: "var(--ink)", fontFamily: "var(--font-sans)" } as React.CSSProperties,
+    textSecondary: { color: "var(--body)", fontFamily: "var(--font-sans)" } as React.CSSProperties,
+    textMuted: { color: "var(--mute)", fontFamily: "var(--font-sans)" } as React.CSSProperties,
+    textMono: { color: "var(--ink)", fontFamily: "var(--font-mono)" } as React.CSSProperties,
+    textMonoMuted: { color: "var(--mute)", fontFamily: "var(--font-mono)" } as React.CSSProperties,
+    heading: { color: "var(--ink)", fontFamily: "var(--font-sg)", fontWeight: 900 } as React.CSSProperties,
+    headingAccent: { color: "var(--accent-sunset)", fontFamily: "var(--font-sg)", fontWeight: 900 } as React.CSSProperties,
+    
+    // Accents (map playground semantic colors to design system)
+    accentPrimary: "var(--accent-sunset)",      // orange/red - was #ff5e00
+    accentSuccess: "var(--accent-emerald)",     // green - was #00ff88/#34d399
+    accentInfo: "var(--accent-breeze)",         // yellow/gold - was #ff9100/#ffc800
+    accentWarning: "var(--accent-lava)",        // orange - was #ff5e00/#ff6b35
+    accentMagic: "var(--accent-magenta)",       // purple/pink - was #b388ff/#a78bfa
+    accentCyan: "var(--accent-breeze)",         // cyan - was #00e5ff (map to breeze)
+    
+    // Borders
+    borderDefault: "2px solid var(--glass-border)",
+    borderAccent: (color: string) => `2px solid ${color}`,
+    
+    // Radius
+    radiusSm: "var(--radius-sm)",
+    radiusMd: "var(--radius-md)",
+    radiusLg: "var(--radius-lg)",
+    
+    // Shadows
+    shadowSm: "var(--shadow-sm)",
+    shadowMd: "var(--shadow-md)",
+    shadowLg: "var(--shadow-lg)",
+    
+    // Buttons
+    btnPrimary: { background: "var(--accent-sunset)", border: "2px solid var(--glass-border)", color: "#ffffff", fontWeight: 700, fontFamily: "var(--font-sg)", borderRadius: "var(--radius-sm)", boxShadow: "var(--shadow-sm)" } as React.CSSProperties,
+    btnSecondary: { background: "var(--canvas-card)", border: "2px solid var(--glass-border)", color: "var(--ink)", fontWeight: 700, fontFamily: "var(--font-sans)", borderRadius: "var(--radius-sm)", boxShadow: "var(--shadow-sm)" } as React.CSSProperties,
+    btnAccent: (bg: string) => ({ background: bg, border: "2px solid var(--glass-border)", color: "#ffffff", fontWeight: 700, fontFamily: "var(--font-sg)", borderRadius: "var(--radius-sm)", boxShadow: "var(--shadow-sm)" } as React.CSSProperties),
+    
+    // Badges
+    badge: (bg: string) => ({ background: bg, border: "2px solid var(--glass-border)", color: "#ffffff", fontWeight: 800, fontFamily: "var(--font-mono)", fontSize: "10px", borderRadius: "var(--radius-sm)", padding: "2px 8px" } as React.CSSProperties),
+    badgeOutline: (color: string) => ({ background: "transparent", border: `2px solid ${color}`, color: color, fontWeight: 800, fontFamily: "var(--font-mono)", fontSize: "10px", borderRadius: "var(--radius-sm)", padding: "2px 8px" } as React.CSSProperties),
+    
+    // Inputs
+    input: { background: "var(--canvas-card)", border: "2px solid var(--glass-border)", color: "var(--ink)", fontFamily: "var(--font-mono)", fontSize: "13px", borderRadius: "var(--radius-sm)", padding: "10px 14px", outline: "none" } as React.CSSProperties,
+  };
+
   return (
-    <div style={{ background: "#0a0508", minHeight: "100vh", position: "relative", overflow: "auto", color: "#e8e8ed" }}>
-      {/* Ambient glow for welcome */}
+    <div style={styles.page}>
+      {/* Ambient glow for welcome - using design system accents */}
       {isWelcome && (
         <>
-          <div style={{ position: "absolute", top: "10%", left: "20%", width: "500px", height: "400px", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,94,0,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
-          <div style={{ position: "absolute", bottom: "10%", right: "10%", width: "500px", height: "300px", borderRadius: "50%", background: "radial-gradient(circle, rgba(0,229,255,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", top: "10%", left: "20%", width: "500px", height: "400px", borderRadius: "50%", background: `radial-gradient(circle, ${DS.sunset}15 0%, transparent 70%)`, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: "10%", right: "10%", width: "500px", height: "300px", borderRadius: "50%", background: `radial-gradient(circle, ${DS.breeze}15 0%, transparent 70%)`, pointerEvents: "none" }} />
         </>
       )}
 
       {/* Main container wrapper */}
-      <div style={{ position: "relative", zIndex: 1, padding: "20px 32px", maxWidth: "1400px", margin: "0 auto" }}>
+      <div style={styles.wrapper}>
 
         {isWelcome ? (
-          /* Welcome — full-width, immersive landing layout */
-          <div style={{ animation: "revealUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+          <>
+            {/* Welcome — full-width, immersive landing layout */}
+            <div style={{ animation: "revealUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
 
             {/* Real CockroachDB Status Bar (Top Left / Right) */}
 
@@ -326,7 +382,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                   width: "120%",
                   height: "120%",
                   borderRadius: "50%",
-                  background: "radial-gradient(circle at 20% 30%, rgba(255,94,0,0.06) 0%, rgba(0,229,255,0.03) 50%, transparent 80%)",
+                  background: `radial-gradient(circle at 20% 30%, ${DS.sunset}10 0%, ${DS.breeze}08 50%, transparent 80%)`,
                   pointerEvents: "none",
                   zIndex: -1
                 }} />
@@ -335,10 +391,10 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                 <div style={{
                   display: "inline-flex", alignItems: "center", gap: "8px",
                   padding: "8px 18px", borderRadius: "99px", fontSize: "11px", fontWeight: 800,
-                  background: "rgba(255,94,0,0.06)", color: "#ff5e00", border: "1px solid rgba(255,94,0,0.2)",
+                  background: `${DS.sunset}10`, color: DS.sunset, border: `1px solid ${DS.sunset}30`,
                   marginBottom: "24px", textTransform: "uppercase", letterSpacing: "2.5px",
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  boxShadow: "0 4px 20px -5px rgba(255,94,0,0.15)",
+                  fontFamily: DS.fSg,
+                  boxShadow: `0 4px 20px -5px ${DS.sunset}25`,
                   animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
                   animationDelay: "0.1s"
                 }}>
@@ -346,8 +402,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                     width: "8px",
                     height: "8px",
                     borderRadius: "50%",
-                    background: "#ff5e00",
-                    boxShadow: "0 0 10px #ff5e00",
+                    background: DS.sunset,
+                    boxShadow: `0 0 10px ${DS.sunset}`,
                     display: "inline-block"
                   }} />
                   System Status: Live Playground
@@ -356,17 +412,17 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                 {/* Headline with premium text glow */}
                 <h1 style={{
                   fontSize: "clamp(42px, 5vw, 56px)", fontWeight: 900, margin: "0 0 20px 0",
-                  lineHeight: "1.05", letterSpacing: "-2.5px", color: "#fff",
-                  fontFamily: "'Outfit', 'Space Grotesk', sans-serif",
+                  lineHeight: "1.05", letterSpacing: "-2.5px", color: DS.ink,
+                  fontFamily: DS.fSg,
                   animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
                   animationDelay: "0.2s"
                 }}>
                   Never let an AI trust <br />
                   <span style={{
-                    background: "linear-gradient(135deg, #ff5e00 10%, #ffc800 100%)",
+                    background: `linear-gradient(135deg, ${DS.sunset} 10%, ${DS.breeze} 100%)`,
                     WebkitBackgroundClip: "text",
                     WebkitTextFillColor: "transparent",
-                    textShadow: "0 0 40px rgba(255,94,0,0.18)",
+                    textShadow: `0 0 40px ${DS.sunset}30`,
                     display: "inline-block"
                   }}>
                     poisoned memory
@@ -374,8 +430,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                 </h1>
 
                 <p style={{
-                  fontSize: "17px", color: "#a2a2b8", margin: "0 0 32px 0", lineHeight: "1.65",
-                  fontFamily: "'Inter', sans-serif", maxWidth: "560px",
+                  fontSize: "17px", color: DS.mute, margin: "0 0 32px 0", lineHeight: "1.65",
+                  fontFamily: DS.fSans, maxWidth: "560px",
                   animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
                   animationDelay: "0.3s"
                 }}>
@@ -391,22 +447,22 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                   <button
                     onClick={() => goStep(1)}
                     style={{
-                      padding: "18px 44px", borderRadius: "16px", border: "none",
-                      background: "linear-gradient(135deg, #ff5e00, #ff8c00)",
+                      padding: "18px 44px", borderRadius: DS.rMd, border: "none",
+                      background: `linear-gradient(135deg, ${DS.sunset}, ${DS.lava})`,
                       color: "#fff", fontWeight: 800, fontSize: "16px", cursor: "pointer",
-                      boxShadow: "0 10px 30px -5px rgba(255,94,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
+                      boxShadow: `0 10px 30px -5px ${DS.sunset}60, inset 0 1px 0 rgba(255,255,255,0.25)`,
                       display: "inline-flex", alignItems: "center", gap: "12px",
-                      fontFamily: "'Outfit', sans-serif",
+                      fontFamily: DS.fSg,
                       letterSpacing: "0.5px",
-                      transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)"
+                      transition: "all 0.3s var(--ease-out)"
                     }}
                     onMouseEnter={e => {
                       e.currentTarget.style.transform = "translateY(-4px) scale(1.02)";
-                      e.currentTarget.style.boxShadow = "0 15px 35px -5px rgba(255,94,0,0.55), 0 5px 15px rgba(0,0,0,0.3)";
+                      e.currentTarget.style.boxShadow = `0 15px 35px -5px ${DS.sunset}70, 0 5px 15px rgba(0,0,0,0.3)`;
                     }}
                     onMouseLeave={e => {
                       e.currentTarget.style.transform = "translateY(0) scale(1)";
-                      e.currentTarget.style.boxShadow = "0 10px 30px -5px rgba(255,94,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25)";
+                      e.currentTarget.style.boxShadow = `0 10px 30px -5px ${DS.sunset}60, inset 0 1px 0 rgba(255,255,255,0.25)`;
                     }}
                   >
                     <span>▶</span>
@@ -417,24 +473,24 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                     display: "flex",
                     alignItems: "center",
                     gap: "10px",
-                    background: "linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%)",
+                    background: `linear-gradient(135deg, ${DS.ink}05 0%, ${DS.ink}08 100%)`,
                     padding: "12px 24px",
                     borderRadius: "99px",
-                    border: "1px solid rgba(255,255,255,0.06)",
-                    boxShadow: "inset 0 1px 1px rgba(255,255,255,0.02)"
+                    border: `1px solid ${DS.border}15`,
+                    boxShadow: `inset 0 1px 1px ${DS.ink}05`
                   }}>
                     <span style={{
                       width: "8px",
                       height: "8px",
                       borderRadius: "50%",
-                      background: "#00ff88",
-                      boxShadow: "0 0 12px #00ff88"
+                      background: DS.emerald,
+                      boxShadow: `0 0 12px ${DS.emerald}`
                     }} />
                     <span style={{
                       fontSize: "13px",
                       fontWeight: 700,
-                      color: "#e2e2ea",
-                      fontFamily: "'JetBrains Mono', monospace",
+                      color: DS.ink,
+                      fontFamily: DS.fMono,
                       letterSpacing: "-0.2px"
                     }}>
                       {stats ? `${stats.memories.toLocaleString()} memories` : "connecting..."}
@@ -446,22 +502,21 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
               {/* Right: Bastion Core Features — 2x2 grid with theme glows */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                 {[
-                  { title: "SHA-256 Hash Chains", desc: "Every memory cryptographically linked to the previous — tamper-proof ledger", icon: "🔐", color: "#ff5e00", tag: "IMMUTABILITY" },
-                  { title: "AS OF SYSTEM TIME", desc: "Time-travel to any past moment — CockroachDB MVCC", icon: "⏰", color: "#00e5ff", tag: "TEMPORAL QUERY" },
-                  { title: "MCP + A2A APIs", desc: "35 MCP tools + 25 A2A skills — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: "#34d399", tag: "DUAL PROTOCOL" },
-                  { title: "OWASP ASI06 Guard", desc: "Blocks 46 injection patterns before memory is stored", icon: "🛡️", color: "#ef4444", tag: "SAFETY SHIELD" },
+                  { title: "SHA-256 Hash Chains", desc: "Every memory cryptographically linked to the previous — tamper-proof ledger", icon: "🔐", color: DS.sunset, tag: "IMMUTABILITY" },
+                  { title: "AS OF SYSTEM TIME", desc: "Time-travel to any past moment — CockroachDB MVCC", icon: "⏰", color: DS.breeze, tag: "TEMPORAL QUERY" },
+                  { title: "MCP + A2A APIs", desc: "35 MCP tools + 25 A2A skills — Claude, Cursor & autonomous agents all speak Bastion natively", icon: "🔗", color: DS.emerald, tag: "DUAL PROTOCOL" },
+                  { title: "OWASP ASI06 Guard", desc: "Blocks 46 injection patterns before memory is stored", icon: "🛡️", color: DS.sunset, tag: "SAFETY SHIELD" },
                 ].map((f, i) => (
                   <div
                     key={i}
                     style={{
                       padding: "24px",
-                      borderRadius: "16px",
-                      background: "linear-gradient(135deg, rgba(14, 9, 22, 0.9) 0%, rgba(8, 4, 12, 0.95) 100%)",
-                      border: `1px solid rgba(255,255,255,0.04)`,
-                      borderTop: `2px solid ${f.color}60`,
-                      boxShadow: "0 10px 30px -15px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05)",
-                      transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
-                      backdropFilter: "blur(20px)",
+                      borderRadius: DS.rLg,
+                      background: DS.card,
+                      border: DS.border2,
+                      borderTop: `4px solid ${f.color}`,
+                      boxShadow: DS.shMd,
+                      transition: "all 0.3s var(--ease-out)",
                       animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
                       animationDelay: `${0.15 + i * 0.08}s`,
                       minHeight: "150px",
@@ -473,38 +528,16 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       overflow: "hidden"
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.transform = "translateY(-8px) scale(1.03)";
-                      e.currentTarget.style.boxShadow = `0 24px 48px -10px rgba(0,0,0,0.8), 0 0 35px ${f.color}25, inset 0 1px 0 rgba(255,255,255,0.1)`;
-                      e.currentTarget.style.borderColor = `${f.color}aa`;
-                      e.currentTarget.style.borderTopColor = f.color;
-                      e.currentTarget.style.background = `linear-gradient(135deg, rgba(18, 12, 28, 0.95) 0%, rgba(12, 6, 18, 0.98) 100%)`;
-                      const iconEl = e.currentTarget.querySelector(".feature-icon") as HTMLElement;
-                      if (iconEl) {
-                        iconEl.style.transform = "scale(1.3) rotate(-15deg)";
-                        iconEl.style.filter = `drop-shadow(0 0 12px ${f.color})`;
-                      }
-                      const glowEl = e.currentTarget.querySelector(".card-glow") as HTMLElement;
-                      if (glowEl) {
-                        glowEl.style.opacity = "1";
-                        glowEl.style.transform = "scale(1.2)";
-                      }
+                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.boxShadow = DS.shLg;
+                      e.currentTarget.style.borderColor = f.color;
+                      e.currentTarget.style.borderTopWidth = "4px";
                     }}
                     onMouseLeave={e => {
-                      e.currentTarget.style.transform = "translateY(0) scale(1)";
-                      e.currentTarget.style.boxShadow = "0 10px 30px -15px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05)";
-                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.04)";
-                      e.currentTarget.style.borderTopColor = `${f.color}60`;
-                      e.currentTarget.style.background = "linear-gradient(135deg, rgba(14, 9, 22, 0.9) 0%, rgba(8, 4, 12, 0.95) 100%)";
-                      const iconEl = e.currentTarget.querySelector(".feature-icon") as HTMLElement;
-                      if (iconEl) {
-                        iconEl.style.transform = "scale(1) rotate(0deg)";
-                        iconEl.style.filter = `drop-shadow(0 0 8px ${f.color}50)`;
-                      }
-                      const glowEl = e.currentTarget.querySelector(".card-glow") as HTMLElement;
-                      if (glowEl) {
-                        glowEl.style.opacity = "0";
-                        glowEl.style.transform = "scale(0.8)";
-                      }
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = DS.shMd;
+                      e.currentTarget.style.borderColor = DS.border;
+                      e.currentTarget.style.borderTopColor = f.color;
                     }}
                   >
                     {/* Glowing background spot on hover */}
@@ -529,7 +562,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                     <div style={{ position: "relative", zIndex: 1 }}>
                       {/* Eyebrow tag */}
                       <div style={{
-                        fontFamily: "'Space Grotesk', sans-serif",
+                        fontFamily: DS.fSg,
                         fontSize: "9px",
                         fontWeight: 700,
                         letterSpacing: "1.5px",
@@ -545,8 +578,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                           className="feature-icon"
                           style={{
                             fontSize: "24px",
-                            filter: `drop-shadow(0 0 8px ${f.color}50)`,
-                            transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+                            transition: "transform 0.3s var(--ease-out)",
                             display: "inline-block"
                           }}
                         >
@@ -554,9 +586,9 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                         </span>
                         <span style={{
                           fontSize: "16px",
-                          fontWeight: 700,
-                          color: "#fff",
-                          fontFamily: "'Outfit', 'Space Grotesk', sans-serif",
+                          fontWeight: 800,
+                          color: DS.ink,
+                          fontFamily: DS.fSg,
                           letterSpacing: "-0.3px"
                         }}>
                           {f.title}
@@ -566,11 +598,11 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
                     <div style={{
                       fontSize: "13px",
-                      color: "#9a9ab0",
+                      color: DS.mute,
                       lineHeight: "1.6",
                       position: "relative",
                       zIndex: 1,
-                      fontFamily: "'Inter', sans-serif"
+                      fontFamily: DS.fSans
                     }}>
                       {f.desc}
                     </div>
@@ -582,60 +614,57 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
             {/* Trust + Stats — full width row with status glow */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "32px" }}>
               {[
-                { label: "Real & Live", value: stats ? `${stats.memories.toLocaleString()} memories` : "0 memories", icon: "⚡", color: "#34d399" },
-                { label: "Secure", value: "SHA-256 hash chain", icon: "🔒", color: "#00e5ff" },
-                { label: "Production", value: "REGIONAL BY ROW locality", icon: "🌍", color: "#ff5e00" },
-                { label: "Always On", value: stats?.avgLatency && stats.avgLatency !== "—" ? stats.avgLatency : "CockroachDB Serverless", icon: "⏱️", color: "#a78bfa" },
+                { label: "Real & Live", value: stats ? `${stats.memories.toLocaleString()} memories` : "0 memories", icon: "⚡", color: DS.emerald },
+                { label: "Secure", value: "SHA-256 hash chain", icon: "🔒", color: DS.breeze },
+                { label: "Production", value: "REGIONAL BY ROW locality", icon: "🌍", color: DS.sunset },
+                { label: "Always On", value: stats?.avgLatency && stats.avgLatency !== "—" ? stats.avgLatency : "CockroachDB Serverless", icon: "⏱️", color: DS.magenta },
               ].map((b, i) => (
                 <div
                   key={i}
                   style={{
-                    padding: "20px 24px", borderRadius: "16px",
-                    border: `1px solid rgba(255,255,255,0.04)`,
+                    padding: "20px 24px", borderRadius: DS.rLg,
+                    border: DS.border2,
                     display: "flex", alignItems: "center", gap: "16px",
-                    background: "linear-gradient(135deg, rgba(16, 12, 24, 0.7) 0%, rgba(10, 6, 16, 0.8) 100%)",
-                    backdropFilter: "blur(20px)",
-                    boxShadow: "0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)",
-                    transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                    background: DS.card,
+                    boxShadow: DS.shMd,
+                    transition: "all 0.2s var(--ease-out)",
                     animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both",
                     animationDelay: `${0.3 + i * 0.08}s`,
                     cursor: "pointer"
                   }}
                   onMouseEnter={e => {
                     e.currentTarget.style.transform = "translateY(-4px)";
-                    e.currentTarget.style.boxShadow = `0 16px 32px rgba(0,0,0,0.6), 0 0 25px ${b.color}25, inset 0 1px 0 rgba(255,255,255,0.06)`;
-                    e.currentTarget.style.borderColor = `${b.color}60`;
-                    e.currentTarget.style.background = `linear-gradient(135deg, rgba(20, 16, 32, 0.85) 0%, rgba(14, 10, 24, 0.9) 100%)`;
+                    e.currentTarget.style.boxShadow = DS.shLg;
+                    e.currentTarget.style.borderColor = b.color;
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)";
-                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.04)";
-                    e.currentTarget.style.background = "linear-gradient(135deg, rgba(16, 12, 24, 0.7) 0%, rgba(10, 6, 16, 0.8) 100%)";
+                    e.currentTarget.style.boxShadow = DS.shMd;
+                    e.currentTarget.style.borderColor = DS.border;
                   }}
                 >
                   <div style={{
-                    width: "44px", height: "44px", borderRadius: "12px",
+                    width: "44px", height: "44px", borderRadius: DS.rMd,
                     background: `${b.color}15`, display: "flex", alignItems: "center", justifyContent: "center",
-                    border: `1px solid ${b.color}30`, boxShadow: `0 0 10px ${b.color}10`
+                    border: `2px solid ${b.color}40`
                   }}>
-                    <span style={{ fontSize: "20px", filter: `drop-shadow(0 0 6px ${b.color}60)` }}>{b.icon}</span>
+                    <span style={{ fontSize: "20px" }}>{b.icon}</span>
                   </div>
                   <div>
                     <div style={{
                       fontSize: "10px",
                       fontWeight: 700,
-                      color: "#808092",
+                      color: DS.mute,
                       textTransform: "uppercase",
                       letterSpacing: "1.5px",
-                      fontFamily: "'Space Grotesk', sans-serif"
+                      fontFamily: DS.fSg
                     }}>{b.label}</div>
                     <div style={{
                       fontSize: "15px",
-                      fontWeight: 700,
-                      color: "#fff",
+                      fontWeight: 800,
+                      color: DS.ink,
                       marginTop: "3px",
-                      fontFamily: "'Outfit', sans-serif"
+                      fontFamily: DS.fSg
                     }}>{b.value}</div>
                   </div>
                 </div>
@@ -644,20 +673,20 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
 
             {/* Demo Flow — full width, 4 equal columns with dynamic border glow */}
             <div style={{
-              borderRadius: "20px", padding: "36px 28px",
-              border: "1px solid rgba(255,94,0,0.18)",
+              borderRadius: DS.rLg, padding: "36px 28px",
+              border: DS.border2,
+              borderTop: `4px solid ${DS.sunset}`,
               marginBottom: "32px", width: "100%",
-              background: "linear-gradient(135deg, rgba(16, 10, 24, 0.6) 0%, rgba(10, 6, 16, 0.75) 100%)",
-              backdropFilter: "blur(24px)",
-              boxShadow: "0 24px 50px rgba(0,0,0,0.6), 0 0 40px rgba(255,94,0,0.04), inset 0 1px 0 rgba(255,255,255,0.05)",
+              background: DS.card,
+              boxShadow: DS.shLg,
               animation: "revealUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both",
               animationDelay: "0.5s"
             }}>
               <div style={{
-                fontSize: "12px", fontWeight: 800, color: "#ff8c00",
+                fontSize: "12px", fontWeight: 800, color: DS.lava,
                 textTransform: "uppercase", letterSpacing: "3px",
                 marginBottom: "32px", textAlign: "center",
-                fontFamily: "'Space Grotesk', sans-serif"
+                fontFamily: DS.fSg
               }}>
                 What You&apos;ll See in the Demo
               </div>
@@ -669,49 +698,49 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                   left: "12%",
                   right: "12%",
                   height: "2px",
-                  background: "linear-gradient(90deg, rgba(239,68,68,0.3) 0%, rgba(255,94,0,0.3) 33%, rgba(0,229,255,0.3) 66%, rgba(52,211,153,0.3) 100%)",
+                  background: `linear-gradient(90deg, ${DS.sunset}30 0%, ${DS.lava}30 33%, ${DS.breeze}30 66%, ${DS.emerald}30 100%)`,
                   zIndex: 0,
                   pointerEvents: "none"
                 }} />
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "20px", position: "relative", zIndex: 1 }}>
                   {[
-                    { num: "01", title: "Poison Memory", desc: "Attacker injects false memory into the system", color: "#ef4444" },
-                    { num: "02", title: "Detect Attack", desc: "Bastion identifies the compromised memory in real-time", color: "#ff5e00" },
-                    { num: "03", title: "Recover Memory", desc: "Time-travel restores agent to a known clean state", color: "#00e5ff" },
-                    { num: "04", title: "Verify & Prove", desc: "Cryptographic proof validation with live SQL evidence", color: "#34d399" },
+                    { num: "01", title: "Poison Memory", desc: "Attacker injects false memory into the system", color: DS.sunset },
+                    { num: "02", title: "Detect Attack", desc: "Bastion identifies the compromised memory in real-time", color: DS.lava },
+                    { num: "03", title: "Recover Memory", desc: "Time-travel restores agent to a known clean state", color: DS.breeze },
+                    { num: "04", title: "Verify & Prove", desc: "Cryptographic proof validation with live SQL evidence", color: DS.emerald },
                   ].map((s, i) => (
                     <div
                       key={i}
                       style={{
-                        padding: "24px 20px", borderRadius: "16px",
-                        background: "linear-gradient(135deg, rgba(14, 9, 22, 0.8) 0%, rgba(8, 4, 12, 0.9) 100%)",
-                        border: "1px solid rgba(255,255,255,0.03)",
+                        padding: "24px 20px", borderRadius: DS.rLg,
+                        background: DS.card,
+                        border: DS.border2,
+                        borderTop: `4px solid ${s.color}`,
                         textAlign: "center",
-                        transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
-                        boxShadow: "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)",
+                        transition: "all 0.2s var(--ease-out)",
+                        boxShadow: DS.shMd,
                         cursor: "pointer"
                       }}
                       onMouseEnter={e => {
-                        e.currentTarget.style.transform = "translateY(-6px) scale(1.02)";
-                        e.currentTarget.style.boxShadow = `0 20px 40px rgba(0,0,0,0.6), 0 0 30px ${s.color}25, inset 0 1px 0 rgba(255,255,255,0.08)`;
-                        e.currentTarget.style.borderColor = `${s.color}60`;
+                        e.currentTarget.style.transform = "translateY(-4px)";
+                        e.currentTarget.style.boxShadow = DS.shLg;
+                        e.currentTarget.style.borderColor = s.color;
                         const numEl = e.currentTarget.querySelector(".step-number") as HTMLElement;
                         if (numEl) {
-                          numEl.style.transform = "scale(1.15) translateY(-2px)";
-                          numEl.style.boxShadow = `0 0 20px ${s.color}50`;
+                          numEl.style.transform = "scale(1.1)";
                           numEl.style.background = s.color;
-                          numEl.style.color = "#000";
+                          numEl.style.color = "#fff";
                         }
                       }}
                       onMouseLeave={e => {
-                        e.currentTarget.style.transform = "translateY(0) scale(1)";
-                        e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)";
-                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.03)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = DS.shMd;
+                        e.currentTarget.style.borderColor = DS.border;
+                        e.currentTarget.style.borderTopColor = s.color;
                         const numEl = e.currentTarget.querySelector(".step-number") as HTMLElement;
                         if (numEl) {
-                          numEl.style.transform = "scale(1) translateY(0)";
-                          numEl.style.boxShadow = `0 0 16px ${s.color}20`;
+                          numEl.style.transform = "scale(1)";
                           numEl.style.background = `${s.color}15`;
                           numEl.style.color = s.color;
                         }
@@ -724,44 +753,46 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                           background: `${s.color}15`, border: `2px solid ${s.color}50`,
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontSize: "15px", fontWeight: 800, color: s.color,
-                          boxShadow: `0 0 16px ${s.color}20`, margin: "0 auto 18px",
-                          fontFamily: "'Space Grotesk', sans-serif",
-                          transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)"
+                          margin: "0 auto 18px",
+                          fontFamily: DS.fSg,
+                          transition: "all 0.2s var(--ease-out)"
                         }}
                       >
                         {s.num}
                       </div>
                       <div style={{
                         fontSize: "15px",
-                        fontWeight: 700,
-                        color: "#fff",
+                        fontWeight: 800,
+                        color: DS.ink,
                         marginBottom: "8px",
-                        fontFamily: "'Outfit', 'Space Grotesk', sans-serif"
+                        fontFamily: DS.fSg
                       }}>{s.title}</div>
-                      <div style={{ fontSize: "12.5px", color: "#8c8c9e", lineHeight: "1.55", fontFamily: "'Inter', sans-serif" }}>{s.desc}</div>
+                      <div style={{ fontSize: "12.5px", color: DS.mute, lineHeight: "1.55", fontFamily: DS.fSans }}>{s.desc}</div>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
+</div>
 
           </div>
+        </div>
+        {" "}
+        </>
         ) : (
           /* 2-Column Developer Playground Console layout when Demo starts */
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", alignItems: "start", animation: "fadeIn 0.4s ease-out" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", alignItems: "start", animation: "fadeIn 0.4s ease-out" }>>
 
               {/* Active Demo steps — full width */}
               <div style={{ minHeight: "560px" }}>
                 {/* Progress bar */}
                 <div style={{ display: "flex", gap: "3px", marginBottom: "20px" }}>
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(i => (
-                    <div key={i} style={{ flex: 1, height: "4px", borderRadius: "999px", background: tourStep >= i ? (i >= 10 ? "#00e5ff" : "#ff5e00") : "#1a1a2a", transition: "all 0.3s" }} />
+                    <div key={i} style={{ flex: 1, height: "4px", borderRadius: "999px", background: tourStep >= i ? (i >= 10 ? DS.breeze : DS.sunset) : DS.dusk, transition: "all 0.3s" }} />
                   ))}
                 </div>
 
                 {/* Step contents panel */}
-                <div style={{ background: "#0c0a0e", border: "1px solid #1a1a24", borderRadius: "16px", padding: "28px", minHeight: "500px", position: "relative" }}>
+                <div style={{ background: DS.card, border: DS.border2, borderRadius: DS.rLg, padding: "28px", minHeight: "500px", position: "relative" }}>
                   <div style={{ position: "relative", zIndex: 1 }}>
                     {tourStep === 1 && (
                       <div style={{ position: "relative", zIndex: 1, animation: "revealUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
@@ -2410,7 +2441,44 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
   );
 }
 
-/* ─── Reusable Components ────────────────────── */
+/* ── Common style primitives using design system ── */
+const DS = {
+  // Surfaces
+  bg: "var(--canvas-bg)",
+  card: "var(--canvas-card)",
+  elevated: "var(--canvas-elevated)",
+  sidebar: "var(--canvas-sidebar)",
+  // Text
+  ink: "var(--ink)",
+  body: "var(--body)",
+  mute: "var(--mute)",
+  faint: "var(--faint)",
+  // Accents
+  sunset: "var(--accent-sunset)",
+  emerald: "var(--accent-emerald)",
+  breeze: "var(--accent-breeze)",
+  lava: "var(--accent-lava)",
+  magenta: "var(--accent-magenta)",
+  dusk: "var(--accent-dusk)",
+  // Borders
+  border: "var(--glass-border)",
+  border2: "2px solid var(--glass-border)",
+  // Radius
+  rSm: "var(--radius-sm)",
+  rMd: "var(--radius-md)",
+  rLg: "var(--radius-lg)",
+  rXl: "var(--radius-xl)",
+  // Shadows
+  shSm: "var(--shadow-sm)",
+  shMd: "var(--shadow-md)",
+  shLg: "var(--shadow-lg)",
+  // Fonts
+  fSans: "var(--font-sans)",
+  fMono: "var(--font-mono)",
+  fSg: "var(--font-sg)",
+  // Transitions
+  ease: "var(--ease-out)",
+} as const;
 
 function managedDbList(result: Record<string, unknown> | null): { dbs: string[]; error?: string } {
   if (!result) return { dbs: [] };
@@ -2426,10 +2494,17 @@ function managedDbList(result: Record<string, unknown> | null): { dbs: string[];
 
 function FeatureCard({ icon, title, desc, color }: { icon: string; title: string; desc: string; color: string }) {
   return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #1a1a2a", borderRadius: "12px", padding: "16px", textAlign: "center" }}>
-      <div style={{ fontSize: "24px", marginBottom: "8px" }}>{icon}</div>
-      <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{title}</div>
-      <div style={{ fontSize: "11px", color: "#606070" }}>{desc}</div>
+    <div style={{
+      background: "var(--canvas-card)",
+      border: "2px solid var(--glass-border)",
+      borderRadius: "var(--radius-md)",
+      padding: "20px",
+      textAlign: "center",
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ fontSize: "28px", marginBottom: "10px" }}>{icon}</div>
+      <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--ink)", fontFamily: "var(--font-sg)", marginBottom: "6px" }}>{title}</div>
+      <div style={{ fontSize: "12px", color: "var(--mute)", fontFamily: "var(--font-sans)", lineHeight: "1.5" }}>{desc}</div>
     </div>
   );
 }
@@ -2437,64 +2512,112 @@ function FeatureCard({ icon, title, desc, color }: { icon: string; title: string
 function FeatureHighlight({ icon, title, desc }: { icon: string; title: string; desc: string }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "20px", marginBottom: "6px" }}>{icon}</div>
-      <div style={{ fontSize: "12px", fontWeight: 700, color: "#fff", marginBottom: "4px" }}>{title}</div>
-      <div style={{ fontSize: "11px", color: "#606070", lineHeight: "1.4" }}>{desc}</div>
+      <div style={{ fontSize: "24px", marginBottom: "8px" }}>{icon}</div>
+      <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--ink)", fontFamily: "var(--font-sg)", marginBottom: "6px" }}>{title}</div>
+      <div style={{ fontSize: "12px", color: "var(--mute)", fontFamily: "var(--font-sans)", lineHeight: "1.5" }}>{desc}</div>
     </div>
   );
 }
 
 function LiveStat({ label, value, color, icon }: { label: string; value: string; color: string; icon: string }) {
   return (
-    <div style={{ textAlign: "center", padding: "14px 8px", background: "#12121a", borderRadius: "10px", border: `1px solid ${color}20` }}>
-      <div style={{ fontSize: "16px", marginBottom: "4px" }}>{icon}</div>
-      <div style={{ fontSize: "20px", fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
-      <div style={{ fontSize: "10px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", marginTop: "4px", fontWeight: 600 }}>{label}</div>
+    <div style={{
+      textAlign: "center",
+      padding: "16px 12px",
+      background: "var(--canvas-card)",
+      borderRadius: "var(--radius-md)",
+      border: "2px solid var(--glass-border)",
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ fontSize: "20px", marginBottom: "6px" }}>{icon}</div>
+      <div style={{ fontSize: "24px", fontWeight: 900, color: color, fontFamily: "var(--font-sg)" }}>{value}</div>
+      <div style={{ fontSize: "10px", color: "var(--mute)", textTransform: "uppercase", letterSpacing: "1.5px", marginTop: "4px", fontWeight: 700, fontFamily: "var(--font-mono)" }}>{label}</div>
     </div>
   );
 }
 
 function SqlStep({ num, label, sql, status }: { num: number; label: string; sql: string; status: "done" | "running" | "pending" }) {
-  const color = status === "done" ? "#00ff88" : status === "running" ? "#ff9100" : "#606070";
-  const icon = status === "done" ? "✓" : status === "running" ? "⟳" : "○";
+  const getStatusStyle = (status: "done" | "running" | "pending") => {
+    switch (status) {
+      case "done": return { color: "var(--accent-emerald)", bg: "rgba(16,185,129,0.1)", border: "var(--accent-emerald)", icon: "✓" };
+      case "running": return { color: "var(--accent-breeze)", bg: "rgba(250,204,21,0.1)", border: "var(--accent-breeze)", icon: "⟳" };
+      default: return { color: "var(--mute)", bg: "transparent", border: "transparent", icon: "○" };
+    }
+  };
+  const s = getStatusStyle(status);
   return (
-    <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", padding: "8px 12px", borderRadius: "8px", background: status === "running" ? "rgba(255,145,0,0.06)" : "transparent", border: status === "running" ? "1px solid rgba(255,145,0,0.15)" : "1px solid transparent" }}>
-      <div style={{ width: "22px", height: "22px", borderRadius: "50%", background: `${color}15`, border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color, fontWeight: 700, flexShrink: 0, animation: status === "running" ? "pulse 1s ease-in-out infinite" : "none" }}>
-        {icon}
+    <div style={{
+      display: "flex", gap: "12px", alignItems: "flex-start",
+      padding: "10px 14px", borderRadius: "var(--radius-md)",
+      background: status === "running" ? s.bg : "transparent",
+      border: status === "running" ? `2px solid ${s.border}` : "2px solid transparent",
+    }}>
+      <div style={{
+        width: "26px", height: "26px", borderRadius: "50%",
+        background: s.bg, border: `2px solid ${s.border}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "11px", color: s.color, fontWeight: 700, flexShrink: 0,
+        animation: status === "running" ? "pulse 1s ease-in-out infinite" : "none",
+      }}>
+        {s.icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "12px", fontWeight: 600, color: status === "pending" ? "#606070" : "#fff", marginBottom: "2px" }}>{label}</div>
-        <code style={{ fontSize: "10px", color: status === "pending" ? "#404050" : color, fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all", lineHeight: "1.4" }}>{sql}</code>
+        <div style={{
+          fontSize: "13px", fontWeight: 600,
+          color: status === "pending" ? "var(--mute)" : "var(--ink)",
+          marginBottom: "3px", fontFamily: "var(--font-sans)"
+        }}>{label}</div>
+        <code style={{
+          fontSize: "11px",
+          color: status === "pending" ? "var(--mute)" : s.color,
+          fontFamily: "var(--font-mono)", wordBreak: "break-all", lineHeight: "1.5"
+        }}>{sql}</code>
       </div>
-      {status === "done" && <span style={{ fontSize: "9px", color: "#00ff88", fontWeight: 600, flexShrink: 0 }}>✓</span>}
-      {status === "running" && <span style={{ fontSize: "9px", color: "#ff9100", fontWeight: 600, flexShrink: 0, animation: "pulse 1s ease-in-out infinite" }}>RUNNING</span>}
+      {status === "done" && <span style={{ fontSize: "10px", color: "var(--accent-emerald)", fontWeight: 700, flexShrink: 0 }}>✓</span>}
+      {status === "running" && <span style={{ fontSize: "10px", color: "var(--accent-breeze)", fontWeight: 700, flexShrink: 0, animation: "pulse 1s ease-in-out infinite" }}>RUNNING</span>}
     </div>
   );
 }
 
 function StatItem({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#ff9100" }} />
-      <span style={{ fontSize: "11px", color: "#a0a0b0" }}>{label}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--accent-breeze)" }} />
+      <span style={{ fontSize: "12px", color: "var(--mute)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>{label}</span>
     </div>
   );
 }
 
 function Metric({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div style={{ background: "#1a1a24", border: `1px solid ${color}30`, borderRadius: "10px", padding: "14px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: "26px", fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
-      <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1.5px", marginTop: "4px", fontWeight: 600 }}>{label}</div>
+    <div style={{
+      background: "var(--canvas-card)",
+      border: `2px solid ${color}`,
+      borderRadius: "var(--radius-md)",
+      padding: "16px 20px", textAlign: "center",
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ fontSize: "28px", fontWeight: 900, color, fontFamily: "var(--font-sg)" }}>{value}</div>
+      <div style={{ fontSize: "11px", color: "var(--mute)", textTransform: "uppercase", letterSpacing: "1.5px", marginTop: "6px", fontWeight: 700, fontFamily: "var(--font-mono)" }}>{label}</div>
     </div>
   );
 }
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div style={{ background: "#1a1a24", borderRadius: "10px", padding: "14px", marginBottom: "8px", border: "1px solid #2a2a35" }}>
-      <div style={{ fontSize: "11px", color: "#a0a0b0", textTransform: "uppercase" as const, letterSpacing: "1px", fontWeight: 600, marginBottom: "4px" }}>{label}</div>
-      <div style={{ fontSize: "14px", color: mono ? "#00e5ff" : "#fff", fontFamily: mono ? "'JetBrains Mono', monospace" : "inherit", fontWeight: mono ? 400 : 600, wordBreak: "break-all" }}>{value}</div>
+    <div style={{
+      background: "var(--canvas-card)",
+      borderRadius: "var(--radius-md)",
+      padding: "16px", marginBottom: "10px",
+      border: "2px solid var(--glass-border)",
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ fontSize: "11px", color: "var(--mute)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 700, marginBottom: "6px", fontFamily: "var(--font-mono)" }}>{label}</div>
+      <div style={{
+        fontSize: "14px", color: mono ? "var(--accent-breeze)" : "var(--ink)",
+        fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
+        fontWeight: mono ? 500 : 600, wordBreak: "break-all"
+      }}>{value}</div>
     </div>
   );
 }
@@ -2502,11 +2625,23 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 function SqlBlock({ sql }: { sql: string[] }) {
   if (!sql.length) return null;
   return (
-    <div style={{ background: "#111118", border: "1px solid #222", borderRadius: "12px", padding: "20px", marginTop: "16px" }}>
-      <div style={{ fontSize: "12px", fontWeight: 600, color: "#666", textTransform: "uppercase" as const, letterSpacing: "1.5px", marginBottom: "12px" }}>SQL Executed Against CockroachDB</div>
+    <div style={{
+      background: "var(--canvas-card)",
+      border: "2px solid var(--glass-border)",
+      borderRadius: "var(--radius-md)",
+      padding: "20px", marginTop: "16px",
+      boxShadow: "var(--shadow-sm)",
+    }}>
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--mute)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "14px", fontFamily: "var(--font-mono)" }}>SQL Executed Against CockroachDB</div>
       {sql.map((q: string, i: number) => (
-        <pre key={i} style={{ margin: 0, marginBottom: i < sql.length - 1 ? "8px" : 0, fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", color: "#22c55e", lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "10px 14px", background: "#0a0a0f", borderRadius: "8px", borderLeft: "2px solid #22c55e40" }}>
-          <span style={{ color: "#555", marginRight: "8px" }}>›</span>{q}
+        <pre key={i} style={{
+          margin: 0, marginBottom: i < sql.length - 1 ? "10px" : 0,
+          fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--accent-emerald)",
+          lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word",
+          padding: "12px 16px", background: "var(--canvas-elevated)",
+          borderRadius: "var(--radius-sm)", borderLeft: "4px solid var(--accent-emerald)",
+        }}>
+          <span style={{ color: "var(--mute)", marginRight: "8px" }}>›</span>{q}
         </pre>
       ))}
     </div>
@@ -2514,34 +2649,39 @@ function SqlBlock({ sql }: { sql: string[] }) {
 }
 
 function BackBtn({ onClick }: { onClick: () => void }) {
-  return <button onClick={onClick} style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #2a2a35", background: "#1a1a24", color: "#a0a0b0", fontSize: "13px", cursor: "pointer" }}>← Back</button>;
+  return <button onClick={onClick} style={{
+    padding: "12px 24px", borderRadius: "var(--radius-sm)",
+    border: "2px solid var(--glass-border)", background: "var(--canvas-card)",
+    color: "var(--mute)", fontSize: "13px", cursor: "pointer",
+    fontFamily: "var(--font-sans)", fontWeight: 700,
+    boxShadow: "var(--shadow-sm)",
+    transition: "all 0.15s var(--ease-out)",
+  }} onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--accent-breeze)"; e.currentTarget.style.color = "var(--ink)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--glass-border)"; e.currentTarget.style.color = "var(--mute)"; }}>← Back</button>;
 }
 
 function NavButtons({ back, next, nextLabel, action, actionLabel }: { back: () => void; next?: () => void; nextLabel?: string; action?: () => void; actionLabel?: string }) {
+  const primaryBtn = {
+    padding: "16px 36px", borderRadius: "var(--radius-sm)", border: "none",
+    background: "var(--accent-sunset)", color: "#fff", fontWeight: 800, fontSize: "15px", cursor: "pointer",
+    fontFamily: "var(--font-sg)", boxShadow: "var(--shadow-md)",
+    transition: "transform 0.1s var(--ease-out), box-shadow 0.1s var(--ease-out)",
+  };
+  const secondaryBtn = {
+    padding: "14px 24px", borderRadius: "var(--radius-sm)",
+    border: "2px solid var(--glass-border)", background: "transparent",
+    color: "var(--mute)", fontSize: "14px", cursor: "pointer",
+    fontFamily: "var(--font-sans)", fontWeight: 700,
+    transition: "all 0.15s var(--ease-out)",
+  };
   return (
-    <div style={{ display: "flex", gap: "12px", marginTop: "20px", alignItems: "center" }}>
-      <button onClick={back} style={{
-        padding: "12px 20px", borderRadius: "10px",
-        border: "1px solid #2a2a35", background: "transparent",
-        color: "#a0a0b0", fontSize: "14px", cursor: "pointer",
-        transition: "all 0.2s",
-      }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "#ff910050"; e.currentTarget.style.color = "#fff"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a2a35"; e.currentTarget.style.color = "#a0a0b0"; }}>
+    <div style={{ display: "flex", gap: "14px", marginTop: "24px", alignItems: "center" }}>
+      <button onClick={back} style={secondaryBtn}
+        onMouseEnter={e => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "var(--shadow-sm)"; e.currentTarget.style.borderColor = "var(--accent-breeze)"; e.currentTarget.style.color = "var(--ink)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.borderColor = "var(--glass-border)"; e.currentTarget.style.color = "var(--mute)"; }}>
         ← Back
       </button>
-      {next && nextLabel && <button onClick={next} style={{
-        padding: "14px 32px", borderRadius: "10px", border: "none",
-        background: "linear-gradient(135deg, #ff5e00, #ff9100)",
-        color: "#fff", fontWeight: 700, fontSize: "15px", cursor: "pointer",
-        boxShadow: "0 0 20px rgba(255,94,0,0.3)",
-      }}>{nextLabel}</button>}
-      {action && actionLabel && <button onClick={action} style={{
-        padding: "14px 32px", borderRadius: "10px", border: "none",
-        background: "linear-gradient(135deg, #ff5e00, #ff9100)",
-        color: "#fff", fontWeight: 700, fontSize: "15px", cursor: "pointer",
-        boxShadow: "0 0 20px rgba(255,94,0,0.3)",
-      }}>{actionLabel}</button>}
+      {next && nextLabel && <button onClick={next} style={primaryBtn} onMouseEnter={e => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "var(--shadow-lg)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "var(--shadow-md)"; }}>{nextLabel}</button>}
+      {action && actionLabel && <button onClick={action} style={primaryBtn} onMouseEnter={e => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "var(--shadow-lg)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "var(--shadow-md)"; }}>{actionLabel}</button>}
     </div>
   );
 }
@@ -2577,35 +2717,42 @@ const MCP_TOOLS = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  core: "#ff9100",
-  ops: "#00e5ff",
-  "multi-agent": "#b388ff",
-  ltm: "#00ff88",
-  intelligence: "#ff6b35",
-  search: "#ffc800",
-  meta: "#a0a0b0",
+  core: "var(--accent-sunset)",
+  ops: "var(--accent-breeze)",
+  "multi-agent": "var(--accent-magenta)",
+  ltm: "var(--accent-emerald)",
+  intelligence: "var(--accent-lava)",
+  search: "var(--accent-gold)",
+  meta: "var(--mute)",
 };
 
 function McpToolCard({ name, desc, category, read, onClick, active }: { name: string; desc: string; category: string; read: boolean; onClick?: () => void; active?: boolean }) {
-  const color = CATEGORY_COLORS[category] || "#a0a0b0";
+  const color = CATEGORY_COLORS[category] || "var(--mute)";
   return (
     <div
       onClick={onClick}
       style={{
-        background: active ? `${color}10` : "#12121a",
-        border: `1px solid ${active ? color : color + "20"}`,
-        borderRadius: "8px", padding: "10px 12px", display: "flex", gap: "10px", alignItems: "flex-start",
+        background: active ? `${color}15` : "var(--canvas-card)",
+        border: `2px solid ${active ? color : "var(--glass-border)"}`,
+        borderRadius: "var(--radius-md)",
+        padding: "12px 14px",
+        display: "flex", gap: "12px", alignItems: "flex-start",
         cursor: onClick ? "pointer" : "default",
-        transition: "all 0.2s",
+        transition: "all 0.2s var(--ease-out)",
+        boxShadow: active ? "var(--shadow-sm)" : "none",
       }}
     >
-      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, marginTop: "5px", flexShrink: 0 }} />
+      <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: color, marginTop: "6px", flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
-          <code style={{ fontSize: "11px", color: "#fff", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{name}</code>
-          <span style={{ padding: "1px 5px", borderRadius: "3px", fontSize: "8px", background: read ? "#00ff8815" : "#ff6b3515", color: read ? "#00ff88" : "#ff6b35", fontWeight: 600 }}>{read ? "READ" : "WRITE"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+          <code style={{ fontSize: "12px", color: "var(--ink)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{name}</code>
+          <span style={{
+            padding: "2px 8px", borderRadius: "var(--radius-sm)", fontSize: "9px",
+            background: read ? "var(--accent-emerald)" : "var(--accent-sunset)",
+            color: "#fff", fontWeight: 700, fontFamily: "var(--font-mono)"
+          }}>{read ? "READ" : "WRITE"}</span>
         </div>
-        <div style={{ fontSize: "10px", color: "#a0a0b0", lineHeight: "1.4" }}>{desc}</div>
+        <div style={{ fontSize: "11px", color: "var(--mute)", fontFamily: "var(--font-sans)", lineHeight: "1.5" }}>{desc}</div>
       </div>
     </div>
   );
