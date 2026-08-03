@@ -17,23 +17,53 @@ interface AuditEvent {
   details?: string;
 }
 
+interface CapturedMemory {
+  id: string;
+  agent_id: string;
+  type: string;
+  content: string;
+  tool?: string;
+  args_keys?: string[];
+  error_type?: string;
+  role?: string;
+  trust_level: number;
+  importance_score: number;
+  provenance: string;
+  is_pinned: boolean;
+  hash?: string;
+  previous_hash?: string;
+  created_at: string;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   memory_store: "Memory Store", memory_search: "Vector Search", memory_delete: "Delete",
   guard_block: "Guard Block", time_travel: "Time Travel", recovery: "Recovery",
   audit_check: "Audit", hash_verify: "Hash Verify", memory_heal: "Heal",
 };
 
-export default function FlightRecorderContent({ initialEvents = [], initialTotal = 0 }: { initialEvents?: AuditEvent[]; initialTotal?: number }) {
+const CAPTURE_TYPE_LABELS: Record<string, string> = {
+  tool_execution: "Tool Call", error_log: "Error", conversation: "Conversation",
+  episodic: "Episode", session_lifecycle: "Session",
+};
+
+export default function FlightRecorderContent({
+  initialEvents = [], initialTotal = 0, initialCaptures = [], initialCapturesTotal = 0,
+}: {
+  initialEvents?: AuditEvent[]; initialTotal?: number;
+  initialCaptures?: CapturedMemory[]; initialCapturesTotal?: number;
+}) {
   const [events, setEvents] = useState<AuditEvent[]>(initialEvents);
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>(initialEvents[0]?.id || "");
   const [showAll, setShowAll] = useState(false);
+  const [captures, setCaptures] = useState<CapturedMemory[]>(initialCaptures);
+  const [capturesLoading, setCapturesLoading] = useState(initialCaptures.length === 0);
+  const [captureFilter, setCaptureFilter] = useState("all");
   const { isMock } = useConnection();
 
   const fetchData = useCallback(async () => {
-    console.log("DEBUG: fetchData called! selectedId =", selectedId);
     try {
       const res = await fetchWithTimeout("/api/audit?limit=50");
       if (res.ok) {
@@ -45,11 +75,23 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
     } catch { setEvents([]); } finally { setLoading(false); }
   }, [selectedId]);
 
+  const fetchCaptures = useCallback(async () => {
+    try {
+      const res = await fetchWithTimeout("/api/captures?limit=50");
+      if (res.ok) {
+        const data = await res.json();
+        const list = data?.data?.captures || [];
+        setCaptures(list);
+      }
+    } catch { setCaptures([]); } finally { setCapturesLoading(false); }
+  }, []);
+
   useEffect(() => {
     if (initialEvents.length === 0) fetchData();
-    const iv = setInterval(fetchData, 15000);
+    if (initialCaptures.length === 0) fetchCaptures();
+    const iv = setInterval(() => { fetchData(); fetchCaptures(); }, 15000);
     return () => clearInterval(iv);
-  }, [fetchData, initialEvents.length]);
+  }, [fetchData, fetchCaptures, initialEvents.length, initialCaptures.length]);
 
   const filtered = useMemo(() => {
     const res = events.filter(e => {
@@ -57,11 +99,16 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
       if (search && !e.content_preview.toLowerCase().includes(search.toLowerCase()) && !e.agent_id.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-    console.log("DEBUG: initialEvents:", initialEvents, "events:", events);
-    const err = new Error();
-    console.log("RENDER TRACE:", err.stack?.split("\n").slice(1, 4).join("\n"));
     return res;
   }, [events, filter, search]);
+
+  const filteredCaptures = useMemo(() => {
+    return captures.filter(c => {
+      if (captureFilter !== "all" && c.type !== captureFilter) return false;
+      if (search && !c.content.toLowerCase().includes(search.toLowerCase()) && !c.agent_id.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [captures, captureFilter, search]);
 
   const visibleEvents = showAll ? filtered : filtered.slice(0, 9);
   const hasMore = filtered.length > 9 && !showAll;
@@ -71,6 +118,7 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
   const passed = events.filter(e => e.status === "success").length;
   const passRate = events.length > 0 ? ((passed / events.length) * 100).toFixed(0) : "—";
   const types = [...new Set(events.map(e => e.type))];
+  const captureTypes = [...new Set(captures.map(c => c.type))];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%", animation: "revealUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
@@ -122,7 +170,7 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
           <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'Space Grotesk', sans-serif" }}>What is this?</span>
         </div>
         <div style={{ fontSize: "14px", color: "#374151", fontWeight: 700, lineHeight: "1.6" }}>
-          Every memory operation in CockroachDB is logged here — stores, searches, deletes, guard blocks, and recoveries. Each event has a SHA-256 hash linking it to the previous event, forming a tamper-proof audit chain. Click any event to inspect its cryptographic proof and execution details.
+          Every memory operation in CockroachDB is logged here — stores, searches, deletes, guard blocks, and recoveries. Each event has a SHA-256 hash linking it to the previous event, forming a tamper-proof audit chain. The <b>Auto-Capture Feed</b> above shows memories the Bastion MCP server wrote automatically as agents used it — no manual store() needed. Click any event to inspect its cryptographic proof and execution details.
         </div>
       </div>
 
@@ -130,9 +178,9 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
         {[
           { l: "Audit Events", v: events.length, c: "#000000" },
-          { l: "Passed", v: passed, c: "#047857" },
+          { l: "Auto-Captured Memories", v: captures.length, c: "#0891b2" },
           { l: "Blocked", v: blocked, c: "#b91c1c" },
-          { l: "Pass Rate", v: `${passRate}%`, c: "#0891b2" },
+          { l: "Pass Rate", v: `${passRate}%`, c: "#047857" },
         ].map((s, i) => (
           <div key={i} style={{ 
             padding: "18px", borderRadius: "var(--radius-sm)", 
@@ -143,6 +191,103 @@ export default function FlightRecorderContent({ initialEvents = [], initialTotal
             <div style={{ fontSize: "28px", fontWeight: 950, color: s.c, fontFamily: "'Space Grotesk', sans-serif", marginTop: "6px" }}>{s.v}</div>
           </div>
         ))}
+      </div>
+
+      {/* Auto-Capture Feed — every MCP tool call lands here as a hash-chained memory */}
+      <div style={{ 
+        padding: "18px 24px", borderRadius: "var(--radius-sm)", 
+        background: "#ffffff", border: "2.5px solid #000000",
+        boxShadow: "3px 3px 0px #000000"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "16px" }}>🛰️</span>
+          <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'Space Grotesk', sans-serif" }}>Auto-Capture Feed</span>
+          <span style={{ 
+            padding: "3px 10px", borderRadius: "var(--radius-sm)", fontSize: "11px", fontWeight: 900,
+            background: "#ecfdf5", color: "#047857", border: "1.5px solid #000000", boxShadow: "1px 1px 0px #000000"
+          }}>
+            {captures.length} MEMORIES
+          </span>
+          <span style={{ fontSize: "13px", color: "#374151", fontWeight: 700 }}>
+            Every tool call & error through the Bastion MCP server is auto-captured here — hash-chained, guard-screened, no manual store() required.
+          </span>
+        </div>
+
+        {/* capture type filter */}
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+          <button 
+            onClick={() => setCaptureFilter("all")} 
+            style={{ 
+              padding: "5px 12px", borderRadius: "var(--radius-sm)", fontSize: "12px", fontWeight: 900, cursor: "pointer",
+              border: "2px solid #000000", background: captureFilter === "all" ? "#0891b2" : "#ffffff",
+              color: captureFilter === "all" ? "#ffffff" : "#000000", boxShadow: "1.5px 1.5px 0px #000000"
+            }}
+          >
+            All ({captures.length})
+          </button>
+          {captureTypes.map(t => (
+            <button 
+              key={t} 
+              onClick={() => setCaptureFilter(captureFilter === t ? "all" : t)} 
+              style={{ 
+                padding: "5px 12px", borderRadius: "var(--radius-sm)", fontSize: "12px", fontWeight: 900, cursor: "pointer",
+                border: "2px solid #000000", background: captureFilter === t ? "#0891b2" : "#ffffff",
+                color: captureFilter === t ? "#ffffff" : "#000000", boxShadow: "1.5px 1.5px 0px #000000"
+              }}
+            >
+              {CAPTURE_TYPE_LABELS[t] || t} ({captures.filter(c => c.type === t).length})
+            </button>
+          ))}
+        </div>
+
+        {capturesLoading ? (
+          <div style={{ padding: "16px", color: "#374151", fontWeight: 800, fontSize: "13px" }}>Loading captured memories…</div>
+        ) : filteredCaptures.length === 0 ? (
+          <div style={{ padding: "16px", color: "#374151", fontWeight: 800, fontSize: "13px" }}>
+            {isMock ? "Demo mode — connect to CockroachDB to see auto-captured tool calls" : "No captured memories yet — run an agent session through the Bastion MCP server"}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {filteredCaptures.slice(0, 8).map((c) => (
+              <div key={c.id} style={{
+                display: "flex", alignItems: "flex-start", gap: "12px",
+                padding: "12px 14px", borderRadius: "var(--radius-sm)",
+                background: "#f9f9f7", border: "2px solid #000000",
+              }}>
+                <span style={{
+                  padding: "3px 10px", borderRadius: "var(--radius-sm)", fontSize: "10px", fontWeight: 900,
+                  background: c.type === "error_log" ? "#fef2f2" : "#ecfdf5",
+                  color: c.type === "error_log" ? "#b91c1c" : "#047857",
+                  border: "1.5px solid #000000", whiteSpace: "nowrap", marginTop: "2px",
+                }}>
+                  {CAPTURE_TYPE_LABELS[c.type] || c.type}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                    {c.tool && <span style={{ fontSize: "11px", fontWeight: 900, color: "#0891b2", fontFamily: "var(--font-mono)" }}>{c.tool}</span>}
+                    {c.error_type && <span style={{ fontSize: "11px", fontWeight: 900, color: "#b91c1c", fontFamily: "var(--font-mono)" }}>{c.error_type}</span>}
+                    <span style={{ fontSize: "11px", color: "#374151", fontWeight: 850, fontFamily: "var(--font-mono)" }}>
+                      {c.created_at ? new Date(c.created_at).toLocaleString() : ""}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "#374151", fontWeight: 800 }}>trust {Math.round((Number(c.trust_level) / 4) * 100)}%</span>
+                  </div>
+                  <div style={{
+                    fontSize: "11.5px", color: "#374151", fontWeight: 550, fontFamily: "var(--font-mono)",
+                    wordBreak: "break-all", lineHeight: "1.5", overflow: "hidden",
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                  }}>
+                    {c.content}
+                  </div>
+                  {c.hash && (
+                    <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "#ff5e00", fontWeight: 900, marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.hash}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Filter + Search */}

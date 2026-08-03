@@ -210,6 +210,31 @@ export async function query(text: string, params?: unknown[]) {
 }
 
 /**
+ * Execute a query using ONLY the static pool (BASTION_CONN from env).
+ * Ignores any dynamic connection from x-bastion-conn header.
+ * Use this for demo routes and internal operations that must use the configured DB.
+ */
+export async function safeQueryStatic(text: string, params?: unknown[]): Promise<SafeQueryResult> {
+  if (!staticPool) {
+    if (isMockForced) {
+      return mockResult();
+    }
+    throw new Error("Static database not available (BASTION_CONN not configured and BASTION_MOCK not enabled)");
+  }
+  const start = Date.now();
+  try {
+    const res = await staticPool.query(text, params);
+    const duration = Date.now() - start;
+    console.log(`[DB Query Static] duration: ${duration}ms, rows: ${res.rowCount}`);
+    return res;
+  } catch (err) {
+    const duration = Date.now() - start;
+    console.error(`[DB Query Static] failed after ${duration}ms:`, err instanceof Error ? err.message : "Unknown error");
+    throw err;
+  }
+}
+
+/**
  * Execute a query. Returns mock data ONLY when BASTION_MOCK=true is set.
  * When DB is unavailable and mock mode is off, throws instead of silently returning empty data.
  * This prevents security dashboards from lying during database outages.

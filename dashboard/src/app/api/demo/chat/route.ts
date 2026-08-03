@@ -1,4 +1,4 @@
-import { safeQuery } from "@/lib/db";
+import { safeQueryStatic } from "@/lib/db";
 import { fetchWithTimeout } from "@/lib/fetch";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
@@ -114,7 +114,7 @@ async function hybridSqlFallback(query: string, agentId: string, k: number): Pro
     .slice(0, 6);
   if (tokens.length === 0) tokens.push(query.toLowerCase().slice(0, 40));
   const likeConditions = tokens.map((_, i) => `content ILIKE '%' || $${i + 2} || '%'`).join(" OR ");
-  const res = await safeQuery(
+  const res = await safeQueryStatic(
     `SELECT memory_id, agent_id, content, memory_type, trust_level, importance_score, created_at
      FROM agent_memory
      WHERE agent_id = $1 AND (expires_at IS NULL OR expires_at > now())
@@ -137,7 +137,7 @@ async function hybridSqlFallback(query: string, agentId: string, k: number): Pro
 
 /** Last resort: most important recent memories for the agent. */
 async function recentMemoriesFallback(agentId: string, k: number): Promise<{ results: MCPMemoryResult[]; total: number }> {
-  const res = await safeQuery(
+  const res = await safeQueryStatic(
     `SELECT memory_id, agent_id, content, memory_type, trust_level, importance_score, created_at
      FROM agent_memory
      WHERE agent_id = $1 AND (expires_at IS NULL OR expires_at > now())
@@ -242,7 +242,7 @@ export async function POST(request: Request) {
     });
 
     // ─── 5. FETCH TRUST SUMMARY ──────────────────────────────
-    const statsRes = await safeQuery(
+    const statsRes = await safeQueryStatic(
       `SELECT COUNT(*) as total,
               COUNT(*) FILTER (WHERE trust_level >= 2) as trusted,
               COUNT(*) FILTER (WHERE trust_level < 2) as untrusted,

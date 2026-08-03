@@ -166,6 +166,61 @@ def _normalize_unicode(text: str) -> str:
     return normalized
 
 
+# ── Evasion-Normalization Transforms ────────────────────────────────────────
+#
+# The OWASP ASI06 threat model includes obfuscated payloads that defeat exact
+# regex matching: leetspeak digit-for-letter substitution, single-char spacing,
+# full reversal, and case scrambling. We generate de-obfuscated candidate
+# strings so the same pattern set catches them before poisoning memory.
+
+_LEET_DECODE: dict[str, str] = {
+    "0": "o", "1": "i", "2": "z", "3": "e", "4": "a", "5": "s",
+    "6": "g", "7": "t", "8": "b", "9": "g", "@": "a", "$": "s", "!": "i",
+}
+
+
+def _decode_leetspeak(text: str) -> str:
+    """Map common leetspeak digits/symbols back to ASCII letters."""
+    return "".join(_LEET_DECODE.get(ch, ch) for ch in text)
+
+
+def _collapse_char_spacing(text: str) -> str:
+    """Join single alphanumeric characters that are space-separated into words.
+
+    'i  g n o r e' -> 'ignore', while normal multi-char words are preserved.
+    """
+    tokens = text.split()
+    if not tokens:
+        return text
+    out: list[str] = []
+    buffer: list[str] = []
+
+    def flush() -> None:
+        if buffer:
+            out.append("".join(buffer))
+            buffer.clear()
+
+    for tok in tokens:
+        if len(tok) == 1 and (tok.isalnum() or tok in "!?."):
+            buffer.append(tok)
+        else:
+            flush()
+            out.append(tok)
+    flush()
+    return " ".join(out)
+
+
+def _obfuscation_variants(text: str) -> list[str]:
+    """Return candidate de-obfuscated strings to scan alongside the original."""
+    leet = _decode_leetspeak(text)
+    spaced = _collapse_char_spacing(text)
+    lsp = _collapse_char_spacing(leet)
+    rev = text[::-1]
+    rev_leet = _decode_leetspeak(rev)
+    rev_spaced = _collapse_char_spacing(rev)
+    return [leet, spaced, lsp, rev, rev_leet, rev_spaced]
+
+
 # ── Trust Score Constants ──────────────────────────────────────────────────
 
 GUARD_SOURCE_WEIGHTS: dict[str, float] = {
@@ -397,6 +452,15 @@ _INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
     (re.compile(r"start\s+(over|fresh)\s+(from|with|as|new)", re.I), "Session reset injection", ThreatSeverity.HIGH),
 )
 
+# Whitespace-agnostic ("tight") variants of the injection patterns. The originals
+# require at least one space between words (\s+), so char-spaced or
+# whitespace-stripped payloads ("i g n o r e ...", "ignoreallprevious...")
+# would slip past. Reusing \s* lets the same patterns match zero-space forms.
+_INJECTION_PATTERNS_TIGHT: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = tuple(
+    (re.compile(pattern.pattern.replace(r"\s+", r"\s*"), re.I), desc, severity)
+    for pattern, desc, severity in _INJECTION_PATTERNS
+)
+
 # ── Secret/API Key Patterns ──────────────────────────────────────────────────
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
@@ -484,8 +548,8 @@ class MemoryGuard:
         # Normalize Unicode BEFORE any scanning to prevent homoglyph/zero-width bypasses
         content = _normalize_unicode(content)
 
-        # 1. Prompt injection scan
-        findings.extend(self._scan_prompt_injection(content))
+        # 1. Prompt injection scan (including obfuscated variants)
+        findings.extend(self._scan_prompt_injection_variants(content))
 
         # 1.1 Multi-language injection detection
         multilang_matches = multilang_scan(content)
@@ -508,7 +572,7 @@ class MemoryGuard:
             for _key, value in metadata.items():
                 if isinstance(value, str) and len(value) > 5:
                     normalized_value = _normalize_unicode(value)
-                    findings.extend(self._scan_prompt_injection(normalized_value))
+                    findings.extend(self._scan_prompt_injection_variants(normalized_value))
 
         # 2. Secret/PII scan
         findings.extend(self._scan_secrets(content))
@@ -587,6 +651,37 @@ class MemoryGuard:
                 )
         return findings
 
+    def _scan_prompt_injection_variants(self, content: str) -> list[Finding]:
+        """Scan raw + de-obfuscated variants (leetspeak, spacing, reversed)."""
+        seen: set[tuple[str, str]] = set()
+        findings: list[Finding] = []
+        candidates = [content] + _obfuscation_variants(content)
+        # Tight scan over whitespace-stripped content catches char-spacing and
+        # any run-on concatenated payload even when normal bounds are absent.
+        no_ws = re.sub(r"\s+", "", content)
+        for candidate in candidates:
+            for finding in self._scan_prompt_injection(candidate):
+                key = (finding.threat_type, finding.detail)
+                if key not in seen:
+                    seen.add(key)
+                    findings.append(finding)
+        if no_ws != content:
+            for pattern, desc, severity in _INJECTION_PATTERNS_TIGHT:
+                if pattern.search(no_ws):
+                    key = ("ASI06: Memory Poisoning", desc)
+                    if key not in seen:
+                        seen.add(key)
+                        findings.append(
+                            Finding(
+                                detector="prompt_injection",
+                                threat_type="ASI06: Memory Poisoning",
+                                severity=severity,
+                                detail=desc,
+                                confidence=0.85,
+                            )
+                        )
+        return findings
+
     def _scan_secrets(self, content: str) -> list[Finding]:
         findings: list[Finding] = []
         for pattern, desc, severity in _SECRET_PATTERNS:
@@ -631,19 +726,20 @@ class MemoryGuard:
             try:
                 decoded = base64.b64decode(match.group()).decode("utf-8", errors="ignore")
                 if decoded and len(decoded) > 10:
-                    # Scan decoded content for injection patterns
-                    for pattern, desc, severity in _INJECTION_PATTERNS:
-                        if pattern.search(decoded):
-                            findings.append(
-                                Finding(
-                                    detector="encoded_injection",
-                                    threat_type="ASI06: Encoded Injection",
-                                    severity=severity,
-                                    detail=f"Base64-encoded payload decoded: {desc}",
-                                    confidence=0.75,
-                                )
+                    # Scan decoded content (and obfuscated variants) for injection patterns
+                    decoded_findings = self._scan_prompt_injection_variants(decoded)
+                    if decoded_findings:
+                        first = decoded_findings[0]
+                        findings.append(
+                            Finding(
+                                detector="encoded_injection",
+                                threat_type="ASI06: Encoded Injection",
+                                severity=first.severity,
+                                detail=f"Base64-encoded payload decoded: {first.detail}",
+                                confidence=0.75,
                             )
-                            break
+                        )
+                        break
             except Exception as exc:
                 logger.debug("Base64 decode failed (non-critical): %s", exc)
 
@@ -651,18 +747,18 @@ class MemoryGuard:
         if "%" in content:
             decoded_url = urllib.parse.unquote(content)
             if decoded_url != content:
-                for pattern, desc, severity in _INJECTION_PATTERNS:
-                    if pattern.search(decoded_url):
-                        findings.append(
-                            Finding(
-                                detector="encoded_injection",
-                                threat_type="ASI06: URL-Encoded Injection",
-                                severity=severity,
-                                detail=f"URL-encoded payload decoded: {desc}",
-                                confidence=0.75,
-                            )
+                url_findings = self._scan_prompt_injection_variants(decoded_url)
+                if url_findings:
+                    first = url_findings[0]
+                    findings.append(
+                        Finding(
+                            detector="encoded_injection",
+                            threat_type="ASI06: URL-Encoded Injection",
+                            severity=first.severity,
+                            detail=f"URL-encoded payload decoded: {first.detail}",
+                            confidence=0.75,
                         )
-                        break
+                    )
 
         return findings
 

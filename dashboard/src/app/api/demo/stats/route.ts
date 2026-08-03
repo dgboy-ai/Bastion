@@ -1,4 +1,4 @@
-import { safeQuery, isMockMode } from "@/lib/db";
+import { safeQueryStatic, isMockMode } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function GET() {
@@ -7,10 +7,10 @@ export async function GET() {
   }
   try {
     const [memRes, entRes, relRes, auditRes] = await Promise.all([
-      safeQuery("SELECT COUNT(*) as cnt FROM agent_memory"),
-      safeQuery("SELECT COUNT(*) as cnt FROM agent_entities"),
-      safeQuery("SELECT COUNT(*) as cnt FROM agent_relations"),
-      safeQuery("SELECT COUNT(*) as cnt FROM agent_audit"),
+      safeQueryStatic("SELECT COUNT(*) as cnt FROM agent_memory"),
+      safeQueryStatic("SELECT COUNT(*) as cnt FROM agent_entities"),
+      safeQueryStatic("SELECT COUNT(*) as cnt FROM agent_relations"),
+      safeQueryStatic("SELECT COUNT(*) as cnt FROM agent_audit"),
     ]);
     return apiSuccess({
       memories: parseInt(String(memRes.rows[0]?.cnt ?? "0"), 10),

@@ -1,4 +1,4 @@
-import { safeQuery } from "@/lib/db";
+import { safeQueryStatic } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
 import { guardCheck } from "@/lib/guard";
@@ -90,19 +90,19 @@ export async function POST(request: Request) {
 
     // ─── 1. SNAPSHOT BEFORE ATTACK ──────────────────────────
     const [beforeMems, beforeEntities, beforeTrust, lastMem] = await Promise.all([
-      safeQuery(
+      safeQueryStatic(
         "SELECT memory_id, memory_type, content::varchar(120) AS content, trust_level, source_provenance, created_at FROM agent_memory WHERE agent_id = $1 AND memory_type != 'poison_attempt' ORDER BY created_at DESC LIMIT 5",
         [agentId]
       ),
-      safeQuery(
+      safeQueryStatic(
         "SELECT name, entity_type FROM agent_entities WHERE agent_id = $1 LIMIT 5",
         [agentId]
       ),
-      safeQuery(
+      safeQueryStatic(
         "SELECT AVG(trust_level)::float AS avg_trust, COUNT(*) AS total FROM agent_memory WHERE agent_id = $1 AND memory_type != 'poison_attempt'",
         [agentId]
       ),
-      safeQuery(
+      safeQueryStatic(
         "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1",
         [agentId]
       ),
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     const embeddingStr = vecToString(poisonEmbedding.slice(0, 384));
     const poisonId = randomUUID();
 
-    await safeQuery(
+    await safeQueryStatic(
       `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding, embedding_384, previous_hash, cryptographic_hash, trust_level, source_provenance, importance_score, crdb_region)
        VALUES ($1, $2, 'poison_attempt', $3, NULL::vector, $4::vector, $5, $6, 0, 'tool_unverified', 0.1, $7)`,
       [poisonId, agentId, poisonContent, embeddingStr, lastHash, poisonHash, BASTION_REGION]
@@ -138,15 +138,15 @@ export async function POST(request: Request) {
 
     // ─── 4. SNAPSHOT AFTER ATTACK ───────────────────────────
     const [afterMems, afterTrust, chainRes] = await Promise.all([
-      safeQuery(
+      safeQueryStatic(
         "SELECT memory_id, memory_type, content::varchar(120) AS content, trust_level, source_provenance, created_at FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 5",
         [agentId]
       ),
-      safeQuery(
+      safeQueryStatic(
         "SELECT AVG(trust_level)::float AS avg_trust, COUNT(*) AS total FROM agent_memory WHERE agent_id = $1",
         [agentId]
       ),
-      safeQuery(
+      safeQueryStatic(
         "SELECT memory_id, memory_type, cryptographic_hash, previous_hash, trust_level, created_at FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 6",
         [agentId]
       ),

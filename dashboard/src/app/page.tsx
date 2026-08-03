@@ -443,7 +443,7 @@ function ForensicSimulator() {
   const [logLines, setLogLines] = useState<string[]>([
     "System Health: 100% SECURE",
     "AGENT_DEFI_01: Ingestion pool idle.",
-    "Memory ledger: 965 blocks verified.",
+    "Memory ledger: hash chain verified.",
     "Hash chain: integrity OK.",
   ]);
   const [scanLine, setScanLine] = useState(0);
@@ -491,7 +491,7 @@ function ForensicSimulator() {
       setLogLines(prev => [
         "[4/5] Running recovery query...",
         "SELECT * FROM agent_memory AS OF SYSTEM TIME '-5s'",
-        "State verified: consistent across all 965 blocks.",
+        "State verified: consistent across the ledger.",
         ...prev
       ]);
     }, 6000);
@@ -502,7 +502,7 @@ function ForensicSimulator() {
       setDrift(0.05);
       setLogLines(prev => [
         "[5/5] RECOVERY COMPLETE — system fully restored",
-        "Trust score: 0.98 | Drift: 0.05 | Chain: 965/965 intact",
+        "Trust score: 0.98 | Drift: 0.05 | Chain: 100% intact",
         "All agents operating normally. No data loss.",
         ...prev
       ]);
@@ -641,7 +641,7 @@ function Features() {
       stat:"CockroachDB", statLabel:"Database", c:P.gold   },
     { icon:"🛡️", t:"OWASP ASI06 MemoryGuard",     d:"Multi-stage guard blocks prompt injection, API key leakage, and PII from ever being written to the memory store.",
       detail:"Pipeline: regex injection scan, secret detection, PII detection, content size check, hash integrity, trust scoring. Blocks before DB write.",
-      stat:"7 Checks", statLabel:"Guard Pipeline", c:P.cyan   },
+      stat:"6 Checks", statLabel:"Guard Pipeline", c:P.cyan   },
     { icon:"🌍", t:"CockroachDB SERIALIZABLE",    d:"SERIALIZABLE isolation prevents write-write conflicts between agents. Schema supports multi-region deployment.",
       detail:"CockroachDB uses SERIALIZABLE isolation by default. REGIONAL BY ROW locality in schema. Automatic leader election on region failure.",
       stat:"SERIALIZABLE", statLabel:"Isolation Level", c:P.cyan   },
@@ -843,7 +843,7 @@ function Consolidation() {
                   )}
                   <div style={{display:"flex",justifyContent:"center",gap:"16px"}}>
                     <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute}}>{scan.total.toLocaleString()} SCANNED</div>
-                    <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute}}>THRESHOLD: 0.85</div>
+                    <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute}}>THRESHOLD: 0.60</div>
                     <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:dedup.duplicates>0?"#f66":"#4f8"}}>{dedup.duplicates} PAIRS</div>
                   </div>
                 </div>}
@@ -970,16 +970,16 @@ function Comparison() {
       c:P.magma,
       tag:"PROTOCOLS",
       points:[
-        {t:"25 MCP Tools", d:"Claude, Cursor, VS Code — any MCP client can interact with memory"},
+        {t:"35 MCP Tools", d:"Claude, Cursor, VS Code — any MCP client can interact with memory"},
         {t:"A2A Signed Cards", d:"Ed25519 cryptographic identity for agent-to-agent trust"},
         {t:"Shared Backend", d:"Both protocols read/write the same CockroachDB — zero duplication"},
         {t:"Production Security", d:"Brute-force protection, rate limiting, RBAC on both servers"},
       ],
-      stat:{label:"MCP TOOLS", value:"25"},
+      stat:{label:"MCP TOOLS", value:"35"},
       detail:{
         title:"Why MCP + A2A Protocols",
-        body:"MCP (Model Context Protocol) gives AI agents a standard way to interact with persistent memory. Bastion exposes 25 MCP tools covering store, search, audit, dreaming, and more.\n\nA2A (Agent-to-Agent) enables secure communication between autonomous agents. Each agent's memory cards are cryptographically signed with Ed25519.\n\nBoth protocols share the same CockroachDB backend — zero data duplication.",
-        code:"@mcp.tool(name=\"memory_search\")\nasync def memory_search(\n    ctx: Context,\n    query: str,\n    k: int = 5,\n    threshold: float = 0.8,\n) -> str:\n    mem = _resolve_memory(ctx)\n    results = mem.search(query, k=k, threshold=threshold)\n    return json.dumps([r.to_dict() for r in results])",
+        body:"MCP (Model Context Protocol) gives AI agents a standard way to interact with persistent memory. Bastion exposes 35 MCP tools covering store, search, audit, time-travel, dreaming, and more.\n\nA2A (Agent-to-Agent) enables secure communication between autonomous agents. Each agent's memory cards are cryptographically signed with Ed25519.\n\nBoth protocols share the same CockroachDB backend — zero data duplication.",
+        code:"@mcp.tool(name=\"memory_search\")\nasync def memory_search(\n    ctx: Context,\n    query: str,\n    k: int = 5,\n    threshold: float | None = None,\n) -> str:\n    mem = _resolve_memory(ctx)\n    results = mem.search(query, k=k, threshold=threshold)\n    return json.dumps([r.to_dict() for r in results])",
         codeLabel:"Real MCP tool from Bastion",
       },
     },
@@ -1117,7 +1117,7 @@ function FAQ() {
     {q:"What does Bastion store?",                       a:"Structured agent observations, user facts, and preferences — timestamped, vectorized, and cryptographically sealed into a CockroachDB ledger with C-SPANN vector indexing."},
     {q:"How does the SHA-256 ledger chain work?",         a:"Each memory stores SHA-256 of its content and links to the previous block's hash. Tampering breaks the chain — instantly detectable via the audit log."},
     {q:"Does Bastion protect against prompt injection?",  a:"Yes. Every memory write passes through a multi-stage OWASP ASI06 guard — scanning for injection patterns, PII, and credential leakage before committing."},
-    {q:"How do dynamic database connections work?",       a:"Set the BASTION_CONN environment variable to your CockroachDB connection string. The server connects on startup — no restart needed to change databases."},
+    {q:"How do dynamic database connections work?",       a:"Set the BASTION_CONN environment variable to your CockroachDB connection string. BastionMemory reads it when each session is initialized — no restart of your app needed, just pass a new connection_string."},
     {q:"Is this fully open source?",                      a:"Yes, MIT licensed. Clone, self-host freely. The full stack — MCP server, A2A server, schema, consolidation daemon, MemoryGuard — is in the repo."},
   ];
   return (
@@ -1142,6 +1142,398 @@ function FAQ() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Trust Bar ──────────────────────────────────────────── */
+function TrustBar() {
+  const logos = [
+    { n:"CockroachDB", tag:"Distributed SQL · SERIALIZABLE", c:P.gold,   mon:"CRDB" },
+    { n:"AWS",         tag:"KMS · S3 Archive · ap-south-1",  c:P.magma,  mon:"AWS" },
+    { n:"OWASP",       tag:"ASI06 Injection Guard",          c:P.cyan,   mon:"ASI06" },
+    { n:"MCP",         tag:"Model Context Protocol",         c:P.purple, mon:"MCP" },
+    { n:"A2A",         tag:"Agent-to-Agent · Ed25519",       c:P.cyan,   mon:"A2A" },
+    { n:"MIT",         tag:"Open Source License",            c:"#00ff66",mon:"MIT" },
+  ];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"1000px",margin:"0 auto",padding:"30px 24px",position:"relative",zIndex:3}}>
+        <div style={{textAlign:"center",marginBottom:"26px"}}>
+          <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,textTransform:"uppercase",letterSpacing:"3.5px",fontWeight:700}}>Backed by proven infrastructure — not promises</div>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"14px"}}>
+          {logos.map((l,i)=>(
+            <Reveal key={l.n} delay={i*60}>
+              <div style={{
+                display:"flex",alignItems:"center",gap:"12px",
+                padding:"14px 22px",
+                background:"rgba(14,2,8,0.75)",
+                border:`1px solid ${l.c}30`,
+                borderRadius:"2px",
+                boxShadow:`inset 2px 2px 0 rgba(255,255,255,.04), 0 4px 20px rgba(0,0,0,.4)`,
+              }}>
+                <div style={{
+                  width:"38px",height:"38px",borderRadius:"6px",
+                  background:`${l.c}12`,border:`1px solid ${l.c}35`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,color:l.c,letterSpacing:"1px",
+                }}>{l.mon}</div>
+                <div>
+                  <div style={{fontSize:"14.5px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{l.n}</div>
+                  <div style={{fontSize:"11px",color:P.mute,fontFamily:"var(--font-mono)",letterSpacing:"0.5px"}}>{l.tag}</div>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Quickstart / Install SDK ──────────────────────────── */
+const QUICKSTART_PY = `# Step 1 — Install the SDK (run in your terminal):
+# pip install bastion-memory
+
+# Step 2 — Save this as bastion_quickstart.py and run with: python bastion_quickstart.py
+import os
+from bastion import BastionMemory
+
+mem = BastionMemory(
+    agent_id="my-agent",
+    connection_string=os.getenv("BASTION_CONN"),
+)
+
+# Store a memory — guarded by OWASP ASI06, sealed into the SHA-256 chain
+mem.store("fact", "API keys live in AWS Secrets Manager, never in chat logs.")
+
+# Semantic search with C-SPANN vector index
+results = mem.search("Where do we keep our secrets?", k=5)
+print(results)`;
+
+function QuickStart() {
+  return (
+    <Reveal>
+      <div style={{maxWidth:"980px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <SH eyebrow="Quick Start" title="Drop-in memory in 2 steps" sub="Install the SDK, point at your CockroachDB cluster, and store your first cryptographically-sealed memory." ec={P.gold}/>
+        {/* Code block */}
+        <div style={{
+          background:"#0a0509",border:"1px solid rgba(55,118,171,.35)",borderRadius:"10px",overflow:"hidden",
+          boxShadow:"0 12px 50px rgba(0,0,0,.5), 0 0 60px rgba(55,118,171,.08)",
+        }}>
+          <div style={{padding:"12px 18px",background:"rgba(255,255,255,.03)",borderBottom:"1px solid rgba(255,255,255,.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",gap:"7px"}}>
+              {["#ff5f56","#ffbd2e","#27c93f"].map(c=>(<span key={c} style={{width:"11px",height:"11px",borderRadius:"50%",background:c,opacity:.85}}/>))}
+            </div>
+            <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute}}>bastion_quickstart.py</span>
+          </div>
+          <pre style={{margin:0,padding:"20px 22px",fontSize:"12.5px",lineHeight:1.7,fontFamily:"var(--font-mono)",color:"#d0c8d4",overflowX:"auto"}}><code>{QUICKSTART_PY}</code></pre>
+        </div>
+        <div style={{textAlign:"center",marginTop:"18px"}}>
+          <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,letterSpacing:"1px"}}>or connect any MCP client — Claude, Cursor, VS Code — to the running <span style={{color:P.gold}}>bastion.mcp_server</span></span>
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Social Proof / Live Stats ─────────────────────────── */
+function ProofStats() {
+  const [stats, setStats] = useState<{memories:number;audits:number;entities:number}|null>(null);
+  useEffect(()=>{
+    fetch("/api/stats").then(r=>r.json()).then(d=>{
+      const s = d?.data;
+      if (s) setStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0 });
+    }).catch(()=>{});
+  },[]);
+  const rows = [
+    { e: stats?.memories ?? 0,         s:"", l:"Memories Sealed",      c:"#00ff66", live:true  },
+    { e: stats?.audits ?? 0,           s:"", l:"Audit Entries",        c:P.cyan,   live:true  },
+    { e: 35,                            s:"", l:"MCP Tools",            c:P.gold,   live:false },
+    { e: stats?.entities ?? 0,          s:"", l:"Entities Tracked",     c:P.purple, live:true  },
+    { e: 1024,                          s:"", l:"Vector Dimensions",    c:P.magma,  live:false },
+  ];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"1000px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <div style={{textAlign:"center",marginBottom:"36px"}}>
+          <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.gold,textTransform:"uppercase",letterSpacing:"3px",fontWeight:700,marginBottom:"8px"}}>Proven, not promised</div>
+          <h2 style={{fontSize:"clamp(28px,4vw,42px)",fontWeight:900,color:"#fff",fontFamily:"var(--font-sg)",margin:"0 0 12px",lineHeight:1.1}}>
+            Live numbers from <span style={{color:P.gold}}>this cluster</span>
+          </h2>
+          <p style={{fontSize:"15px",color:"#b0a8b4",maxWidth:"520px",margin:"0 auto",lineHeight:1.6,fontFamily:"var(--font-inter)"}}>
+            No marketing estimates — every stat below is served live from the CockroachDB ledger powering this page.
+          </p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"14px"}}>
+          {rows.map((r,i)=>(
+            <Reveal key={r.l} delay={i*70}>
+              <Card accent={r.c} style={{textAlign:"center",padding:"28px 16px"}}>
+                <div style={{fontSize:"clamp(32px,4vw,46px)",fontWeight:900,color:r.c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 30px ${r.c}40`}}>
+                  <CountUp end={r.e} suffix={r.s}/>
+                </div>
+                <div style={{fontSize:"10px",color:P.mute,fontFamily:"var(--font-mono)",marginTop:"12px",textTransform:"uppercase",letterSpacing:"2px"}}>{r.l}</div>
+                <div style={{marginTop:"10px"}}>
+                  <span style={{padding:"3px 9px",borderRadius:"2px",background:r.live?"rgba(0,255,102,.08)":"rgba(255,194,0,.08)",border:`1px solid ${r.live?"rgba(0,255,102,.25)":"rgba(255,194,0,.25)"}`,fontFamily:"var(--font-mono)",fontSize:"8.5px",color:r.live?"#00ff66":P.gold,letterSpacing:"1px"}}>
+                    {r.live?"● LIVE":"PLATFORM"}
+                  </span>
+                </div>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Proof, Not Promises (3 pillars) ──────────────────── */
+function ProofPillars() {
+  const [tab, setTab] = useState(0);
+  const pillars = [
+    {
+      k:"integrity", c:P.cyan, icon:"🔗",
+      t:"Integrity", h:"Every write is tamper-evident. Prove it in one query.",
+      d:"Bastion seals every memory into a SHA-256 hash chain backed by CockroachDB SERIALIZABLE transactions. Corruption, injection, or silent edits break the chain — and memory_audit catches it in a single O(n) scan. Trust scores decay with drift, so you always know how much to trust a memory.",
+      points:["SHA-256 linked blocks, verified by audit","OWASP ASI06 guard blocks poison at write time","AS OF SYSTEM TIME replays any past state"],
+      metric:{v:"100%", l:"chain verified (SHA-256)", c:"#00ff66"},
+    },
+    {
+      k:"visibility", c:P.gold, icon:"👁️",
+      t:"Visibility", h:"Know what your agent knew, when, and why.",
+      d:"A full forensic record, not a black box. Every tool call, error, conversation turn, and session lifecycle event is auto-captured into an append-only audit trail. Inspect the flight-recorder, browse memory by type, and time-travel to any timestamp with native MVCC.",
+      points:["Auto-capture of tool calls, errors, and sessions","Live dashboard + flight-recorder replay","C-SPANN semantic search over 1024-dim vectors"],
+      metric:{v:"5", l:"capture event types", c:P.cyan},
+    },
+    {
+      k:"control", c:P.magma, icon:"🛡️",
+      t:"Control", h:"Governance baked in, not bolted on.",
+      d:"Bastion ships role-based access, rate limiting, brute-force protection, AWS KMS encryption-at-rest, and S3 archival — out of the box. Full export to your own archive. EU AI Act Article 12 compliance reporting generated from the live hash chain.",
+      points:["RBAC + rate limiting on every protocol server","AWS KMS AES-256-GCM envelope encryption","SOC 2–style controls with exportable compliance report"],
+      metric:{v:"Art.12", l:"EU AI Act ready", c:P.purple},
+    },
+  ];
+  const p = pillars[tab];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"980px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <SH eyebrow="For Builders" title="Built for developers who want proof, not promises" sub="Bastion gives agents tamper-evident memory without pipeline rewrites. Less redundant context, lower token costs, and a verifiable chain of custody." ec={P.cyan}/>
+        {/* Tab pills */}
+        <div style={{display:"flex",justifyContent:"center",gap:"10px",marginBottom:"26px"}}>
+          {pillars.map((p2,i)=>(
+            <button key={p2.k} onClick={()=>setTab(i)} style={{
+              padding:"12px 28px",borderRadius:"6px",cursor:"pointer",display:"flex",alignItems:"center",gap:"9px",
+              fontFamily:"var(--font-sg)",fontSize:"14px",fontWeight:700,textTransform:"uppercase",letterSpacing:"1px",
+              background:tab===i?`linear-gradient(135deg,${p2.c}25,${p2.c}08)`:"rgba(14,2,8,0.75)",
+              border:tab===i?`1.5px solid ${p2.c}`:"1px solid rgba(255,170,0,0.22)",
+              color:tab===i?"#fff":P.mute,
+              boxShadow:tab===i?`0 0 26px ${p2.c}25`:"none",
+              transition:"all .3s",
+            }}>
+              <span style={{fontSize:"16px"}}>{p2.icon}</span>{p2.t}
+            </button>
+          ))}
+        </div>
+        {/* Active pillar detail */}
+        <Card accent={p.c} style={{padding:"34px 30px",animation:"modalIn .4s cubic-bezier(.4,0,.2,1)"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:"34px",alignItems:"center"}} className="two-col">
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"14px"}}>
+                <span style={{fontSize:"26px"}}>{p.icon}</span>
+                <div style={{fontSize:"22px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{p.h}</div>
+              </div>
+              <p style={{fontSize:"14px",color:P.body,lineHeight:1.7,fontFamily:"var(--font-inter)",margin:"0 0 20px"}}>{p.d}</p>
+              <div style={{display:"flex",flexDirection:"column",gap:"9px"}}>
+                {p.points.map(pt=>(
+                  <div key={pt} style={{display:"flex",gap:"10px",alignItems:"center"}}>
+                    <span style={{color:p.c,fontFamily:"var(--font-mono)",fontSize:"12px",fontWeight:700}}>✓</span>
+                    <span style={{fontSize:"13px",color:"#d8d0dc",fontFamily:"var(--font-inter)"}}>{pt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Metric panel */}
+            <div style={{
+              background:"rgba(0,0,0,.35)",border:`1px solid ${p.c}25`,borderRadius:"10px",padding:"28px 22px",textAlign:"center",
+              boxShadow:`inset 0 0 40px ${p.c}08`,
+            }}>
+              <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute,textTransform:"uppercase",letterSpacing:"2px",marginBottom:"12px"}}>HEADLINE METRIC</div>
+              <div style={{fontSize:"clamp(34px,4.5vw,48px)",fontWeight:900,color:p.c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1px",textShadow:`0 0 35px ${p.c}45`,marginBottom:"8px"}}>{p.metric.v}</div>
+              <div style={{fontSize:"11px",color:P.mute,fontFamily:"var(--font-mono)",letterSpacing:"1px",textTransform:"uppercase"}}>{p.metric.l}</div>
+              <div style={{height:"3px",background:`linear-gradient(90deg,${p.c},transparent)`,marginTop:"18px",opacity:.5}}/>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── How It Works (Capture / Guard / Retrieve) ────────── */
+function HowItWorks() {
+  const steps = [
+    { icon:"📥", t:"Capture",   c:P.gold,  d:"Agent activity is auto-captured — tool calls, errors, conversations, session lifecycle — with zero manual annotation. No config, no boilerplate.",
+      code:`after_tool_call(ctx, agent_id, tool_name, args, result)
+  → tool_execution memory
+  → SHA-256(prev_hash + payload)` },
+    { icon:"🛡️", t:"Guard",     c:P.cyan,  d:"Every write passes the OWASP ASI06 pipeline — injection patterns, API-key leakage, PII — before it can reach the CockroachDB ledger.",
+      code:`regex_injection → secret_detector → pii_scan
+  → content_size → trust_score
+  BLOCKED ✗ or SEALED ✓` },
+    { icon:"🔍", t:"Retrieve",  c:P.magma, d:"Query by semantic similarity via C-SPANN vector search — or time-travel to any past instant with AS OF SYSTEM TIME.",
+      code:`memory_search(query, k=5)
+  → C-SPANN 1024-dim similarity
+  SELECT ... AS OF SYSTEM TIME '-1h'` },
+  ];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"1000px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <SH eyebrow="How It Works" title="Add anything. Bastion remembers." sub="A three-stage pipeline that captures, protects, and recalls — automatically." ec={P.gold}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"16px"}}>
+          {steps.map((s,i)=>(
+            <Reveal key={s.t} delay={i*90}>
+              <Card accent={s.c} style={{height:"100%",display:"flex",flexDirection:"column"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"14px"}}>
+                  <div style={{width:"44px",height:"44px",borderRadius:"8px",background:`${s.c}12`,border:`1px solid ${s.c}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px"}}>{s.icon}</div>
+                  <div>
+                    <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:s.c,letterSpacing:"1.5px",fontWeight:700}}>STAGE {i+1}</div>
+                    <div style={{fontSize:"18px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{s.t}</div>
+                  </div>
+                </div>
+                <p style={{fontSize:"13.5px",color:P.body,lineHeight:1.65,fontFamily:"var(--font-inter)",margin:"0 0 16px",flex:1}}>{s.d}</p>
+                <div style={{background:"#0a0509",border:`1px solid ${s.c}18`,borderRadius:"6px",padding:"12px 14px"}}>
+                  <pre style={{margin:0,fontFamily:"var(--font-mono)",fontSize:"11px",lineHeight:1.6,color:"#c0b8c4",whiteSpace:"pre-wrap"}}><code>{s.code}</code></pre>
+                </div>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Domains / Use Cases ────────────────────────────────── */
+function Domains() {
+  const domains = [
+    { icon:"🤖", c:P.cyan,   t:"Autonomous Coding Agents", h:"Persistence across sessions and repos, with full blame.", cards:[
+      { t:"Project Memory", d:"Remembers architectural decisions, tool preferences, and conventions across every session — no context loss between tasks." },
+      { t:"Injection-Resistant Prompts", d:"Guard blocks malicious overrides embedded in fetched files, so a poisoned artifact can't redirect the agent." },
+      { t:"Time-Travel on Bugs", d:"Replay what the agent actually knew when a regression shipped — before and after the breaking change." },
+    ]},
+    { icon:"🛟", name:"Customer Support", c:P.gold, h:"Personalized, compliant answers that improve every interaction.", cards:[
+      { t:"User Profile Memory", d:"Remembers preferences, entitlements, and past resolutions across tickets — context that persists." },
+      { t:"PII Encrypted", d:"Customer data encrypted with AWS KMS and sealed in the hash chain — audit-ready for every read and write." },
+      { t:"Escalation Blame", d:"Trace exactly which memory an agent used to make a decision, when it was written, and by whom." },
+    ]},
+    { icon:"🔐", c:P.purple, t:"Security & Compliance", h:"A governed record of what every agent knew and did.", cards:[
+      { t:"Injection Forensics", d:"Point-in-time proof that a write was or wasn't poisoned — trust score + drift history per memory." },
+      { t:"EU AI Act Art.12", d:"Automatic, append-only logging with a tamper-evident chain — report generated on demand from the live ledger." },
+      { t:"Incident Teardown", d:"Rekey, dedup with contradictions, and time-travel to reconstruct the exact state at the moment of failure." },
+    ]},
+    { icon:"🤝", c:P.magma,  t:"Multi-Agent Systems", h:"Shared, conflict-free memory across many agents.", cards:[
+      { t:"Cross-Agent Ledger", d:"Every agent reads and writes the same CockroachDB bank under SERIALIZABLE isolation — no conflicting memories." },
+      { t:"A2A Signed Cards", d:"Agents exchange Ed25519-signed memory bundles with provenance, verified on receipt." },
+      { t:"Sleep-Time Fusion", d:"A background daemon deduplicates, resolves contradictions, and promotes episodic memory to durable knowledge." },
+    ]},
+    { icon:"📊", c:"#00e5ff", t:"Research & Analytics", h:"Reproducible reasoning anchored to verified knowledge.", cards:[
+      { t:"Verified Sources", d:"Every borrowed fact carries a trust score; the chain records exactly which source seeded it." },
+      { t:"Semantic Recall", d:"C-SPANN vector search over 1024-dim embeddings finds the right memory in a large corpus." },
+      { t:"Exportable Audit", d:"Ship your complete archive to AWS S3 for durable, off-chain retention." },
+    ]},
+  ];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"1080px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <SH eyebrow="Use Cases" title="AI memory that adapts to your system" sub="Bastion helps agents remember what matters — across domains, teams, and threat models." ec={P.cyan}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:"18px"}}>
+          {domains.map((d,i)=>(
+            <Reveal key={d.t} delay={i*80}>
+              <Card accent={d.c} style={{height:"100%",display:"flex",flexDirection:"column"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+                  <div style={{width:"42px",height:"42px",borderRadius:"8px",background:`${d.c}12`,border:`1px solid ${d.c}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"21px"}}>{d.icon}</div>
+                  <div>
+                    <div style={{fontSize:"17px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{d.t}</div>
+                    <div style={{fontSize:"11.5px",color:P.mute,fontFamily:"var(--font-inter)",marginTop:"2px"}}>{d.h}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:"10px",marginTop:"8px"}}>
+                  {d.cards.map(card=>(
+                    <div key={card.t} style={{display:"flex",gap:"10px"}}>
+                      <span style={{color:d.c,fontFamily:"var(--font-mono)",fontSize:"12px",fontWeight:700,flexShrink:0}}>▸</span>
+                      <div>
+                        <div style={{fontSize:"13px",fontWeight:700,color:"#e8e2ec",fontFamily:"var(--font-sg)"}}>{card.t}</div>
+                        <div style={{fontSize:"12px",color:"#9a929e",lineHeight:1.5,fontFamily:"var(--font-inter)"}}>{card.d}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+/* ─── Benchmarks ────────────────────────────────────────── */
+function Benchmarks() {
+  const metrics = [
+    { c:"#00ff66",v:"88.2%",l:"Adversarial TPR",          d:"426/483 raw + obfuscated ASI06 payloads caught — leetspeak, char-spacing, reversed, base64." },
+    { c:P.cyan,   v:"0 / 25",l:"False Positives",         d:"Zero benign texts flagged across the full adversarial guard sweep." },
+    { c:P.gold,   v:"28.5k",l:"Hash Verify / sec",        d:"1000-link SHA-256 chain verified in full — tamper caught, ~0.03ms per link." },
+    { c:P.magma,  v:"70%",  l:"Recall@5",                 d:"65% @1 / 75% @10 over a 40-fact MiniLM corpus; precision@5 = 1.0, MRR 0.67." },
+    { c:P.purple, v:"1024", l:"Vector Dimensions",        d:"C-SPANN index over 1024-dim embeddings for every memory." },
+  ];
+  const bars = [
+    { l:"Guard scan — p50",     v:6.7, max:50, c:P.cyan,    label:"6.7 ms" },
+    { l:"Time-travel — p50",    v:311, max:600,c:P.purple,  label:"311 ms" },
+    { l:"Search — p50",         v:308, max:600,c:P.gold,    label:"308 ms" },
+    { l:"Store — p50",          v:910, max:1600,c:P.magma,  label:"910 ms" },
+  ];
+  return (
+    <Reveal>
+      <div style={{maxWidth:"960px",margin:"0 auto",position:"relative",zIndex:3}}>
+        <SH eyebrow="Benchmarks" title="Measured on a live CockroachDB cluster" sub="Every number below was produced by scripts/benchmark_brutal.py on 2026-08-03 against the real cluster (ap-south-1) — real MiniLM embeddings, an adversarial 483-payload injection corpus, no fallbacks. No estimates, no slideware." ec={P.magma}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"26px",alignItems:"center"}} className="two-col">
+          {/* Metric tiles */}
+          <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+            {metrics.map((m,i)=>(
+              <Reveal key={m.l} delay={i*60}>
+                <div style={{
+                  padding:"16px 20px",background:"rgba(14,2,8,0.8)",border:`1px solid ${m.c}28`,borderRadius:"4px",
+                  display:"flex",alignItems:"center",gap:"18px",
+                  boxShadow:`inset 2px 2px 0 rgba(255,255,255,.03), 0 4px 18px rgba(0,0,0,.4)`,
+                }}>
+                  <div style={{fontSize:"clamp(20px,2.6vw,28px)",fontWeight:900,color:m.c,fontFamily:"var(--font-sg)",minWidth:"110px",letterSpacing:"-0.5px",textShadow:`0 0 22px ${m.c}35`}}>{m.v}</div>
+                  <div>
+                    <div style={{fontSize:"14px",fontWeight:700,color:"#fff",fontFamily:"var(--font-sg)"}}>{m.l}</div>
+                    <div style={{fontSize:"12px",color:P.mute,fontFamily:"var(--font-inter)",marginTop:"3px"}}>{m.d}</div>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          {/* Bar chart */}
+          <Card accent={P.magma} style={{display:"flex",flexDirection:"column",gap:"20px"}}>
+            <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute,letterSpacing:"2px",textTransform:"uppercase"}}>P50 LATENCY — LIVE CRDB · AP-SOUTH-1</div>
+            {bars.map((b,i)=>(
+              <div key={b.l}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+                  <span style={{fontSize:"12px",color:"#d8d0dc",fontFamily:"var(--font-mono)"}}>{b.l}</span>
+                  <span style={{fontSize:"12px",color:b.c,fontFamily:"var(--font-mono)",fontWeight:700}}>{b.label}</span>
+                </div>
+                <div style={{height:"10px",background:"rgba(255,255,255,.05)",borderRadius:"3px",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.max((b.v/b.max)*100,2)}%`,background:`linear-gradient(90deg,${b.c}80,${b.c})`,borderRadius:"3px",boxShadow:`0 0 10px ${b.c}40`,animation:`barGrow 1.2s ${i*.15}s ease-out`}}/>
+                </div>
+              </div>
+            ))}
+            <div style={{fontFamily:"var(--font-mono)",fontSize:"8.5px",color:P.mute,letterSpacing:"1px"}}>GUARD TPR 88.2% · FP 0 · CHAIN 1000-LINK VERIFIED · 483 ADVERSARIAL PAYLOADS</div>
+          </Card>
         </div>
       </div>
     </Reveal>
@@ -1211,7 +1603,7 @@ export default function Page() {
           <div style={{fontWeight:900,fontSize:"20px",letterSpacing:"3px",color:"#fff",textTransform:"uppercase",fontFamily:"var(--font-sg)"}}>BASTION</div>
         </Link>
         <div style={{display:"flex",gap:"26px",alignItems:"center"}} className="dnav">
-          {([["Docs","/docs/introduction"],["Logs","/logs"],["Health","/health"]] as const).map(([l,h])=>(
+          {([["Dashboard","/dashboard"],["Docs","/docs/introduction"]] as const).map(([l,h])=>(
             <Link key={l} href={h} className="nl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontWeight:600}}>{l}</Link>
           ))}
           <span style={{padding:"2px 8px",borderRadius:"2px",background:"rgba(255,194,0,.1)",border:`1px solid ${P.gold}40`,fontFamily:"var(--font-mono)",fontSize:"8.5px",color:P.gold,letterSpacing:"1px",display:"inline-flex",alignItems:"center",gap:"5px"}}>
@@ -1331,7 +1723,7 @@ export default function Page() {
               borderTop:"1px solid rgba(255,170,0,.2)",
               flexWrap:"wrap",
             }}>
-              {[{e:liveStats?.memories ?? 0,s:"",l:"Memories Stored",c:"#00ff66"},{e:25,s:"",l:"MCP Tools",c:P.gold},{e:4,s:"",l:"Resources",c:P.cyan}].map(({e,s,l,c})=>(
+              {[{e:liveStats?.memories ?? 0,s:"",l:"Memories Stored",c:"#00ff66"},{e:35,s:"",l:"MCP Tools",c:P.gold},{e:3,s:"",l:"Resources",c:P.cyan}].map(({e,s,l,c})=>(
                 <div key={l} style={{textAlign:"center",minWidth:"120px"}}>
                   <div style={{fontSize:"clamp(36px,4.5vw,52px)",fontWeight:900,color:c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 35px ${c}45`}}>
                     <CountUp end={e} suffix={s}/>
@@ -1366,13 +1758,13 @@ export default function Page() {
                 </p>
                 <div style={{display:"flex",gap:"22px"}}>
                   <div>
-                    <div style={{fontSize:"24px",fontWeight:800,color:"#00ff66",fontFamily:"var(--font-sg)"}}>&lt; 1ms</div>
-                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>Regex Guard Scan</div>
+                    <div style={{fontSize:"24px",fontWeight:800,color:"#00ff66",fontFamily:"var(--font-sg)"}}>6.7ms</div>
+                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>Guard Scan p50</div>
                   </div>
                   <div style={{width:"1px",background:"rgba(255,255,255,0.1)"}}/>
                   <div>
-                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>12-42ms</div>
-                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>CockroachDB Query</div>
+                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>308ms</div>
+                    <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>Vector Search p50</div>
                   </div>
                 </div>
               </div>
@@ -1414,6 +1806,13 @@ export default function Page() {
 
       {/* ── CONTENT SECTIONS ── */}
       <div style={{position:"relative",zIndex:2}}>
+        <SW glow={P.lava}><TrustBar/></SW>
+        <SW glow={P.cyan}><QuickStart/></SW>
+        <SW glow={P.gold}><ProofStats/></SW>
+        <SW glow={P.cyan}><ProofPillars/></SW>
+        <SW glow={P.gold}><HowItWorks/></SW>
+        <SW glow={P.cyan}><Domains/></SW>
+        <SW glow={P.magma}><Benchmarks/></SW>
         <SW glow={P.gold}><Comparison/></SW>
         <SW glow={P.cyan}><Features/></SW>
         <SW glow={P.gold}><Consolidation/></SW>
@@ -1442,7 +1841,7 @@ export default function Page() {
               Open-source cryptographic memory ledger for autonomous AI agents. MIT licensed.
             </p>
             <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
-              {[["MIT","License"],["v0.10.0","Release"],["2","Regions"]].map(([n,l])=>(
+              {[["MIT","License"],["v0.10.0","Release"],["1","Region"]].map(([n,l])=>(
                 <div key={l} style={{textAlign:"center"}}>
                   <div style={{fontFamily:"var(--font-sg)",fontSize:"15px",fontWeight:900,color:P.gold}}>{n}</div>
                   <div style={{fontFamily:"var(--font-mono)",fontSize:"8px",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>{l}</div>

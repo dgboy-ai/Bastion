@@ -33,6 +33,7 @@ When an agent's memory is hijacked, the agent acts on compromised facts without 
 Bastion bridges memory integrity to any developer client or framework:
 - **Clients**: Claude Code, Cursor, VS Code, or custom API endpoints.
 - **Frameworks**: LangChain, CrewAI, LlamaIndex, or custom Python/TypeScript agents.
+- **A2A v1.0 server** (agent↔agent delegation, signed Agent Cards) — for orchestrators like **Bedrock Agents** / **Vertex AI**; see [docs/A2A_SERVER.md](docs/A2A_SERVER.md).
 
 ---
 
@@ -101,6 +102,12 @@ Bastion relies on the core architectural primitives of CockroachDB to act as the
 ![System Architecture](docs/architecture.svg)
 
 *(Detailed vector and database schema layouts are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))*
+
+#### Why A2A?
+- **Two layers, one stack** — **MCP** connects agents to tools/data (Claude Code, Cline, Copilot); **A2A v1.0** connects agents to each other (Bedrock Agents, Vertex AI, Copilot Studio).
+- **Delegation** — an orchestrator treats Bastion as a peer agent: delegate `memory_store` / `memory_heal` / `memory_verify` tasks over A2A; results land in CockroachDB as hash-chained memory.
+- **Trust** — signed Agent Cards (Ed25519) let any A2A client verify Bastion's identity before delegating.
+- **Future-facing** — MCP is today's surface; A2A is the emerging agent-to-agent standard as agent marketplaces mature.
 
 ---
 

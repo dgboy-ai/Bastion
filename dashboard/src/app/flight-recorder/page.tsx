@@ -4,6 +4,67 @@ import FlightRecorderContent from "./Content";
 
 export const dynamic = "force-dynamic";
 
+interface CaptureRow {
+  id: string;
+  agent_id: string;
+  type: string;
+  content: string;
+  tool?: string;
+  args_keys?: string[];
+  error_type?: string;
+  role?: string;
+  trust_level: number;
+  importance_score: number;
+  provenance: string;
+  is_pinned: boolean;
+  hash?: string;
+  previous_hash?: string;
+  created_at: string;
+}
+
+async function getCapturedMemories() {
+  try {
+    const res = await safeQuery(`
+      SELECT memory_id, agent_id, memory_type, left(content, 1000) AS content,
+             metadata::varchar(500) AS metadata, trust_level, importance_score,
+             source_provenance, is_pinned, cryptographic_hash, previous_hash, created_at
+      FROM agent_memory
+      WHERE memory_type IN ('tool_execution', 'error_log', 'conversation', 'episodic', 'session_lifecycle')
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+    const captures: CaptureRow[] = res.rows.map((row: Record<string, unknown>) => {
+      let metadata: Record<string, unknown> = {};
+      if (typeof row.metadata === "string") {
+        try { metadata = JSON.parse(row.metadata); } catch {}
+      } else if (row.metadata && typeof row.metadata === "object") {
+        metadata = row.metadata as Record<string, unknown>;
+      }
+      return {
+        id: String(row.memory_id),
+        agent_id: String(row.agent_id),
+        type: String(row.memory_type),
+        content: String(row.content),
+        tool: (metadata.tool_name as string) || (metadata.tool as string) || undefined,
+        args_keys: Array.isArray(metadata.arguments_keys) ? metadata.arguments_keys : undefined,
+        error_type: (metadata.error_type as string) || undefined,
+        role: (metadata.role as string) || undefined,
+        trust_level: Number(row.trust_level ?? 2),
+        importance_score: Number(row.importance_score ?? 0),
+        provenance: String(row.source_provenance || "agent_direct"),
+        is_pinned: Boolean(row.is_pinned),
+        hash: (row.cryptographic_hash as string) || undefined,
+        previous_hash: (row.previous_hash as string) || undefined,
+        created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      };
+    });
+    return { captures, total: captures.length };
+  } catch (err: any) {
+    console.error("Failed to fetch captured memories:", err.message);
+    return { captures: [], total: 0 };
+  }
+}
+
 async function getAuditEvents() {
   try {
     const res = await safeQuery(`
@@ -64,10 +125,16 @@ async function getAuditEvents() {
 
 export default async function FlightRecorderPage() {
   const { events, total } = await getAuditEvents();
+  const { captures, total: capturesTotal } = await getCapturedMemories();
 
   return (
     <DashboardLayoutWrapper>
-      <FlightRecorderContent initialEvents={events} initialTotal={total} />
+      <FlightRecorderContent
+        initialEvents={events}
+        initialTotal={total}
+        initialCaptures={captures}
+        initialCapturesTotal={capturesTotal}
+      />
     </DashboardLayoutWrapper>
   );
 }

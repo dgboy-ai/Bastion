@@ -1,6 +1,33 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { guardCheck } from "@/lib/guard";
+import { createHmac } from "crypto";
+
+/**
+ * Canonical Bastion chained hash — mirrors src/bastion/crypto.py compute_hash().
+ * HMAC-SHA256 over length-prefixed (content + metadata + previous_hash) so that
+ * identical content stored after different history produces DIFFERENT hashes,
+ * making the chain tamper-evident and unique per position.
+ */
+function computeChainHash(content: string, metadata: string | null, previousHash: string | null): string {
+  const metaStr = metadata ?? "";
+  const prev = previousHash ?? "";
+  const contentBytes = Buffer.from(content, "utf8");
+  const metaBytes = Buffer.from(metaStr, "utf8");
+  const prevBytes = Buffer.from(prev, "utf8");
+  const len = (n: number) => {
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(n, 0);
+    return b;
+  };
+  const payload = Buffer.concat([
+    len(contentBytes.length), contentBytes,
+    len(metaBytes.length), metaBytes,
+    len(prevBytes.length), prevBytes,
+  ]);
+  const secret = process.env.BASTION_SESSION_SECRET || "bastion-demo-dev-secret";
+  return createHmac("sha256", secret).update(payload).digest("hex");
+}
 
 /**
  * POST /api/soc — Run multi-agent SOC demo steps.
@@ -61,12 +88,13 @@ async function stepContext(): Promise<SocStepResult> {
     at: r.recorded_at,
   }));
 
-  // Hash chain verification
+  // Hash chain verification (memories are DESC = newest first, so each row's
+  // previous_hash must match the NEXT (older) row's cryptographic_hash)
   const chainValid = analystMemories.length > 1;
   let brokenLinks = 0;
-  for (let i = 1; i < analystMemories.length; i++) {
+  for (let i = 0; i < analystMemories.length - 1; i++) {
     if (analystMemories[i].previousHash !== "GENESIS" &&
-        analystMemories[i].previousHash !== analystMemories[i - 1].hash) {
+        analystMemories[i].previousHash !== analystMemories[i + 1].hash) {
       brokenLinks++;
     }
   }
@@ -108,9 +136,6 @@ async function stepAnalyst(alert: {
   const isSafe = guardReport.isSafe;
   const trustLevel = isSafe ? 4 : 0;
 
-  // Hash chain
-  const contentHash = crypto.createHash("sha256").update(content).digest("hex");
-
   // Get previous hash from last memory
   let previousHash: string | null = null;
   try {
@@ -124,6 +149,9 @@ async function stepAnalyst(alert: {
   } catch {
     // First memory — no previous hash
   }
+
+  // Hash chain — chained HMAC-SHA256 over (content + metadata + previous_hash)
+  const contentHash = computeChainHash(content, JSON.stringify(alert), previousHash);
 
   // Store memory in CockroachDB
   const memoryId = crypto.randomUUID();
@@ -244,7 +272,7 @@ async function stepRespond(alert: {
       } catch {
         // Fallback to default content
       }
-      const healedHash = crypto.createHash("sha256").update(healedContent + healedId).digest("hex");
+      const healedHash = computeChainHash(healedContent, "healed", String(poisoned.cryptographic_hash));
 
       await safeQuery(
         `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, trust_level, embedding, embedding_384, cryptographic_hash, previous_hash, source_provenance, crdb_region)
@@ -378,12 +406,13 @@ async function stepVerify(): Promise<SocStepResult> {
     at: r.recorded_at,
   }));
 
-  // Hash chain check
-  let chainValid = true;
+  // Hash chain check (memories DESC = newest first → row[i].previous_hash must
+  // equal row[i+1].cryptographic_hash, the older sibling)
+  let chainValid = analystMemories.length > 1;
   let brokenLinks = 0;
-  for (let i = 1; i < analystMemories.length; i++) {
+  for (let i = 0; i < analystMemories.length - 1; i++) {
     if (analystMemories[i].previousHash !== "GENESIS" &&
-        analystMemories[i].previousHash !== analystMemories[i - 1].hash) {
+        analystMemories[i].previousHash !== analystMemories[i + 1].hash) {
       chainValid = false;
       brokenLinks++;
     }

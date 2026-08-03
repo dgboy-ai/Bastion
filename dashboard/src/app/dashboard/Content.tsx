@@ -130,6 +130,65 @@ function ExecutiveSummary({
           {trustScore}
         </div>
       </div>
+
+      {/* Cold Archive (S3) Card */}
+      <S3ArchiveCard />
+    </div>
+  );
+}
+
+function S3ArchiveCard() {
+  const [exporting, setExporting] = useState(false);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const doExport = async () => {
+    setExporting(true);
+    setErr(null);
+    try {
+      const res = await fetchWithTimeout("/api/demo/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: "agent-demo" }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "S3 export failed");
+      setResult(json.data);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "S3 export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "8px" }}>🗄️ COLD ARCHIVE (AWS S3)</div>
+      {result ? (
+        <div style={{ fontSize: "12px", color: C.ink, fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5", marginBottom: "8px", wordBreak: "break-all" }}>
+          <div style={{ fontSize: "14px", fontWeight: 800, color: C.green }}>Exported ✓</div>
+          <div>memory-exports/{String(result.agentId ?? "agent-demo")}/</div>
+          <div style={{ color: C.mute }}>{String(result.count)} memories · {(Number(result.bytes) / 1024).toFixed(1)} KB</div>
+          {result.url ? (
+            <a href={String(result.url)} target="_blank" rel="noreferrer" style={{ color: C.cyan, textDecoration: "underline" }}>Open in S3 Console ↗</a>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ fontSize: "12px", color: C.mute, fontFamily: "'JetBrains Mono', monospace" }}>
+          {err ? <span style={{ color: C.red }}>⚠ {err}</span> : "Bastion → CockroachDB → S3. Snapshot agent memory."}
+        </div>
+      )}
+      <button
+        onClick={doExport}
+        disabled={exporting}
+        style={{
+          marginTop: "8px", padding: "8px 14px", borderRadius: "8px", border: `1px solid ${C.border}`,
+          background: exporting ? C.glassBright : C.ink, color: exporting ? C.ink : "#fff",
+          fontSize: "12px", fontWeight: 800, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace",
+        }}
+      >
+        {exporting ? "EXPORTING…" : result ? "EXPORT AGAIN" : "EXPORT TO S3"}
+      </button>
     </div>
   );
 }

@@ -57,6 +57,7 @@ class CaptureHooks:
         auto_capture_errors: bool = True,
         min_content_length: int = 10,
         dedup_window_seconds: int = 60,
+        bypass_guard: bool = True,
     ):
         self._memory = memory_engine
         self._auto_tool_calls = auto_capture_tool_calls
@@ -64,6 +65,7 @@ class CaptureHooks:
         self._auto_errors = auto_capture_errors
         self._min_content_length = min_content_length
         self._dedup_window = dedup_window_seconds
+        self._bypass_guard = bypass_guard
         self._recent_contents: list[tuple[str, float]] = []
         self._capture_count = 0
 
@@ -296,13 +298,17 @@ class CaptureHooks:
     def _store_event(self, event: CaptureEvent, memory_type: str) -> None:
         """Store a capture event as a memory."""
         try:
-            self._memory.store(
-                memory_type=memory_type,
-                content=event.content,
-                metadata=event.metadata,
-                _skip_guard=True,
-                _guard_bypass_token=True,  # Events are internally generated
-            )
+            store_kwargs: dict[str, Any] = {
+                "memory_type": memory_type,
+                "content": event.content,
+                "metadata": event.metadata,
+            }
+            if self._bypass_guard:
+                # Internally generated events can skip the guard for throughput;
+                # callers that want full ASI06 guard coverage pass bypass_guard=False.
+                store_kwargs["_skip_guard"] = True
+                store_kwargs["_guard_bypass_token"] = True
+            self._memory.store(**store_kwargs)
             self._capture_count += 1
             self._recent_contents.append((event.content[:100], time.time()))
             # Trim old entries from dedup window

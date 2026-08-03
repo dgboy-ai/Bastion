@@ -28,6 +28,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
   const [poisonResult, setPoisonResult] = useState<Record<string, unknown> | null>(null);
   const [healResult, setHealResult] = useState<Record<string, unknown> | null>(null);
   const [chatResult, setChatResult] = useState<Record<string, unknown> | null>(null);
+  const [s3Result, setS3Result] = useState<Record<string, unknown> | null>(null);
+  const [s3Error, setS3Error] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
@@ -221,6 +223,31 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
   const runHeal = useCallback(() => callApi("/api/demo/heal", { agentId: "agent-demo" }, setHealResult, "heal"), [callApi]);
   const runChat = useCallback(() => callApi("/api/demo/chat", { query: "secret keys and encryption", agentId: "agent-demo" }, setChatResult, "chat"), [callApi]);
   const runContext = useCallback(() => callApi("/api/demo/context", { agentId: "agent-demo" }, setContextResult, "context"), [callApi]);
+
+  const runExportS3 = useCallback(async () => {
+    ctrlRef.current?.abort();
+    const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
+    setLoading("export");
+    setS3Error(null);
+    setS3Result(null);
+    try {
+      const res = await fetchWithTimeout("/api/demo/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: "agent-demo" }),
+        signal: ctrl.signal,
+      } as any);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "S3 export failed");
+      setS3Result(json.data);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setS3Error(e instanceof Error ? e.message : "S3 export failed");
+    } finally {
+      setLoading(null);
+    }
+  }, []);
 
   // Multi-agent SOC API call
   const runSoc = useCallback(async (step: string, alert?: Record<string, unknown>) => {
@@ -1575,7 +1602,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             marginBottom: "28px",
                             borderRadius: DS.rLg,
                             background: DS.card,
-                            border: "1px solid rgba(0, 229, 255, 0.25)",
+border: DS.border2,
                             boxShadow: `0 10px 30px ${DS.lava}20`,
                             overflow: "hidden",
                             transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
@@ -1591,7 +1618,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             e.currentTarget.style.boxShadow = "none";
                           }}
                         >
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: DS.elevated, borderBottom: "1px solid rgba(0, 229, 255, 0.15)" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: DS.elevated, borderBottom: DS.border2 }}>
                             <span style={{ fontSize: "10.5px", fontWeight: 850, color: DS.breeze, letterSpacing: "1.5px", fontFamily: "'Space Grotesk', sans-serif" }}>COCKROACHDB MVCC HISTORIC QUERY</span>
                             <div style={{ display: "flex", gap: "5px" }}>
                               <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ff6b6b" }} />
@@ -2194,7 +2221,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                                   const icons: Record<string, string> = { observation: "👁️", hypothesis: "💡", question: "❓", decision: "⚖️", action: "⚡", result: "✅" };
                                   const colors: Record<string, string> = { observation: DS.breeze, hypothesis: DS.lava, question: DS.breeze, decision: DS.magenta, action: DS.sunset, result: DS.emerald };
                                   return (
-                                    <div key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", padding: "8px 12px", borderRadius: DS.rSm, background: DS.elevated, border: `1px solid ${colors[thought.type] || DS.border}` }}>
+                                    <div key={i} style={{ display: "flex", gap: "8px", alignItems: "flex-start", padding: "8px 12px", borderRadius: DS.rSm, background: DS.elevated, border: DS.border2 }}>
                                       <span style={{ fontSize: "14px", flexShrink: 0, marginTop: "1px" }}>{icons[thought.type] || "•"}</span>
                                       <div style={{ flex: 1 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
@@ -2251,7 +2278,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                               <div style={{ marginTop: "12px" }}>
                                 <div style={{ fontSize: "10px", color: DS.mute, marginBottom: "4px" }}>SQL QUERIES</div>
                                 {(reasonResult.sql as string[]).map((q: string, i: number) => (
-                                  <code key={i} style={{ display: "block", fontSize: "10px", color: DS.lava, background: DS.elevated, padding: "4px 8px", borderRadius: DS.rSm, marginBottom: "2px" }}>{q}</code>
+                                  <code key={i} style={{ display: "block", fontSize: "10px", color: DS.lava, background: DS.elevated, padding: "4px 8px", borderRadius: DS.rSm, marginBottom: "2px", border: DS.border2 }}>{q}</code>
                                 ))}
                               </div>
                             )}
@@ -2291,12 +2318,12 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             ))}
                           </div>
                           {officialLoading === 'mcp' && (
-                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: `1px solid ${DS.lava}30` }}>
+                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: DS.border2 }}>
                               <div style={{ fontSize: "11px", color: DS.lava, marginBottom: "6px" }}>⏳ Calling tools/list + tools/call(list_databases) on the managed server...</div>
                             </div>
                           )}
                           {officialMcpResult && officialLoading !== 'mcp' && (
-                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: officialMcpResult.error ? `1px solid ${DS.sunset}30` : `1px solid ${DS.emerald}30` }}>
+                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: officialMcpResult.error ? `1px solid ${DS.sunset}` : `1px solid ${DS.emerald}` }}>
                               {(() => {
                                 const info = managedDbList(officialMcpResult);
                                 if (info.error) return (
@@ -2352,7 +2379,7 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             ))}
                           </div>
                           {ccloudResult && (
-                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: ccloudResult.error ? `1px solid ${DS.sunset}30` : `1px solid ${DS.emerald}30` }}>
+                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: ccloudResult.error ? `1px solid ${DS.sunset}` : `1px solid ${DS.emerald}` }}>
                               <div style={{ fontSize: "11px", color: ccloudResult.error ? DS.sunset : DS.emerald, marginBottom: "6px" }}>
                                 {ccloudResult.error ? "⚠️ Auth Required" : "✅ Cluster List"}
                               </div>
@@ -2411,14 +2438,81 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                       </div>
                     )}
 
-                    {/* Step 19: Done */}
+                    {/* Step 19: AWS S3 Cold Archive */}
                     {tourStep === 19 && (
+                      <div style={{ padding: "20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                          <span style={{ fontSize: "20px" }}>🗄️</span>
+                          <span style={{ fontSize: "16px", fontWeight: 700, color: DS.ink }}>Amazon S3 — Cold Memory Archive</span>
+                        </div>
+                        <div style={{ background: DS.elevated, borderRadius: DS.rMd, border: DS.border2, padding: "16px", marginBottom: "12px" }}>
+                          <div style={{ fontSize: "12px", color: DS.mute, marginBottom: "8px" }}>
+                            CockroachDB holds <strong style={{ color: DS.ink }}>hot memory</strong> (ms-latency, vector, hash-chained).
+                            <br />
+                            This step exports a full agent snapshot to <strong style={{ color: DS.lava }}>Amazon S3</strong> — an immutable cold archive for compliance, audit, and retraining.
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                            {[
+                              { k: "Bucket", v: "bastion-memory-archives" },
+                              { k: "Region", v: "ap-south-1" },
+                              { k: "Format", v: "JSON" },
+                              { k: "Lifecycle", v: "Glacier after 90d" },
+                            ].map(({ k, v }) => (
+                              <div key={k} style={{ background: DS.elevated, borderRadius: DS.rSm, padding: "8px 12px", border: DS.border2 }}>
+                                <div style={{ fontSize: "10px", color: DS.mute }}>{k}</div>
+                                <code style={{ fontSize: "11px", color: DS.lava }}>{v}</code>
+                              </div>
+                            ))}
+                          </div>
+
+                          <button
+                            onClick={runExportS3}
+                            disabled={loading === "export"}
+                            style={{
+                              padding: "14px 26px", borderRadius: DS.rMd, border: "none",
+                              background: `linear-gradient(135deg, ${DS.lava}, ${DS.magenta})`,
+                              color: "#fff", fontWeight: 800, fontSize: "14px", cursor: "pointer",
+                              boxShadow: `0 10px 30px -5px ${DS.lava}50, inset 0 1px 0 rgba(255,255,255,0.25)`,
+                              fontFamily: DS.fSg, letterSpacing: "0.5px",
+                            }}
+                          >
+                            {loading === "export" ? "⏳ Exporting..." : "📤 Export to S3"}
+                          </button>
+
+                          {s3Error && (
+                            <div style={{ marginTop: "12px", padding: "12px", borderRadius: DS.rSm, background: `${DS.sunset}10`, border: `1px solid ${DS.sunset}`, fontSize: "11px", color: DS.sunset }}>
+                              ⚠️ {s3Error}
+                            </div>
+                          )}
+
+                          {s3Result && (
+                            <div style={{ marginTop: "12px", background: DS.elevated, borderRadius: DS.rSm, padding: "12px", border: `1px solid ${DS.emerald}` }}>
+                              <div style={{ fontSize: "11px", color: DS.emerald, fontWeight: 700, marginBottom: "6px" }}>✅ Exported to Amazon S3</div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                <CodeRow label="Bucket" value={String(s3Result.bucket)} />
+                                <CodeRow label="Key" value={String(s3Result.key)} />
+                                <div style={{ display: "flex", gap: "16px" }}>
+                                  <span style={{ fontSize: "11px", color: DS.mute }}>{String(s3Result.count)} memories · {(Number(s3Result.bytes) / 1024).toFixed(2)} KB</span>
+                                </div>
+                                <a href={String(s3Result.url)} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: DS.breeze, textDecoration: "underline", marginTop: "4px" }}>
+                                  Open in S3 Console ↗
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <NavButtons back={() => goStep(18)} next={() => goStep(20)} nextLabel="▶ All Demos Complete" />
+                      </div>
+                    )}
+
+                    {/* Step 20: Done */}
+                    {tourStep === 20 && (
                       <div style={{ textAlign: "center", padding: "24px 0" }}>
                         <div style={{ fontSize: "48px", marginBottom: "16px" }}>🎉</div>
                         <div style={{ fontSize: "22px", fontWeight: 700, color: DS.ink, marginBottom: "8px" }}>All Demos Complete</div>
                         <div style={{ fontSize: "14px", color: DS.mute, marginBottom: "20px", lineHeight: "1.7" }}>
                           Every step ran <strong style={{ color: DS.lava }}>real SQL</strong> against a live CockroachDB cluster.<br />
-                          Single agent + Multi-agent + Reasoning + Official CockroachDB tools — all verified.
+                          Single agent + Multi-agent + Reasoning + Official CockroachDB tools + <strong style={{ color: DS.breeze }}>Amazon S3 cold archive</strong> — all verified.
                         </div>
                         <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
                           <button onClick={() => goStep(18)} style={{ padding: "10px 20px", borderRadius: DS.rMd, border: DS.border2, background: DS.elevated, color: DS.mute, fontSize: "13px", cursor: "pointer" }}>← Back</button>
@@ -2754,6 +2848,15 @@ function McpToolCard({ name, desc, category, read, onClick, active }: { name: st
         </div>
         <div style={{ fontSize: "11px", color: "var(--mute)", fontFamily: "var(--font-sans)", lineHeight: "1.5" }}>{desc}</div>
       </div>
+    </div>
+  );
+}
+
+function CodeRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+      <span style={{ fontSize: "10px", color: "var(--mute)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.5px", minWidth: "52px" }}>{label}</span>
+      <code style={{ fontSize: "11px", color: "var(--ink)", fontFamily: "var(--font-mono)", wordBreak: "break-all", lineHeight: "1.4" }}>{value}</code>
     </div>
   );
 }

@@ -43,9 +43,11 @@ from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl, AnyUrl
 
 from bastion.auth_provider import BastionOAuthProvider, is_oauth_enabled
+from bastion.capture_hooks import CaptureHooks
 from bastion.config import VERSION
 from bastion.errors import SecurityBlockError
 from bastion.limiter import RequestLimiter
+from bastion.log_setup import configure_logging
 from bastion.mcp_scanner import scan_tool_manifest
 from bastion.memory import BastionMemory
 from bastion.pool import ConnectionPool
@@ -66,12 +68,10 @@ def check_request_size(data_len: int) -> None:
     if data_len > _MAX_REQUEST_BYTES:
         raise ValueError("Request too large")
 
-logging.basicConfig(
-    level=logging.INFO,
-    stream=sys.stderr,
-    force=True,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# Configure logging with UTF-8 stderr. Critical on Windows: structlog's default
+# console renderer writes to cp1252 and crashes (UnicodeEncodeError) whenever
+# captured tool-call content contains non-ASCII characters.
+configure_logging()
 logger = logging.getLogger("bastion-mcp")
 
 
@@ -445,6 +445,41 @@ def create_server(
 
     mcp = FastMCP(**kwargs)
 
+    # ── Automatic capture hooks (flight-recorder memory layer) ──────────────
+    # Every tool call / error flows through CaptureHooks so the agent's actions
+    # are auto-persisted as hash-chained memories without manual store() calls.
+    _auto_capture = os.environ.get("BASTION_AUTO_CAPTURE", "1").lower() not in (
+        "0", "false", "no", "off"
+    )
+    _capture_skip_tools: set[str] = {
+        "memory_search", "memory_search_encrypted", "multi_signal_search",
+        "memory_list", "memory_get_pinned", "memory_health", "memory_audit",
+        "list_agent_skills", "context_pack", "agent_schema",
+        "detect_observations", "scan_all_contradictions", "ltm_check_reuse",
+        "ltm_invalidate", "ltm_store_analysis", "managed_mcp_list_tools",
+        "memory_store", "memory_store_batch", "memory_store_encrypted",
+        "memory_pin",
+    }
+    _capture_hooks_cache: dict[str, CaptureHooks] = {}
+    _capture_hooks_lock = threading.Lock()
+
+    def _get_capture_hooks(ctx: Context | None = None) -> CaptureHooks | None:
+        if not _auto_capture or is_mock:
+            return None
+        try:
+            mem = _resolve_memory(ctx)
+            key = getattr(mem, "agent_id", None) or _safe_client_id(ctx)
+            with _capture_hooks_lock:
+                hooks = _capture_hooks_cache.get(key)
+                if hooks is None:
+                    # bypass_guard=False keeps the ASI06 guard on every captured memory
+                    hooks = CaptureHooks(mem, bypass_guard=False)
+                    _capture_hooks_cache[key] = hooks
+                return hooks
+        except Exception as exc:
+            logger.debug("Capture hooks unavailable: %s", exc)
+            return None
+
     # ── Tool call logging middleware ──────────────────────────────────────────
     _original_call_tool = mcp._tool_manager.call_tool
     _log_conn = None
@@ -635,7 +670,23 @@ def create_server(
                             client_name = f"{client_name}:{ci.version}"
         except Exception:
             pass
-        result = await _original_call_tool(name, arguments, context=context, convert_result=convert_result)
+        try:
+            result = await _original_call_tool(name, arguments, context=context, convert_result=convert_result)
+        except Exception as exc:
+            # Auto-capture the error as a memory (flight recorder)
+            if name not in _capture_skip_tools:
+                try:
+                    hooks = _get_capture_hooks(context)
+                    if hooks is not None:
+                        args_txt = _redact_args(arguments)
+                        hooks.after_error(
+                            type(exc).__name__,
+                            str(exc)[:300],
+                            {"tool": name, "arguments": args_txt[:200]},
+                        )
+                except Exception:
+                    pass
+            raise
         duration_ms = int((time.time() - t0) * 1000)
         try:
             args_txt = _redact_args(arguments)
@@ -648,6 +699,26 @@ def create_server(
             )
         except Exception:
             pass
+        # Auto-capture the tool call as a memory (flight recorder)
+        if name not in _capture_skip_tools:
+            try:
+                hooks = _get_capture_hooks(context)
+                if hooks is not None:
+                    args_txt = _redact_args(arguments)
+                    try:
+                        args_dict = json.loads(args_txt) if args_txt else {}
+                    except (json.JSONDecodeError, TypeError):
+                        args_dict = {"summary": args_txt[:200]}
+                    # Best-effort: if the result text is itself JSON, capture it as a dict
+                    res_text = _extract_content_text(result)[:4000]
+                    try:
+                        res_parsed = json.loads(res_text)
+                        res_dict = res_parsed if isinstance(res_parsed, dict) else {"result": res_parsed}
+                    except (json.JSONDecodeError, TypeError):
+                        res_dict = {"result": res_text[:200]}
+                    hooks.after_tool_call(name, args_dict, res_dict)
+            except Exception:
+                pass
         return result
 
     atexit.register(_close_log_conn)
