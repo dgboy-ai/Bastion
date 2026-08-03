@@ -1151,12 +1151,30 @@ function FAQ() {
 /* ─── Trust Bar ──────────────────────────────────────────── */
 function TrustBar() {
   const logos = [
-    { n:"CockroachDB", tag:"Distributed SQL · SERIALIZABLE", c:P.gold,   mon:"CRDB" },
-    { n:"AWS",         tag:"KMS · S3 Archive · ap-south-1",  c:P.magma,  mon:"AWS" },
-    { n:"OWASP",       tag:"ASI06 Injection Guard",          c:P.cyan,   mon:"ASI06" },
-    { n:"MCP",         tag:"Model Context Protocol",         c:P.purple, mon:"MCP" },
-    { n:"A2A",         tag:"Agent-to-Agent · Ed25519",       c:P.cyan,   mon:"A2A" },
-    { n:"MIT",         tag:"Open Source License",            c:"#00ff66",mon:"MIT" },
+    {
+      n:"CockroachDB", tag:"Distributed SQL · SERIALIZABLE", c:P.gold, mon:"CRDB",
+      proof:"Every write is a distributed transaction at SERIALIZABLE isolation on a live 3-node cluster in aws-ap-south-1, num_replicas=3.",
+    },
+    {
+      n:"AWS", tag:"KMS · S3 Archive · ap-south-1", c:P.magma, mon:"AWS",
+      proof:"Customer-controlled encryption keys plus an archive tier on AWS infrastructure — the same region as the memory cluster.",
+    },
+    {
+      n:"OWASP", tag:"ASI06 Injection Guard", c:P.cyan, mon:"ASI06",
+      proof:"Adversarially evaluated against 483 payloads: 88.2% detection on obfuscated prompt-injection, 0 false positives on benign input.",
+    },
+    {
+      n:"MCP", tag:"Model Context Protocol", c:P.purple, mon:"MCP",
+      proof:"35 tools over MCP — works today with Claude, Cursor, VS Code, opencode, and any MCP client. This is the live integration path.",
+    },
+    {
+      n:"A2A", tag:"Agent-to-Agent · Ed25519", c:P.cyan, mon:"A2A",
+      proof:"Signed agent cards with a trust registry — strict, TOFU, or allowlist — plus a JSON-RPC 2.0 task lifecycle. See the honest picture below.",
+    },
+    {
+      n:"MIT", tag:"Open Source License", c:"#00ff66", mon:"MIT",
+      proof:"The full stack — MCP server, A2A server, schema, consolidation daemon, MemoryGuard — is in the repo. Clone and self-host freely.",
+    },
   ];
   return (
     <Reveal>
@@ -1164,76 +1182,240 @@ function TrustBar() {
         <div style={{textAlign:"center",marginBottom:"26px"}}>
           <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,textTransform:"uppercase",letterSpacing:"3.5px",fontWeight:700}}>Backed by proven infrastructure — not promises</div>
         </div>
-        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"14px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"14px"}} className="why-grid">
           {logos.map((l,i)=>(
             <Reveal key={l.n} delay={i*60}>
               <div style={{
-                display:"flex",alignItems:"center",gap:"12px",
-                padding:"14px 22px",
+                height:"100%",
+                padding:"16px 16px 14px",
                 background:"rgba(14,2,8,0.75)",
                 border:`1px solid ${l.c}30`,
                 borderRadius:"2px",
                 boxShadow:`inset 2px 2px 0 rgba(255,255,255,.04), 0 4px 20px rgba(0,0,0,.4)`,
               }}>
-                <div style={{
-                  width:"38px",height:"38px",borderRadius:"6px",
-                  background:`${l.c}12`,border:`1px solid ${l.c}35`,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,color:l.c,letterSpacing:"1px",
-                }}>{l.mon}</div>
-                <div>
-                  <div style={{fontSize:"14.5px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{l.n}</div>
-                  <div style={{fontSize:"11px",color:P.mute,fontFamily:"var(--font-mono)",letterSpacing:"0.5px"}}>{l.tag}</div>
+                <div style={{display:"flex",alignItems:"center",gap:"11px"}}>
+                  <div style={{
+                    width:"36px",height:"36px",borderRadius:"6px",
+                    background:`${l.c}12`,border:`1px solid ${l.c}35`,
+                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+                    fontFamily:"var(--font-mono)",fontSize:"9px",fontWeight:700,color:l.c,letterSpacing:"1px",
+                  }}>{l.mon}</div>
+                  <div>
+                    <div style={{fontSize:"14px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>{l.n}</div>
+                    <div style={{fontSize:"9.5px",color:l.c,fontFamily:"var(--font-mono)",letterSpacing:"0.5px",textTransform:"uppercase",fontWeight:700}}>{l.tag}</div>
+                  </div>
                 </div>
+                <div style={{fontSize:"12px",color:P.mute,fontFamily:"var(--font-inter)",lineHeight:1.6,marginTop:"11px"}}>{l.proof}</div>
               </div>
             </Reveal>
           ))}
         </div>
+
+        {/* ── A2A honest picture ── */}
+        <Reveal delay={120}>
+          <div style={{
+            marginTop:"18px",
+            padding:"20px 24px 18px",
+            background:"linear-gradient(135deg,rgba(0,229,255,0.07),rgba(14,2,8,0.85))",
+            border:`1px solid ${P.cyan}35`,
+            borderRadius:"2px",
+            boxShadow:`inset 2px 2px 0 rgba(255,255,255,.04), 0 4px 20px rgba(0,0,0,.4)`,
+          }}>
+            <div style={{display:"flex",alignItems:"center",gap:"11px",marginBottom:"6px"}}>
+              <div style={{
+                width:"34px",height:"34px",borderRadius:"6px",flexShrink:0,
+                background:`${P.cyan}12`,border:`1px solid ${P.cyan}35`,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontFamily:"var(--font-mono)",fontSize:"9px",fontWeight:700,color:P.cyan,letterSpacing:"1px",
+              }}>A2A</div>
+              <div>
+                <div style={{fontSize:"15px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)"}}>The honest picture — where A2A stands today</div>
+                <div style={{fontSize:"11px",color:P.mute,fontFamily:"var(--font-inter)",lineHeight:1.5}}>Signed, standards-track, and live — but not yet what your everyday IDE agent speaks.</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginTop:"14px"}} className="two-col">
+              {[
+                {
+                  k:"WHY", v:"Agent-to-agent is where multi-agent systems are heading. A2A (Linux Foundation · Agentic AI Foundation) covers the agent↔agent boundary — tasks, artifacts, and state — while MCP covers the human↔agent boundary. Two protocols, different jobs.",
+                },
+                {
+                  k:"WHO", v:"Enterprise platforms have adopted A2A: AWS Bedrock Agents, Google ADK, Microsoft Copilot Studio. When a Bedrock-style multi-agent stack wants to call Bastion, the bridge is already there.",
+                },
+                {
+                  k:"WHOM NOT YET", v:"Claude, Cline, opencode, and Copilot speak MCP today — not A2A. That is the honest reality, so MCP is the primary live path and A2A is future-proofing that is already wired and signed.",
+                },
+                {
+                  k:"HOW SIGNED", v:"Every agent card carries an Ed25519 signature over sorted fields, verified against a TrustedKeyRegistry (strict / TOFU / allowlist) to stop self-signed impersonation. Cards live at /.well-known/agent-card.json on both servers.",
+                },
+              ].map(x=>(
+                <div key={x.k} style={{border:`1px solid ${P.cyan}22`,background:"rgba(14,2,8,0.55)",padding:"12px 14px",borderRadius:"2px"}}>
+                  <div style={{fontFamily:"var(--font-mono)",fontSize:"9px",fontWeight:700,color:P.cyan,letterSpacing:"1.5px",marginBottom:"5px"}}>{x.k}</div>
+                  <div style={{fontSize:"12px",color:P.body,fontFamily:"var(--font-inter)",lineHeight:1.6}}>{x.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,letterSpacing:"0.5px",marginTop:"13px"}}>
+              25 A2A skills · JSON-RPC 2.0 task lifecycle · rate-limited 600 req/min/IP · signature verification with DNS-pinned SSRF protection
+            </div>
+          </div>
+        </Reveal>
       </div>
     </Reveal>
   );
 }
 
-/* ─── Quickstart / Install SDK ──────────────────────────── */
-const QUICKSTART_PY = `# Step 1 — Install the SDK (run in your terminal):
-# pip install bastion-memory
+/* ─── Connect / MCP Client Config ─────────────────────────── */
+const CLIENTS = [
+  {
+    n:"Claude Code", tag:"Anthropic CLI", c:"#d97757", file:".mcp.json",
+    cfg:`{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full",
+        "BASTION_MOCK": "false",
+        "AWS_REGION": "ap-south-1"
+      }
+    }
+  }
+}`,
+  },
+  {
+    n:"Cline", tag:"VS Code Extension", c:P.cyan, file:"cline_mcp_settings.json",
+    cfg:`{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full",
+        "BASTION_MOCK": "false"
+      }
+    }
+  }
+}`,
+  },
+  {
+    n:"VS Code", tag:"MCP Studio / Agent", c:"#4aa3f0", file:".vscode/mcp.json",
+    cfg:`{
+  "servers": {
+    "bastion": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
+      }
+    }
+  }
+}`,
+  },
+  {
+    n:"Copilot", tag:"GitHub Copilot", c:P.purple, file:"settings.json",
+    cfg:`{
+  "github.copilot.chat.mcp.servers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
+      }
+    }
+  }
+}`,
+  },
+  {
+    n:"Codex", tag:"OpenAI CLI", c:"#10a37f", file:"config.toml",
+    cfg:`[mcp_servers.bastion]
+command = "python"
+args = ["-m", "bastion.mcp_server"]
+env = { "BASTION_CONN" = "postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full", "BASTION_MOCK" = "false" }`,
+  },
+];
 
-# Step 2 — Save this as bastion_quickstart.py and run with: python bastion_quickstart.py
-import os
-from bastion import BastionMemory
+function TypingBlock({ code, file, accent }: { code:string; file?:string; accent:string }) {
+  const [len, setLen] = useState(0);
+  useEffect(() => {
+    setLen(0);
+    const iv = setInterval(() => {
+      setLen(l => { const n = l + 2; if (n >= code.length) { clearInterval(iv); return code.length; } return n; });
+    }, 12);
+    return () => clearInterval(iv);
+  }, [code]);
+  const done = len >= code.length;
+  return (
+    <div style={{background:"#0a0509",border:`1px solid ${accent}35`,borderRadius:"10px",overflow:"hidden",boxShadow:"0 12px 50px rgba(0,0,0,.5)"}}>
+      <div style={{padding:"12px 18px",background:"rgba(255,255,255,.03)",borderBottom:`1px solid ${accent}20`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",gap:"7px"}}>
+          {["#ff5f56","#ffbd2e","#27c93f"].map(c=>(<span key={c} style={{width:"11px",height:"11px",borderRadius:"50%",background:c,opacity:.85}}/>))}
+        </div>
+        <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute}}>{file ?? "config"}</span>
+      </div>
+      <pre style={{margin:0,padding:"20px 22px",fontSize:"12.5px",lineHeight:1.7,fontFamily:"var(--font-mono)",color:"#d7cfdb",minHeight:"240px",overflow:"auto"}}>
+        <code>{code.slice(0, len)}{!done && <span style={{display:"inline-block",width:"8px",height:"13px",background:accent,verticalAlign:"middle",marginLeft:"2px",animation:"blink .8s step-end infinite"}}/>}</code>
+      </pre>
+    </div>
+  );
+}
 
-mem = BastionMemory(
-    agent_id="my-agent",
-    connection_string=os.getenv("BASTION_CONN"),
-)
-
-# Store a memory — guarded by OWASP ASI06, sealed into the SHA-256 chain
-mem.store("fact", "API keys live in AWS Secrets Manager, never in chat logs.")
-
-# Semantic search with C-SPANN vector index
-results = mem.search("Where do we keep our secrets?", k=5)
-print(results)`;
-
-function QuickStart() {
+function ConnectSection() {
+  const [active, setActive] = useState(0);
+  const client = CLIENTS[active];
+  const cmd = `pip install bastion-memory`;
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(client.cfg); setCopied(true); setTimeout(()=>setCopied(false),1500); } catch {} };
   return (
     <Reveal>
       <div style={{maxWidth:"980px",margin:"0 auto",position:"relative",zIndex:3}}>
-        <SH eyebrow="Quick Start" title="Drop-in memory in 2 steps" sub="Install the SDK, point at your CockroachDB cluster, and store your first cryptographically-sealed memory." ec={P.gold}/>
-        {/* Code block */}
-        <div style={{
-          background:"#0a0509",border:"1px solid rgba(55,118,171,.35)",borderRadius:"10px",overflow:"hidden",
-          boxShadow:"0 12px 50px rgba(0,0,0,.5), 0 0 60px rgba(55,118,171,.08)",
-        }}>
-          <div style={{padding:"12px 18px",background:"rgba(255,255,255,.03)",borderBottom:"1px solid rgba(255,255,255,.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{display:"flex",gap:"7px"}}>
-              {["#ff5f56","#ffbd2e","#27c93f"].map(c=>(<span key={c} style={{width:"11px",height:"11px",borderRadius:"50%",background:c,opacity:.85}}/>))}
+        <SH eyebrow="Connect" title="Drop-in memory in one step" sub="Install the SDK, add the MCP server to your agent — Claude Code, Cline, VS Code, Copilot, or Codex — and persist cryptographically-sealed memory immediately." ec={P.gold}/>
+        <div style={{display:"grid",gridTemplateColumns:"0.85fr 1.15fr",gap:"18px",alignItems:"stretch"}} className="two-col">
+          {/* Install column */}
+          <Card accent={P.gold} style={{padding:"22px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.gold,letterSpacing:"2px",fontWeight:700,marginBottom:"14px"}}>STEP 01 — INSTALL</div>
+              <TypingBlock code={cmd} file="terminal" accent={P.gold}/>
+              <p style={{fontSize:"13px",color:P.body,fontFamily:"var(--font-inter)",lineHeight:1.6,margin:"16px 0 0"}}>
+                Then run the MCP server once — it stays up so every client below can attach:
+              </p>
+              <div style={{fontFamily:"var(--font-mono)",fontSize:"12px",background:"rgba(14,2,8,.6)",border:"1px solid rgba(255,170,0,.2)",borderRadius:"6px",padding:"12px 14px",color:"#d6e0ff",marginTop:"10px"}}>
+                python -m bastion.mcp_server --transport http --port 9997
+              </div>
             </div>
-            <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute}}>bastion_quickstart.py</span>
-          </div>
-          <pre style={{margin:0,padding:"20px 22px",fontSize:"12.5px",lineHeight:1.7,fontFamily:"var(--font-mono)",color:"#d0c8d4",overflowX:"auto"}}><code>{QUICKSTART_PY}</code></pre>
+            <div style={{marginTop:"16px",fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,lineHeight:1.7,letterSpacing:.5}}>
+              BASTION_CONN=postgresql://…/:26257 <span style={{color:P.gold}}>→ confirm sslmode=verify-full</span>
+            </div>
+          </Card>
+
+          {/* Config column */}
+          <Card accent={client.c} style={{padding:"22px",display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
+              <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:client.c,letterSpacing:"2px",fontWeight:700}}>STEP 02 — SELECT YOUR CLIENT</div>
+              <span style={{fontFamily:"var(--font-mono)",fontSize:"9px",color:P.mute}}>{client.file}</span>
+            </div>
+            {/* Navbar-style selector */}
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+              {CLIENTS.map((c2,i)=>(
+                <button key={c2.n} onClick={()=>setActive(i)} style={{
+                  padding:"8px 14px",borderRadius:"4px",cursor:"pointer",
+                  fontFamily:"var(--font-sg)",fontSize:"12.5px",fontWeight:700,letterSpacing:".5px",
+                  background:active===i?`linear-gradient(135deg,${c2.c}30,${c2.c}0c)`:"rgba(14,2,8,.7)",
+                  border:active===i?`1.5px solid ${c2.c}`:"1px solid rgba(255,170,0,.2)",
+                  color:active===i?"#fff":P.mute,transition:"all .25s",
+                }}>{c2.n}</button>
+              ))}
+            </div>
+            <TypingBlock code={client.cfg} file={client.file} accent={client.c}/>
+            <button onClick={copy} className="cta-btn" style={{
+              marginTop:"14px",padding:"11px 18px",borderRadius:"5px",border:"none",cursor:"pointer",
+              background:`linear-gradient(135deg,${client.c},${P.magma})`,color:"#fff",
+              fontFamily:"var(--font-mono)",fontSize:"11px",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+            }}>{copied?"✓ COPIED":"COPY CONFIG"}</button>
+          </Card>
         </div>
-        <div style={{textAlign:"center",marginTop:"18px"}}>
-          <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,letterSpacing:"1px"}}>or connect any MCP client — Claude, Cursor, VS Code — to the running <span style={{color:P.gold}}>bastion.mcp_server</span></span>
+        <div style={{textAlign:"center",marginTop:"20px"}}>
+          <span style={{fontFamily:"var(--font-mono)",fontSize:"10px",color:P.mute,letterSpacing:"1px"}}>25+ MCP tools — <span style={{color:P.gold}}>memory_store · memory_search · memory_audit · memory_timetravel · context_pack</span> and more</span>
         </div>
       </div>
     </Reveal>
@@ -1807,15 +1989,12 @@ export default function Page() {
       {/* ── CONTENT SECTIONS ── */}
       <div style={{position:"relative",zIndex:2}}>
         <SW glow={P.lava}><TrustBar/></SW>
-        <SW glow={P.cyan}><QuickStart/></SW>
-        <SW glow={P.gold}><ProofStats/></SW>
+        <SW glow={P.gold}><ConnectSection/></SW>
         <SW glow={P.cyan}><ProofPillars/></SW>
         <SW glow={P.gold}><HowItWorks/></SW>
-        <SW glow={P.cyan}><Domains/></SW>
         <SW glow={P.magma}><Benchmarks/></SW>
         <SW glow={P.gold}><Comparison/></SW>
         <SW glow={P.cyan}><Features/></SW>
-        <SW glow={P.gold}><Consolidation/></SW>
         <SW glow={P.cyan}><FAQ/></SW>
       </div>
 
@@ -1853,16 +2032,7 @@ export default function Page() {
           <div>
             <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2px",color:P.gold,marginBottom:"16px"}}>Product</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["Live Demo","/playground"],["Dashboard","/dashboard"],["Knowledge Graph","/graph"],["Memory Logs","/logs"],["Health","/health"],["Compliance","/compliance"]].map(([l,h])=>(
-                <Link key={l} href={h} className="fl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontFamily:"var(--font-inter)"}}>{l}</Link>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div style={{fontFamily:"var(--font-mono)",fontSize:"10px",fontWeight:700,textTransform:"uppercase",letterSpacing:"2px",color:P.magma,marginBottom:"16px"}}>Developer</div>
-            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-              {[["Documentation","/docs"],["Quick Start","/docs#quickstart"],["API Reference","/docs#api"],["Schema","/docs#schema"],["GitHub","https://github.com/dgboy-ai/Bastion"]].map(([l,h])=>(
+              {[["Dashboard","/dashboard"],["Docs","/docs/introduction"],["GitHub","https://github.com/dgboy-ai/Bastion"]].map(([l,h])=>(
                 <a key={l} href={h} target={h.startsWith("http")?"_blank":"_self"} rel="noopener noreferrer" className="fl" style={{color:P.body,fontSize:"13.5px",textDecoration:"none",fontFamily:"var(--font-inter)"}}>{l}</a>
               ))}
             </div>
