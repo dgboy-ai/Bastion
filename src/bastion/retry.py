@@ -82,7 +82,8 @@ class SerializationRetryEngine:
                     with conn.cursor() as cur:
                         result = operation(cur)
                         conn.commit()
-                        self._total_successes += 1
+                        with self._stats_lock:
+                            self._total_successes += 1
                         return result
                 except Exception as e:
                     conn.rollback()
@@ -91,7 +92,8 @@ class SerializationRetryEngine:
                         raise
 
                     last_error = e
-                    self._total_retries += 1
+                    with self._stats_lock:
+                        self._total_retries += 1
                     delay = self._compute_delay(attempt)
                     # Cap delay to not exceed total time limit
                     remaining = max(0, self.max_total_time_seconds - (time.monotonic() - start_time))

@@ -66,11 +66,34 @@ export async function GET(request: Request) {
       FROM agent_memory m
     `;
     const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    // Scope to authenticated agent's memories to prevent cross-agent data leakage
+    // Extract agent ID from session token (first part before the dot)
+    const authToken = request.headers.get("cookie")?.match(/bastion_auth_token=([^;]+)/)?.[1];
+    if (authToken) {
+      const tokenParts = authToken.split(".");
+      if (tokenParts.length === 2) {
+        try {
+          const payload = JSON.parse(Buffer.from(tokenParts[0], "base64url").toString());
+          if (payload.agent_id) {
+            conditions.push(`m.agent_id = $${params.length + 1}`);
+            params.push(payload.agent_id);
+          }
+        } catch { /* ignore malformed tokens */ }
+      }
+    }
 
     if (entityId) {
-      sql += ` JOIN agent_relations r ON r.source_memory_id = m.memory_id
-               WHERE (r.source_entity_id = $1 OR r.target_entity_id = $1)`;
+      conditions.push(`m.memory_id IN (
+        SELECT r.source_memory_id FROM agent_relations r
+        WHERE r.source_entity_id = $${params.length + 1} OR r.target_entity_id = $${params.length + 1}
+      )`);
       params.push(entityId);
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(" AND ")}`;
     }
 
     sql += ` ORDER BY m.created_at DESC LIMIT $${params.length + 1}`;

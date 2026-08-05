@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bastion Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #030712;
+    color: #f3f4f6;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    min-height: 100vh;
+    padding: 60px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 1400px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #1f2937;
+    padding-bottom: 24px;
+  }
+  .header-left h1 {
+    font-family: 'Outfit', sans-serif;
+    font-size: 56px;
+    font-weight: 900;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #60a5fa, #3b82f6, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 40px rgba(59, 130, 246, 0.4);
+  }
+  .header-left p {
+    font-size: 18px;
+    color: #9ca3af;
+    margin-top: 8px;
+    font-weight: 500;
+  }
+  .tech-meta {
+    display: flex;
+    gap: 16px;
+  }
+  .meta-badge {
+    background: #111827;
+    border: 2px solid #374151;
+    color: #e5e7eb;
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Grid Layers ── */
+  .grid-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  .layer {
+    background: #0b0f19;
+    border: 2px solid #1f2937;
+    border-radius: 20px;
+    padding: 36px;
+    position: relative;
+  }
+  
+  .layer::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 4px;
+    border-radius: 20px 20px 0 0;
+  }
+  
+  .layer-title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+  }
+  .layer-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .layer-tag {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+
+  /* Client layer theme */
+  .layer-clients::before { background: #3b82f6; }
+  .layer-clients .layer-title { color: #3b82f6; text-shadow: 0 0 25px rgba(59, 130, 246, 0.45); }
+  .layer-clients { border-color: #2563eb; box-shadow: 0 0 35px rgba(37, 99, 235, 0.15); }
+
+  /* Protocol layer theme */
+  .layer-protocol::before { background: #8b5cf6; }
+  .layer-protocol .layer-title { color: #8b5cf6; text-shadow: 0 0 25px rgba(139, 92, 246, 0.45); }
+  .layer-protocol { border-color: #7c3aed; box-shadow: 0 0 35px rgba(124, 58, 237, 0.15); }
+
+  /* Engine layer theme */
+  .layer-engine::before { background: #10b981; }
+  .layer-engine .layer-title { color: #10b981; text-shadow: 0 0 25px rgba(16, 185, 129, 0.45); }
+  .layer-engine { border-color: #059669; box-shadow: 0 0 35px rgba(5, 150, 105, 0.15); }
+
+  /* Database layer theme */
+  .layer-crdb::before { background: #059669; }
+  .layer-crdb .layer-title { color: #34d399; text-shadow: 0 0 25px rgba(52, 211, 153, 0.45); }
+  .layer-crdb { border-color: #047857; box-shadow: 0 0 35px rgba(4, 120, 87, 0.15); }
+
+  /* Cloud services theme */
+  .layer-cloud::before { background: #f97316; }
+  .layer-cloud .layer-title { color: #f97316; text-shadow: 0 0 25px rgba(249, 115, 22, 0.45); }
+  .layer-cloud { border-color: #ea580c; box-shadow: 0 0 35px rgba(234, 88, 12, 0.15); }
+
+  /* ── Content Grid Layouts ── */
+  .cards-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: #0f1322;
+    border: 2px solid #202942;
+    border-radius: 16px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card:hover {
+    border-color: #3b82f6;
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.15);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .card-icon {
+    font-size: 24px;
+  }
+  .card-name {
+    font-size: 18px;
+    font-weight: 800;
+    color: #f9fafb;
+    font-family: 'Outfit', sans-serif;
+  }
+  .card-desc {
+    font-size: 14px;
+    color: #9ca3af;
+    line-height: 1.6;
+  }
+  .card-desc b {
+    color: #f3f4f6;
+    font-weight: 600;
+  }
+  .card-tag-list {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+  }
+  .mini-tag {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    background: #1e293b;
+    color: #cbd5e1;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+  }
+
+  /* ── Specialized Connector ── */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: #4b5563;
+    font-size: 26px;
+    font-weight: 800;
+    margin: 8px 0;
+  }
+  .connector span {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    background: #0f1322;
+    border: 2px solid #202942;
+    padding: 8px 24px;
+    border-radius: 30px;
+    color: #9ca3af;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.05);
+  }
+
+  /* ── Database Table Grid ── */
+  .table-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid #1f2937;
+  }
+  .db-table {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    background: #022c22;
+    border: 2px solid #0f766e;
+    color: #34d399;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    box-shadow: 0 0 15px rgba(52, 211, 153, 0.1);
+  }
+
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- ══════════════════ HEADER ══════════════════ -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Bastion System Architecture</h1>
+      <p>Secure, Forensic Agentic Memory Layer on CockroachDB & AWS</p>
+    </div>
+    <div class="tech-meta">
+      <div class="meta-badge" style="border-color: #3b82f6; color: #60a5fa; box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);">Frontend: Vercel</div>
+      <div class="meta-badge" style="border-color: #8b5cf6; color: #a78bfa; box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);">Server: Render.com</div>
+      <div class="meta-badge" style="border-color: #10b981; color: #34d399; box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);">Database: CockroachDB</div>
+    </div>
+  </div>
+
+  <div class="grid-layers">
+
+    <!-- ══════════════════ LAYER 1: CLIENTS ══════════════════ -->
+    <div class="layer layer-clients">
+      <div class="layer-title-bar">
+        <div class="layer-title">🖥️ Client &amp; SDK Access Layer</div>
+        <div class="layer-tag" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 2px solid #3b82f6;">VERCEL HOSTED</div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🤖</span>
+            <span class="card-name">AI Code Agents</span>
+          </div>
+          <div class="card-desc">Provides persistent memory context inside developer tools like <b>Claude, Cursor, Cline, Copilot, Codex, and Opencode</b>.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🧠</span>
+            <span class="card-name">Custom Agents</span>
+          </div>
+          <div class="card-desc">Integrates custom LLM workflows (such as <b>Groq Qwen-3.6-27B</b>) with persistent memory capabilities.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🖥️</span>
+            <span class="card-name">React Dashboard</span>
+          </div>
+          <div class="card-desc">Visual administration dashboard featuring a <b>Memory Inspector</b>, <b>Forensic Audit viewer</b>, and real-time performance analytics.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔌</span>
+            <span class="card-name">Frameworks</span>
+          </div>
+          <div class="card-desc">Plug-and-play integrations for multi-agent frameworks, including adapters for <b>LangChain, LlamaIndex, and CrewAI</b>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">↓ <span>Bearer Auth Authentication · Dynamic API Keys via agent_auth Table</span> ↓</div>
+
+    <!-- ══════════════════ LAYER 2: SERVICE PORTS / PROTOCOLS ══════════════════ -->
+    <div class="layer layer-protocol">
+      <div class="layer-title-bar">
+        <div class="layer-title">📡 MCP Gateway Protocol Layer</div>
+        <div class="layer-tag" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6; border: 2px solid #8b5cf6;">RENDER DEPLOYED</div>
+      </div>
+      <div class="cards-row">
+        <div class="card" style="grid-column: span 2;">
+          <div class="card-header">
+            <span class="card-icon">🛰️</span>
+            <span class="card-name">FastMCP Server Instance</span>
+          </div>
+          <div class="card-desc">Handles streamable HTTP JSON-RPC payloads mapping tools like:
+            <br>• <b>Memory Storage:</b> memory_store · memory_store_batch · memory_store_encrypted
+            <br>• <b>Semantic Retrieval:</b> memory_search · multi_signal_search · memory_timetravel
+            <br>• <b>System Operations:</b> memory_correct · memory_pin · memory_delete · memory_heal
+          </div>
+          <div class="card-tag-list">
+            <span class="mini-tag">FastMCP API</span>
+            <span class="mini-tag">JSON-RPC over HTTP</span>
+            <span class="mini-tag">Multi-Tenant Sessions</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🛡️</span>
+            <span class="card-name">Security Gate</span>
+          </div>
+          <div class="card-desc">Authenticates requests against the <b>agent_auth</b> table using constant-time key validation. Features active rate limiting.</div>
+          <div class="card-tag-list">
+            <span class="mini-tag">bcrypt Verification</span>
+            <span class="mini-tag">Rate Limiter</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🏥</span>
+            <span class="card-name">Observability</span>
+          </div>
+          <div class="card-desc">Monitors platform status through dedicated <b>/health</b>, <b>/readyz</b>, and <b>/metrics</b> OpenAPI metrics. Employs circuit breakers.</div>
+          <div class="card-tag-list">
+            <span class="mini-tag">Circuit Breakers</span>
+            <span class="mini-tag">Prometheus Metrics</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector">↓ <span>Connection Pool (psycopg2) · BASTION_CONN Datastore Link</span> ↓</div>
+
+    <!-- ══════════════════ LAYER 3: CORE MEMORY ENGINE ══════════════════ -->
+    <div class="layer layer-engine">
+      <div class="layer-title-bar">
+        <div class="layer-title">⚙️ Bastion Engine &amp; Logic Controllers</div>
+        <div class="layer-tag" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 2px solid #10b981;">CORE CONTROLLER</div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🧠</span>
+            <span class="card-name">Memory Tiers</span>
+          </div>
+          <div class="card-desc">
+            • <b>Session Memory:</b> Ephemeral contexts with auto-promotion.
+            <br>• <b>Long-Term (LTM):</b> Gateway layer avoiding duplicate LLM reads if similarity threshold is ≥80%.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔎</span>
+            <span class="card-name">Retrieval System</span>
+          </div>
+          <div class="card-desc">Fuses 4 distinct signals: <b>40% Vector Embeddings</b> + <b>30% BM25 Keyword MATCH</b> + <b>15% Entity Hops</b> + <b>15% Time-Decay weights</b>.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🌳</span>
+            <span class="card-name">Knowledge Graph</span>
+          </div>
+          <div class="card-desc">Performs natural language entity and relationship extraction. Uses CockroachDB <b>Recursive CTEs</b> for BFS multi-hop graph hops.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔄</span>
+            <span class="card-name">Conflict Resolution</span>
+          </div>
+          <div class="card-desc">Conflict-Free Replicated Data Types (<b>CRDT</b>) with VectorClocks. Employs <b>SELECT FOR UPDATE</b> locks to prevent concurrent write skew.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🛡️</span>
+            <span class="card-name">OWASP ASI06 Guard</span>
+          </div>
+          <div class="card-desc">Defends against memory poisoning. Automatically filters homoglyphs, visual confusables, and normalized leetspeak injection.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">😴</span>
+            <span class="card-name">Sleep-Time Consolidation</span>
+          </div>
+          <div class="card-desc">Background daemon consolidates duplicate events, ranks importances, prunes noise, and promotes episodic entries to semantic rules.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔁</span>
+            <span class="card-name">Saga Rollbacks</span>
+          </div>
+          <div class="card-desc">Crash-safe transaction tracking. Employs automatic compensating transactions to reverse memory writes if agent tasks fail.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">💰</span>
+            <span class="card-name">Spend Manager</span>
+          </div>
+          <div class="card-desc">Monitors limits for storage, search, embedding, and healing. Automatically suspends agents if daily cost limits are exceeded.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ LAYER 4: COCKROACHDB ══════════════════ -->
+    <div class="layer layer-crdb">
+      <div class="layer-title-bar">
+        <div class="layer-title">🪳 CockroachDB Managed Cloud Datastore</div>
+        <div class="layer-tag" style="background: rgba(52, 211, 153, 0.1); color: #34d399; border: 2px solid #34d399;">COCKROACHDB SERVERLESS</div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔒</span>
+            <span class="card-name">SERIALIZABLE Isolation</span>
+          </div>
+          <div class="card-desc">Prevents write-skew and race conditions during concurrent multi-agent updates to shared memory state.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">⏱️</span>
+            <span class="card-name">AS OF SYSTEM TIME</span>
+          </div>
+          <div class="card-desc">Performs instant historical queries and forensic time-travel inspections on the system's memory graph.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📶</span>
+            <span class="card-name">VECTOR(1024) Indexes</span>
+          </div>
+          <div class="card-desc">C-SPANN distributed vector indexes allow high-efficiency semantic similarity lookups at scale.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🌍</span>
+            <span class="card-name">REGIONAL BY ROW</span>
+          </div>
+          <div class="card-desc">Applies row-level geographical partitioning to satisfy compliance requirements like GDPR.</div>
+        </div>
+      </div>
+      <div class="table-grid">
+        <span class="db-table">agent_memory</span>
+        <span class="db-table">agent_audit</span>
+        <span class="db-table">agent_entities</span>
+        <span class="db-table">agent_relations</span>
+        <span class="db-table">agent_drift_scores</span>
+        <span class="db-table">agent_budgets</span>
+        <span class="db-table">agent_auth</span>
+        <span class="db-table">saga_states</span>
+        <span class="db-table">thought_chain_nodes</span>
+        <span class="db-table">ltm_cache</span>
+      </div>
+    </div>
+
+    <!-- ══════════════════ LAYER 5: CLOUD & AWS ══════════════════ -->
+    <div class="layer layer-cloud">
+      <div class="layer-title-bar">
+        <div class="layer-title">☁️ Infrastructure Encryption &amp; Security Pipelines</div>
+        <div class="layer-tag" style="background: rgba(249, 115, 22, 0.1); color: #f97316; border: 2px solid #f97316;">AWS PIPELINE</div>
+      </div>
+      <div class="cards-row">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🔑</span>
+            <span class="card-name">KMS Encryption Wrapper</span>
+          </div>
+          <div class="card-desc">Secures memory contents through pluggable key managers (<b>LocalKMS, AwsKMS, or GcpKMS</b>). Plaintext vector searches remain supported.</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📦</span>
+            <span class="card-name">S3 Memory Archival</span>
+          </div>
+          <div class="card-desc">Backs up and restores memory states to encrypted S3 Buckets. Includes Glacier lifecycle configuration for cost-optimized compliance.</div>
+        </div>
+        <div class="card" style="grid-column: span 2;">
+          <div class="card-header">
+            <span class="card-icon">🛡️</span>
+            <span class="card-name">CDC Webhook Handler (self-heal)</span>
+          </div>
+          <div class="card-desc">Streams real-time updates directly via CockroachDB Changefeeds to a webhook controller (<b>cdc_handler.py</b>).
+          <br>• Validates HMAC security chains to identify unauthorized modification.
+          <br>• Automatically triggers memory rollback sequences if validation fails.
+          <br>• Optional deployment target: <b>AWS Lambda</b>.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

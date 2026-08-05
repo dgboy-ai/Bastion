@@ -12,7 +12,10 @@ and demotes cold memories back to L2-only.
 
 from __future__ import annotations
 
-from collections import deque
+import math
+import threading
+import time
+from collections import OrderedDict
 from typing import Any
 
 from bastion.log_setup import get_logger
@@ -21,7 +24,7 @@ logger = get_logger(__name__)
 
 
 class MemoryRouter:
-    """Routes vector retrieval between L1 cache and L2 CockroachDB."""
+    """Routes vector retrieval between L1 cache and L2 CRDB."""
 
     def __init__(
         self,
@@ -33,16 +36,20 @@ class MemoryRouter:
         self.memory = memory
         self.cache_size = cache_size
         self.promotion_threshold = promotion_threshold
+        self._demotion_interval = demotion_interval_seconds
 
-        # L1 Cache: memory_id -> MemoryRecord
-        self._cache: dict[str, Any] = {}
-        # Access order for LRU eviction
-        self._access_order: deque[str] = deque()
+        # L1 Cache: memory_id -> MemoryRecord (OrderedDict for O(1) LRU)
+        self._cache: OrderedDict[str, Any] = OrderedDict()
         # Access count: memory_id -> count (for promotion decisions)
         self._access_counts: dict[str, int] = {}
+        # Access timestamps for TTL-based demotion
+        self._access_times: dict[str, float] = {}
         # Cache hits/misses for metrics
         self._cache_hits = 0
         self._cache_misses = 0
+        self._lock = threading.Lock()
+        # Last demotion sweep time
+        self._last_demotion = time.monotonic()
 
     def search(
         self,
@@ -60,21 +67,26 @@ class MemoryRouter:
         3. Merge results, prioritizing cached items for speed
         4. Promote frequently accessed memories to L1 cache
         """
+        # Periodic demotion sweep
+        self._maybe_demote()
+
         # Step 1: Search L1 cache (fast path, <1ms)
-        cached_results = self._search_cache(query, k, memory_type)
+        cached_results = self._search_cache(query, k, memory_type, threshold)
 
         # Step 2: Search L2 CRDB (slower path, 15-30ms)
         db_results = self.memory.search(query, k, threshold, memory_type, namespace_scope)
 
-        # Step 3: Merge results — cached items first, then fill from DB
+        # Step 3: Merge results — deduplicate, cached items get score boost
         merged = self._merge_results(cached_results, db_results, k)
 
         # Step 4: Promote frequently accessed memories to cache
-        for mem in merged:
-            mid = mem.memory_id
-            self._access_counts[mid] = self._access_counts.get(mid, 0) + 1
-            if self._access_counts[mid] >= self.promotion_threshold:
-                self._promote_to_cache(mem)
+        with self._lock:
+            for mem in merged:
+                mid = mem.memory_id
+                self._access_counts[mid] = self._access_counts.get(mid, 0) + 1
+                self._access_times[mid] = time.monotonic()
+                if self._access_counts[mid] >= self.promotion_threshold:
+                    self._promote_to_cache(mem)
 
         return merged
 
@@ -83,21 +95,88 @@ class MemoryRouter:
         query: str,
         k: int,
         memory_type: str | None,
+        threshold: float,
     ) -> list[Any]:
-        """Search the in-memory L1 cache."""
+        """Search the in-memory L1 cache using cosine similarity."""
         if not self._cache:
             return []
 
-        query_lower = query.lower()
-        results = []
-        for mem in self._cache.values():
-            if memory_type and mem.memory_type != memory_type:
-                continue
-            if query_lower in mem.content.lower():
-                results.append(mem)
+        # Try to get query embedding for cosine similarity
+        query_embedding = self._get_query_embedding(query)
+        if query_embedding is None:
+            # Fallback: keyword overlap scoring
+            return self._search_cache_keyword(query, k, memory_type)
 
-        results.sort(key=lambda m: m.importance_score, reverse=True)
-        return results[:k]
+        results = []
+        with self._lock:
+            for mem in list(self._cache.values()):
+                if memory_type and getattr(mem, "memory_type", None) != memory_type:
+                    continue
+                mem_embedding = getattr(mem, "embedding", None)
+                if mem_embedding is not None:
+                    score = self._cosine_similarity(query_embedding, mem_embedding)
+                    if score >= threshold * 0.7:  # Slightly lower threshold for L1
+                        results.append((mem, score))
+                else:
+                    # No embedding — use keyword fallback
+                    kw_score = self._keyword_overlap(query, mem.content)
+                    if kw_score >= threshold * 0.7:
+                        results.append((mem, kw_score))
+
+        results.sort(key=lambda x: x[1], reverse=True)
+        return [mem for mem, _ in results[:k]]
+
+    def _search_cache_keyword(
+        self,
+        query: str,
+        k: int,
+        memory_type: str | None,
+    ) -> list[Any]:
+        """Fallback keyword-based cache search when embeddings unavailable."""
+        query_words = set(query.lower().split())
+        results = []
+        with self._lock:
+            for mem in list(self._cache.values()):
+                if memory_type and getattr(mem, "memory_type", None) != memory_type:
+                    continue
+                score = self._keyword_overlap(query, mem.content)
+                if score > 0:
+                    results.append((mem, score))
+
+        results.sort(key=lambda x: x[1], reverse=True)
+        return [mem for mem, _ in results[:k]]
+
+    def _get_query_embedding(self, query: str) -> list[float] | None:
+        """Get embedding for query text. Returns None if unavailable."""
+        try:
+            from bastion.embeddings import embed_text
+            return embed_text(query)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        if len(a) != len(b):
+            # Truncate to shorter length
+            min_len = min(len(a), len(b))
+            a, b = a[:min_len], b[:min_len]
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    @staticmethod
+    def _keyword_overlap(query: str, content: str) -> float:
+        """Simple keyword overlap score."""
+        query_words = set(query.lower().split())
+        content_words = set(content.lower().split())
+        if not query_words:
+            return 0.0
+        overlap = query_words & content_words
+        return len(overlap) / len(query_words)
 
     def _merge_results(
         self,
@@ -105,17 +184,21 @@ class MemoryRouter:
         db: list[Any],
         k: int,
     ) -> list[Any]:
-        """Merge cached and DB results, deduplicating by memory_id."""
+        """Merge cached and DB results, deduplicating by memory_id.
+        Cached items are marked with a flag for score boosting."""
         seen = set()
         merged = []
 
+        # Cached items first (they're faster to retrieve)
         for mem in cached:
             if mem.memory_id not in seen:
+                mem._from_cache = True  # type: ignore[attr-defined]
                 merged.append(mem)
                 seen.add(mem.memory_id)
 
         for mem in db:
             if mem.memory_id not in seen:
+                mem._from_cache = False  # type: ignore[attr-defined]
                 merged.append(mem)
                 seen.add(mem.memory_id)
                 if len(merged) >= k:
@@ -125,31 +208,64 @@ class MemoryRouter:
 
     def _promote_to_cache(self, mem: Any) -> None:
         """Add a memory to the L1 cache, evicting LRU if full."""
-        if len(self._cache) >= self.cache_size and self._access_counts:
-            oldest_id = min(self._access_counts, key=self._access_counts.get)  # type: ignore[arg-type]
-            self._cache.pop(oldest_id, None)
-            self._access_counts.pop(oldest_id, None)
-        self._cache[mem.memory_id] = mem
+        mid = mem.memory_id
+        if mid in self._cache:
+            self._cache.move_to_end(mid)
+            return
+        if len(self._cache) >= self.cache_size:
+            # Evict least recently used
+            evicted_id, _ = self._cache.popitem(last=False)
+            self._access_counts.pop(evicted_id, None)
+            self._access_times.pop(evicted_id, None)
+        self._cache[mid] = mem
+
+    def _maybe_demote(self) -> None:
+        """Periodically demote cold entries from L1 cache."""
+        now = time.monotonic()
+        if now - self._last_demotion < self._demotion_interval:
+            return
+        self._last_demotion = now
+
+        cutoff = now - (self._demotion_interval * 3)
+        with self._lock:
+            cold_ids = [
+                mid for mid, t in self._access_times.items()
+                if t < cutoff
+            ]
+            for mid in cold_ids:
+                self._cache.pop(mid, None)
+                self._access_counts.pop(mid, None)
+                self._access_times.pop(mid, None)
+            if cold_ids:
+                logger.info("Demoted %d cold entries from L1 cache", len(cold_ids))
 
     def invalidate(self, memory_id: str) -> None:
         """Remove a memory from the L1 cache."""
-        self._cache.pop(memory_id, None)
-        self._access_counts.pop(memory_id, None)
+        with self._lock:
+            self._cache.pop(memory_id, None)
+            self._access_counts.pop(memory_id, None)
+            self._access_times.pop(memory_id, None)
 
     def clear_cache(self) -> None:
         """Clear the entire L1 cache."""
-        self._cache.clear()
-        self._access_counts.clear()
+        with self._lock:
+            self._cache.clear()
+            self._access_counts.clear()
+            self._access_times.clear()
 
     def get_stats(self) -> dict[str, Any]:
         """Return cache performance statistics."""
-        total = self._cache_hits + self._cache_misses
-        hit_rate = (self._cache_hits / total * 100) if total > 0 else 0.0
+        with self._lock:
+            cache_size = len(self._cache)
+            hits = self._cache_hits
+            misses = self._cache_misses
+        total = hits + misses
+        hit_rate = (hits / total * 100) if total > 0 else 0.0
         return {
-            "cache_size": len(self._cache),
+            "cache_size": cache_size,
             "cache_capacity": self.cache_size,
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
+            "cache_hits": hits,
+            "cache_misses": misses,
             "hit_rate_percent": round(hit_rate, 1),
             "promotion_threshold": self.promotion_threshold,
         }

@@ -1,5 +1,6 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 import { guardCheck } from "@/lib/guard";
 import { createHmac } from "crypto";
 
@@ -25,7 +26,8 @@ function computeChainHash(content: string, metadata: string | null, previousHash
     len(metaBytes.length), metaBytes,
     len(prevBytes.length), prevBytes,
   ]);
-  const secret = process.env.BASTION_SESSION_SECRET || "bastion-demo-dev-secret";
+  const secret = process.env.BASTION_SESSION_SECRET;
+  if (!secret) throw new Error("BASTION_SESSION_SECRET required for chain hash computation");
   return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
@@ -69,8 +71,10 @@ async function stepContext(): Promise<SocStepResult> {
     type: r.memory_type,
     content: r.content,
     trustLevel: r.trust_level,
-    hash: String(r.cryptographic_hash || "").slice(0, 12) + "...",
-    previousHash: r.previous_hash ? String(r.previous_hash).slice(0, 12) + "..." : "GENESIS",
+    hash: String(r.cryptographic_hash || ""),
+    previousHash: r.previous_hash ? String(r.previous_hash) : "GENESIS",
+    hashDisplay: String(r.cryptographic_hash || "").slice(0, 12) + "...",
+    previousHashDisplay: r.previous_hash ? String(r.previous_hash).slice(0, 12) + "..." : "GENESIS",
     createdAt: r.created_at,
   }));
 
@@ -459,6 +463,9 @@ async function stepVerify(): Promise<SocStepResult> {
 
 export async function POST(request: Request) {
   try {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+
     let body: { step?: string; alert?: Record<string, unknown> } = {};
     try {
       const text = await request.text();

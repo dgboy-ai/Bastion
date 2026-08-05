@@ -1,7 +1,9 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
+import { computeHmacHash } from "@/lib/hash-chain";
+import { embedToVectorString } from "@/lib/embeddings";
 
 export async function POST(
   request: Request,
@@ -32,28 +34,31 @@ export async function POST(
 
     const startTime = Date.now();
 
-    // 1. memory_pin tool: Insert a pinned record
+    // 1. memory_pin tool: Insert a pinned record with the same hash-chain and
+    //    embedding pipeline as the Python engine's mem.pin()/store path.
     if (tool === "memory_pin") {
       const pinContent = content || body.query || "Critical security override rule";
+      if (!pinContent || !pinContent.trim()) {
+        return apiError("content is required", 400);
+      }
+      if (pinPriority !== 0 && pinPriority !== 1 && pinPriority !== 2) {
+        return apiError("pin_priority must be 0 (normal), 1 (important), or 2 (CRITICAL)", 400);
+      }
+
       const lastMem = await safeQuery(
         "SELECT cryptographic_hash FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1",
         [agentId]
       );
-      const previousHash = lastMem.rows[0]?.cryptographic_hash as string ||
-        createHash("sha256").update("genesis-" + agentId).digest("hex");
+      const previousHash = (lastMem.rows[0]?.cryptographic_hash as string) || "";
 
       const newMemoryId = randomUUID();
-      const cryptographicHash = createHash("sha256")
-        .update(previousHash + pinContent + agentId + Date.now())
-        .digest("hex");
+      const cryptographicHash = computeHmacHash(pinContent, {}, previousHash);
 
-      const hash = pinContent.split("").reduce((acc: number, c: string) => ((acc << 5) - acc + c.charCodeAt(0)) | 0, 0);
-      const mockEmbedding = Array.from({ length: 384 }, (_, i) => Math.sin(hash + i) * 0.1);
-      const embeddingStr = `[${mockEmbedding.join(",")}]`;
+      const embeddingStr = await embedToVectorString(pinContent);
 
       await safeQuery(
-        `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding, embedding_384, previous_hash, cryptographic_hash, trust_level, source_provenance, importance_score, crdb_region, is_pinned, pin_priority)
-         VALUES ($1, $2, $3, $4, NULL::vector, $5::vector, $6, $7, 4, 'agent_direct', 0.9, 'aws-ap-south-1', true, $8)`,
+        `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding, metadata, previous_hash, cryptographic_hash, trust_level, source_provenance, importance_score, crdb_region, is_pinned, pin_priority)
+         VALUES ($1, $2, $3, $4, $5::vector(1024), '{}', $6, $7, 4, 'agent_direct', 0.9, 'aws-ap-south-1', true, $8)`,
         [newMemoryId, agentId, memoryType, pinContent, embeddingStr, previousHash, cryptographicHash, pinPriority]
       );
 
@@ -64,6 +69,8 @@ export async function POST(
         content: pinContent,
         isPinned: true,
         pinPriority,
+        previousHash: previousHash.slice(0, 20) + "...",
+        cryptographicHash: cryptographicHash.slice(0, 20) + "...",
         latency: (Date.now() - startTime) + "ms",
         sql: `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, is_pinned, pin_priority) VALUES ($1, $2, $3, $4, true, $5)`,
       }, "dynamic");
@@ -124,10 +131,13 @@ export async function POST(
       }, "dynamic");
     }
 
-    // 4. memory_delete: Delete a memory
+    // 4. memory_delete: Delete a memory (requires confirmation, matches engine)
     if (tool === "memory_delete") {
       const targetId = memoryId || query || body.query;
       if (!targetId) return apiError("memoryId is required for deletion", 400);
+      if (!body.confirmed) {
+        return apiError("Deletion requires confirmed=true", 400);
+      }
       const deleteRes = await safeQuery(
         "DELETE FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
         [targetId, agentId]
@@ -151,6 +161,10 @@ export async function POST(
         "UPDATE agent_memory SET content = $1, overwrite_count = overwrite_count + 1 WHERE memory_id = $2 AND agent_id = $3",
         [newContent, targetId, agentId]
       );
+
+      if (updateRes.rowCount === 0) {
+        return apiError(`Memory ${targetId} not found`, 404);
+      }
 
       return apiSuccess({
         tool: "memory_correct",

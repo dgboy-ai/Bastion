@@ -1,39 +1,9 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
-import { createHmac, createHash, randomUUID } from "crypto";
-
-function computeHmacHash(
-  content: string, 
-  metadata: Record<string, unknown>, 
-  previousHash: string | null
-): string {
-  const secret = process.env.BASTION_HMAC_SECRET || "";
-  // Match Python: json.dumps(metadata, sort_keys=True)
-  const metaStr = Object.keys(metadata).length > 0
-    ? JSON.stringify(metadata, Object.keys(metadata).sort())
-    : "";
-  const prev = previousHash || "";
-  
-  // Length-prefix each field (matches Python's to_bytes(4, 'big'))
-  const contentBytes = Buffer.from(content, "utf8");
-  const metaBytes = Buffer.from(metaStr, "utf8");
-  const prevBytes = Buffer.from(prev, "utf8");
-  
-  const buf = Buffer.alloc(
-    4 + contentBytes.length + 4 + metaBytes.length + 4 + prevBytes.length
-  );
-  
-  let offset = 0;
-  buf.writeUInt32BE(contentBytes.length, offset); offset += 4;
-  contentBytes.copy(buf, offset); offset += contentBytes.length;
-  buf.writeUInt32BE(metaBytes.length, offset); offset += 4;
-  metaBytes.copy(buf, offset); offset += metaBytes.length;
-  buf.writeUInt32BE(prevBytes.length, offset); offset += 4;
-  prevBytes.copy(buf, offset);
-  
-  return createHmac("sha256", secret).update(buf).digest("hex");
-}
+import { randomUUID } from "crypto";
+import { computeHmacHash } from "@/lib/hash-chain";
+import { embedToVectorString } from "@/lib/embeddings";
 
 export async function POST(request: Request) {
   const authError = requireAuth(request);
@@ -63,8 +33,8 @@ export async function POST(request: Request) {
     const memoryId = randomUUID();
     const cryptographicHash = computeHmacHash(content, {}, previousHash);
 
-    // Get embedding
-    const embeddingStr = await getEmbeddingString(content);
+    // Get embedding (real model, deterministic hash fallback)
+    const embeddingStr = await embedToVectorString(content);
 
     // Insert with hash chain
     await safeQuery(
@@ -87,27 +57,5 @@ export async function POST(request: Request) {
     }, "dynamic");
   } catch (err) {
     return apiError("memory_store failed", 500);
-  }
-}
-
-async function getEmbeddingString(text: string): Promise<string> {
-  try {
-    const res = await fetch(process.env.EMBEDDING_URL || "http://localhost:8080/embed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(5000),
-    });
-    const data = await res.json();
-    return `[${data.embedding.join(",")}]`;
-  } catch {
-    // 1024-dim hash fallback (matches Python's _hash_fallback_embed)
-    const digest = Array.from(text).reduce((acc, c, i) => 
-      acc ^ (c.charCodeAt(0) * 31 + i), 0);
-    const mock = Array.from({ length: 1024 }, (_, i) => 
-      Math.sin(digest * 31 + i) * 0.1);
-    // L2 normalize
-    const norm = Math.sqrt(mock.reduce((s, v) => s + v * v, 0)) || 1;
-    return `[${mock.map(v => v / norm).join(",")}]`;
   }
 }

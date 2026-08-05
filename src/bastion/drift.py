@@ -71,8 +71,7 @@ class BehavioralDriftDetector:
 
     def __init__(self, memory: BastionMemory):
         self.memory = memory
-        self._watch_thread: threading.Thread | None = None
-        self._stop_event = threading.Event()
+        self._watch_threads: dict[str, tuple[threading.Thread, threading.Event]] = {}
 
     def establish_baseline(self, agent_id: str, window: str = "7d") -> dict[str, Any]:
         """Establish drift baseline using SQL aggregate queries (no full memory load)."""
@@ -364,25 +363,35 @@ class BehavioralDriftDetector:
 
     def watch(self, agent_id: str, interval_seconds: int = 300) -> None:
         baseline = self.establish_baseline(agent_id)
+        stop_event = threading.Event()
 
         def _loop():
             logger.info("Drift watch started for agent %s (interval=%ds)", agent_id, interval_seconds)
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 try:
                     report = self.score_drift(agent_id, baseline)
                     self._store_drift_score(agent_id, report)
                 except Exception:
                     logger.exception("Drift watch iteration failed for agent %s", agent_id)
-                self._stop_event.wait(interval_seconds)
+                stop_event.wait(interval_seconds)
             logger.info("Drift watch stopped for agent %s", agent_id)
 
-        self._watch_thread = threading.Thread(target=_loop, daemon=True)
-        self._watch_thread.start()
+        thread = threading.Thread(target=_loop, daemon=True)
+        thread.start()
+        self._watch_threads[agent_id] = (thread, stop_event)
 
-    def stop_watch(self) -> None:
-        self._stop_event.set()
-        if self._watch_thread and self._watch_thread.is_alive():
-            self._watch_thread.join(timeout=5)
+    def stop_watch(self, agent_id: str | None = None) -> None:
+        if agent_id:
+            entry = self._watch_threads.pop(agent_id, None)
+            if entry:
+                thread, stop_event = entry
+                stop_event.set()
+                thread.join(timeout=5)
+        else:
+            for aid, (thread, stop_event) in list(self._watch_threads.items()):
+                stop_event.set()
+                thread.join(timeout=5)
+            self._watch_threads.clear()
 
     def _store_drift_score(self, agent_id: str, report: DriftReport) -> None:
         if self.memory._mock:

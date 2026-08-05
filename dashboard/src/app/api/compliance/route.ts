@@ -80,10 +80,17 @@ export async function GET(request: Request) {
     const hashResult = await safeQuery(hashChainSql, [agentId]);
     const hashStats = hashResult.rows?.[0] ?? { total: "0", chained: "0" };
 
+    const hashChainCoverage = parseInt(String(hashStats.total ?? "0")) > 0
+      ? Math.round((parseInt(String(hashStats.chained ?? "0")) / parseInt(String(hashStats.total ?? "1"))) * 100)
+      : 0;
+    const hasAuditTrail = (auditResult.rowCount ?? 0) > 0;
+    const hasMemories = parseInt(String(memStats.total ?? "0")) > 0;
+    const isCompliant = hashChainCoverage >= 95 && hasAuditTrail;
+
     return apiSuccess({
       report_id: crypto.randomUUID(),
       agent_id: agentId,
-      status: "COMPLIANT",
+      status: isCompliant ? "COMPLIANT" : "NON_COMPLIANT",
       generated_at: new Date().toISOString(),
       period: {
         start: startDate || "all",
@@ -97,20 +104,18 @@ export async function GET(request: Request) {
       },
       compliance_status: {
         framework: "EU AI Act Article 12",
-        tamper_evident_logging: true,
-        hash_chain_integrity: true,
+        tamper_evident_logging: hasAuditTrail,
+        hash_chain_integrity: hashChainCoverage >= 95,
         audit_trail_format: "IETF AAT draft-sharif-agent-audit-trail-00",
-        hash_chain_coverage: parseInt(String(hashStats.total ?? "0")) > 0
-          ? Math.round((parseInt(String(hashStats.chained ?? "0")) / parseInt(String(hashStats.total ?? "1"))) * 100)
-          : 0,
-        status: "COMPLIANT",
+        hash_chain_coverage: hashChainCoverage,
+        status: isCompliant ? "COMPLIANT" : "NON_COMPLIANT",
       },
       art12_requirements: {
-        automatic_event_recording: true,
-        tamper_evident_logs: true,
-        traceability: true,
-        human_oversight_verification: true,
-        post_market_monitoring: true,
+        automatic_event_recording: hasAuditTrail,
+        tamper_evident_logs: hashChainCoverage >= 95,
+        traceability: hasMemories && hasAuditTrail,
+        human_oversight_verification: hasAuditTrail,
+        post_market_monitoring: hasMemories,
       },
       recent_audit_trail: auditResult.rows.slice(0, 50).map((row: Record<string, unknown>) => ({
         action: row.action ?? "",

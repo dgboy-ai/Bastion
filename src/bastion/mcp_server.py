@@ -303,6 +303,10 @@ def create_server(
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
+    # L1/L2 Cache Router — wraps the memory engine for two-tier retrieval
+    from bastion.cache_router import MemoryRouter
+    _router = MemoryRouter(_shared, cache_size=1000, promotion_threshold=3)
+
     # Configure anyio thread pool to prevent exhaustion under high load
     _thread_pool_max = int(os.environ.get("BASTION_THREAD_POOL_MAX", "40"))
     try:
@@ -965,16 +969,6 @@ def create_server(
         # Use lower default threshold for mock mode (mock embeddings are less discriminative)
         if threshold is None:
             threshold = 0.3 if mem.is_mock else 0.8
-        internal_k = max(k, 200)
-        results = await anyio.to_thread.run_sync(
-            functools.partial(
-                mem.search,
-                query,
-                internal_k,
-                threshold,
-                memory_type,
-            )
-        )
 
         offset = 0
         if cursor:
@@ -989,18 +983,52 @@ def create_server(
                 logger.warning("Invalid cursor, resetting to offset 0")
                 offset = 0
 
-        page = results[offset : offset + k]
-        next_cursor = None
-        if offset + k < len(results):
-            import base64
+        if mem.is_mock:
+            # Mock store keeps the full candidate set in memory; fetch a large
+            # window so `total` reflects the real match count and slice in Python.
+            internal_k = max(k, 200)
+            results = await anyio.to_thread.run_sync(
+                functools.partial(
+                    _router.search,
+                    query,
+                    internal_k,
+                    threshold,
+                    memory_type,
+                )
+            )
+            total = len(results)
+            page = results[offset : offset + k]
+            next_cursor = None
+            if offset + k < total:
+                import base64
 
-            next_cursor = base64.b64encode(str(offset + k).encode()).decode()
+                next_cursor = base64.b64encode(str(offset + k).encode()).decode()
+        else:
+            # Real mode: push the offset down to SQL (LIMIT fetch_k OFFSET offset)
+            # so pagination is lazy instead of capped at an in-memory window.
+            fetch_k = min(offset + k + 1, 10_000)
+            results = await anyio.to_thread.run_sync(
+                functools.partial(
+                    _router.search,
+                    query,
+                    fetch_k,
+                    threshold,
+                    memory_type,
+                )
+            )
+            page = results[:k]
+            total = offset + len(page)
+            next_cursor = None
+            if len(results) > k:
+                import base64
+
+                next_cursor = base64.b64encode(str(offset + k).encode()).decode()
 
         return json.dumps(
             {
                 "results": [r.to_dict() for r in page],
                 "next_cursor": next_cursor,
-                "total": len(results),
+                "total": total,
             },
             indent=2,
             default=str,
@@ -1211,6 +1239,7 @@ def create_server(
         k: int = 5,
         threshold: float | None = None,
         memory_type: str | None = None,
+        cursor: str | None = None,
     ) -> str:
         if k < 1:
             return json.dumps({"error": "k must be >= 1"})
@@ -1221,24 +1250,66 @@ def create_server(
             return json.dumps({"error": "query must be a non-empty string"})
         mem = _resolve_memory(ctx)
         from bastion.kms import EncryptedMemoryWrapper
+
         wrapper = EncryptedMemoryWrapper(mem)
         if threshold is None:
             threshold = 0.3 if mem.is_mock else 0.8
-        internal_k = max(k, 200)
-        results = await anyio.to_thread.run_sync(
-            functools.partial(
-                wrapper.search,
-                query,
-                k=internal_k,
-                threshold=threshold,
-                memory_type=memory_type,
+
+        offset = 0
+        if cursor:
+            try:
+                import base64
+
+                decoded = base64.b64decode(cursor).decode("ascii")
+                offset = int(decoded)
+                if offset < 0 or offset > 1_000_000:
+                    raise ValueError(f"Cursor offset out of range: {offset}")
+            except Exception:
+                logger.warning("Invalid cursor, resetting to offset 0")
+                offset = 0
+
+        if mem.is_mock:
+            internal_k = max(k, 200)
+            results = await anyio.to_thread.run_sync(
+                functools.partial(
+                    wrapper.search,
+                    query,
+                    k=internal_k,
+                    threshold=threshold,
+                    memory_type=memory_type,
+                )
             )
-        )
-        page = results[:k]
+            total = len(results)
+            page = results[offset : offset + k]
+            next_cursor = None
+            if offset + k < total:
+                import base64
+
+                next_cursor = base64.b64encode(str(offset + k).encode()).decode()
+        else:
+            fetch_k = min(offset + k + 1, 10_000)
+            results = await anyio.to_thread.run_sync(
+                functools.partial(
+                    wrapper.search,
+                    query,
+                    k=fetch_k,
+                    threshold=threshold,
+                    memory_type=memory_type,
+                )
+            )
+            page = results[:k]
+            total = offset + len(page)
+            next_cursor = None
+            if len(results) > k:
+                import base64
+
+                next_cursor = base64.b64encode(str(offset + k).encode()).decode()
+
         return json.dumps(
             {
                 "results": [r.to_dict() for r in page],
-                "total": len(results),
+                "next_cursor": next_cursor,
+                "total": total,
             },
             indent=2,
             default=str,
@@ -1634,6 +1705,10 @@ def create_server(
                 return json.dumps({"error": f"Memory {memory_id} not found"})
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(record.to_dict(), indent=2, default=str)
+        except ValueError as e:
+            if "MemoryGuard" in str(e):
+                return json.dumps({"error": f"Blocked by security guard: {e}"})
+            return json.dumps({"error": str(e)})
         except Exception:
             logger.exception("memory_correct failed")
             return json.dumps({"error": "Correct failed — check server logs"})
@@ -1658,6 +1733,8 @@ def create_server(
         try:
             mem = _resolve_memory(ctx)
             health = await anyio.to_thread.run_sync(mem.memory_health)
+            # Include L1/L2 cache router stats
+            health["cache_router"] = _router.get_stats()
             return json.dumps(health, indent=2, default=str)
         except Exception:
             logger.exception("memory_health failed")
@@ -3249,6 +3326,16 @@ def create_server(
                 "name": "memory_store_batch",
                 "description": "Atomically batch store up to 100 memories in a single SERIALIZABLE transaction",
                 "read_only": False,
+            },
+            {
+                "name": "memory_store_encrypted",
+                "description": "Store a memory encrypted with AWS KMS AES-256-GCM envelope encryption (zero-knowledge)",
+                "read_only": False,
+            },
+            {
+                "name": "memory_search_encrypted",
+                "description": "KMS-encrypted memory search: embed on plaintext, decrypt transparently on retrieval",
+                "read_only": True,
             },
             {
                 "name": "memory_timetravel",

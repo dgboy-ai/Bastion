@@ -1,0 +1,48 @@
+{
+  "mcpServers": {
+    "bastion-memory": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8005/mcp",
+      "headers": {
+        "Authorization": "Bearer bastion-f6ce4b88f8f1ecb1bbfba069ea86955e30be9c1b"
+      },
+      "autoApprove": [
+        "memory_store",
+        "memory_store_encrypted",
+        "memory_search_encrypted",
+        "memory_store_batch",
+        "memory_timetravel",
+        "memory_audit",
+        "memory_heal",
+        "memory_delete",
+        "memory_pin",
+        "memory_get_pinned",
+        "memory_list",
+        "memory_correct",
+        "memory_health",
+        "forensic_report",
+        "memory_apply_patch",
+        "resolve_conflict",
+        "ltm_check_reuse",
+        "ltm_store_analysis",
+        "ltm_invalidate",
+        "detect_contradictions",
+        "scan_all_contradictions",
+        "dream",
+        "dream_history",
+        "detect_observations",
+        "multi_signal_search",
+        "context_pack",
+        "agent_schema",
+        "a2a_bridge",
+        "managed_mcp_list_tools",
+        "managed_mcp_call",
+        "invoke_agent_skill",
+        "list_agent_skills",
+        "ccloud_exec"
+      ]
+    }
+  }
+}

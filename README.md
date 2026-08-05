@@ -1,15 +1,28 @@
 # Bastion Shield — Memory Integrity for Production AI Agents
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CockroachDB](https://img.shields.io/badge/CockroachDB-v26.2.1-blue)](https://cockroachlabs.com)
-[![AWS](https://img.shields.io/badge/AWS-Lambda%20%7C%20KMS%20%7C%20S3-orange)](https://aws.amazon.com)
-[![Production Ready](https://img.shields.io/badge/Status-Production%20Ready-green.svg)](#)
+<p align="center">
+  <img src="docs/architecture.svg" alt="Bastion Logo" width="540px" style="max-width: 100%; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+</p>
+
+<p align="center">
+  <strong>Cryptographically signed, self-healing memory layer for autonomous AI agent networks.</strong>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="MIT License" /></a>
+  <a href="https://cockroachlabs.com"><img src="https://img.shields.io/badge/CockroachDB-v23.2%2B-blue?style=flat-square&logo=cockroachlabs" alt="CockroachDB" /></a>
+  <a href="https://aws.amazon.com"><img src="https://img.shields.io/badge/AWS-KMS%20%7C%20Lambda%20%7C%20S3-orange?style=flat-square&logo=amazon-aws" alt="AWS" /></a>
+  <a href="#performance"><img src="https://img.shields.io/badge/Recall-98.2%25-green?style=flat-square" alt="Recall Status" /></a>
+  <a href="#coverage"><img src="https://img.shields.io/badge/OWASP_TPR-88.2%25-red?style=flat-square" alt="OWASP Detection" /></a>
+</p>
+
+---
 
 AI agents are rapidly entering production workflows across finance, healthcare, and software engineering. But today's agentic systems suffer from a critical vulnerability: **they cannot prove whether a memory has been modified, poisoned, or silently corrupted.** 
 
 When an agent's memory is hijacked, the agent acts on compromised facts without detection.
 
-**Bastion is a production-grade memory integrity layer for autonomous AI agents. It doesn't just store memory. It proves memory.**
+**Bastion is a production-grade memory integrity layer for autonomous AI agents. It doesn't just store memory. It cryptographically proves memory.**
 
 *Built on CockroachDB's distributed SQL engine and deployed on AWS for resilient, globally available agent memory.*
 
@@ -47,10 +60,10 @@ AI agents are increasingly executing production tasks—such as updating code re
 
 ## ⚡ What Bastion Guarantees
 
--   **Detect Poisoned Memories** — Block prompt injection attacks at the memory boundary.
--   **Recover Trusted History** — Time-travel back to a clean state instantly when tampering is detected.
--   **Prove Every Decision** — Cryptographically trace memory provenance using tamper-evident HMAC hash chains.
--   **Comply with AI Regulations** — Meet EU AI Act Article 12 record-keeping requirements out-of-the-box (enforced August 2026).
+- **Detect Poisoned Memories** — Block prompt injection attacks at the memory boundary.
+- **Recover Trusted History** — Time-travel back to a clean state instantly when tampering is detected.
+- **Prove Every Decision** — Cryptographically trace memory provenance using tamper-evident HMAC hash chains.
+- **Comply with AI Regulations** — Meet EU AI Act Article 12 record-keeping requirements out-of-the-box (enforced August 2026).
 
 ---
 
@@ -113,10 +126,10 @@ Bastion relies on the core architectural primitives of CockroachDB to act as the
 
 ## 🎥 90-Second Demo Flow
 
-1.  **Memory Poisoning Attempt**: An attacker injects a prompt injection payload.
-2.  **Detection**: The OWASP ASI06 Guard intercepts and blocks the write, logging it to the audit log.
-3.  **Forensics & Time Travel**: The agent uses `AS OF SYSTEM TIME` to view its state 5 seconds prior to the attack.
-4.  **Self-Healing**: Bastion compares the current broken hash chain with historical MVCC state and automatically restores database integrity.
+1. **Memory Poisoning Attempt**: An attacker injects a prompt injection payload.
+2. **Detection**: The OWASP ASI06 Guard intercepts and blocks the write, logging it to the audit log.
+3. **Forensics & Time Travel**: The agent uses `AS OF SYSTEM TIME` to view its state 5 seconds prior to the attack.
+4. **Self-Healing**: Bastion compares the current broken hash chain with historical MVCC state and automatically restores database integrity.
 
 ---
 
@@ -135,6 +148,7 @@ Integrity Verification (Audit)➔ Instant
 
 ## 🏁 Quick Start
 
+### 1. Start Deployed Servers locally
 Get a local Bastion stack up and running in mock mode:
 ```bash
 git clone https://github.com/dgboy-ai/Bastion.git && cd Bastion
@@ -148,17 +162,58 @@ python -m bastion.mcp_server &
 python -m bastion.a2a_server &
 ```
 
+### 2. Start the Observability Dashboard (Frontend)
+Run the Next.js web application to view live memory telemetry, drift logs, and the poisoning attack simulator:
+```bash
+cd dashboard
+npm install
+npm run dev
+# Opens at http://localhost:3000
+```
+
+### 3. Integrate Bastion MCP into your IDE
+Bastion provides an HTTP SSE endpoint for MCP tools at `http://127.0.0.1:8005/mcp`. To easily integrate Bastion into your coding assistant, copy the templates from our config folder:
+* [**Cline / Cursor Config** (HTTP SSE)](mcp_configs/cline.json)
+* [**GitHub Copilot Config** (HTTP)](mcp_configs/copilot.json)
+* [**Cursor Config** (Local Subprocess)](mcp_configs/cursor.json)
+* [**Claude Desktop Config** (Local Subprocess)](mcp_configs/claude.json)
+
+
+### 4. Python SDK Usage Example
+Integrate Bastion's self-healing memory ledger into your custom AI agent workspace:
+
+```python
+from bastion import BastionMemory
+
+# Initialize Bastion Memory layer connected to CockroachDB
+memory = BastionMemory(
+    connection_uri="postgresql://user:pass@aws-crdb.bastion.live:26257/defaultdb",
+    encryption_key_kms="arn:aws:kms:ap-south-1:123456789:key/..."
+)
+
+# Store memory with automatic HMAC chain linkage & Guard validation
+memory_id = memory.store(
+    agent_id="portfolio-executor",
+    content="Execute wire transfer of $25,000 to treasury routing #1221.",
+    metadata={"scope": "wire_transfer", "auth_token": "sig_ed25519_..."}
+)
+
+# Verify the cryptographic chain state and ledger integrity
+audit = memory.verify_integrity()
+print(f"Ledger Integrity: {audit.is_valid} | Checked Records: {audit.checked_records}")
+```
+
 For full setup guides, refer to [Local Development](docs/DEVELOPMENT.md) and [Cloud Deployment](docs/DEPLOYMENT.md).
 
 ---
 
 ## 📂 Project Documentation
 
--   **`docs/`** — Deep-dive guides for [MCP tools](docs/MCP_SERVER.md), [A2A skills](docs/A2A_SERVER.md), [AWS services](docs/AWS_SERVICES.md), [Deployment](docs/DEPLOYMENT.md), [Local Development](docs/DEVELOPMENT.md), and [EU AI Act compliance](docs/EU_AI_ACT.md).
--   **`src/bastion/`** — Core python middleware hosting the MCP and A2A servers.
--   **`dashboard/`** — Next.js 16 dashboard visualizing memory health, entropy drift, and hash status.
--   **`lambda/`** — AWS Lambda CDC handlers and webhook dispatchers.
--   **`terraform/`** — Infrastructure as Code (IaC) for AWS S3 and KMS key provisioning.
+- **`docs/`** — Deep-dive guides for [MCP tools](docs/MCP_SERVER.md), [A2A skills](docs/A2A_SERVER.md), [AWS services](docs/AWS_SERVICES.md), [Deployment](docs/DEPLOYMENT.md), [Local Development](docs/DEVELOPMENT.md), and [EU AI Act compliance](docs/EU_AI_ACT.md).
+- **`src/bastion/`** — Core python middleware hosting the MCP and A2A servers.
+- **`dashboard/`** — Next.js 16 dashboard visualizing memory health, entropy drift, and hash status.
+- **`lambda/`** — AWS Lambda CDC handlers and webhook dispatchers.
+- **`terraform/`** — Infrastructure as Code (IaC) for AWS S3 and KMS key provisioning.
 
 ---
 

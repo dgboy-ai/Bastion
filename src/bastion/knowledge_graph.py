@@ -305,21 +305,22 @@ class KnowledgeGraph:
             self._set_rls(conn)
         try:
             with conn.cursor() as cur:
-                cur.execute("SET TRANSACTION AS OF SYSTEM TIME %s::TIMESTAMPTZ", (timestamp,))
-
+                # Use statement-level AS OF SYSTEM TIME to avoid tainting the transaction
                 if entity:
                     cur.execute(
                         "SELECT entity_id, agent_id, entity_type, name, attributes, "
                         "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s AND name = %s",
-                        (self.agent_id, entity),
+                        "FROM agent_entities AS OF SYSTEM TIME %s::TIMESTAMPTZ "
+                        "WHERE agent_id = %s AND name = %s",
+                        (timestamp, self.agent_id, entity),
                     )
                 else:
                     cur.execute(
                         "SELECT entity_id, agent_id, entity_type, name, attributes, "
                         "valid_from, valid_until, created_at "
-                        "FROM agent_entities WHERE agent_id = %s",
-                        (self.agent_id,),
+                        "FROM agent_entities AS OF SYSTEM TIME %s::TIMESTAMPTZ "
+                        "WHERE agent_id = %s",
+                        (timestamp, self.agent_id),
                     )
                 entities = [EntityRecord.from_row(r).to_dict() for r in cur.fetchall()]
 
@@ -541,7 +542,7 @@ class KnowledgeGraph:
                     },
                     {
                         "role": "user",
-                        "content": (f"Text: {content}\nExisting triples: {triples_text}\nReturn JSON array only:"),
+                        "content": (f"Text: {content[:4096]}\nExisting triples: {triples_text}\nReturn JSON array only:"),
                     },
                 ],
                 temperature=0.0,

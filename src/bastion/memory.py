@@ -30,6 +30,15 @@ logger = get_logger(__name__)
 _guard_bypass_counter = 0
 _guard_bypass_lock = threading.Lock()
 
+# Modules authorized to bypass the guard (internal system-generated content only)
+_GUARD_BYPASS_ALLOWLIST = frozenset({
+    "bastion.capture_hooks",
+    "bastion.procedural",
+    "bastion.thought_chain",
+    "bastion.kms",
+    "bastion.cli",
+})
+
 _local_model_lock = threading.Lock()
 _local_model = None
 
@@ -392,16 +401,53 @@ class BastionMemory:
                     agent_id=self.agent_id,
                     pii_types=pii_types,
                 )
+                # Store PII detection metadata for forensic audit
+                if metadata is None:
+                    metadata = {}
+                metadata["_pii_detected"] = True
+                metadata["_pii_types"] = list(pii_types)
                 content = redacted_content
         else:
             global _guard_bypass_counter
-            if not _guard_bypass_token:
+            # Allowlist check: only authorized internal modules can bypass guard
+            import inspect as _inspect
+
+            _caller_module = None
+            try:
+                _frame = _inspect.currentframe()
+                if _frame and _frame.f_back and _frame.f_back.f_globals:
+                    _caller_module = _frame.f_back.f_globals.get("__name__", "")
+            except Exception:
+                pass
+            if _caller_module not in _GUARD_BYPASS_ALLOWLIST:
                 with _guard_bypass_lock:
                     _guard_bypass_counter += 1
                 import traceback
 
                 logger.warning(
-                    "Guard bypass without token — possible unauthorized bypass",
+                    "Guard bypass from unauthorized module — BLOCKING",
+                    agent_id=self.agent_id,
+                    memory_type=memory_type,
+                    caller_module=_caller_module,
+                    content_preview=content[:80] if content else "",
+                    bypass_count=_guard_bypass_counter,
+                    stack="\n".join(traceback.format_stack()[-4:-1]),
+                )
+                # Fall through to run the guard instead of bypassing
+                report = self._guard.check(content)
+                if not report.is_safe:
+                    details = "; ".join(f"{f.detector}: {f.detail}" for f in report.findings)
+                    raise SecurityBlockError(
+                        f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}",
+                        report=report,
+                    )
+            elif not _guard_bypass_token or not isinstance(_guard_bypass_token, str) or len(_guard_bypass_token) < 16:
+                with _guard_bypass_lock:
+                    _guard_bypass_counter += 1
+                import traceback
+
+                logger.warning(
+                    "Guard bypass without valid token — possible unauthorized bypass",
                     agent_id=self.agent_id,
                     memory_type=memory_type,
                     content_preview=content[:80] if content else "",
@@ -413,6 +459,7 @@ class BastionMemory:
                     "Guard bypassed via _skip_guard=True (authorized internal caller)",
                     agent_id=self.agent_id,
                     memory_type=memory_type,
+                    caller_module=_caller_module,
                 )
 
         if self._mock:
@@ -659,6 +706,12 @@ class BastionMemory:
         if not memory_id or not isinstance(memory_id, str):
             raise ValueError(f"memory_id must be a non-empty string, got {type(memory_id).__name__}")
         _validate_content(new_content)
+        report = self._guard.check(new_content)
+        if not report.is_safe:
+            details = "; ".join(f"{f.category}: {f.evidence[:80]}" for f in report.findings[:5])
+            raise ValueError(
+                f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}"
+            )
         if self._mock:
             return _mock.mock_correct_memory(self.agent_id, memory_id, new_content, metadata)
         return self._correct_memory_real(memory_id, new_content, metadata)
@@ -691,6 +744,16 @@ class BastionMemory:
         """
         if not memory_id or not isinstance(memory_id, str):
             raise ValueError("memory_id must be a non-empty string")
+        # Guard-scan all string values in patch operations
+        for op in patch_ops:
+            val = op.get("value")
+            if isinstance(val, str) and val:
+                report = self._guard.check(val)
+                if not report.is_safe:
+                    details = "; ".join(f"{f.detector}: {f.detail}" for f in report.findings)
+                    raise ValueError(
+                        f"Patch value blocked by MemoryGuard [{report.poisoning_risk}]: {details}"
+                    )
         if self._mock:
             return _mock.mock_apply_patch(self.agent_id, memory_id, patch_ops)
         return self._apply_patch_real(memory_id, patch_ops)
@@ -703,6 +766,7 @@ class BastionMemory:
         memory_type: str | None = None,
         namespace_scope: str = "own",
         region_filter: str | None = None,
+        offset: int = 0,
     ) -> list[MemoryRecord]:
         # Use lower default threshold for mock mode (mock embeddings are less discriminative)
         if threshold is None:
@@ -711,10 +775,15 @@ class BastionMemory:
         _validate_k(k)
         _validate_threshold(threshold)
         _validate_namespace_scope(namespace_scope)
+        if offset < 0:
+            raise ValueError(f"offset must be >= 0, got {offset}")
         if region_filter is not None and (not isinstance(region_filter, str) or not region_filter.strip()):
             raise ValueError(f"region_filter must be a non-empty string when provided, got {region_filter!r}")
         ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
         if self._mock:
+            # The mock store keeps the full candidate set in memory, so the MCP
+            # layer slices pages from the complete result list. `offset` is not
+            # threaded into the mock backend to preserve that contract.
             return _mock.mock_search_memory(
                 ns_agent_id,
                 query,
@@ -724,7 +793,9 @@ class BastionMemory:
                 namespace_scope,
                 region_filter=region_filter,
             )
-        return self._search_real(query, k, threshold, memory_type, namespace_scope, region_filter=region_filter)
+        return self._search_real(
+            query, k, threshold, memory_type, namespace_scope, region_filter=region_filter, offset=offset
+        )
 
     def list_all(
         self,
@@ -1129,6 +1200,7 @@ class BastionMemory:
         memory_type: str | None,
         namespace_scope: str = "own",
         region_filter: str | None = None,
+        offset: int = 0,
     ) -> list[MemoryRecord]:
         pool = self.get_pool()
         conn = pool.acquire(timeout=30.0)
@@ -1145,7 +1217,7 @@ class BastionMemory:
             if using_hash_embeddings:
                 ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
                 result = self._search_keyword_fallback(
-                    query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn
+                    query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn, offset=offset
                 )
                 return result
 
@@ -1179,8 +1251,8 @@ class BastionMemory:
                         "FROM agent_memory "
                         f"WHERE {agent_filter} AND memory_type = %s {region_clause} "
                         "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY decay_score DESC LIMIT %s",
-                        [query_vector_str, decay_rate, *kw_terms, agent_param, memory_type, *region_param, k],
+                        "ORDER BY decay_score DESC LIMIT %s OFFSET %s",
+                        [query_vector_str, decay_rate, *kw_terms, agent_param, memory_type, *region_param, k, offset],
                     )
                 else:
                     cur.execute(
@@ -1191,8 +1263,8 @@ class BastionMemory:
                         "FROM agent_memory "
                         f"WHERE {agent_filter} {region_clause} "
                         "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY decay_score DESC LIMIT %s",
-                        [query_vector_str, decay_rate, *kw_terms, agent_param, *region_param, k],
+                        "ORDER BY decay_score DESC LIMIT %s OFFSET %s",
+                        [query_vector_str, decay_rate, *kw_terms, agent_param, *region_param, k, offset],
                     )
                 rows = cur.fetchall()
                 results = []
@@ -1204,7 +1276,7 @@ class BastionMemory:
                 if not results:
                     ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
                     keyword_results = self._search_keyword_fallback(
-                        query, k, 0.0, memory_type, ns_agent_id, _existing_conn=conn
+                        query, k, 0.0, memory_type, ns_agent_id, _existing_conn=conn, offset=offset
                     )
                     if keyword_results:
                         return keyword_results
@@ -1218,7 +1290,9 @@ class BastionMemory:
                     extra={"agent_id": self.agent_id, "query": query[:100]},
                 )
                 ns_agent_id = self.namespace if namespace_scope == "shared" else self.agent_id
-                return self._search_keyword_fallback(query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn)
+                return self._search_keyword_fallback(
+                    query, k, threshold, memory_type, ns_agent_id, _existing_conn=conn, offset=offset
+                )
             if "does not exist" in str(e).lower():
                 logger.warning(
                     "Schema may be missing columns. Run: "
@@ -1532,8 +1606,11 @@ class BastionMemory:
         except ValueError as e:
             if "future" in str(e):
                 raise
-            # If it's not a valid ISO timestamp, let CockroachDB handle the error
-            pass
+            # Invalid timestamp — reject to prevent SQL injection via f-string interpolation
+            raise ValueError(
+                f"Invalid timestamp format: {timestamp!r}. "
+                "Expected ISO 8601 format (e.g. '2024-01-01T00:00:00Z')."
+            ) from e
         return timestamp
 
     def _audit_real(self, agent_id: str) -> list[AuditEntry]:
@@ -2070,6 +2147,7 @@ class BastionMemory:
         memory_type: str | None,
         agent_id: str,
         _existing_conn: Any = None,
+        offset: int = 0,
     ) -> list[MemoryRecord]:
         """Keyword-based fallback search when vector search degrades completely.
 
@@ -2095,16 +2173,16 @@ class BastionMemory:
                         f"WHERE agent_id = %s AND memory_type = %s "
                         f"AND ({like_conditions}) "
                         "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY importance_score DESC LIMIT %s",
-                        (agent_id, memory_type, *like_params, k),
+                        "ORDER BY importance_score DESC LIMIT %s OFFSET %s",
+                        (agent_id, memory_type, *like_params, k, offset),
                     )
                 else:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS} FROM agent_memory "
                         f"WHERE agent_id = %s AND ({like_conditions}) "
                         "AND (expires_at IS NULL OR expires_at > now()) "
-                        "ORDER BY importance_score DESC LIMIT %s",
-                        (agent_id, *like_params, k),
+                        "ORDER BY importance_score DESC LIMIT %s OFFSET %s",
+                        (agent_id, *like_params, k, offset),
                     )
                 return [MemoryRecord.from_row(r) for r in cur.fetchall()]
         except Exception as exc:

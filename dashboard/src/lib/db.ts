@@ -79,16 +79,21 @@ async function ensureSchema(pool: any) {
             if (err instanceof Error && (err.message.includes("already exists") || err.message.includes("duplicate"))) {
               // Ignore expected idempotent duplicates
             } else {
-              console.warn(`[DB Bootstrap] Statement warning in ${file}: ${err instanceof Error ? err.message : String(err)}`);
+              // Throw on non-idempotent SQL errors to prevent partial migration
+              throw new Error(`Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
       }
       const elapsed = Date.now() - start;
 
+      // Compute SHA-256 checksum of migration file content
+      const { createHash } = await import("crypto");
+      const checksum = createHash("sha256").update(sql).digest("hex");
+
       // Record migration version as applied
       await pool.query(
         "INSERT INTO _schema_migrations (version, filename, checksum, execution_ms) VALUES ($1, $2, $3, $4) ON CONFLICT (version) DO NOTHING",
-        [version, file, "", elapsed]
+        [version, file, checksum, elapsed]
       );
       appliedCount++;
     }
@@ -131,7 +136,22 @@ async function getDynamicConnectionString(): Promise<string | null> {
   if (process.env.NODE_ENV === "production") return null;
   try {
     const h = await headers();
-    return h.get("x-bastion-conn") || null;
+    const conn = h.get("x-bastion-conn");
+    if (!conn) return null;
+    // Require admin API key for dynamic connection switching to prevent DB pivoting
+    const { requireAuth } = await import("@/lib/api-auth");
+    const fakeRequest = new Request("http://localhost", { headers: Object.fromEntries(Object.entries(h)) });
+    const authError = requireAuth(fakeRequest);
+    if (authError) {
+      console.warn("[DB] Dynamic connection rejected: admin auth required");
+      return null;
+    }
+    // Validate connection string format (must be a cockroachdb:// URI)
+    if (!conn.startsWith("postgresql://") && !conn.startsWith("cockroachdb://")) {
+      console.warn("[DB] Dynamic connection rejected: invalid protocol");
+      return null;
+    }
+    return conn;
 } catch (err: unknown) {
     return null;
   }

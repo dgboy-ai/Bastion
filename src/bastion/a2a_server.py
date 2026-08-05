@@ -162,6 +162,16 @@ def create_a2a_server(
         "context_pack": "context_pack",
         "agent_schema": "agent_schema",
         "a2a_bridge": "a2a_bridge",
+        "memory_store_encrypted": "memory_store_encrypted",
+        "memory_search_encrypted": "memory_search_encrypted",
+        "memory_store_batch": "memory_store_batch",
+        "forensic_report": "forensic_report",
+        "managed_mcp_list_tools": "managed_mcp_list_tools",
+        "managed_mcp_call": "managed_mcp_call",
+        "invoke_agent_skill": "invoke_agent_skill",
+        "list_agent_skills": "list_agent_skills",
+        "ccloud_exec": "ccloud_exec",
+        "compliance_report": "compliance_report",
     }
 
     # -- RBAC: role-based skill access control --
@@ -178,7 +188,7 @@ def create_a2a_server(
         "detect_observations": "reader",
         "scan_all_contradictions": "reader",
         "context_pack": "reader",
-        "agent_schema": "reader",
+        "agent_schema": "admin",
         "a2a_bridge": "reader",
         "ltm_check_reuse": "reader",
         "dream_history": "reader",
@@ -196,23 +206,36 @@ def create_a2a_server(
         "memory_delete": "admin",
         "memory_heal": "admin",
         "dream": "admin",
+        "memory_store_encrypted": "writer",
+        "memory_search_encrypted": "reader",
+        "memory_store_batch": "writer",
+        "forensic_report": "reader",
+        "managed_mcp_list_tools": "reader",
+        "managed_mcp_call": "writer",
+        "invoke_agent_skill": "writer",
+        "list_agent_skills": "reader",
+        "ccloud_exec": "admin",
+        "compliance_report": "reader",
     }
     _role_hierarchy = {"reader": 0, "writer": 1, "admin": 2}
 
     def _resolve_role(api_key_value: str) -> str:
         """Resolve role from API key. Supports per-key role mapping via BASTION_A2A_ROLES env var.
-        Format: BASTION_A2A_ROLES=key1:writer,key2:reader,default:admin
+        Format: BASTION_A2A_ROLES=sha256(key1):writer,sha256(key2):reader,default:admin
         Falls back to BASTION_A2A_ROLE env var, then 'admin' for single-key mode."""
+        import hashlib as _hashlib
         import secrets as _secrets
 
+        key_hash = _hashlib.sha256(api_key_value.encode()).hexdigest() if api_key_value else ""
         role_env = os.environ.get("BASTION_A2A_ROLE", "")
         roles_map = os.environ.get("BASTION_A2A_ROLES", "")
         if roles_map:
             for pair in roles_map.split(","):
                 if ":" in pair:
-                    k, v = pair.split(":", 1)
-                    # Constant-time comparison to prevent timing side-channel
-                    if len(k.strip()) == len(api_key_value) and _secrets.compare_digest(k.strip(), api_key_value):
+                    stored_hash, v = pair.split(":", 1)
+                    stored_hash = stored_hash.strip()
+                    # Support both hashed and raw key lookup for backwards compatibility
+                    if stored_hash == key_hash or (len(stored_hash) == len(api_key_value) and _secrets.compare_digest(stored_hash, api_key_value)):
                         return v.strip()
         if role_env:
             return role_env
@@ -454,11 +477,19 @@ def create_a2a_server(
 
     _cleanup_interval = int(os.environ.get("A2A_CLEANUP_INTERVAL", "3600"))  # seconds
     _task_max_age = int(os.environ.get("A2A_TASK_MAX_AGE", "86400"))  # seconds
+    _cleanup_last_run = 0.0  # coordinate with asyncio cleanup to avoid double DB work
+    _cleanup_lock = threading.Lock()  # prevent concurrent thread+asyncio cleanup
 
     def _cleanup_loop() -> None:
         while True:
             time.sleep(_cleanup_interval)
             try:
+                now = time.time()
+                # Coordinate with asyncio cleanup: skip if asyncio ran recently
+                with _cleanup_lock:
+                    if now - _cleanup_last_run < _cleanup_interval / 2:
+                        continue
+                    _cleanup_last_run = now
                 if not memory._mock:
                     deleted = memory._a2a_store.cleanup_expired(max_age_seconds=_task_max_age)
                     if deleted:
@@ -706,16 +737,20 @@ def create_a2a_server(
     _idempotency_ttl = 86400
     _idempotency_max_size = 10000  # Prevent unbounded memory growth
 
-    async def _check_idempotency(key: str) -> dict[str, Any] | None:
+    async def _check_idempotency(key: str, caller_token: str = "") -> dict[str, Any] | None:
+        # Namespace idempotency key by caller to prevent cross-agent replay
+        namespaced_key = f"{hashlib.sha256(caller_token.encode()).hexdigest()[:16]}:{key}" if caller_token else key
         with _idempotency_lock:
-            entry = _idempotency_store.get(key)
+            entry = _idempotency_store.get(namespaced_key)
             if entry and time.time() - entry.get("_ts", 0) < _idempotency_ttl:
                 return entry
             if entry:
-                _idempotency_store.pop(key, None)
+                _idempotency_store.pop(namespaced_key, None)
             return None
 
-    def _set_idempotency(key: str, data: dict[str, Any]) -> None:
+    def _set_idempotency(key: str, data: dict[str, Any], caller_token: str = "") -> None:
+        # Namespace idempotency key by caller to prevent cross-agent replay
+        namespaced_key = f"{hashlib.sha256(caller_token.encode()).hexdigest()[:16]}:{key}" if caller_token else key
         with _idempotency_lock:
             # Evict expired entries and enforce max size
             if len(_idempotency_store) >= _idempotency_max_size:
@@ -901,26 +936,48 @@ def create_a2a_server(
             pinned_fetch_url += f"?{parsed_url.query}"
         logger.debug("DNS pinned for sender auth", extra={"hostname": hostname, "pinned_ip": pinned_ip})
 
-        # Check cache
+        # Check cache (in-memory first, then CockroachDB for multi-instance sharing)
         now = time.time()
         with _sender_key_cache_lock:
             cached = _sender_key_cache.get(sender_url)
         if cached and cached[1] > now:
             pubkey_pem = cached[0]
         else:
-            # Fetch sender's agent card via pinned IP (no re-resolve)
-            try:
-                import httpx
+            # Try loading from CockroachDB (shared across instances)
+            pubkey_pem = None
+            if not memory._mock:
+                try:
+                    conn = memory.get_pool().acquire(timeout=5)
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT public_key_pem, expires_at FROM sender_key_cache WHERE url = %s AND expires_at > now()",
+                                (sender_url,),
+                            )
+                            row = cur.fetchone()
+                            if row:
+                                pubkey_pem = row[0]
+                                with _sender_key_cache_lock:
+                                    _sender_key_cache[sender_url] = (pubkey_pem, row[1].timestamp() if hasattr(row[1], 'timestamp') else now + _signature_cache_ttl)
+                    finally:
+                        memory.get_pool().release(conn)
+                except Exception:
+                    logger.debug("DB sender key cache lookup failed, falling back to fetch")
 
-                async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-                    resp = await client.get(pinned_fetch_url)
-                    if resp.status_code != 200:
-                        logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
-                        return False
-                    card = resp.json()
-                    if not verify_card_signed_trusted(card, _trust_registry):
-                        logger.warning("Sender card signature verification FAILED", extra={"sender_url": sender_url})
-                        return False
+            if not pubkey_pem:
+                # Fetch sender's agent card via pinned IP (no re-resolve)
+                try:
+                    import httpx
+
+                    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
+                        resp = await client.get(pinned_fetch_url)
+                        if resp.status_code != 200:
+                            logger.warning("Failed to fetch sender agent card", extra={"sender_url": sender_url})
+                            return False
+                        card = resp.json()
+                        if not verify_card_signed_trusted(card, _trust_registry):
+                            logger.warning("Sender card signature verification FAILED", extra={"sender_url": sender_url})
+                            return False
                     sig_info = card.get("signature", {})
                     pubkey_pem = sig_info.get("publicKeyPem", "")
                     if not pubkey_pem:
@@ -931,9 +988,29 @@ def create_a2a_server(
                         if len(_sender_key_cache) > _signature_cache_maxsize:
                             oldest = min(_sender_key_cache, key=lambda k: _sender_key_cache[k][1])
                             _sender_key_cache.pop(oldest)
-            except Exception:
-                logger.exception("Error fetching sender agent card", extra={"sender_url": sender_url})
-                return False
+                    # Persist to CockroachDB for multi-instance sharing
+                    if not memory._mock:
+                        try:
+                            conn = memory.get_pool().acquire(timeout=5)
+                            try:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        """INSERT INTO sender_key_cache (url, public_key_pem, expires_at, last_verified)
+                                           VALUES (%s, %s, now() + interval '%s seconds', now())
+                                           ON CONFLICT (url) DO UPDATE SET
+                                           public_key_pem = EXCLUDED.public_key_pem,
+                                           expires_at = EXCLUDED.expires_at,
+                                           last_verified = now()""",
+                                        (sender_url, pubkey_pem, _signature_cache_ttl),
+                                    )
+                                conn.commit()
+                            finally:
+                                memory.get_pool().release(conn)
+                        except Exception:
+                            logger.debug("Failed to persist sender key to DB cache")
+                except Exception:
+                    logger.exception("Error fetching sender agent card", extra={"sender_url": sender_url})
+                    return False
 
         # Verify signature
         try:
@@ -1187,8 +1264,7 @@ def create_a2a_server(
                 return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
-            is_loopback_client = client_ip in ("127.0.0.1", "::1", "localhost")
-            if _api_key and not is_loopback_client and (not token or not _verify_api_key(token)):
+            if _api_key and (not token or not _verify_api_key(token)):
                 _record_auth_failure(client_ip)
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             if _api_key:
@@ -1429,9 +1505,41 @@ def create_a2a_server(
         rid = getattr(request.state, "request_id", uuid.uuid4().hex)
         if not _check_version(request):
             return JSONResponse({"error": "Unsupported A2A version"}, status_code=400)
+
+        # Verify sender signature (same as non-streaming endpoint)
+        raw_body = await _read_body(request)
+        if _strict_auth:
+            sender_url = request.headers.get("X-Sender-URL", "")
+            sender_sig = request.headers.get("X-Sender-Signature", "")
+            if not (sender_url and sender_sig):
+                logger.warning(
+                    "Strict auth: missing signature headers in streaming",
+                    extra={"request_id": rid, "sender_url": sender_url},
+                )
+                return JSONResponse(
+                    {"error": "Missing required signature headers (X-Sender-URL, X-Sender-Signature)"},
+                    status_code=401,
+                )
+            try:
+                verified = await _verify_sender_signature(request, raw_body)
+                if not verified:
+                    logger.warning(
+                        "Signature verification failed in streaming",
+                        extra={"request_id": rid, "sender_url": sender_url},
+                    )
+                    return JSONResponse(
+                        {"error": "Signature verification failed: invalid or missing sender signature"},
+                        status_code=401,
+                    )
+            except Exception:
+                logger.exception("Signature verification error in streaming", extra={"request_id": rid})
+                return JSONResponse(
+                    {"error": "Signature verification error"},
+                    status_code=500,
+                )
+
         try:
-            raw = await _read_body(request)
-            body = json.loads(raw)
+            body = json.loads(raw_body)
         except Exception:
             logger.exception("Invalid request body in /message:sendStream")
             return JSONResponse({"error": "Invalid request"}, status_code=400)
@@ -1764,9 +1872,7 @@ def create_a2a_server(
             is_loopback_client = cip in ("127.0.0.1", "::1", "localhost")
             auth_header = request.headers.get("Authorization", "")
             caller_token = auth_header.removeprefix("Bearer ") if auth_header.startswith("Bearer ") else ""
-        caller_role = "admin" if is_loopback_client else (
-            _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
-        )
+        caller_role = _resolve_role(caller_token) if caller_token else ("reader" if not _api_key else "reader")
         # Warn when running without API key (dev mode only — not for production)
         if not _api_key and not caller_token:
             logger.debug("No API key configured — unauthenticated requests treated as reader (dev mode)")
@@ -1940,10 +2046,15 @@ async def _read_body(request: Request, max_bytes: int = _MAX_REQUEST_BYTES) -> b
 
 def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
     # OWASP ASI06 guard screening for content-bearing operations
-    if method in ("store", "resolve_conflict", "broadcast", "memory_correct"):
+    if method in ("store", "memory_store_encrypted", "memory_store_batch", "resolve_conflict", "broadcast", "memory_correct"):
         _content_to_check = ""
-        if method == "store":
+        if method in ("store", "memory_store_encrypted"):
             _content_to_check = params.get("content") or params.get("text") or ""
+        elif method == "memory_store_batch":
+            _memories = params.get("memories", [])
+            _content_to_check = " ".join(
+                m.get("content", "") or m.get("text", "") for m in _memories if isinstance(m, dict)
+            )
         elif method == "resolve_conflict":
             _content_to_check = (params.get("fact_a") or "") + " " + (params.get("fact_b") or "")
         elif method == "broadcast":
@@ -2251,6 +2362,86 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
             "protocol": "a2a",
             "provider": {"organization": "Bastion", "url": "https://github.com/dgboy-ai/Bastion"},
         }
+    elif method == "memory_store_encrypted":
+        content = params.get("content") or params.get("text")
+        if not content:
+            return {"error": "Missing required parameter: content or text"}
+        mtype = params.get("memory_type", "fact")
+        meta = params.get("metadata")
+        expires = params.get("expires_in_seconds")
+        return mem.store_encrypted(mtype, content, meta, expires).to_dict()
+    elif method == "memory_search_encrypted":
+        query = params.get("query") or params.get("text")
+        if not query:
+            return {"error": "Missing required parameter: query or text"}
+        k = max(1, min(int(params.get("k", 5)), 100))
+        threshold = max(0.0, min(float(params.get("threshold", 0.8)), 1.0))
+        mtype = params.get("memory_type")
+        results = mem.search_encrypted(query, k=k, threshold=threshold, memory_type=mtype)
+        return [r.to_dict() for r in results]
+    elif method == "memory_store_batch":
+        memories = params.get("memories", [])
+        if not memories:
+            return {"error": "Missing required parameter: memories"}
+        if len(memories) > 100:
+            return {"error": "Batch size limited to 100 memories"}
+        results = mem.store_batch(memories)
+        return [r.to_dict() for r in results]
+    elif method == "forensic_report":
+        return mem.generate_forensic_report()
+    elif method == "managed_mcp_list_tools":
+        try:
+            from bastion.official_mcp import get_official_mcp_client
+            client = get_official_mcp_client()
+            return client.list_tools()
+        except Exception as e:
+            return {"error": str(e)}
+    elif method == "managed_mcp_call":
+        tool = params.get("tool")
+        if not tool:
+            return {"error": "Missing required parameter: tool"}
+        tool_params = params.get("params", {})
+        try:
+            from bastion.official_mcp import get_official_mcp_client
+            client = get_official_mcp_client()
+            return client.call_tool(tool, tool_params)
+        except Exception as e:
+            return {"error": str(e)}
+    elif method == "invoke_agent_skill":
+        skill_name = params.get("skill_name")
+        if not skill_name:
+            return {"error": "Missing required parameter: skill_name"}
+        execute = params.get("execute", False)
+        skill_params = params.get("params")
+        try:
+            from bastion.agent_skills import invoke_skill
+            return invoke_skill(skill_name, execute=execute, params=skill_params)
+        except Exception as e:
+            return {"error": str(e)}
+    elif method == "list_agent_skills":
+        try:
+            from bastion.agent_skills import list_skills
+            return list_skills()
+        except Exception as e:
+            return {"error": str(e)}
+    elif method == "ccloud_exec":
+        command = params.get("command")
+        if not command:
+            return {"error": "Missing required parameter: command"}
+        args = params.get("args")
+        cluster_id = params.get("cluster_id")
+        try:
+            from bastion.ccloud import exec_command
+            return exec_command(command, args=args, cluster_id=cluster_id)
+        except Exception as e:
+            return {"error": str(e)}
+    elif method == "compliance_report":
+        start_date = params.get("start_date")
+        end_date = params.get("end_date")
+        try:
+            return mem.generate_compliance_report(start_date=start_date, end_date=end_date)
+        except Exception as e:
+            return {"error": str(e)}
     return {"error": f"Unknown method: {method}"}
 
 

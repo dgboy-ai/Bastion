@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "bastion-memory": {
+      "type": "http",
+      "url": "http://127.0.0.1:8005/mcp",
+      "headers": {
+        "Authorization": "Bearer bastion-f6ce4b88f8f1ecb1bbfba069ea86955e30be9c1b"
+      }
+    }
+  }
+}

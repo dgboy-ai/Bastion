@@ -72,7 +72,7 @@ class ConnectionPool:
 
         def reaper():
             while not self._stop_reaper.is_set():
-                self._stop_reaper.wait(timeout=self.max_idle_seconds / 2)
+                self._stop_reaper.wait(timeout=min(self.max_idle_seconds / 2, 60))
                 self._reap_idle_connections()
 
         self._reaper_thread = threading.Thread(target=reaper, daemon=True)

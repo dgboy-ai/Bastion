@@ -57,6 +57,8 @@ export function getMockStats() {
       { rank: 3, text: "CockroachDB multi-region follower reads enabled in us-east-1", count: 31 },
     ],
     cacheHitPct: "84.6",
+    mcpTools: 35,
+    resources: 4,
     recentAudits: [
       { id: "a1", action: "memory_store", recordedAt: new Date(Date.now() - 1000).toISOString(), details: { content_preview: "[LTM] Stored Agent Memory: MCP tool ltm_store_analysis initialized" } },
       { id: "a2", action: "dream_consolidation", recordedAt: new Date(Date.now() - 5000).toISOString(), details: { content_preview: "Background consolidation sweep merged 4 entity duplicates" } },

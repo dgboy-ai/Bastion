@@ -304,6 +304,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         client_id STRING,
                         scopes JSONB,
                         expires_at FLOAT8,
+                        expires_at_ts TIMESTAMPTZ,
                         code_challenge STRING,
                         redirect_uri STRING,
                         redirect_uri_provided_explicitly BOOL,
@@ -317,6 +318,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         client_id STRING,
                         scopes JSONB,
                         expires_at INT8,
+                        expires_at_ts TIMESTAMPTZ,
                         resource JSONB,
                         created_at TIMESTAMPTZ DEFAULT now()
                     )
@@ -327,6 +329,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         client_id STRING,
                         scopes JSONB,
                         expires_at INT8,
+                        expires_at_ts TIMESTAMPTZ,
                         created_at TIMESTAMPTZ DEFAULT now()
                     )
                 """)
@@ -335,6 +338,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                         code STRING PRIMARY KEY,
                         code_verifier STRING,
                         expires_at FLOAT8,
+                        expires_at_ts TIMESTAMPTZ,
                         created_at TIMESTAMPTZ DEFAULT now()
                     )
                 """)
@@ -367,20 +371,26 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             return
         self._last_cleanup = now
 
+        # Use asyncio-safe snapshot-then-delete to avoid RuntimeError during iteration
+        # asyncio is single-threaded so no lock needed, but snapshot prevents
+        # "dictionary changed size during iteration" if a concurrent coroutine mutates
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        def _safe_cleanup(store: dict, predicate):
+            keys_to_remove = [k for k, v in list(store.items()) if predicate(v)]
+            for k in keys_to_remove:
+                store.pop(k, None)
+
         # Clean expired auth codes
-        expired_codes = [k for k, v in self._auth_codes.items() if v.expires_at < now]
-        for k in expired_codes:
-            self._auth_codes.pop(k, None)
-
+        _safe_cleanup(self._auth_codes, lambda v: v.expires_at < now)
         # Clean expired access tokens
-        expired_tokens = [k for k, v in self._access_tokens.items() if v.expires_at and v.expires_at < now]
-        for k in expired_tokens:
-            self._access_tokens.pop(k, None)
-
+        _safe_cleanup(self._access_tokens, lambda v: v.expires_at and v.expires_at < now)
         # Clean expired refresh tokens
-        expired_refresh = [k for k, v in self._refresh_tokens.items() if v.expires_at and v.expires_at < now]
-        for k in expired_refresh:
-            self._refresh_tokens.pop(k, None)
+        _safe_cleanup(self._refresh_tokens, lambda v: v.expires_at and v.expires_at < now)
 
         total_cleaned = len(expired_codes) + len(expired_tokens) + len(expired_refresh)
         if total_cleaned > 0:
@@ -608,26 +618,31 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
+                        from datetime import datetime as _dt, timezone as _tz
+                        _expires_ts = _dt.fromtimestamp(int(now) + 3600, tz=_tz.utc)
                         cur.execute(
-                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, resource, role)
-                               VALUES (%s, %s, %s, %s, %s, %s)""",
+                            """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, expires_at_ts, resource, role)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                             (
-                                access_token_str,
+                                _hash_token(access_token_str),
                                 client.client_id,
                                 json.dumps(authorization_code.scopes),
                                 int(now) + 3600,
+                                _expires_ts,
                                 json.dumps(authorization_code.resource) if authorization_code.resource else None,
                                 token_role,
                             ),
                         )
+                        _refresh_expires_ts = _dt.fromtimestamp(int(now) + 86400 * 7, tz=_tz.utc)
                         cur.execute(
-                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, role)
-                               VALUES (%s, %s, %s, %s, %s)""",
+                            """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, expires_at_ts, role)
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
                             (
-                                refresh_token_str,
+                                _hash_token(refresh_token_str),
                                 client.client_id,
                                 json.dumps(authorization_code.scopes),
                                 int(now) + 86400 * 7,
+                                _refresh_expires_ts,
                                 token_role,
                             ),
                         )
@@ -654,7 +669,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT * FROM oauth_refresh_tokens WHERE token = %s", (refresh_token,))
+                        cur.execute("SELECT * FROM oauth_refresh_tokens WHERE token = %s", (_hash_token(refresh_token),))
                         row = cur.fetchone()
                         if row and (row[3] is None or row[3] > time.time()):
                             return RefreshToken(
@@ -724,7 +739,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     try:
                         with conn.cursor() as cur:
                             # Delete old tokens first (atomic with inserts)
-                            cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (refresh_token.token,))
+                            cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (_hash_token(refresh_token.token),))
                             # Delete old access tokens for this client
                             # (the old access token value is not available here)
                             cur.execute(
@@ -798,7 +813,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT * FROM oauth_access_tokens WHERE token = %s", (token,))
+                        cur.execute("SELECT * FROM oauth_access_tokens WHERE token = %s", (_hash_token(token),))
                         row = cur.fetchone()
                         if row and (row[3] is None or row[3] > time.time()):
                             return AccessToken(
@@ -837,9 +852,9 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             "ON CONFLICT (token_hash) DO NOTHING",
                             (token_hash, token_type, int(token.expires_at) if token.expires_at else None),
                         )
-                        # Also delete the token row
-                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (token.token,))
-                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (token.token,))
+                        # Also delete the token row (tokens stored as hashes)
+                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (_hash_token(token.token),))
+                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (_hash_token(token.token),))
                     conn.commit()
                 finally:
                     self._release_conn(conn)
@@ -865,8 +880,8 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             "VALUES (%s, %s) ON CONFLICT (token_hash) DO NOTHING",
                             (token_hash, token_type_hint),
                         )
-                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (token_value,))
-                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (token_value,))
+                        cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (_hash_token(token_value),))
+                        cur.execute("DELETE FROM oauth_refresh_tokens WHERE token = %s", (_hash_token(token_value),))
                         revoked = cur.rowcount > 0
                     conn.commit()
                 finally:

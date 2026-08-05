@@ -57,7 +57,7 @@ class CaptureHooks:
         auto_capture_errors: bool = True,
         min_content_length: int = 10,
         dedup_window_seconds: int = 60,
-        bypass_guard: bool = True,
+        bypass_guard: bool = False,
     ):
         self._memory = memory_engine
         self._auto_tool_calls = auto_capture_tool_calls

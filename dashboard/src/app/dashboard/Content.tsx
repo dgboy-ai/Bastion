@@ -2425,17 +2425,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── ROW 6: MANAGED MCP TOOLS USED + AGENT ATTRIBUTION (2-column bento row) ── */}
+        {/* ── ROW 6: MCP TOOLS + AGENT ATTRIBUTION (2-column bento row) ── */}
         {((toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 || (toolUsage?.by_agent?.length ?? 0) > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "20px", width: "100%", alignItems: "stretch" }}>
-            {/* Left: MANAGED MCP TOOLS USED */}
+            {/* Left: MCP TOOLS */}
             {(toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 && (
               <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
                     <Dot color="#b45309" pulse />
                     <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
-                      MANAGED MCP TOOLS USED
+                      MCP TOOLS
                     </span>
                     <span style={{ marginLeft: "auto", fontSize: "12px", fontFamily: "var(--font-mono)", color: "#374151", fontWeight: 800 }}>
                       {toolUsage.crdb_tool_breakdown.length} tools active
@@ -2443,7 +2443,7 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                    {toolUsage.crdb_tool_breakdown.slice(0, 16).map((ct: any, j: number) => (
+                    {toolUsage.crdb_tool_breakdown.map((ct: any, j: number) => (
                       <div key={j} onClick={() => {
                         const recent = (toolUsage.usage ?? []).find((u: any) =>
                           u.tool_name === ct.tool || u.sub_tool === ct.tool

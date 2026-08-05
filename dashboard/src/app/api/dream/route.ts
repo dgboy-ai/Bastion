@@ -52,6 +52,12 @@ export async function POST(request: Request) {
         if (contentMap.has(key)) {
           const existing = contentMap.get(key)!;
           if (row.trust_level < existing.trust || (row.trust_level === existing.trust && new Date(row.created_at) < new Date(existing.createdAt))) {
+            // Record deletion in audit trail before deleting
+            await safeQuery(
+              `INSERT INTO agent_audit (agent_id, action, memory_id, details, created_at)
+               VALUES ($1, 'dream_consolidation_delete', $2, $3, NOW())`,
+              [agentId, row.memory_id, JSON.stringify({ reason: "duplicate_consolidation", trust_level: row.trust_level })]
+            );
             await safeQuery("DELETE FROM agent_memory WHERE memory_id = $1", [row.memory_id]);
             duplicatesRemoved++;
           }

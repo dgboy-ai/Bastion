@@ -9,8 +9,13 @@ This is the pattern CockroachDB described in their June 2026 blog post as the
 
     "Instead of rerunning the full workflow from scratch, the LTM Gateway
     performs a similarity search against prior completed analyses. It bypassed
-    the planner, bypassed the SQL execution, bypassed the web search, and
+    planner, bypassed the SQL execution, bypassed the web search, and
     returned the cached insight instantly."
+
+Retrieval strategy:
+    1. Vector search via C-SPANN index (recall candidates)
+    2. Overlap-based re-ranking (precision: does the stored analysis cover the query?)
+    3. Blended similarity score gates reuse at 80% threshold
 
 Usage:
     gateway = LTMMemoryGateway(memory_engine)

@@ -72,10 +72,11 @@ function getRateLimitCookie(request: Request): { count: number; windowStart: num
 }
 
 function signRateLimitCookie(count: number, windowStart: number): string {
-  const secret = process.env.BASTION_SESSION_SECRET || "";
+  const secret = process.env.BASTION_SESSION_SECRET;
+  if (!secret) throw new Error("BASTION_SESSION_SECRET required for rate-limit cookies");
   const payload = JSON.stringify({ count, windowStart });
   const dataB64 = Buffer.from(payload).toString("base64url");
-  const sig = createHmac("sha256", secret).update(dataB64).digest().toString("base64url");
+  const sig = createHmac("sha256", secret).update(Buffer.from(payload)).digest().toString("base64url");
   return `${dataB64}.${sig}`;
 }
 
@@ -94,10 +95,8 @@ function isValidSessionCookie(request: Request): boolean {
 
   const secret = process.env.BASTION_SESSION_SECRET;
   if (!secret) {
-    // No session secret configured — accept any well-formed token in dev mode
-    // In production, BASTION_SESSION_SECRET must be set for secure validation
-    const parts = token.split(".");
-    return parts.length === 2;
+    // No session secret configured — reject all tokens
+    return false;
   }
 
   const parts = token.split(".");
@@ -248,7 +247,9 @@ export function requireAuth(request: Request): NextResponse | null {
   }
 
   // Allow disabling auth via env var (for public demo deployments)
-  if (process.env.BASTION_DISABLE_AUTH === "true") {
+  // NOTE: This only bypasses API key auth; session cookie auth is still enforced
+  // by middleware.ts for page routes. Remove this in production.
+  if (process.env.BASTION_DISABLE_AUTH === "true" && process.env.NODE_ENV !== "production") {
     return null;
   }
 

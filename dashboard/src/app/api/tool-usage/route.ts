@@ -61,7 +61,7 @@ export async function GET(request: Request) {
          FROM tool_usage_log
          GROUP BY COALESCE(sub_tool, tool_name)
          ORDER BY calls DESC
-         LIMIT 30`
+          LIMIT 50`
       ),
     ]);
 

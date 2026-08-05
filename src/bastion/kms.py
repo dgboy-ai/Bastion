@@ -444,6 +444,12 @@ def create_kms(key_arn: str | None = None, region: str | None = None) -> KMSInte
                 resolved,
                 extra={"error": str(exc)},
             )
+    if is_production:
+        raise RuntimeError(
+            "No BASTION_AWS_KMS_KEY_ARN configured. "
+            "LocalKMS is not allowed in production mode. "
+            "Set BASTION_AWS_KMS_KEY_ARN or BASTION_MOCK=true for local development."
+        )
     return LocalKMS(generate=True)
 
 
@@ -652,8 +658,9 @@ class EncryptedMemoryWrapper:
     # AwsKMS: 12(IV) + 4(DEK_CT_len) + ~1KB(DEK_CT) + 16(tag) -> raw ~= content*1.0 + 1048
     # LocalKMS: 1(version) + 12(IV) + 16(tag) -> raw ~= content*1.0 + 29
     # After base64: raw * 4/3
-    # Worst case margin: plaintext must stay under ~73KB when limit is 100KB
-    _ENCRYPTION_OVERHEAD_BYTES = 2048  # safe upper bound for all KMS implementations
+    # Dynamic computation: MAX_CONTENT = (DB_COLUMN_BYTES - KMS_OVERHEAD) / 1.34
+    _KMS_OVERHEAD_BYTES = 1048  # worst case (AwsKMS with large DEK ciphertext)
+    _BASE64_EXPANSION = 1.34  # 4/3 rounded up
 
     def store(
         self,
@@ -668,11 +675,12 @@ class EncryptedMemoryWrapper:
         if not content or not isinstance(content, str):
             raise ValueError(f"content must be a non-empty string, got {type(content).__name__}")
 
-        estimated_encoded = len(content) * 4 // 3 + self._ENCRYPTION_OVERHEAD_BYTES
-        if estimated_encoded > _MAX_CONTENT_LENGTH:
+        estimated_encoded = len(content) * 4 // 3 + self._KMS_OVERHEAD_BYTES
+        max_safe_content = int((_MAX_CONTENT_LENGTH - self._KMS_OVERHEAD_BYTES) / self._BASE64_EXPANSION)
+        if len(content) > max_safe_content:
             raise ValueError(
-                f"content too long for encryption ({len(content)} chars -> ~{estimated_encoded} bytes "
-                f"encoded, limit {_MAX_CONTENT_LENGTH})"
+                f"content too long for encryption ({len(content)} chars, max safe ~{max_safe_content}, "
+                f"encoded ~{estimated_encoded} bytes, column limit {_MAX_CONTENT_LENGTH})"
             )
 
         ctx = {"agent_id": self._memory.agent_id}

@@ -138,6 +138,8 @@ export async function GET(request: Request) {
         recordedAt: row.recorded_at,
         details: row.details,
       })),
+      mcpTools: 35,
+      resources: 4,
     }, "short");
   } catch (error) {
     console.error("[api/stats] Query failed:", error instanceof Error ? error.message : 'Unknown error');

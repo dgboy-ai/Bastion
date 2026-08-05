@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { randomUUID } from "crypto";
 
 const BUCKET = process.env.BASTION_S3_BUCKET || "bastion-memory-archives";
 const REGION = process.env.AWS_REGION || "ap-south-1";
@@ -24,7 +25,7 @@ export async function exportAgentMemory(
   agentId: string,
   payload: unknown,
 ): Promise<ExportResult> {
-  const key = `memory-exports/${agentId}/${Date.now()}.json`;
+  const key = `memory-exports/${agentId}/${Date.now()}-${randomUUID()}.json`;
   const body = JSON.stringify(payload, null, 2);
   const bytes = Buffer.byteLength(body, "utf8");
 
@@ -34,6 +35,9 @@ export async function exportAgentMemory(
       Key: key,
       Body: body,
       ContentType: "application/json",
+      ServerSideEncryption: "aws:kms",
+      SSEKMSKeyId: process.env.BASTION_KMS_KEY_ARN || undefined,
+      BucketKeyEnabled: true,
       Metadata: {
         "agent-id": agentId,
         "created-at": new Date().toISOString(),
