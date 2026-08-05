@@ -32,8 +32,8 @@ htmlcov/
 *.key
 credentials.json
 service-account*.json
-# Generated files
-benchmark_results.json
+# Generated files (root only — dashboard/src copy is tracked for Vercel build)
+/benchmark_results.json
 # Build artifacts
 scripts/check_schema.py
 scripts/fix_schema.py
