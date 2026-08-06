@@ -4,8 +4,11 @@ import { requireAuth } from "@/lib/api-auth";
 import { embedToVectorString } from "@/lib/embeddings";
 
 export async function POST(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
 
   try {
     const body = await request.json();

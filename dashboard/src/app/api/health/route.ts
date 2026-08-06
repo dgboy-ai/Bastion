@@ -13,11 +13,15 @@ const defaultHealth = {
 };
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  // Skip auth when user provides their own connection string via the playground dialog
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
 
-  if (isMockMode()) {
-    return apiSuccess(defaultHealth, "short", { mock: true });
+    if (isMockMode()) {
+      return apiSuccess(defaultHealth, "short", { mock: true });
+    }
   }
 
   try {

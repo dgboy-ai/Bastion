@@ -12,8 +12,11 @@ interface A2ASkillRequest {
 }
 
 export async function POST(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
 
   try {
     let body: A2ASkillRequest;
@@ -106,8 +109,11 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
 
   return apiSuccess({
     server: "Bastion A2A Orchestrator",

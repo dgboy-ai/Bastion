@@ -4,10 +4,13 @@ import { getMockAnomalies } from "@/lib/mock-data";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
-  if (isMockMode()) {
-    return apiSuccess(getMockAnomalies(), 'short', { mock: true });
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    if (isMockMode()) {
+      return apiSuccess(getMockAnomalies(), 'short', { mock: true });
+    }
   }
 
   try {

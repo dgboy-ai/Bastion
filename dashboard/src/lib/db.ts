@@ -208,26 +208,17 @@ const poolCache = new Map<string, Pool>();
 const POOL_CACHE_MAX = 10;
 
 async function getDynamicConnectionString(): Promise<string | null> {
-  if (process.env.NODE_ENV === "production") return null;
   try {
     const h = await headers();
     const conn = h.get("x-bastion-conn");
     if (!conn) return null;
-    // Require admin API key for dynamic connection switching to prevent DB pivoting
-    const { requireAuth } = await import("@/lib/api-auth");
-    const fakeRequest = new Request("http://localhost", { headers: Object.fromEntries(Object.entries(h)) });
-    const authError = requireAuth(fakeRequest);
-    if (authError) {
-      console.warn("[DB] Dynamic connection rejected: admin auth required");
-      return null;
-    }
-    // Validate connection string format (must be a cockroachdb:// URI)
+    // Validate connection string format
     if (!conn.startsWith("postgresql://") && !conn.startsWith("cockroachdb://")) {
       console.warn("[DB] Dynamic connection rejected: invalid protocol");
       return null;
     }
     return conn;
-} catch (err: unknown) {
+  } catch (err: unknown) {
     return null;
   }
 }

@@ -3,8 +3,11 @@ import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
   try {
     const { searchParams } = new URL(request.url);
     const entityId = (searchParams.get("entity_id") || "").slice(0, 255);

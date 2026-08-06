@@ -3,9 +3,11 @@ import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
-  if (isMockMode()) {
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    if (isMockMode()) {
     return apiSuccess({
       scan: { total: 965, types: { fact: 883, preference: 34, instruction: 26 }, agentCount: 3 },
       dedup: { duplicates: 12, similarityPairs: [{ a: "User prefers Python", b: "User likes Python", score: 0.92 }, { a: "CockroachDB uses Raft", b: "CRDB uses Raft consensus", score: 0.87 }] },

@@ -12,8 +12,11 @@ interface DriftRow {
 }
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
 
   try {
     const { searchParams } = new URL(request.url);

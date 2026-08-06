@@ -9,8 +9,12 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ tool: string }> }
 ) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
+  // Skip auth when user provides their own connection string via the playground dialog
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+  }
 
   const { tool } = await params;
 

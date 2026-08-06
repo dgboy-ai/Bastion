@@ -34,6 +34,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const [testingConn, setTestingConn] = useState(false);
   const [connError, setConnError] = useState("");
   const [hasSavedConn, setHasSavedConn] = useState(false);
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const [authPassphrase, setAuthPassphrase] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   // Onboarding tour state
   const [tourStep, setTourStep] = useState<number | null>(null);
@@ -90,6 +94,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     setTestingConn(true);
     setConnError("");
+    setNeedsAuth(false);
+    setAuthError("");
 
     if (!dbConnInput.trim()) {
       try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
@@ -106,8 +112,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // Save temporarily so fetchWithTimeout sends x-bastion-conn header
+      sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+
       const res = await fetchWithTimeout("/api/health");
       const json = await res.json();
+
+      if (res.status === 401 || json.code === "UNAUTHORIZED") {
+        setNeedsAuth(true);
+        setTestingConn(false);
+        return;
+      }
 
       if (!res.ok || json.success === false) {
         throw new Error(json.error || "Connection rejected by server — check credentials");
@@ -116,7 +131,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         throw new Error("API fallback to mock data — connection string invalid or unreachable");
       }
 
-      sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
       setHasSavedConn(true);
       setTestingConn(false);
       setIsModalOpen(false);
@@ -126,6 +140,56 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       setHasSavedConn(false);
       setConnError(err instanceof Error ? err.message : "Connection failed");
       setTestingConn(false);
+    }
+  };
+
+  const handleAuthenticate = async () => {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch("/login/api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase: authPassphrase }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAuthError(data.error || "Authentication failed");
+        setAuthLoading(false);
+        return;
+      }
+      setNeedsAuth(false);
+      setAuthPassphrase("");
+      setAuthError("");
+      setAuthLoading(false);
+      // Retry the connection test
+      setTestingConn(true);
+      try {
+        // Save temporarily so fetchWithTimeout sends x-bastion-conn header
+        sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+
+        const healthRes = await fetchWithTimeout("/api/health");
+        const healthJson = await healthRes.json();
+        if (!healthRes.ok || healthJson.success === false) {
+          throw new Error(healthJson.error || "Connection rejected — check credentials");
+        }
+        if (healthJson.meta?.mock) {
+          throw new Error("API fallback to mock data — connection string invalid or unreachable");
+        }
+        sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+        setHasSavedConn(true);
+        setTestingConn(false);
+        setIsModalOpen(false);
+        window.location.reload();
+      } catch (retryErr: unknown) {
+        try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
+        setHasSavedConn(false);
+        setConnError(retryErr instanceof Error ? retryErr.message : "Connection failed after auth");
+        setTestingConn(false);
+      }
+    } catch {
+      setAuthError("Login request failed");
+      setAuthLoading(false);
     }
   };
 
@@ -445,7 +509,94 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 </span>
               </div>
 
-              {connError && (
+              {needsAuth ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <div style={{
+                    padding: "12px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "#fef9c3",
+                    border: "2px solid #a16207",
+                    color: "#a16207",
+                    fontWeight: 800,
+                    fontSize: "12.5px"
+                  }}>
+                    Authentication required to connect. Enter your dashboard passphrase.
+                  </div>
+                  <input
+                    type="password"
+                    value={authPassphrase}
+                    onChange={(e) => setAuthPassphrase(e.target.value)}
+                    placeholder="Enter passphrase"
+                    autoFocus
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAuthenticate(); }}
+                    style={{
+                      background: "#ffffff",
+                      border: "2.5px solid #000000",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "12px 14px",
+                      color: "#000000",
+                      fontSize: "13px",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      width: "100%",
+                      outline: "none",
+                      boxShadow: "inset 1px 1px 0px rgba(0,0,0,0.1)"
+                    }}
+                  />
+                  {authError && (
+                    <div style={{
+                      padding: "10px",
+                      borderRadius: "var(--radius-sm)",
+                      background: "#fef2f2",
+                      border: "2px solid #b91c1c",
+                      color: "#b91c1c",
+                      fontWeight: 800,
+                      fontSize: "12px"
+                    }}>
+                      {authError}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      onClick={() => { setNeedsAuth(false); setAuthPassphrase(""); setAuthError(""); }}
+                      style={{
+                        background: "#ffffff",
+                        border: "2.5px solid #000000",
+                        color: "#000000",
+                        fontSize: "13px",
+                        fontWeight: 900,
+                        padding: "10px 18px",
+                        borderRadius: "var(--radius-sm)",
+                        cursor: "pointer",
+                        boxShadow: "2.5px 2.5px 0px #000000",
+                        fontFamily: "var(--font-sans)"
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAuthenticate}
+                      disabled={authLoading || !authPassphrase}
+                      style={{
+                        background: "var(--accent-breeze)",
+                        border: "2.5px solid #000000",
+                        color: "#000000",
+                        fontSize: "13px",
+                        fontWeight: 900,
+                        padding: "10px 24px",
+                        borderRadius: "var(--radius-sm)",
+                        cursor: "pointer",
+                        boxShadow: "2.5px 2.5px 0px #000000",
+                        opacity: authLoading || !authPassphrase ? 0.6 : 1,
+                        fontFamily: "var(--font-sans)"
+                      }}
+                    >
+                      {authLoading ? "Authenticating..." : "Authenticate"}
+                    </button>
+                  </div>
+                </div>
+              ) : connError && (
                 <div style={{
                   padding: "12px",
                   borderRadius: "var(--radius-sm)",
@@ -459,6 +610,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
+              {!needsAuth && (
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "12px" }}>
                 {hasSavedConn && (
                   <button 
@@ -500,6 +652,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   {testingConn ? "Verifying..." : "Connect Cluster"}
                 </button>
               </div>
+              )}
             </form>
           </div>
         </div>

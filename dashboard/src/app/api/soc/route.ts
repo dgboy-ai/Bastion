@@ -463,8 +463,12 @@ async function stepVerify(): Promise<SocStepResult> {
 
 export async function POST(request: Request) {
   try {
-    const authError = requireAuth(request);
-    if (authError) return authError;
+    // Skip auth when user provides their own connection string via the playground dialog
+    const hasUserConn = !!request.headers.get("x-bastion-conn");
+    if (!hasUserConn) {
+      const authError = requireAuth(request);
+      if (authError) return authError;
+    }
 
     let body: { step?: string; alert?: Record<string, unknown> } = {};
     try {

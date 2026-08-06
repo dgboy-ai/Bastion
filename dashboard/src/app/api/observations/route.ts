@@ -46,10 +46,13 @@ function getMockObservations() {
 }
 
 export async function GET(request: Request) {
-  const authError = requireAuth(request);
-  if (authError) return authError;
-  if (isMockMode()) {
-    return apiSuccess(getMockObservations(), "short", { mock: true });
+  const hasUserConn = !!request.headers.get("x-bastion-conn");
+  if (!hasUserConn) {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    if (isMockMode()) {
+      return apiSuccess(getMockObservations(), "short", { mock: true });
+    }
   }
 
   try {
