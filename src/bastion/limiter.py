@@ -57,6 +57,7 @@ class RequestLimiter:
         self._total_rejected = 0
         self._total_timeout = 0
         self._lock = threading.Lock()
+        self._pending_releases: list[int] = []
 
         is_mock = os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
 
@@ -76,8 +77,8 @@ class RequestLimiter:
                 conn_str = get_settings().connection_string
             self._pool = ConnectionPool(
                 connection_string=conn_str,
-                min_size=1,
-                max_size=2,
+                min_size=2,
+                max_size=10,
                 max_idle_seconds=timeout_seconds * 2,
             )
             conn = self._pool.acquire(timeout=10)
@@ -192,6 +193,7 @@ class RequestLimiter:
             remaining = max(0.1, deadline - time.time())
             conn = self._pool.acquire(timeout=remaining)
             try:
+                self._drain_pending_with_conn(conn)
                 with conn.cursor() as cur:
                     # Step 1: Find and lock an available slot
                     cur.execute(
@@ -237,6 +239,32 @@ class RequestLimiter:
         logger.warning("Request timed out after %.1fs", effective_timeout)
         return False
 
+    def _drain_pending_with_conn(self, conn: Any) -> None:
+        with self._lock:
+            if not self._pending_releases:
+                return
+            to_release = list(self._pending_releases)
+
+        released_slots = []
+        try:
+            with conn.cursor() as cur:
+                for slot in to_release:
+                    cur.execute(
+                        "UPDATE agent_limiter "
+                        "SET instance_id = NULL, acquired_at = NULL "
+                        "WHERE slot_id = %s AND instance_id = %s",
+                        (slot, self._instance_id),
+                    )
+                    released_slots.append(slot)
+            conn.commit()
+        except Exception:
+            logger.warning("DB error during inline release of slots: %s", to_release, exc_info=True)
+            with contextlib.suppress(Exception):
+                conn.rollback()
+
+        with self._lock:
+            self._pending_releases = [s for s in self._pending_releases if s not in released_slots]
+
     def _db_release(self) -> None:
         slot_id = None
         with self._lock:
@@ -244,41 +272,25 @@ class RequestLimiter:
                 return
             slot_id = self._held_slots.pop()
             self._active_count = max(0, self._active_count - 1)
+            self._pending_releases.append(slot_id)
 
+        # Use a fresh connection for release to avoid competing with acquires
+        # Acquire with short timeout, but don't fail hard - store for background drain
+        conn = None
         try:
-            conn = self._pool.acquire(timeout=5)
+            conn = self._pool.acquire(timeout=2)
+            try:
+                self._drain_pending_with_conn(conn)
+            finally:
+                if conn:
+                    self._pool.release(conn)
         except Exception:
-            with self._lock:
-                self._held_slots.append(slot_id)
-                self._active_count += 1
-            logger.warning("Pool unavailable during release, slot returned")
-            return
-
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE agent_limiter "
-                    "SET instance_id = NULL, acquired_at = NULL "
-                    "WHERE slot_id = %s AND instance_id = %s",
-                    (slot_id, self._instance_id),
-                )
-                if cur.rowcount == 0:
-                    # Slot was not released in DB (stolen by another instance or never committed)
-                    # Log warning but don't restore to _held_slots — the slot is orphaned
-                    logger.warning(
-                        "Slot %d not released in DB (rowcount=0) — slot may have been stolen or expired",
-                        slot_id,
-                    )
-            conn.commit()
-        except Exception:
-            logger.warning("DB error during release", exc_info=True)
-            with contextlib.suppress(Exception):
-                conn.rollback()
-            with self._lock:
-                self._held_slots.append(slot_id)
-                self._active_count += 1
-        finally:
-            self._pool.release(conn)
+            logger.warning("Pool unavailable during release, slot %d stored for background release", slot_id)
+            if conn:
+                try:
+                    self._pool.release(conn)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # stats

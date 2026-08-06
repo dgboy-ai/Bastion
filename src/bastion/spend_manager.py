@@ -98,6 +98,23 @@ class SpendManager:
                     (agent_id,),
                 )
 
+                # Check budget_date and reset if it's a new day
+                today = datetime.date.today()
+                cur.execute(
+                    "SELECT budget_date FROM agent_budgets WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0] and row[0] < today:
+                    cur.execute(
+                        "UPDATE agent_budgets SET "
+                        "daily_searches = 0, daily_stores = 0, daily_embeds = 0, daily_heals = 0, "
+                        "budget_date = %s, is_suspended = false, suspension_reason = NULL, "
+                        "updated_at = now() "
+                        "WHERE agent_id = %s",
+                        (today, agent_id),
+                    )
+
                 # Check if suspended
                 suffix = "es" if category == "search" else "s"
                 limit_col = f"hard_limit_{category}{suffix}"

@@ -266,7 +266,11 @@ class BehavioralDriftDetector:
                 pool.release(conn)
 
         # Compute dimension scores
-        current_access_mean = sum(access_types.values()) / max(len(access_types), 1)
+        # Fix: Use proportion distribution instead of raw count mean to avoid
+        # false positives as database grows (access_types count sum grows but type count is bounded)
+        total_access = sum(access_types.values()) or 1
+        access_proportions = [count / total_access for count in access_types.values()]
+        current_access_mean = sum(access_proportions) / max(len(access_proportions), 1) if access_proportions else 0
         bl_access = baseline.get("memory_access_pattern", {})
         bl_access_mean = bl_access.get("mean", current_access_mean)
         bl_access_std = bl_access.get("stddev", 0.1) or 0.01

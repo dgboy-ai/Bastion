@@ -3,6 +3,11 @@
 Enforces agent isolation at the database engine level using
 Postgres RLS policies. Prevents cross-agent data leaks even
 if application code has bugs.
+
+NOTE: CockroachDB does NOT support PostgreSQL-style RLS policies.
+On CockroachDB, this module provides application-level filtering
+via SET LOCAL app.current_agent_id + WHERE agent_id = %s clauses,
+which is enforced in the memory engine's _set_rls_context() method.
 """
 
 from __future__ import annotations
@@ -66,9 +71,40 @@ class RowLevelSecurity:
         self._verify_lock = threading.Lock()
 
     def enable_rls(self) -> dict[str, Any]:
-        """Enable RLS on all agent tables."""
+        """Enable RLS on all agent tables.
+
+        On PostgreSQL: enables true RLS policies.
+        On CockroachDB: RLS is not supported; falls back to application-level
+        filtering via SET LOCAL app.current_agent_id + WHERE clauses.
+        """
         try:
             with self.conn.cursor() as cur:
+                # Detect database type
+                cur.execute("SELECT version()")
+                version = cur.fetchone()[0].lower()
+                is_cockroachdb = "cockroachdb" in version
+                
+                if is_cockroachdb:
+                    logger.warning("CockroachDB detected - RLS policies not supported, using application-level isolation")
+                    # Application-level isolation is handled by _set_rls_context in memory.py
+                    self.conn.commit()
+                    return {
+                        "status": "enabled",
+                        "mode": "application_level",
+                        "note": "CockroachDB does not support RLS; using WHERE agent_id = %s filtering",
+                        "tables": [
+                            "agent_memory",
+                            "agent_audit",
+                            "agent_checkpoints",
+                            "agent_entities",
+                            "agent_relations",
+                            "agent_keys",
+                            "agent_budgets",
+                            "agent_region_mapping",
+                        ],
+                    }
+                
+                # PostgreSQL - enable true RLS
                 for stmt in RLS_ENABLE_SQL.strip().split("\n"):
                     stmt = stmt.strip()
                     if stmt:
@@ -86,6 +122,7 @@ class RowLevelSecurity:
             self.conn.commit()
             return {
                 "status": "enabled",
+                "mode": "postgres_rls",
                 "tables": [
                     "agent_memory",
                     "agent_audit",

@@ -4,7 +4,11 @@
       "command": "python",
       "args": ["-m", "bastion.mcp_server"],
       "env": {
-        "BASTION_CONN": "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+        "BASTION_CONN": "${BASTION_CONN}",
+        "BASTION_API_KEY": "${BASTION_API_KEY}",
+        "GROQ_API_KEY": "${GROQ_API_KEY}",
+        "COCKROACHDB_MCP_API_KEY": "${COCKROACHDB_MCP_API_KEY}",
+        "COCKROACHDB_CLUSTER_ID": "${COCKROACHDB_CLUSTER_ID}"
       }
     }
   }

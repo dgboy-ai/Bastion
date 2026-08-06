@@ -125,10 +125,12 @@ class TestOAuthProviderInit:
                 os.environ["BASTION_CONN"] = conn
 
     def test_provider_stores_client_secret(self):
-        """Explicit client_secret is stored on the client info."""
+        """Explicit client_secret is stored as SHA-256 hash on the client info."""
+        import hashlib
         p = _make_provider()
         client = p._clients["test-client"]
-        assert client.client_secret == "test-secret"
+        expected_hash = hashlib.sha256(b"test-secret").hexdigest()
+        assert client.client_secret == expected_hash
 
     def test_provider_stores_redirect_uri(self):
         """Explicit redirect_uri is stored on the client info."""

@@ -339,23 +339,30 @@ def create_server(
 
         def _consolidation_worker() -> None:
             """Periodically run memory consolidation in the background."""
-            from bastion.dreaming import MemoryDreamer
+            from bastion.dreaming import MemoryDreamer, DreamScheduler
 
             dreamer = MemoryDreamer(_shared)
+            scheduler = DreamScheduler(dreamer, interval_seconds=_consolidation_interval * 60)
+            scheduler.start()
             while True:
                 try:
                     time.sleep(_consolidation_interval * 60)
-                    journal = dreamer.dream()
-                    if journal.memories_reviewed > 0:
-                        logger.info(
-                            "Auto-consolidation: reviewed=%d consolidated=%d "
-                            "promoted=%d pruned=%d duration=%dms",
-                            journal.memories_reviewed,
-                            journal.memories_consolidated,
-                            journal.memories_promoted,
-                            journal.memories_pruned,
-                            journal.duration_ms,
-                        )
+                    if scheduler.should_dream_now():
+                        journal = scheduler.run_cycle()
+                        if journal.memories_reviewed > 0:
+                            logger.info(
+                                "Auto-consolidation: reviewed=%d consolidated=%d "
+                                "promoted=%d pruned=%d reinforced=%d insights=%d "
+                                "precomputed=%d duration=%dms",
+                                journal.memories_reviewed,
+                                journal.memories_consolidated,
+                                journal.memories_promoted,
+                                journal.memories_pruned,
+                                journal.memories_reinforced,
+                                journal.insights_generated,
+                                journal.precomputed_queries,
+                                journal.duration_ms,
+                            )
                 except Exception as exc:
                     logger.warning("Auto-consolidation cycle failed: %s", exc)
 
@@ -1513,6 +1520,31 @@ def create_server(
             return json.dumps({"error": "Self-heal failed — check server logs"})
 
     @mcp.tool(
+        name="chain_verify",
+        title="Hash Chain Verification",
+        description=(
+            "Verify hash chain integrity for flagged memories. "
+            "Re-computes HMAC-SHA256 for each flagged row and reports mismatches. "
+            "Use after heal or when tampering is suspected."
+        ),
+        annotations=ToolAnnotations(
+            title="Hash Chain Verification",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def chain_verify(ctx: Context, batch_size: int = 100) -> str:
+        mem = _resolve_memory(ctx)
+        try:
+            result = await anyio.to_thread.run_sync(mem.chain_verify, batch_size)
+            return json.dumps(result, indent=2, default=str)
+        except Exception:
+            logger.exception("chain_verify failed")
+            return json.dumps({"error": "Chain verification failed — check server logs"})
+
+    @mcp.tool(
         name="memory_delete",
         title="Delete Memory",
         description=(
@@ -2094,7 +2126,7 @@ def create_server(
             openWorldHint=False,
         ),
     )
-    async def dream(ctx: Context, lookback_hours: int = 24) -> str:
+    async def dream(ctx: Context, lookback_hours: int = 24, enable_llm: bool = True) -> str:
         from bastion.dreaming import MemoryDreamer
 
         if lookback_hours < 1 or lookback_hours > 168:
@@ -2102,7 +2134,7 @@ def create_server(
 
         try:
             mem = _resolve_memory(ctx)
-            dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
+            dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours, enable_llm=enable_llm)
             await _report_progress(ctx, 0, 4, "Starting dream cycle...")
             journal = await anyio.to_thread.run_sync(dreamer.dream)
             await _report_progress(ctx, 4, 4, "Dream cycle complete")
@@ -3352,6 +3384,11 @@ def create_server(
                 "description": "CDC-triggered self-healing: prune expired, detect anomalies, compact",
                 "read_only": False,
                 "destructive": True,
+            },
+            {
+                "name": "chain_verify",
+                "description": "Verify hash chain integrity for flagged memories via HMAC-SHA256 re-computation",
+                "read_only": True,
             },
             {
                 "name": "memory_delete",

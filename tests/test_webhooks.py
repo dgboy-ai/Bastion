@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+import socket
 
 from bastion.webhooks import (
     EventSeverity,
@@ -119,6 +120,7 @@ class TestWebhookNotifier:
                 env,
             ),
             mock.patch("httpx.Client") as mock_client,
+            mock.patch("socket.getaddrinfo", return_value=[(socket.AF_INET, 0, 0, "", ("93.184.216.34", 0))]),
         ):
             mock_client.return_value.__enter__.return_value.post.return_value.status_code = 200
             n = WebhookNotifier()
@@ -134,6 +136,7 @@ class TestWebhookNotifier:
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/services/bad"},
             ),
             mock.patch("httpx.Client") as mock_client,
+            mock.patch("socket.getaddrinfo", return_value=[(socket.AF_INET, 0, 0, "", ("93.184.216.34", 0))]),
         ):
             mock_client.return_value.__enter__.return_value.post.side_effect = ConnectionError("unreachable")
             n = WebhookNotifier()
@@ -149,6 +152,7 @@ class TestWebhookNotifier:
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
             ),
             mock.patch("httpx.Client") as mock_client,
+            mock.patch("socket.getaddrinfo", return_value=[(socket.AF_INET, 0, 0, "", ("93.184.216.34", 0))]),
         ):
             mock_client.return_value.__enter__.return_value.post.return_value.status_code = 200
             n = WebhookNotifier()
@@ -160,7 +164,7 @@ class TestWebhookNotifier:
     def test_partial_failure(self, sample_event):
         def _side_effect(url, **kwargs):
             url_str = str(url)
-            if "slack" in url_str:
+            if "hooks.slack.com" in url_str:
                 raise ConnectionError("timeout")
             resp = mock.MagicMock()
             resp.status_code = 200
@@ -172,6 +176,7 @@ class TestWebhookNotifier:
                 {"BASTION_WEBHOOK_URLS": "https://hooks.slack.com/a,https://discord.com/api/webhooks/b"},
             ),
             mock.patch("httpx.Client") as mock_client,
+            mock.patch("socket.getaddrinfo", return_value=[(socket.AF_INET, 0, 0, "", ("93.184.216.34", 0))]),
         ):
             mock_client.return_value.__enter__.return_value.post.side_effect = _side_effect
             n = WebhookNotifier()

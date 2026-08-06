@@ -18,13 +18,73 @@
 
 ---
 
-AI agents are rapidly entering production workflows across finance, healthcare, and software engineering. But today's agentic systems suffer from a critical vulnerability: **they cannot prove whether a memory has been modified, poisoned, or silently corrupted.** 
+## 🔗 MCP Configuration Quick Links
 
-When an agent's memory is hijacked, the agent acts on compromised facts without detection.
+| Client | Config | Protocol | Server |
+|--------|--------|----------|--------|
+| **Cline / VS Code** | [`mcp_configs/cline.json`](mcp_configs/cline.json) | Streamable HTTP | Bastion Memory + CockroachDB Cloud |
+| **Cursor** | [`mcp_configs/cursor.json`](mcp_configs/cursor.json) | Local Subprocess | Bastion Memory |
+| **GitHub Copilot** | [`mcp_configs/copilot.json`](mcp_configs/copilot.json) | HTTP | Bastion Memory + CockroachDB Cloud |
+| **Claude Desktop** | [`mcp_configs/claude.json`](mcp_configs/claude.json) | Local Subprocess | Bastion Memory |
+| **Codex** | [`mcp_configs/codex.json`](mcp_configs/codex.json) | Local Subprocess | Bastion Memory |
+| **CockroachDB Cloud Managed MCP** | [`mcp_configs/managed.json`](mcp_configs/managed.json) | Streamable HTTP | **Official `https://cockroachlabs.cloud/mcp`** |
 
-**Bastion is a production-grade memory integrity layer for autonomous AI agents. It doesn't just store memory. It cryptographically proves memory.**
+> **📁 All configs use environment variable templates** — copy to `.env.local` and fill in your values (see [`.env.example`](.env.example)).  
+> **Never commit real credentials.** Use `${VAR_NAME}` placeholders in JSON configs.
 
-*Built on CockroachDB's distributed SQL engine and deployed on AWS for resilient, globally available agent memory.*
+---
+
+## 🧠 Two MCP Servers — What's the Difference?
+
+Bastion runs **two distinct MCP servers** that work together:
+
+### 1. **Bastion Custom MCP Server** (`bastion-memory`)
+**Your memory integrity layer** — runs locally or on your infrastructure.
+- **37 tools** for memory operations with cryptographic guarantees
+- **Hash chains** (HMAC-SHA256) on every memory block
+- **OWASP ASI06 Guard** blocks prompt injection before DB write
+- **Sleep-time consolidation** (Dreaming): dedup, conflict resolution, pattern extraction, LLM lesson synthesis
+- **Time-travel queries** via CockroachDB MVCC (`AS OF SYSTEM TIME`)
+- **A2A v1.0 bridge** for agent-to-agent delegation
+- **Self-healing**: CDC Lambda handlers, hash chain verification, auto-recovery
+
+**Tools include:** `memory_store`, `memory_search`, `memory_timetravel`, `memory_heal`, `memory_audit`, `dream`, `ltm_check_reuse`, `invoke_agent_skill`, `ccloud_exec`, `chain_verify`, `forensic_report`, `detect_contradictions`, `multi_signal_search`, `context_pack`, `agent_schema`, `a2a_bridge`, `memory_store_encrypted`, `memory_apply_patch`, `resolve_conflict`, `ltm_store_analysis`, `ltm_invalidate`, `detect_observations`, `scan_all_contradictions`, `dream_history`, `memory_pin`, `memory_get_pinned`, `memory_list`, `memory_correct`, `memory_health`, `forensic_report`, `memory_apply_patch`, `memory_delete`, `memory_store_batch`.
+
+### 2. **CockroachDB Cloud Managed MCP** (`cockroachdb-cloud`)
+**Official CockroachDB Cloud control plane** — hosted by Cockroach Labs at `https://cockroachlabs.cloud/mcp`.
+- **13 tools** for cluster operations via the official MCP endpoint
+- **Direct cluster access**: list clusters, databases, tables, schemas
+- **SQL execution**: `select_query`, `explain_query`, `show_running_queries`
+- **DDL operations**: `create_database`, `create_table`, `insert_rows`
+- **Authentication**: OAuth (Basic/Serverless) or API Key (Advanced/Dedicated)
+
+**Tools include:** `list_clusters`, `get_cluster`, `list_databases`, `list_tables`, `get_table_schema`, `select_query`, `explain_query`, `show_running_queries`, `show_statement`, `create_database`, `create_table`, `insert_rows`.
+
+### How They Work Together
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        YOUR AGENT (Cline/Cursor)                │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+┌───────────────┐           ┌───────────────────┐
+│ Bastion Memory│           │ CockroachDB Cloud │
+│ Custom MCP    │           │ Managed MCP       │
+│ (memory ops)  │           │ (cluster ops)     │
+└───────┬───────┘           └────────┬──────────┘
+        │                            │
+        └──────────────┬─────────────┘
+                       ▼
+            ┌─────────────────────┐
+            │  CockroachDB Cluster │
+            │  (single source of   │
+            │   truth for both)    │
+            └─────────────────────┘
+```
+
+**Use Bastion MCP for agent memory workflows** (store/search/heal memories).  
+**Use Managed MCP for infrastructure operations** (provision clusters, run SQL, inspect schemas).
 
 ---
 
@@ -32,12 +92,12 @@ When an agent's memory is hijacked, the agent acts on compromised facts without 
 
 | Requirement | Status | Technology Used |
 | :--- | :---: | :--- |
-| **CockroachDB Tool 1** | ✅ | **Managed MCP Server** — Live SQL queries via the official console endpoint. |
-| **CockroachDB Tool 2** | ✅ | **C-SPANN Distributed Vector Indexing** — Native semantic search on the memory table. |
-| **CockroachDB Tool 3** | ✅ | **ccloud CLI (Agent-Ready)** — Auto-introspecting cluster topology and scaling rules. |
-| **CockroachDB Tool 4** | ✅ | **Agent Skills Repo** — 34 playbooks execution wrapper from `cockroachdb-skills`. |
-| **AWS Services (6)** | ✅ | **Lambda** (CDC & Webhooks), **KMS** (Key encryption), **S3** (Snapshots & Glacier), **SNS** (Breach alarms), **CloudWatch** (Alarms), **Bedrock** (Titan config fallbacks). |
-| **Open Source** | ✅ | Released under the standard **MIT License**. |
+| **CockroachDB Tool 1** | ✅ | **Managed MCP Server** — Direct config [`mcp_configs/managed.json`](mcp_configs/managed.json) → `https://cockroachlabs.cloud/mcp` + `managed_mcp_call` tool |
+| **CockroachDB Tool 2** | ✅ | **C-SPANN Distributed Vector Indexing** — Native semantic search via `CREATE VECTOR INDEX` + `multi_signal_search` |
+| **CockroachDB Tool 3** | ✅ | **ccloud CLI (Agent-Ready)** — `ccloud_exec` MCP tool |
+| **CockroachDB Tool 4** | ✅ | **Agent Skills Repo** — 34 playbooks via `invoke_agent_skill` |
+| **AWS Services (6)** | ✅ | **Lambda** (CDC & Webhooks), **KMS** (Key encryption), **S3** (Snapshots & Glacier), **SNS** (Breach alarms), **CloudWatch** (Alarms), **Bedrock** (Titan config fallbacks) |
+| **Open Source** | ✅ | Released under the standard **MIT License** |
 
 ---
 
@@ -157,7 +217,7 @@ git clone https://github.com/dgboy-ai/Bastion.git && cd Bastion
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[mcp,a2a,groq]"
 
-# Start MCP (35 tools) & A2A (25 skills)
+# Start MCP (37 tools) & A2A (25 skills)
 python -m bastion.mcp_server &
 python -m bastion.a2a_server &
 ```
@@ -172,12 +232,23 @@ npm run dev
 ```
 
 ### 3. Integrate Bastion MCP into your IDE
-Bastion provides an HTTP SSE endpoint for MCP tools at `http://127.0.0.1:8005/mcp`. To easily integrate Bastion into your coding assistant, copy the templates from our config folder:
-* [**Cline / Cursor Config** (HTTP SSE)](mcp_configs/cline.json)
-* [**GitHub Copilot Config** (HTTP)](mcp_configs/copilot.json)
-* [**Cursor Config** (Local Subprocess)](mcp_configs/cursor.json)
-* [**Claude Desktop Config** (Local Subprocess)](mcp_configs/claude.json)
+Copy the template from our config folder and fill in your `.env.local`:
+```bash
+# Example for Cline
+cp mcp_configs/cline.json ~/.config/cline/mcp_settings.json
+cp .env.example .env.local
+# Edit .env.local with your values
+```
 
+**Available configs in [`mcp_configs/`](mcp_configs/):**
+| File | Client | Mode |
+|------|--------|------|
+| `cline.json` | Cline / VS Code | HTTP SSE + Managed MCP |
+| `cursor.json` | Cursor | Local subprocess |
+| `copilot.json` | GitHub Copilot | HTTP + Managed MCP |
+| `claude.json` | Claude Desktop | Local subprocess |
+| `codex.json` | Codex | Local subprocess |
+| `managed.json` | **CockroachDB Cloud Managed MCP** | Direct to `https://cockroachlabs.cloud/mcp` |
 
 ### 4. Python SDK Usage Example
 Integrate Bastion's self-healing memory ledger into your custom AI agent workspace:
@@ -214,6 +285,7 @@ For full setup guides, refer to [Local Development](docs/DEVELOPMENT.md) and [Cl
 - **`dashboard/`** — Next.js 16 dashboard visualizing memory health, entropy drift, and hash status.
 - **`lambda/`** — AWS Lambda CDC handlers and webhook dispatchers.
 - **`terraform/`** — Infrastructure as Code (IaC) for AWS S3 and KMS key provisioning.
+- **`mcp_configs/`** — Ready-to-use MCP client configurations for all major clients.
 
 ---
 

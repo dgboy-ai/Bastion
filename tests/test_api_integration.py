@@ -213,7 +213,9 @@ class TestAuthMiddleware:
         try:
             with patch.dict(os.environ, {"BASTION_MOCK": "true", "BASTION_MCP_API_KEYS": ""}):
                 mcp_mod._API_KEYS = None  # Force reload
-                assert mcp_mod._check_auth({}) is True
+                # Mock _load_api_keys to return empty (no DB keys either)
+                with patch.object(mcp_mod, "_load_api_keys", return_value=set()):
+                    assert mcp_mod._check_auth({}) is True
         finally:
             mcp_mod._API_KEYS = old_keys
 

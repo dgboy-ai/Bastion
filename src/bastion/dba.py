@@ -8,6 +8,7 @@ autonomously scale and optimize their own database infrastructure.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from datetime import UTC, datetime
@@ -17,6 +18,9 @@ from bastion.config import DBA_SLOW_QUERY_LIMIT
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+# ASCII-only identifier validation (no Unicode normalization issues)
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # ── CockroachDB Cloud API wrapper ──────────────────────────────────────────
 
@@ -34,12 +38,19 @@ def _run_ccloud(args: list[str], timeout: int = _DEFAULT_TIMEOUT) -> dict[str, A
     cmd = [CCLOUD_CMD] + args
     cmd_str = " ".join(cmd)
     logger.debug("ccloud exec: %s", cmd_str)
+    
+    # Map COCKROACHDB_MCP_API_KEY to COCKROACH_API_KEY for ccloud CLI auth
+    env = os.environ.copy()
+    mcp_key = env.get("COCKROACHDB_MCP_API_KEY")
+    if mcp_key and "COCKROACH_API_KEY" not in env:
+        env["COCKROACH_API_KEY"] = mcp_key
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         if result.returncode == 0:
             if result.stdout.strip():
@@ -268,16 +279,16 @@ class SchemaEvolution:
         # Validate table name
         if not table_name or not isinstance(table_name, str):
             errors.append("table_name must be a non-empty string")
-        elif not table_name.isidentifier():
-            errors.append(f"Invalid table name: {table_name}")
+        elif not _IDENTIFIER_RE.match(table_name):
+            errors.append(f"Invalid table name: {table_name} (must be ASCII alphanumeric/underscore)")
         elif len(table_name) > 128:
             errors.append(f"table_name too long ({len(table_name)} > 128)")
 
         # Validate column name
         if not column_name or not isinstance(column_name, str):
             errors.append("column_name must be a non-empty string")
-        elif not column_name.isidentifier():
-            errors.append(f"Invalid column name: {column_name}")
+        elif not _IDENTIFIER_RE.match(column_name):
+            errors.append(f"Invalid column name: {column_name} (must be ASCII alphanumeric/underscore)")
         elif len(column_name) > 128:
             errors.append(f"column_name too long ({len(column_name)} > 128)")
 

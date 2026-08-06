@@ -164,8 +164,14 @@ def _detect_negation_contradiction(text_a: str, text_b: str) -> float:
             clean_a = re.sub(neg_pattern, "", re.sub(pos_pattern, "", norm_a))
             clean_b = re.sub(neg_pattern, "", re.sub(pos_pattern, "", norm_b))
             remaining_overlap = _word_overlap(clean_a, clean_b)
-            if remaining_overlap > 0.3:
-                return min(0.95, 0.7 + remaining_overlap * 0.25)
+            # Increased threshold from 0.3 to 0.5 to avoid false positives on
+            # generic words like "he", "is", "a", "the"
+            # Also require at least 3 significant words in common
+            if remaining_overlap > 0.5:
+                # Count meaningful shared words (length > 2)
+                shared_words = {w for w in clean_a.split() if len(w) > 2} & {w for w in clean_b.split() if len(w) > 2}
+                if len(shared_words) >= 3:
+                    return min(0.95, 0.7 + remaining_overlap * 0.25)
 
     return 0.0
 

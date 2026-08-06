@@ -139,8 +139,9 @@ class WebhookNotifier:
 
     @staticmethod
     def _validate_url(url: str) -> None:
-        """Validate URL to prevent SSRF — block private/internal IPs."""
+        """Validate URL to prevent SSRF — block private/internal IPs and resolve DNS."""
         import ipaddress
+        import socket
         import urllib.parse
 
         parsed = urllib.parse.urlparse(url)
@@ -149,18 +150,33 @@ class WebhookNotifier:
         host = parsed.hostname or ""
         if not host:
             raise ValueError(f"Missing hostname in URL: {url}")
-        # Try to parse as IP address
+
+        # Resolve DNS to check actual IPs (prevents DNS rebinding)
+        try:
+            # Get all IP addresses for the hostname
+            addrs = socket.getaddrinfo(host, None)
+            for addr in addrs:
+                ip_str = addr[4][0]
+                ip = ipaddress.ip_address(ip_str)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                    raise ValueError(f"Blocked URL resolving to private/internal IP: {url} -> {ip_str}")
+        except ValueError as e:
+            if "Blocked" in str(e):
+                raise
+            # DNS resolution failed or other error - log and continue to domain checks
+            pass
+
+        # Try to parse as IP address (for direct IP URLs)
         try:
             ip = ipaddress.ip_address(host)
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 raise ValueError(f"Blocked private/internal IP URL: {url}")
             # Valid public IP — nothing else to check
             return
-        except ValueError as e:
-            # Re-raise our own blocked-IP error (not the ipaddress parsing error)
-            if "Blocked" in str(e):
-                raise
+        except ValueError:
             # Not an IP — fall through to domain-based checks
+            pass
+
         # Domain-based blocks
         blocked_domains = ("localhost", "0.0.0.0", "::1")
         if host.lower() in blocked_domains:

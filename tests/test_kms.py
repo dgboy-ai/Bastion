@@ -22,8 +22,14 @@ class TestKMSFactory:
 
     def test_create_kms_returns_local_when_no_aws(self):
         os.environ.pop("BASTION_AWS_KMS_KEY_ARN", None)
-        kms = create_kms()
-        assert isinstance(kms, LocalKMS)
+        # In production mode (BASTION_MOCK not set), LocalKMS is blocked — raises RuntimeError
+        # Set BASTION_MOCK=true to allow LocalKMS for testing
+        os.environ["BASTION_MOCK"] = "true"
+        try:
+            kms = create_kms()
+            assert isinstance(kms, LocalKMS)
+        finally:
+            os.environ.pop("BASTION_MOCK", None)
 
     def test_create_kms_returns_aws_when_key_arn_set(self):
         os.environ["BASTION_AWS_KMS_KEY_ARN"] = "arn:aws:kms:us-east-1:123456789012:key/mock"

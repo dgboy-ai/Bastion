@@ -331,13 +331,14 @@ class MerkleHashChain:
 
     def verify_chain(self) -> bool:
         """
-        Full O(n) verification of the entire chain.
+        Full verification of the entire chain.
         Returns True if every block is consistent with the latest root.
         """
         if not self.blocks:
             return True
-        trusted = self._trusted_root
+        # Rebuild tree from blocks to detect tampering
         current = MerkleTree.from_prehashed(self.blocks).root
+        trusted = self._trusted_root
         return hmac.compare_digest(current, trusted)
 
     def proof_json(self, index: int) -> dict[str, Any]:

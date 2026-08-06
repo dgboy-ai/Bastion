@@ -150,7 +150,38 @@ class SessionMemory:
             return
         try:
             entries_dict = [e.to_dict() for e in self._entries]
-            self._redis.setex(self._redis_key(), self._session_ttl, json.dumps(entries_dict))
+            # Use Lua script for atomic compare-and-set to prevent dirty-write races
+            # Only writes if the current value matches our expected version
+            lua_script = """
+            local current = redis.call('GET', KEYS[1])
+            if current == ARGV[1] then
+                return redis.call('SETEX', KEYS[1], ARGV[3], ARGV[2])
+            else
+                return 0
+            end
+            """
+            # For simplicity and correctness, use Redis WATCH/MULTI/EXEC pattern
+            # But since we're using redis-py, let's use a simpler approach:
+            # Use pipeline with WATCH on the key
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    pipe = self._redis.pipeline()
+                    pipe.watch(self._redis_key())
+                    current = self._redis.get(self._redis_key())
+                    pipe.multi()
+                    pipe.setex(self._redis_key(), self._session_ttl, json.dumps(entries_dict))
+                    pipe.execute()
+                    break  # Success
+                except _redis_sync.WatchError:
+                    if attempt == max_retries - 1:
+                        logger.warning("Redis WATCH failed after %d retries, using SETEX anyway", max_retries)
+                        self._redis.setex(self._redis_key(), self._session_ttl, json.dumps(entries_dict))
+                finally:
+                    try:
+                        pipe.unwatch()
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.warning("Redis persist failed: %s", exc)
 

@@ -174,7 +174,8 @@ class TestA2AStreaming:
         reset()
 
     def test_stream_endpoint_exists(self):
-        app, _ = _make_app()
+        with patch.dict(os.environ, {"BASTION_API_KEY": "", "BASTION_MCP_API_KEYS": ""}):
+            app, _ = _make_app()
         anyio, client = _client(app)
 
         async def run():
@@ -195,7 +196,8 @@ class TestA2AStreaming:
         anyio.run(run)
 
     def test_stream_emits_events(self):
-        app, _ = _make_app()
+        with patch.dict(os.environ, {"BASTION_API_KEY": "", "BASTION_MCP_API_KEYS": ""}):
+            app, _ = _make_app()
         anyio, client = _client(app)
 
         async def run():
@@ -251,7 +253,8 @@ class TestTaskStateMachine:
     def test_validation_rejects_invalid_transition(self):
         from bastion.a2a_server import create_a2a_server
 
-        app, _ = create_a2a_server(mock=True)
+        with patch.dict(os.environ, {"BASTION_API_KEY": "test-key"}):
+            app, _ = create_a2a_server(mock=True)
         anyio, client = _client(app)
 
         async def run():
@@ -270,7 +273,7 @@ class TestTaskStateMachine:
                             }
                         },
                     },
-                    headers=_h(),
+                    headers=_h({"Authorization": "Bearer test-key"}),
                 )
                 assert r.status_code == 200
                 task = r.json().get("result", {})
@@ -287,7 +290,7 @@ class TestTaskStateMachine:
                         "method": "CancelTask",
                         "params": {"id": task_id},
                     },
-                    headers=_h(),
+                    headers=_h({"Authorization": "Bearer test-key"}),
                 )
                 # Should return JSON-RPC error (cannot cancel terminal task)
                 error = r2.json().get("error", {})
@@ -516,7 +519,8 @@ class TestPushNotificationDelivery:
         reset()
 
     def test_push_notification_registration(self):
-        app, _ = _make_app()
+        with patch.dict(os.environ, {"BASTION_API_KEY": "", "BASTION_MCP_API_KEYS": ""}):
+            app, _ = _make_app()
         anyio, client = _client(app)
 
         async def run():

@@ -107,12 +107,33 @@ function isValidSessionCookie(request: Request): boolean {
     const data = Buffer.from(dataB64, "base64url");
     const sig = Buffer.from(sigB64, "base64url");
     if (sig.length !== 32) return false;
-    const expected = createHmac("sha256", secret).update(data).digest();
-    return cryptoTimingSafeEqual(sig, expected);
+
+    // Check both potential signatures (decoded raw JSON payload or base64url format)
+    const expectedWithData = createHmac("sha256", secret).update(data).digest();
+    const expectedWithB64 = createHmac("sha256", secret).update(Buffer.from(dataB64, "utf8")).digest();
+
+    const matchData = cryptoTimingSafeEqual(sig, expectedWithData);
+    const matchB64 = cryptoTimingSafeEqual(sig, expectedWithB64);
+
+    if (!matchData && !matchB64) {
+      return false;
+    }
+
+    // Verify session expiration and subject claims
+    const payload = JSON.parse(data.toString("utf8"));
+    if (typeof payload.exp !== "number" || Date.now() / 1000 > payload.exp) {
+      return false;
+    }
+    if (payload.sub !== "dashboard-user") {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
 }
+
 
 export function checkRateLimit(request: Request): NextResponse | null {
   if (process.env.NODE_ENV !== "production") {
@@ -240,10 +261,12 @@ export function requireAuth(request: Request): NextResponse | null {
   }
 
   // In local dev, allow unauthenticated access to facilitate easy testing and auditing
-  const host = request.headers.get("host") || "";
-  const isLocal = host.includes("localhost") || host.includes("127.0.0.1") || host.startsWith("192.168.") || host.startsWith("10.");
-  if (process.env.NODE_ENV !== "production" || isLocal) {
-    return null;
+  // NOTE: This bypass is controlled by BASTION_DEV_MODE env var, NOT by Host header
+  // Host header is user-controllable and MUST NOT be used for security decisions
+  if (process.env.NODE_ENV !== "production") {
+    if (process.env.BASTION_DEV_MODE === "true") {
+      return null;
+    }
   }
 
   // Allow disabling auth via env var (for public demo deployments)

@@ -146,21 +146,101 @@ _STOP_WORDS = frozenset(
 def extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
     """Extract (subject, object, relation, kind, confidence) triples from text.
 
-    Confidence is reduced for generic entities (stop words) and simpler patterns.
+    Tries LLM extraction first (when Groq available) for complex syntax,
+    falls back to regex patterns, and merges/deduplicates results.
     """
     if len(text) > 5000:
         text = text[:5000]
+
+    # Try LLM extraction first for richer results
+    llm_triples = _llm_extract_triples(text)
+
+    # Always run regex extraction as baseline
+    regex_triples = _regex_extract_triples(text)
+
+    # Merge: LLM triples take priority, add unique regex triples
+    if llm_triples:
+        seen = {(s, r, t) for s, t, r, k, c in llm_triples}
+        merged = list(llm_triples)
+        for triple in regex_triples:
+            key = (triple[0], triple[2], triple[1])
+            if key not in seen:
+                merged.append(triple)
+                seen.add(key)
+        return merged
+
+    return regex_triples
+
+
+def _llm_extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
+    """Use Groq LLM to extract entity-relation triples from text.
+
+    Returns triples in the same format as regex extraction, or empty list on failure.
+    """
+    try:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return []
+        from groq import Groq
+
+        client = Groq(api_key=api_key)
+        # Default to Qwen3-32B (available on Groq); override with GROQ_MODEL env var
+        # Supported options: qwen/qwen3-32b, openai/gpt-oss-120b, llama-3.3-70b-versatile
+        model = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract entity-relation triples from the given text. "
+                        "Return ONLY a JSON object with a 'triples' key containing an array. "
+                        'Format: {"triples": [["subject","relation","object","kind",confidence],...]} '
+                        "kind is 'relation' or 'entity_type'. confidence is 0.0-1.0. "
+                        "subject and object should be lowercase. "
+                        "Focus on meaningful relationships, not trivial sentence structure."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Text: {text[:4096]}\nReturn JSON object with triples array only:",
+                },
+            ],
+            temperature=0.0,
+            max_tokens=512,
+            timeout=10,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or '{"triples": []}'
+        parsed = KnowledgeGraph._parse_json_response(raw)
+        # Handle both array and object-with-triples-key formats
+        triples_list = parsed.get("triples", []) if isinstance(parsed, dict) else parsed
+        triples: list[tuple[str, str, str, str, float]] = []
+        for t in triples_list:
+            if isinstance(t, list) and len(t) >= 5:
+                src = str(t[0]).lower().strip()
+                rel = str(t[1]).lower().strip()
+                tgt = str(t[2]).lower().strip()
+                kind = str(t[3]).strip()
+                conf = float(t[4])
+                if len(src) >= 2 and len(tgt) >= 2 and src not in _STOP_WORDS:
+                    triples.append((src, tgt, rel, kind, min(max(conf, 0.0), 1.0)))
+        return triples
+    except Exception:
+        logger.debug("LLM triple extraction failed, falling back to regex")
+        return []
+
+
+def _regex_extract_triples(text: str) -> list[tuple[str, str, str, str, float]]:
+    """Extract triples using compiled regex patterns (baseline extraction)."""
     triples: list[tuple[str, str, str, str, float]] = []
     for compiled, rel_type, kind in _TRIPLE_PATTERNS:
         for match in compiled.finditer(text):
             src, tgt = match.group(1).lower(), match.group(2).lower()
-            # Skip if subject is a stop word (object can be articles like "the dashboard")
             if src in _STOP_WORDS:
                 continue
-            # Skip very short entities (likely false positives)
             if len(src) < 2 or len(tgt) < 2:
                 continue
-            # Confidence: specific relations (is_a, entity_type) get higher confidence
             confidence = 0.9 if kind == "entity_type" else 0.7
             triples.append((src, tgt, rel_type, kind, confidence))
     return triples
@@ -527,7 +607,8 @@ class KnowledgeGraph:
             if client is None:
                 return triples
             triples_text = "; ".join(f"{s} {r} {t}" for s, t, r, k, c in triples)
-            model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+            # Default to Qwen3-32B (available on Groq); override with GROQ_MODEL env var
+            model = os.environ.get("GROQ_MODEL", "qwen/qwen3-32b")
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -535,14 +616,14 @@ class KnowledgeGraph:
                         "role": "system",
                         "content": (
                             "Extract and verify entity-relation triples from text. "
-                            "Return ONLY a JSON array. No explanation, no markdown, no text. "
-                            'Format: [["subject","relation","object","kind",confidence],...] '
+                            "Return ONLY a JSON object with a 'triples' key containing an array. "
+                            'Format: {"triples": [["subject","relation","object","kind",confidence],...]} '
                             "kind is 'relation' or 'entity_type'. confidence is 0.0-1.0."
                         ),
                     },
                     {
                         "role": "user",
-                        "content": (f"Text: {content[:4096]}\nExisting triples: {triples_text}\nReturn JSON array only:"),
+                        "content": (f"Text: {content[:4096]}\nExisting triples: {triples_text}\nReturn JSON object with triples array only:"),
                     },
                 ],
                 temperature=0.0,
@@ -550,10 +631,12 @@ class KnowledgeGraph:
                 timeout=10,
                 response_format={"type": "json_object"},
             )
-            raw = resp.choices[0].message.content or "[]"
+            raw = resp.choices[0].message.content or '{"triples": []}'
             verified = self._parse_json_response(raw)
+            # Handle both array and object-with-triples-key formats
+            triples_list = verified.get("triples", []) if isinstance(verified, dict) else verified
             result = []
-            for t in verified:
+            for t in triples_list:
                 if isinstance(t, list) and len(t) >= 5:
                     result.append((str(t[0]), str(t[1]), str(t[2]), str(t[3]), float(t[4])))
             return result if result else triples

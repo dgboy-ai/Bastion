@@ -404,10 +404,11 @@ class MemoryAnalytics:
             from bastion.log_setup import get_logger
 
             get_logger(__name__).warning("Hash chain check: sampling 10K of %d memories to prevent OOM", len(memories))
-            memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))[-10_000:]
+            memories = sorted(memories, key=lambda m: (m.created_at or datetime.min.replace(tzinfo=UTC), m.memory_id))[-10_000:]
         from bastion.crypto import verify_hash
 
-        sorted_memories = sorted(memories, key=lambda m: m.created_at or datetime.min.replace(tzinfo=UTC))
+        # Sort by created_at with memory_id tiebreaker for deterministic ordering of batch inserts
+        sorted_memories = sorted(memories, key=lambda m: (m.created_at or datetime.min.replace(tzinfo=UTC), m.memory_id))
         prev_hash = None
         for mem in sorted_memories:
             if not verify_hash(mem.content, mem.metadata, mem.previous_hash, mem.cryptographic_hash):

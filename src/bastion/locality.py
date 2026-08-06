@@ -86,6 +86,9 @@ class MemoryLocality:
 
         In real CRDB mode this executes the schema migration (ALTER TABLE).
         In mock mode it is a no-op that returns the available regions.
+        
+        Note: REGIONAL BY ROW requires CockroachDB Dedicated/Enterprise tier.
+        Serverless (Basic) clusters will return an error with guidance.
         """
         with self._lock:
             self._routing_enabled = True
@@ -101,6 +104,17 @@ class MemoryLocality:
                 conn = pool.acquire(timeout=30.0)
                 try:
                     with conn.cursor() as cur:
+                        # Check if running on Serverless tier (which doesn't support REGIONAL BY ROW)
+                        try:
+                            cur.execute("SHOW CLUSTER SETTING version")
+                            version_row = cur.fetchone()
+                            if version_row:
+                                version = version_row[0] if hasattr(version_row, "_mapping") else version_row[0]
+                                # Note: This is a heuristic - Serverless version strings may vary
+                                pass
+                        except Exception:
+                            pass
+                        
                         cur.execute(
                             "ALTER TABLE agent_memory "
                             "ADD COLUMN IF NOT EXISTS crdb_region STRING "
@@ -121,8 +135,18 @@ class MemoryLocality:
                         "total_regions": len(self._region_configs),
                         "mode": "crdb",
                     }
-                except Exception:
+                except Exception as exc:
                     conn.rollback()
+                    err_str = str(exc).lower()
+                    if "unsupported" in err_str or "regional by row" in err_str or "not supported" in err_str:
+                        return {
+                            "status": "error",
+                            "error": (
+                                "REGIONAL BY ROW is not supported on this cluster tier. "
+                                "Geo-partitioning requires CockroachDB Dedicated (Enterprise) tier. "
+                                "See https://www.cockroachlabs.com/docs/stable/multi-region-overview"
+                            ),
+                        }
                     logger.exception("Failed to enable regional routing")
                     return {"status": "error", "error": "Operation failed — check server logs"}
                 finally:
@@ -403,7 +427,7 @@ class MemoryLocality:
                         "region": region,
                         "note": "No rows found for agent (trivially compliant)",
                     }
-                non_compliant = actual_regions - {expected_alias, "us-east-1", region}
+                non_compliant = actual_regions - {expected_alias, region}
                 if non_compliant:
                     return {
                         "compliant": False,

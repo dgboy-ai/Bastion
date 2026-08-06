@@ -51,7 +51,7 @@ class CircuitBreaker:
         self._total_failures = 0
         self._total_rejected = 0
         self._half_open_semaphore = threading.Semaphore(1)  # Limit concurrent HALF_OPEN probes
-        self._async_lock = asyncio.Lock()  # For async_call() serialization
+        self._async_lock: asyncio.Lock | None = None  # Created lazily in async_call()
 
     @property
     def state(self) -> CircuitState:
@@ -106,6 +106,9 @@ class CircuitBreaker:
 
     async def async_call(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """Execute async function through circuit breaker."""
+        # Create lock lazily in the current event loop to avoid loop-binding issues
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
         async with self._async_lock:
             self._total_calls += 1
             current_state = self.state

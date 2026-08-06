@@ -6,6 +6,7 @@ and don't depend on core memory CRUD operations.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -256,6 +257,31 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
                     broken_at = chain_rows[i][0]
                     break
 
+            # 2b. Re-hashing integrity: recalculate HMAC from content + metadata
+            #     to detect out-of-band modifications that don't break chain links
+            from bastion.crypto import compute_hash
+            cur.execute(
+                "SELECT memory_id, content, metadata, previous_hash, cryptographic_hash "
+                "FROM agent_memory "
+                "WHERE agent_id = %s AND cryptographic_hash IS NOT NULL "
+                "ORDER BY created_at ASC",
+                (mem.agent_id,),
+            )
+            hash_mismatches = []
+            hash_checked = 0
+            for row in cur.fetchall():
+                mid, content, metadata, prev_hash, stored_hash = row
+                hash_checked += 1
+                try:
+                    meta_dict = json.loads(metadata) if metadata and isinstance(metadata, str) else metadata
+                except (json.JSONDecodeError, TypeError):
+                    meta_dict = metadata
+                recomputed = compute_hash(content or "", meta_dict, prev_hash)
+                if recomputed != stored_hash:
+                    hash_mismatches.append(mid)
+                    if len(hash_mismatches) >= 10:
+                        break
+
             # 3. Memory type distribution
             cur.execute(
                 "SELECT memory_type, COUNT(*) "
@@ -298,6 +324,10 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
             "hash_chain_verified": hashed,
             "hash_chain_total": total,
             "hash_chain_broken_at_memory": broken_at,
+            # Re-hashing integrity
+            "hash_recomputation_checked": hash_checked,
+            "hash_recomputation_mismatches": hash_mismatches,
+            "hash_recomputation_status": "TAMPERED" if hash_mismatches else "VERIFIED",
             # Memory stats
             "total_memories": total,
             "pinned_memories": pinned,

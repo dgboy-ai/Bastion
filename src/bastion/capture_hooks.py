@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +23,40 @@ from typing import Any
 from bastion.log_setup import get_logger
 
 logger = get_logger(__name__)
+
+
+_SENSITIVE_PATTERNS = [
+    (re.compile(r"AKIA[A-Z0-9]{16}", re.IGNORECASE), "[REDACTED_AWS_KEY]"),
+    (re.compile(r"(postgresql|cockroachdb|mongodb|mysql|redis)://[^'\"]+", re.IGNORECASE), "[REDACTED_URI]"),
+    (re.compile(r"(api[_-]key|secret|password|passphrase|token|auth_token|session_secret|private_key|access_key|client_secret)(['\"\s]*[:=]['\"\s]*)([a-zA-Z0-9_\-\.\+=/]{8,})", re.IGNORECASE), r"\1\2[REDACTED]"),
+    (re.compile(r"bearer\s+[a-zA-Z0-9_\-\.\+=/]{8,}", re.IGNORECASE), "Bearer [REDACTED]"),
+    (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.IGNORECASE), "[REDACTED_EMAIL]"),
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[REDACTED_IP]"),
+    (re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b"), "[REDACTED_CARD]"),
+    (re.compile(r"(?i)authorization\s*[:=]\s*[\"']?([^\"'\s,}]+)", re.IGNORECASE), r'Authorization=[REDACTED]'),
+    (re.compile(r"(?i)connection[_-]?string\s*[:=]\s*[\"']?([^\"'\s,}]+)", re.IGNORECASE), r'connection_string=[REDACTED]'),
+    (re.compile(r"(?i)aws_secret_access_key\s*[:=]\s*[\"']?([^\"'\s,}]+)", re.IGNORECASE), r'aws_secret_access_key=[REDACTED]'),
+    (re.compile(r"(?i)aws_access_key_id\s*[:=]\s*[\"']?([^\"'\s,}]+)", re.IGNORECASE), r'aws_access_key_id=[REDACTED]'),
+]
+
+
+def _redact_sensitive_content(text: str) -> str:
+    if not text:
+        return text
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _redact_metadata(val: Any) -> Any:
+    if isinstance(val, dict):
+        return {k: _redact_metadata(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_redact_metadata(v) for v in val]
+    elif isinstance(val, str):
+        return _redact_sensitive_content(val)
+    return val
+
 
 
 @dataclass
@@ -169,6 +204,9 @@ class CaptureHooks:
             context_summary = json.dumps(context, default=str)[:200]
             content += f" (context: {context_summary})"
 
+        if self._is_duplicate(content):
+            return None
+
         event = CaptureEvent(
             event_type="error",
             content=content,
@@ -187,6 +225,8 @@ class CaptureHooks:
         content = f"File read: {file_path}"
         if content_preview:
             content += f" — {content_preview[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="file_read",
             content=content,
@@ -200,6 +240,8 @@ class CaptureHooks:
         content = f"File written: {file_path}"
         if content_preview:
             content += f" — {content_preview[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="file_write",
             content=content,
@@ -213,6 +255,8 @@ class CaptureHooks:
         content = f"Command: {command} (exit={exit_code})"
         if output_preview:
             content += f" — {output_preview[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="command",
             content=content,
@@ -226,6 +270,8 @@ class CaptureHooks:
         content = f"Checkpoint saved: {checkpoint_id}"
         if description:
             content += f" — {description}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="checkpoint",
             content=content,
@@ -237,6 +283,8 @@ class CaptureHooks:
     def after_network_request(self, url: str, method: str = "GET", status: int = 200) -> CaptureEvent | None:
         """Capture memory after a network request."""
         content = f"Network {method} {url} → {status}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="network_request",
             content=content,
@@ -248,6 +296,8 @@ class CaptureHooks:
     def after_db_query(self, query: str, rows_affected: int = 0) -> CaptureEvent | None:
         """Capture memory after a database query."""
         content = f"DB query: {query[:200]} — {rows_affected} rows"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="db_query",
             content=content,
@@ -261,6 +311,8 @@ class CaptureHooks:
         content = f"Session started: {session_id}"
         if context:
             content += f" — {context[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="session_start",
             content=content,
@@ -274,6 +326,8 @@ class CaptureHooks:
         content = f"Session ended: {session_id}"
         if summary:
             content += f" — {summary[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="session_end",
             content=content,
@@ -287,6 +341,8 @@ class CaptureHooks:
         content = f"Sub-agent started: {subagent_id}"
         if task:
             content += f" — {task[:200]}"
+        if self._is_duplicate(content):
+            return None
         event = CaptureEvent(
             event_type="subagent_start",
             content=content,
@@ -298,10 +354,12 @@ class CaptureHooks:
     def _store_event(self, event: CaptureEvent, memory_type: str) -> None:
         """Store a capture event as a memory."""
         try:
+            redacted_content = _redact_sensitive_content(event.content)
+            redacted_metadata = _redact_metadata(event.metadata)
             store_kwargs: dict[str, Any] = {
                 "memory_type": memory_type,
-                "content": event.content,
-                "metadata": event.metadata,
+                "content": redacted_content,
+                "metadata": redacted_metadata,
             }
             if self._bypass_guard:
                 # Internally generated events can skip the guard for throughput;
@@ -310,7 +368,7 @@ class CaptureHooks:
                 store_kwargs["_guard_bypass_token"] = True
             self._memory.store(**store_kwargs)
             self._capture_count += 1
-            self._recent_contents.append((event.content[:100], time.time()))
+            self._recent_contents.append((redacted_content[:100], time.time()))
             # Trim old entries from dedup window
             cutoff = time.time() - self._dedup_window
             self._recent_contents = [(c, t) for c, t in self._recent_contents if t >= cutoff]

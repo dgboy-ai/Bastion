@@ -41,11 +41,10 @@ class TestHMACSecretPersistence:
                 secret1 = crypto._get_hmac_secret()
                 assert len(secret1) == 32
                 assert os.path.exists(secret_file)
-                with open(secret_file, "rb") as f:
-                    disk_bytes = f.read()
-                    # File may be DPAPI-encrypted on Windows — unwrap
-                    from_disk = crypto._unprotect_secret(disk_bytes)
-                    assert from_disk == secret1
+                # Reload using the proper loading mechanism
+                with patch.object(crypto, "_hmac_secret", None):
+                    secret2 = crypto._get_hmac_secret()
+                    assert secret2 == secret1
 
     def test_hmac_secret_loads_from_disk(self):
         from bastion import crypto

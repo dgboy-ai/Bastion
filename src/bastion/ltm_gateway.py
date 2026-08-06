@@ -224,9 +224,14 @@ class LTMMemoryGateway:
             if query_words and orig_words:
                 orig_overlap = len(query_words & orig_words) / len(query_words)
         best_overlap = max(content_overlap, orig_overlap)
-        # Blend with importance as a secondary signal (importance boosts confidence)
+        # Blend with importance as a secondary signal
+        # Importance only boosts when there's already meaningful overlap (>0.5),
+        # preventing high-importance cached results from matching unrelated queries
         importance_signal = min(1.0, max(0.0, best.importance_score / 10.0))
-        similarity = min(1.0, best_overlap * 0.7 + importance_signal * 0.3)
+        if best_overlap > 0.5:
+            similarity = min(1.0, best_overlap * 0.7 + importance_signal * 0.3)
+        else:
+            similarity = best_overlap  # No importance boost for low overlap
 
         if similarity < threshold:
             return None

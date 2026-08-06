@@ -158,13 +158,13 @@ class ProceduralMemory:
         return patterns
 
     def get_workflow_by_name(self, name: str) -> WorkflowPattern | None:
-        """Get a specific workflow by name."""
-        results = self._memory.search(
-            query=f"workflow {name}",
-            k=5,
-            memory_type="procedural",
-        )
-        for record in results:
+        """Get a specific workflow by name using exact metadata lookup.
+
+        Uses list_all with exact metadata filter instead of vector search
+        to guarantee finding the workflow by name even at scale.
+        """
+        all_proc = self._memory.list_all(namespace_scope="own", memory_type="procedural")
+        for record in all_proc:
             meta = record.metadata or {}
             if meta.get("workflow_name", "").lower() == name.lower():
                 return WorkflowPattern(

@@ -27,8 +27,24 @@ class BastionVectorStore:
         return [r.to_dict() for r in results]
 
     def delete(self, ref_doc_id: str) -> None:
-        memories = self.bastion.list_memories(limit=100)
-        for mem in memories:
-            if ref_doc_id in (mem.metadata or {}).get("ref_doc_id", ""):
-                self.bastion.delete_memory(mem.memory_id)
-                return
+        """Delete all memories with the given ref_doc_id.
+
+        Iterates through all memories (with pagination) to find and delete
+        all chunks belonging to the document, not just the first 100.
+        """
+        cursor = None
+        while True:
+            memories = self.bastion.list_memories(limit=500, cursor=cursor)
+            if not memories:
+                break
+            found = False
+            for mem in memories:
+                if ref_doc_id in (mem.metadata or {}).get("ref_doc_id", ""):
+                    self.bastion.delete_memory(mem.memory_id)
+                    found = True
+            if not found:
+                cursor = memories[-1].memory_id if hasattr(memories[-1], 'memory_id') else None
+                if not cursor:
+                    break
+            # Continue to next page if we found matches (there might be more)
+            # cursor is automatically handled by list_memories returning next_cursor

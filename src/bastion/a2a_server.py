@@ -166,6 +166,7 @@ def create_a2a_server(
         "memory_search_encrypted": "memory_search_encrypted",
         "memory_store_batch": "memory_store_batch",
         "forensic_report": "forensic_report",
+        "chain_verify": "chain_verify",
         "managed_mcp_list_tools": "managed_mcp_list_tools",
         "managed_mcp_call": "managed_mcp_call",
         "invoke_agent_skill": "invoke_agent_skill",
@@ -210,6 +211,7 @@ def create_a2a_server(
         "memory_search_encrypted": "reader",
         "memory_store_batch": "writer",
         "forensic_report": "reader",
+        "chain_verify": "reader",
         "managed_mcp_list_tools": "reader",
         "managed_mcp_call": "writer",
         "invoke_agent_skill": "writer",
@@ -304,6 +306,16 @@ def create_a2a_server(
                 ),
                 "tags": ["memory", "healing", "integrity"],
                 "examples": ["Heal any broken hash chain links in my memories"],
+            },
+            {
+                "id": "chain_verify",
+                "name": "Verify Hash Chain",
+                "description": (
+                    "Verify hash chain integrity for flagged memories. "
+                    "Re-computes HMAC-SHA256 for each row and reports mismatches."
+                ),
+                "tags": ["memory", "hash-chain", "integrity", "verification"],
+                "examples": ["Verify the hash chain integrity for my recent memories"],
             },
             {
                 "id": "memory_delete",
@@ -1256,19 +1268,21 @@ def create_a2a_server(
             if forwarded and os.environ.get("BASTION_TRUST_PROXY", "").lower() in ("true", "1", "yes")
             else (request.client.host if request.client else "unknown")
         )
-        if request.url.path not in ("/healthz", "/readyz") and not request.url.path.startswith(
+        if request.url.path not in ("/healthz", "/readyz", "/metrics") and not request.url.path.startswith(
             "/.well-known/"
         ):
-            if _check_brute_force(client_ip):
-                logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
-                return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
-            auth = request.headers.get("Authorization", "")
-            token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
-            if _api_key and (not token or not _verify_api_key(token)):
-                _record_auth_failure(client_ip)
-                return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            if _api_key:
-                _clear_auth_failures(client_ip)
+            # OPTIONS (CORS preflight) is always allowed — CORS middleware handles it
+            if request.method != "OPTIONS":
+                if _check_brute_force(client_ip):
+                    logger.warning("IP locked out due to brute-force", extra={"client_ip": client_ip})
+                    return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
+                auth = request.headers.get("Authorization", "")
+                token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+                if _api_key and (not token or not _verify_api_key(token)):
+                    _record_auth_failure(client_ip)
+                    return JSONResponse({"error": "Unauthorized"}, status_code=401)
+                if _api_key:
+                    _clear_auth_failures(client_ip)
         request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex)
         request.state.request_id = request_id
 
@@ -2110,6 +2124,9 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
     elif method == "memory_heal":
         agent_id = params.get("agent_id")
         return mem.heal(agent_id)
+    elif method == "chain_verify":
+        batch_size = int(params.get("batch_size", 100))
+        return mem.chain_verify(batch_size)
     elif method == "memory_delete":
         memory_id = params.get("memory_id", "")
         if not memory_id:
@@ -2238,7 +2255,8 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         from bastion.dreaming import MemoryDreamer
 
         lookback_hours = max(1, min(int(params.get("lookback_hours", 24)), 168))
-        dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours)
+        enable_llm = bool(params.get("enable_llm", True))
+        dreamer = MemoryDreamer(mem, lookback_hours=lookback_hours, enable_llm=enable_llm)
         journal = dreamer.dream()
         return journal.to_dict()
     elif method == "dream_history":

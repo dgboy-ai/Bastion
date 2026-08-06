@@ -257,9 +257,9 @@ class TracedBastionMemory:
         with self._span("bastion.apply_patch", {"memory_id": memory_id}):
             return self._memory.apply_patch(memory_id, patch_ops)
 
-    def pin(self, memory_id: str, priority: int = 5, reason: str = "") -> bool:
-        with self._span("bastion.pin", {"memory_id": memory_id, "priority": priority}):
-            return self._memory.pin(memory_id, priority, reason)
+    def pin(self, memory_type: str, content: str, pin_priority: int = 2, metadata: dict[str, Any] | None = None) -> bool:
+        with self._span("bastion.pin", {"memory_type": memory_type, "pin_priority": pin_priority}):
+            return self._memory.pin(memory_type, content, pin_priority, metadata)
 
     def unpin(self, memory_id: str) -> bool:
         with self._span("bastion.unpin", {"memory_id": memory_id}):

@@ -295,6 +295,7 @@ class AwsKMS(KMSInterface):
         # Cache for DEKs unwrapped by other processes: encrypted_dek -> plaintext_dek
         self._dek_cache: dict[str, bytes] = {}
         self._dek_cache_max = 1000
+        self._dek_cache_lock = threading.Lock()
         self._dek_cache[self._dek_ciphertext.hex()] = self._dek_plaintext
 
     def encrypt(self, plaintext: str, context: dict[str, str] | None = None) -> str:
@@ -320,7 +321,9 @@ class AwsKMS(KMSInterface):
         dek_ct = payload[16 : 16 + dek_ct_len]
         ct = payload[16 + dek_ct_len :]
 
-        dek = self._dek_cache.get(dek_ct.hex())
+        dek = None
+        with self._dek_cache_lock:
+            dek = self._dek_cache.get(dek_ct.hex())
         if dek is None:
             try:
                 resp = self._client.decrypt(CiphertextBlob=dek_ct)
@@ -329,10 +332,11 @@ class AwsKMS(KMSInterface):
                 raise RuntimeError(f"AWS KMS decrypt failed: {exc}") from exc
             dek = resp["Plaintext"]
             # Evict oldest entries if cache exceeds max size
-            if len(self._dek_cache) >= self._dek_cache_max:
-                oldest_key = next(iter(self._dek_cache))
-                self._dek_cache.pop(oldest_key, None)
-            self._dek_cache[dek_ct.hex()] = dek
+            with self._dek_cache_lock:
+                if len(self._dek_cache) >= self._dek_cache_max:
+                    oldest_key = next(iter(self._dek_cache))
+                    self._dek_cache.pop(oldest_key, None)
+                self._dek_cache[dek_ct.hex()] = dek
 
         aesgcm = AESGCM(dek)
         aad = self._encode_aad(context)

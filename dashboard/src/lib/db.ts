@@ -17,7 +17,82 @@ const mockResult = (): SafeQueryResult => ({
 });
 
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
-const isMockForced = false;
+const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true";
+
+/**
+ * Split SQL into individual statements, handling:
+ * - Regular statements ending with ;
+ * - DO $$ ... $$; blocks (dollar-quoted strings)
+ * - BEGIN ... COMMIT; transaction blocks
+ * - CREATE FUNCTION/PROCEDURE with dollar-quoted bodies
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inDollarQuote = false;
+  let dollarTag = "";
+  let i = 0;
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    // Check for dollar quote start ($tag$ or $$)
+    if (!inDollarQuote && ch === "$") {
+      let j = i + 1;
+      let tag = "";
+      while (j < sql.length && sql[j] !== "$") {
+        tag += sql[j];
+        j++;
+      }
+      if (j < sql.length && sql[j] === "$") {
+        // Found dollar quote delimiter
+        inDollarQuote = true;
+        dollarTag = tag;
+        current += sql.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
+    }
+    // Check for dollar quote end
+    else if (inDollarQuote && ch === "$") {
+      let j = i + 1;
+      let tag = "";
+      while (j < sql.length && sql[j] !== "$") {
+        tag += sql[j];
+        j++;
+      }
+      if (j < sql.length && sql[j] === "$" && tag === dollarTag) {
+        // Found matching end delimiter
+        inDollarQuote = false;
+        dollarTag = "";
+        current += sql.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
+    }
+
+    current += ch;
+
+    // Statement terminator (only when not in dollar quote)
+    if (!inDollarQuote && ch === ";") {
+      const trimmed = current.trim();
+      if (trimmed) {
+        statements.push(trimmed);
+      }
+      current = "";
+    }
+
+    i++;
+  }
+
+  // Add any remaining
+  const trimmed = current.trim();
+  if (trimmed) {
+    statements.push(trimmed);
+  }
+
+  return statements;
+}
 
 async function ensureSchema(pool: any) {
   if (pool.schemaEnsured) return;
@@ -69,19 +144,19 @@ async function ensureSchema(pool: any) {
       const sqlPath = path.join(schemaDir, file);
       const sql = fs.readFileSync(sqlPath, "utf8");
 
-      // Execute SQL statements
-      const statements = sql.split(";").map(s => s.trim()).filter(Boolean);
+// Execute SQL statements using a proper parser that handles DO $$ blocks
+      const statements = splitSqlStatements(sql);
       const start = Date.now();
       for (const stmt of statements) {
         try {
           await pool.query(stmt);
-} catch (err: unknown) {
-            if (err instanceof Error && (err.message.includes("already exists") || err.message.includes("duplicate"))) {
-              // Ignore expected idempotent duplicates
-            } else {
-              // Throw on non-idempotent SQL errors to prevent partial migration
-              throw new Error(`Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`);
-            }
+        } catch (err: unknown) {
+          if (err instanceof Error && (err.message.includes("already exists") || err.message.includes("duplicate"))) {
+            // Ignore expected idempotent duplicates
+          } else {
+            // Throw on non-idempotent SQL errors to prevent partial migration
+            throw new Error(`Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
       const elapsed = Date.now() - start;

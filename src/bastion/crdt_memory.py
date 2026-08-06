@@ -178,14 +178,30 @@ class CRDTMemory:
 
         clocks = [self._extract_clock(r) for r in candidates]
 
-        has_concurrent = False
-        for i in range(len(clocks)):
-            for j in range(i + 1, len(clocks)):
-                if clocks[i].is_concurrent_with(clocks[j]):
-                    has_concurrent = True
+        # O(N·K) concurrency detection: find Pareto-optimal (maximal) clocks.
+        # A clock is maximal if no other clock dominates it (happens-after).
+        # If >1 maximal clocks exist, they are concurrent.
+        maximal_indices = []
+        for i, ci in enumerate(clocks):
+            dominated = False
+            for j, cj in enumerate(clocks):
+                if i == j:
+                    continue
+                # cj dominates ci if cj happens-after ci (ci <= cj in all dimensions, < in at least one)
+                if ci.is_concurrent_with(cj):
+                    # Concurrent — neither dominates, so ci is still candidate maximal
+                    continue
+                # Check if cj happens-after ci
+                all_keys = set(ci._clock) | set(cj._clock)
+                if all(cj._clock.get(k, 0) >= ci._clock.get(k, 0) for k in all_keys) and any(
+                    cj._clock.get(k, 0) > ci._clock.get(k, 0) for k in all_keys
+                ):
+                    dominated = True
                     break
-            if has_concurrent:
-                break
+            if not dominated:
+                maximal_indices.append(i)
+
+        has_concurrent = len(maximal_indices) > 1
 
         if not has_concurrent:
             # Totally ordered by happens-before — pick the latest
@@ -710,46 +726,45 @@ class PNCounter:
         target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
         if len(target) <= 1:
             return 0
-        # Keep only the most recent record, delete the rest
-        target.sort(key=lambda r: r.created_at, reverse=True)
-        removed = 0
-        for record in target[1:]:
-            self._memory.delete_memory(record.memory_id)
-            removed += 1
-        return removed
-
-        seen_p: set[str] = set()
-        seen_n: set[str] = set()
-        self._p_clock = {}
-        self._n_clock = {}
+        # Compact: sum all operations and create a single consolidated record
+        # instead of deleting history (which destroys the counter state)
         p_total = 0
         n_total = 0
-
+        latest_record = max(target, key=lambda r: r.created_at)
+        
         for r in target:
             try:
                 data = json.loads(r.content)
             except (json.JSONDecodeError, TypeError):
                 continue
-            vc_raw = (r.metadata or {}).get("_vector_clock", {})
-            tag_str = json.dumps(vc_raw, sort_keys=True) if vc_raw else r.memory_id
             if data.get("op") == "inc":
-                if tag_str in seen_p:
-                    continue
-                seen_p.add(tag_str)
                 p_total += data.get("delta", 1)
-                if isinstance(vc_raw, dict):
-                    for agent, tick in vc_raw.items():
-                        self._p_clock[agent] = max(self._p_clock.get(agent, 0), tick)
             elif data.get("op") == "dec":
-                if tag_str in seen_n:
-                    continue
-                seen_n.add(tag_str)
                 n_total += data.get("delta", 1)
-                if isinstance(vc_raw, dict):
-                    for agent, tick in vc_raw.items():
-                        self._n_clock[agent] = max(self._n_clock.get(agent, 0), tick)
-
-        return p_total - n_total
+        
+        # Delete all old records
+        removed = 0
+        for record in target:
+            self._memory.delete_memory(record.memory_id)
+            removed += 1
+        
+        # Create consolidated record with net value
+        # Store as an "inc" with the net delta
+        net_delta = p_total - n_total
+        if net_delta != 0:
+            self._memory.store(
+                content=json.dumps({"op": "inc" if net_delta > 0 else "dec", "delta": abs(net_delta)}),
+                memory_type=self._CRDT_TYPE,
+                metadata={
+                    "_crdt_key": self._key,
+                    "_vector_clock": latest_record.metadata.get("_vector_clock", {}) if latest_record.metadata else {},
+                    "_compacted": True,
+                    "_p_total": p_total,
+                    "_n_total": n_total,
+                },
+            )
+        
+        return removed
 
 
 class RGA:
@@ -778,7 +793,30 @@ class RGA:
     def __init__(self, memory: CRDTMemory, key: str) -> None:
         self._memory = memory
         self._key = key
-        self._seq_counter = 0  # Logical sequence counter (monotonic, no wall-clock collision)
+        # Persist seq_counter in a dedicated metadata record to survive restarts
+        self._seq_counter = self._load_seq_counter()
+
+    def _load_seq_counter(self) -> int:
+        """Load persisted seq_counter from the latest RGA metadata record."""
+        records = self._memory.search(
+            self._key,
+            k=1,
+            threshold=0.0,
+            memory_type=self._CRDT_TYPE,
+        )
+        for r in records:
+            meta = r.metadata or {}
+            if meta.get("_crdt_key") == self._key and "_crdt_seq" in meta:
+                return int(meta["_crdt_seq"])
+        return 0
+
+    def _persist_seq_counter(self) -> None:
+        """Persist seq_counter as a lightweight metadata record."""
+        self._memory.store(
+            memory_type=self._CRDT_TYPE,
+            content=json.dumps({"_seq": self._seq_counter}),
+            metadata={"_crdt_key": self._key, "_crdt_seq": self._seq_counter},
+        )
 
     def append(self, content: str) -> MemoryRecord:
         entry_id = str(uuid.uuid4())
@@ -787,10 +825,12 @@ class RGA:
             "_crdt_key": self._key,
             "_crdt_entry_id": entry_id,
             "_crdt_position": f"{self._memory.agent_id}:{self._seq_counter}",
+            "_crdt_seq": self._seq_counter,  # Persist counter for crash recovery
         }
+        self._persist_seq_counter()
         return self._memory.store(
-            self._CRDT_TYPE,
-            json.dumps({"entry_id": entry_id, "content": content}),
+            memory_type=self._CRDT_TYPE,
+            content=json.dumps({"entry_id": entry_id, "content": content}),
             metadata=meta,
         )
 
@@ -801,7 +841,8 @@ class RGA:
             threshold=0.0,
             memory_type=self._CRDT_TYPE,
         )
-        target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key]
+        target = [r for r in records if (r.metadata or {}).get("_crdt_key") == self._key
+                       and "_seq" not in (r.content or "")]
 
         # Sort by position, then by agent_id, then by memory_id as tiebreaker
         def _sort_key(r: MemoryRecord) -> tuple[int, str, str]:

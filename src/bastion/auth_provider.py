@@ -65,7 +65,7 @@ _token_rotation_locks_lock = threading.Lock()
 # PKCE code_verifier storage: maps authorization_code -> code_verifier
 # In-memory cache is ONLY used when DB is unavailable (single-instance dev mode).
 # In production, DB is the primary store — this dict is a fast-path cache.
-_pkce_verifiers: dict[str, str] = {}
+_pkce_verifiers: dict[str, tuple[str, float]] = {}
 _pkce_lock = threading.Lock()
 
 # TTL for cleanup of stale PKCE entries (10 minutes)
@@ -380,19 +380,20 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
         except RuntimeError:
             loop = None
 
-        def _safe_cleanup(store: dict, predicate):
+        def _safe_cleanup(store: dict, predicate) -> int:
             keys_to_remove = [k for k, v in list(store.items()) if predicate(v)]
             for k in keys_to_remove:
                 store.pop(k, None)
+            return len(keys_to_remove)
 
         # Clean expired auth codes
-        _safe_cleanup(self._auth_codes, lambda v: v.expires_at < now)
+        cleaned_codes = _safe_cleanup(self._auth_codes, lambda v: v.expires_at < now)
         # Clean expired access tokens
-        _safe_cleanup(self._access_tokens, lambda v: v.expires_at and v.expires_at < now)
+        cleaned_tokens = _safe_cleanup(self._access_tokens, lambda v: v.expires_at and v.expires_at < now)
         # Clean expired refresh tokens
-        _safe_cleanup(self._refresh_tokens, lambda v: v.expires_at and v.expires_at < now)
+        cleaned_refresh = _safe_cleanup(self._refresh_tokens, lambda v: v.expires_at and v.expires_at < now)
 
-        total_cleaned = len(expired_codes) + len(expired_tokens) + len(expired_refresh)
+        total_cleaned = cleaned_codes + cleaned_tokens + cleaned_refresh
         if total_cleaned > 0:
             logger.info("OAuth token cleanup: removed %d expired entries", total_cleaned)
 
@@ -435,7 +436,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                     conn = self._get_conn()
                     try:
                         with conn.cursor() as cur:
-                            hashed_secret = _hash_token(client_info.client_secret)
+                            hashed_secret = _hash_token(client_info.client_secret or "")
                             cur.execute(
                                 """INSERT INTO oauth_clients (client_id, client_secret, redirect_uris,
                                    token_endpoint_auth_method, grant_types, response_types, scope)
@@ -598,14 +599,14 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             token=access_token_str,
             client_id=client.client_id or "",
             scopes=authorization_code.scopes,
-            expires_at=int(now) + 3600,
+            expires_at=now + 3600,
             resource=authorization_code.resource,
         )
         refresh_token = RefreshToken(
             token=refresh_token_str,
             client_id=client.client_id or "",
             scopes=authorization_code.scopes,
-            expires_at=int(now) + 86400 * 7,
+            expires_at=now + 86400 * 7,
         )
 
         self._access_tokens[access_token_str] = access_token
@@ -619,7 +620,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                 try:
                     with conn.cursor() as cur:
                         from datetime import datetime as _dt, timezone as _tz
-                        _expires_ts = _dt.fromtimestamp(int(now) + 3600, tz=_tz.utc)
+                        _expires_ts = _dt.fromtimestamp(now + 3600, tz=_tz.utc)
                         cur.execute(
                             """INSERT INTO oauth_access_tokens (token, client_id, scopes, expires_at, expires_at_ts, resource, role)
                                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
@@ -627,13 +628,13 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 _hash_token(access_token_str),
                                 client.client_id,
                                 json.dumps(authorization_code.scopes),
-                                int(now) + 3600,
+                                now + 3600,
                                 _expires_ts,
                                 json.dumps(authorization_code.resource) if authorization_code.resource else None,
                                 token_role,
                             ),
                         )
-                        _refresh_expires_ts = _dt.fromtimestamp(int(now) + 86400 * 7, tz=_tz.utc)
+                        _refresh_expires_ts = _dt.fromtimestamp(now + 86400 * 7, tz=_tz.utc)
                         cur.execute(
                             """INSERT INTO oauth_refresh_tokens (token, client_id, scopes, expires_at, expires_at_ts, role)
                                VALUES (%s, %s, %s, %s, %s, %s)""",
@@ -641,7 +642,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                 _hash_token(refresh_token_str),
                                 client.client_id,
                                 json.dumps(authorization_code.scopes),
-                                int(now) + 86400 * 7,
+                                now + 86400 * 7,
                                 _refresh_expires_ts,
                                 token_role,
                             ),
@@ -711,23 +712,24 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
             token=access_token_str,
             client_id=client.client_id or "",
             scopes=final_scopes,
-            expires_at=int(now) + 3600,
+            expires_at=now + 3600,
         )
         new_refresh = RefreshToken(
             token=refresh_token_str,
             client_id=client.client_id or "",
             scopes=final_scopes,
-            expires_at=int(now) + 86400 * 7,
+            expires_at=now + 86400 * 7,
         )
 
         # Delete old refresh token FIRST to prevent race condition
         # (two concurrent requests using the same token)
         # Use per-client lock to make pop + insert atomic (both in-memory AND DB)
         with _token_rotation_locks_lock:
-            client_lock = _token_rotation_locks.get(client.client_id)
+            client_id = client.client_id or ""
+            client_lock = _token_rotation_locks.get(client_id)
             if client_lock is None:
                 client_lock = threading.Lock()
-                _token_rotation_locks[client.client_id] = client_lock
+                _token_rotation_locks[client_id] = client_lock
         with client_lock:
             self._refresh_tokens.pop(refresh_token.token, None)
             self._access_tokens[access_token_str] = new_access
@@ -744,7 +746,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             # (the old access token value is not available here)
                             cur.execute(
                                 "DELETE FROM oauth_access_tokens WHERE client_id = %s AND expires_at < %s",
-                                (client.client_id, int(now)),
+                                (client.client_id, now),
                             )
                             # Then insert new tokens
                             cur.execute(
@@ -754,7 +756,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                     access_token_str,
                                     client.client_id,
                                     json.dumps(list(final_scopes)),
-                                    int(now) + 3600,
+                                    now + 3600,
                                     token_role,
                                 ),
                             )
@@ -765,7 +767,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                                     refresh_token_str,
                                     client.client_id,
                                     json.dumps(list(final_scopes)),
-                                    int(now) + 86400 * 7,
+                                    now + 86400 * 7,
                                     token_role,
                                 ),
                             )
@@ -850,7 +852,7 @@ class BastionOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, R
                             "INSERT INTO oauth_revoked_tokens (token_hash, token_type, expires_at) "
                             "VALUES (%s, %s, %s) "
                             "ON CONFLICT (token_hash) DO NOTHING",
-                            (token_hash, token_type, int(token.expires_at) if token.expires_at else None),
+                            (token_hash, token_type, token.expires_at if token.expires_at else None),
                         )
                         # Also delete the token row (tokens stored as hashes)
                         cur.execute("DELETE FROM oauth_access_tokens WHERE token = %s", (_hash_token(token.token),))

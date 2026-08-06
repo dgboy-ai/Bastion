@@ -99,6 +99,8 @@ class MemoryRouter:
     ) -> list[Any]:
         """Search the in-memory L1 cache using cosine similarity."""
         if not self._cache:
+            with self._lock:
+                self._cache_misses += 1
             return []
 
         # Try to get query embedding for cosine similarity
@@ -124,7 +126,14 @@ class MemoryRouter:
                         results.append((mem, kw_score))
 
         results.sort(key=lambda x: x[1], reverse=True)
-        return [mem for mem, _ in results[:k]]
+        cached_results = [mem for mem, _ in results[:k]]
+        if cached_results:
+            with self._lock:
+                self._cache_hits += 1
+        else:
+            with self._lock:
+                self._cache_misses += 1
+        return cached_results
 
     def _search_cache_keyword(
         self,
@@ -144,7 +153,14 @@ class MemoryRouter:
                     results.append((mem, score))
 
         results.sort(key=lambda x: x[1], reverse=True)
-        return [mem for mem, _ in results[:k]]
+        cached_results = [mem for mem, _ in results[:k]]
+        if cached_results:
+            with self._lock:
+                self._cache_hits += 1
+        else:
+            with self._lock:
+                self._cache_misses += 1
+        return cached_results
 
     def _get_query_embedding(self, query: str) -> list[float] | None:
         """Get embedding for query text. Returns None if unavailable."""

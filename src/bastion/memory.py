@@ -870,6 +870,84 @@ class BastionMemory:
         finally:
             pool.release(conn)
 
+    def chain_verify(self, batch_size: int = 100) -> dict[str, Any]:
+        """Verify hash chain integrity for flagged memories in batches.
+
+        Picks up memories where needs_verification=true, re-computes the HMAC,
+        and clears the flag if valid. Records mismatches in the audit trail.
+        Can be called by a background worker or on-demand.
+        """
+        if self._mock:
+            return {"verified": 0, "mismatches": 0, "status": "mock"}
+        pool = self.get_pool()
+        conn = pool.acquire(timeout=30.0)
+        try:
+            self._set_rls_context(conn)
+            from bastion.crypto import compute_hash
+
+            def _op(cur):
+                # Fetch flagged memories in order (with memory_id tiebreaker for batch inserts)
+                cur.execute(
+                    "SELECT memory_id, content, metadata, previous_hash, cryptographic_hash "
+                    "FROM agent_memory "
+                    "WHERE agent_id = %s AND needs_verification = TRUE "
+                    "ORDER BY created_at ASC, memory_id ASC LIMIT %s",
+                    (self.agent_id, batch_size),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    return {"verified": 0, "mismatches": 0, "status": "clean"}
+
+                verified = 0
+                mismatches = []
+                for mid, content, metadata, stored_prev, stored_hash in rows:
+                    meta_dict = dict(metadata) if metadata else {}
+                    recomputed = compute_hash(content or "", meta_dict, stored_prev)
+                    if recomputed != stored_hash:
+                        mismatches.append(str(mid))
+                        logger.warning(
+                            "Chain verification: mismatch at memory_id=%s "
+                            "(stored=%s, recomputed=%s)",
+                            str(mid)[:12],
+                            str(stored_hash)[:16] if stored_hash else "None",
+                            str(recomputed)[:16],
+                        )
+                    verified += 1
+
+                # Clear verification flags for all processed rows
+                cur.execute(
+                    "UPDATE agent_memory SET needs_verification = FALSE "
+                    "WHERE agent_id = %s AND needs_verification = TRUE "
+                    "AND memory_id IN (%s)" % ", ".join(["%s"] * len(rows)),
+                    (self.agent_id, *[str(r[0]) for r in rows]),
+                )
+
+                # Log mismatches in audit trail
+                if mismatches:
+                    import uuid as _uuid
+                    cur.execute(
+                        "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (
+                            self.agent_id, str(_uuid.uuid4()), "chain_verification_failed",
+                            json.dumps({
+                                "mismatch_count": len(mismatches),
+                                "mismatch_ids": mismatches[:20],
+                                "batch_size": len(rows),
+                            }),
+                        ),
+                    )
+
+                return {
+                    "verified": verified,
+                    "mismatches": len(mismatches),
+                    "mismatch_ids": mismatches,
+                    "status": "tampered" if mismatches else "verified",
+                }
+            return self._retry_write(conn, _op)
+        finally:
+            pool.release(conn)
+
     def resolve_conflict(self, fact_a: str, fact_b: str, context: str | None = None) -> str:
         if not fact_a or not isinstance(fact_a, str):
             raise ValueError(f"fact_a must be a non-empty string, got {type(fact_a).__name__}")
@@ -1046,6 +1124,32 @@ class BastionMemory:
         try:
             self._set_rls_context(conn)
             def _op(cur):
+                # First, get the previous_hash of the row to be deleted
+                cur.execute(
+                    "SELECT previous_hash FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return False
+                prev_hash = row[0] if hasattr(row, "_mapping") else row[0]
+
+                # Find the next row in the chain and update its previous_hash to skip the deleted row
+                cur.execute(
+                    "SELECT memory_id FROM agent_memory "
+                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory WHERE memory_id = %s) "
+                    "ORDER BY created_at ASC LIMIT 1",
+                    (self.agent_id, memory_id),
+                )
+                next_row = cur.fetchone()
+                if next_row:
+                    next_id = next_row[0] if hasattr(next_row, "_mapping") else next_row[0]
+                    cur.execute(
+                        "UPDATE agent_memory SET previous_hash = %s WHERE memory_id = %s AND agent_id = %s",
+                        (prev_hash, next_id, self.agent_id),
+                    )
+
+                # Now delete the row
                 cur.execute(
                     "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
@@ -1054,7 +1158,7 @@ class BastionMemory:
                     return False
                 cur.execute(
                     "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                    (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id})),
+                    (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id, "prev_hash": prev_hash})),
                 )
                 return True
             return self._retry_write(conn, _op)
@@ -1245,7 +1349,7 @@ class BastionMemory:
                 if memory_type:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS}, "
-                        "(1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
+                        "GREATEST(0.0, 1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) "
                         f"{kw_sql} AS decay_score "
                         "FROM agent_memory "
@@ -1257,7 +1361,7 @@ class BastionMemory:
                 else:
                     cur.execute(
                         f"SELECT {_MEMORY_COLS}, "
-                        "(1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
+                        "GREATEST(0.0, 1.0 - (embedding <=> %s::vector)) * importance_score::FLOAT8 / "
                         "(1.0 + %s * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) "
                         f"{kw_sql} AS decay_score "
                         "FROM agent_memory "
@@ -1688,29 +1792,46 @@ class BastionMemory:
                 )
                 rows = cur.fetchall()
                 prev_hash_chain = None
+                tampered_records = []
                 for mid, content, metadata, stored_prev, stored_hash in rows:
                     meta_dict = dict(metadata) if metadata else {}
                     expected_hash = compute_hash(content, meta_dict, prev_hash_chain)
                     expected_prev = prev_hash_chain or ""
                     if stored_hash != expected_hash or stored_prev != expected_prev:
+                        # Preserve old hash values for forensic audit trail
+                        tampered_records.append({
+                            "memory_id": str(mid),
+                            "old_hash": str(stored_hash) if stored_hash else None,
+                            "old_prev_hash": str(stored_prev) if stored_prev else None,
+                            "new_hash": str(expected_hash),
+                            "content_snippet": (content or "")[:200],
+                        })
                         cur.execute(
                             "UPDATE agent_memory SET cryptographic_hash = %s, previous_hash = %s WHERE memory_id = %s",
                             (expected_hash, expected_prev, mid),
                         )
                         resealed += 1
-                        cur.execute(
-                            "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                            (
-                                agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
-                                json.dumps({"memory_id": str(mid), "content_snippet": (content or "")[:200]}),
-                            ),
-                        )
-                        logger.warning(
-                            "Hash chain repair: resealed memory %s for agent %s",
-                            str(mid)[:12],
-                            agent_id,
-                        )
                     prev_hash_chain = expected_hash
+                # Log full forensic audit record with all tampered hashes preserved
+                if tampered_records:
+                    cur.execute(
+                        "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (
+                            agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
+                            json.dumps({
+                                "resealed_count": resealed,
+                                "tampered_records": tampered_records[:50],  # cap at 50 for audit size
+                                "total_tampered": len(tampered_records),
+                            }),
+                        ),
+                    )
+                    logger.warning(
+                        "Hash chain repair: resealed %d memories for agent %s "
+                        "(forensic audit trail preserved)",
+                        resealed,
+                        agent_id,
+                    )
                 return {
                     "agent_id": agent_id,
                     "pruned": pruned,
@@ -2058,15 +2179,19 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             self._set_rls_context(conn)
+            from bastion.crypto import compute_hash
+
             def _op(cur):
                 cur.execute(
-                    "SELECT memory_id, metadata FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    "SELECT memory_id, metadata, previous_hash FROM agent_memory "
+                    "WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
                 if not row:
                     return None
                 current_metadata = dict(row[1]) if row[1] else {}
+                prev_hash = row[2]
                 fixed_ops = []
                 for op in patch_ops:
                     if op.get("op") == "replace":
@@ -2086,10 +2211,34 @@ class BastionMemory:
                     else:
                         fixed_ops.append(op)
                 patched = jsonpatch.apply_patch(current_metadata, fixed_ops)
+                patched_json = _json.dumps(patched, sort_keys=True)
+                # Recompute hash for this row (metadata changed, content unchanged)
                 cur.execute(
-                    "UPDATE agent_memory SET metadata = %s WHERE memory_id = %s AND agent_id = %s",
-                    (_json.dumps(patched), memory_id, self.agent_id),
+                    "SELECT content FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    (memory_id, self.agent_id),
                 )
+                content_row = cur.fetchone()
+                content = content_row[0] if content_row else ""
+                new_hash = compute_hash(content, patched, prev_hash)
+                cur.execute(
+                    "UPDATE agent_memory SET metadata = %s, cryptographic_hash = %s "
+                    "WHERE memory_id = %s AND agent_id = %s",
+                    (patched_json, new_hash, memory_id, self.agent_id),
+                )
+                # Invalidate downstream hashes (same pattern as _correct_memory_real)
+                cur.execute(
+                    "UPDATE agent_memory SET cryptographic_hash = NULL "
+                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
+                    "WHERE memory_id = %s)",
+                    (self.agent_id, memory_id),
+                )
+                downstream_count = cur.rowcount
+                if downstream_count > 0:
+                    logger.warning(
+                        "Metadata patched — downstream hash chain invalidated for %d records. "
+                        "Run 'memory_heal' to reseal.",
+                        downstream_count,
+                    )
                 return {"memory_id": memory_id, "metadata": patched}
             return self._retry_write(conn, _op)
         finally:

@@ -6,7 +6,7 @@
       "type": "streamableHttp",
       "url": "http://127.0.0.1:8005/mcp",
       "headers": {
-        "Authorization": "Bearer bastion-f6ce4b88f8f1ecb1bbfba069ea86955e30be9c1b"
+        "Authorization": "Bearer ${BASTION_API_KEY}"
       },
       "autoApprove": [
         "memory_store",
@@ -43,6 +43,29 @@
         "list_agent_skills",
         "ccloud_exec"
       ]
+    },
+    "cockroachdb-cloud": {
+      "autoApprove": [
+        "create_database",
+        "create_table",
+        "explain_query",
+        "get_cluster",
+        "get_table_schema",
+        "insert_rows",
+        "list_clusters",
+        "list_databases",
+        "list_tables",
+        "select_query",
+        "show_running_queries",
+        "show_statement"
+      ],
+      "disabled": false,
+      "timeout": 60,
+      "type": "streamableHttp",
+      "url": "https://cockroachlabs.cloud/mcp",
+      "headers": {
+        "mcp-cluster-id": "${COCKROACHDB_CLUSTER_ID}"
+      }
     }
   }
 }

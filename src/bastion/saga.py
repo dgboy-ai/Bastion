@@ -260,11 +260,9 @@ class SagaMemoryManager:
                         if op["op_type"] == "store":
                             mid = op.get("memory_id")
                             if mid:
-                                cur.execute(
-                                    "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
-                                    (mid, self.memory.agent_id),
-                                )
-                                rolled_back += cur.rowcount
+                                # Use the memory engine's delete method to preserve hash chain and audit trail
+                                if self.memory.delete_memory(mid):
+                                    rolled_back += 1
                     cur.execute(
                         "UPDATE saga_states SET status = 'rolled_back', completed_at = now() "
                         "WHERE saga_id = %s AND status = 'active'",
