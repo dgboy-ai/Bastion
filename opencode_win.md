@@ -26,10 +26,9 @@ All 4 tools are already implemented. The video must explicitly show **2+** in ac
 | Service | Bastion uses it? | How |
 |---------|-----------------|-----|
 | **Embedding Chain** | ✅ | 1024-dim: HuggingFace bge-large-en-v1.5 → MiniLM → hash fallback — used in vector search |
-| **AWS Lambda** | ✅ | CDC handler + webhook dispatcher — shown in architecture diagram |
+| **AWS KMS** | ✅ | AES-256-GCM envelope encryption + ECDSA hash-chain signing |
 | **Amazon S3** | ✅ | Memory archives + backups — shown in architecture diagram |
-| **AWS KMS** | ✅ | AES-256-GCM envelope encryption |
-| **CloudWatch** | ✅ | Metrics + alarms |
+| **Amazon Bedrock** | ✅ | Titan embeddings fallback |
 
 ### Judging Criteria (parsed for what to build)
 
@@ -53,7 +52,7 @@ A playground with 3 buttons is surface-level. **Deep integration** means:
 - The poison demo shows real hash chain computation + trust recalculation + SSE propagation
 - The heal demo shows real AS OF SYSTEM TIME query with cryptographic verification
 - The chat demo shows real C-SPANN vector search + Groq context assembly
-- The architecture shows real CDC → Lambda → S3 pipeline for audit storage
+- The architecture shows real hash-chain verification → S3 audit pipeline
 
 ---
 
@@ -100,7 +99,7 @@ A playground with 3 buttons is surface-level. **Deep integration** means:
 │  ├─ Serializable isolation                                       │
 │  ├─ Row-level TTL                                                │
 │  ├─ AS OF SYSTEM TIME (time-travel)                              │
-│  ├─ CDC changefeeds → Lambda                                     │
+│  ├─ Hash-chain verification (self-heal)                          │
 │  ├─ JSONB metadata                                               │
 │  ├─ Regional by row                                              │
 │  └─ UUID sharding                                                │
@@ -111,10 +110,9 @@ A playground with 3 buttons is surface-level. **Deep integration** means:
 ┌──────────────────────────────────────────────────────────────────┐
 │  Services:                                                       │
 │  ├─ Embedding Chain → 1024-dim (HF→MiniLM→hash)                 │
-│  ├─ AWS Lambda     → CDC handler + webhook dispatcher           │
+│  ├─ AWS KMS        → Hash-chain signing + envelope encryption   │
 │  ├─ Amazon S3      → Memory archives + backups                  │
-│  ├─ AWS KMS        → Envelope encryption (AES-256-GCM)          │
-│  └─ CloudWatch     → Metrics + alarms                           │
+│  └─ Amazon Bedrock → Titan embeddings fallback                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -402,7 +400,7 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
   - Solution (1 paragraph): Bastion — cryptographic hash chains, time-travel, trust scoring
   - Architecture (screenshot of diagram)
   - CockroachDB features used (C-SPANN, SERIALIZABLE, AS OF SYSTEM TIME, TTL, CDC)
-  - AWS services used (Bedrock, Lambda, S3, KMS, CloudWatch)
+  - AWS services used (Bedrock, KMS, S3)
   - Link to demo video (placeholder)
   - Link to GitHub
 - [ ] Create `README.md` skeleton following kassi's structure:
@@ -617,9 +615,9 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
     - Detect: "Trust scores detect poisoning in real-time"
     - Recover: "AS OF SYSTEM TIME reverts to any verified state"
   - "Built on CockroachDB + AWS" section:
-    - Badges/logos for CRDB, AWS Bedrock, Lambda, S3, KMS
+    - Badges/logos for CRDB, AWS Bedrock, KMS, S3
     - Architecture diagram (imported from `architecture_diagram.md`)
-    - "10 CRDB features, 5 AWS services"
+    - "10 CRDB features, 3 AWS services"
   - Demo Video section:
     - YouTube embed placeholder
     - Caption: "Watch the 3-minute demo"
@@ -805,7 +803,7 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
 
   ## Bastion Features Used
   - Append-only agent_audit table
-  - CDC changefeed streaming to Lambda
+  - Hash-chain integrity verification
   - S3 archive for long-term retention
   - EU AI Act Article 12 compliance dashboard
 
@@ -898,7 +896,7 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
   ### 2:15-2:45 — Architecture + Features
   Visual: Architecture diagram overlay → 25 MCP tools → A2A → CRDT
   Audio: "Bastion is built on CockroachDB Cloud — C-SPANN vector indexing,
-         SERIALIZABLE isolation, CDC changefeeds to AWS Lambda, all running
+         SERIALIZABLE isolation, hash-chain verification, all running
          on Vercel's global edge network. Zero infrastructure to manage."
 
   ### 2:45-3:00 — Call to Action
@@ -1087,7 +1085,7 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
   ```
 - [ ] Verify: CockroachDB cluster provisioned
 - [ ] Verify: Vercel project config correct
-- [ ] Verify: AWS resources exist (Lambda, S3, KMS)
+- [ ] Verify: AWS resources exist (S3, KMS)
 - [ ] Verify: Bastion connects and dashboard loads
 
 **Security:**
@@ -1203,7 +1201,7 @@ Each day has: ✅ Frontend, ✅ Backend/API, ✅ Security, ✅ Content/Docs, ✅
     - Problem: agent memory poisoning
     - Solution: Bastion's architecture (CRDB + AWS + Vercel)
     - Features: hash chain, trust scoring, time-travel, MCP, A2A, CRDT
-  - Built with: CockroachDB Cloud, AWS Bedrock, AWS Lambda, AWS S3, AWS KMS, CloudWatch, Vercel, Next.js, Python, TypeScript, Groq
+  - Built with: CockroachDB Cloud, AWS Bedrock, AWS KMS, AWS S3, Vercel, Next.js, Python, TypeScript, Groq
   - Track: (pick the best match — likely "Distributed SQL" or equivalent)
   - Demo video URL: YouTube link
   - GitHub URL: `https://github.com/trueboy1123/bastion`
@@ -1336,9 +1334,9 @@ CRDT merge: last-writer-wins + conflict log
 Dashboard shows conflict resolution timeline
 ```
 
-### 2. Real-time CDC Pipeline Visualization
+### 2. Real-time Self-Healing Visualization
 
-Dashboard shows CDC changefeed streaming from CRDB → Lambda → S3, updating in real-time as memories are stored. This demonstrates the event-driven architecture judges look for.
+Dashboard shows hash-chain verification streaming in real-time as memories are stored, with tamper detection + auto-reseal events. This demonstrates the integrity architecture judges look for.
 
 ### 3. Region Failover Demo
 
@@ -1380,7 +1378,7 @@ The chat sidebar shows how many tokens each memory uses, and how context window 
 | **Agent Skills Repo** | 8 machine-executable skills in `skills/manifest.json` | ✅ Ready |
 | **Row-Level TTL** | `_MEMORY_TTL_SECONDS` per memory type | ✅ Ready |
 | **AS OF SYSTEM TIME** | Time-travel queries in flight recorder | ✅ Ready |
-| **CDC Changefeeds** | Stream to Lambda for self-healing | ✅ Ready |
+| **Hash-chain verification** | `memory_heal` self-healing + forensic_report | ✅ Ready |
 | **SERIALIZABLE isolation** | `SerializationRetryEngine` for hash chain integrity | ✅ Ready |
 | **JSONB metadata** | Flexible schema in `agent_memory.metadata` | ✅ Ready |
 | **UUID sharding** | UUID primary keys on all tables | ✅ Ready |
@@ -1390,11 +1388,8 @@ The chat sidebar shows how many tokens each memory uses, and how context window 
 | Service | How Bastion uses it | Status |
 |---------|-------------------|--------|
 | **Amazon Bedrock** | Titan V2 embeddings (1024-dim), circuit breaker fallback | ✅ Ready |
-| **AWS Lambda** | CDC handler + webhook dispatcher | ✅ Ready |
 | **Amazon S3** | Memory archives, backups, Glacier lifecycle | ✅ Ready |
-| **AWS KMS** | AES-256-GCM envelope encryption, per-tenant DEKs | ✅ Ready |
-| **Amazon ECS/EKS** | Terraform-deployed containerized workloads | Terraform ready |
-| **CloudWatch** | Metrics + alarms for Lambda functions | ✅ Ready |
+| **AWS KMS** | AES-256-GCM envelope encryption + ECDSA hash-chain signing | ✅ Ready |
 
 ---
 

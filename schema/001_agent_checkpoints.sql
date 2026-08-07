@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS agent_checkpoints (
     INDEX idx_idempotency (idempotency_key) WHERE idempotency_key IS NOT NULL
 );
 
--- CDC Changefeed: Streams every checkpoint write to downstream processors (Lambda, anomaly detection)
+-- CDC Changefeed: Streams every checkpoint write to downstream processors (anomaly detection)
 -- Used for real-time memory health monitoring, self-healing triggers, and audit trail
 -- NOTE: CDC changefeeds are configured at runtime, not in schema files
--- Example: CREATE CHANGEFEED FOR TABLE agent_checkpoints INTO 'function://cdc_handler' WITH updated, resolved, on_error=resume, initial_scan='no';
+-- Example: CREATE CHANGEFEED FOR TABLE agent_checkpoints WITH updated, resolved, on_error=resume, initial_scan='no';

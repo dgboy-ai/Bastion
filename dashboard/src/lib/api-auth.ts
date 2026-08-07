@@ -234,6 +234,13 @@ export function requireAuth(request: Request): NextResponse | null {
   const rateLimit = checkRateLimit(request);
   if (rateLimit) return rateLimit;
 
+  // Public read-only endpoints — GET only, returns aggregate counts (no sensitive data)
+  const url = new URL(request.url);
+  const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/stats", "/api/tool-usage", "/api/memories", "/api/asi06", "/api/drift", "/api/audit", "/api/graph", "/api/observations", "/api/region-stats", "/api/trust", "/api/entity-memories"];
+  if (request.method === "GET" && PUBLIC_GET_ENDPOINTS.some(ep => url.pathname.startsWith(ep))) {
+    return null;
+  }
+
   // Check session cookie first (set by /login page)
   if (isValidSessionCookie(request)) {
     // For state-changing methods (POST, PUT, DELETE, PATCH), verify CSRF token

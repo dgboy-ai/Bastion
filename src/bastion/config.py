@@ -8,7 +8,7 @@ from typing import ClassVar
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(".env.local", override=False)
+    load_dotenv(".env.local", override=True)
     load_dotenv(".env", override=False)
     # Warn if .env.local contains real credentials (security check)
     import logging

@@ -18,6 +18,22 @@
 
 ---
 
+## 📖 The Story
+
+As autonomous AI agents transition from answering support tickets to executing system-level operations—running migrations, managing servers, and adjusting records—their memory becomes the ultimate attack vector. 
+
+**The Problem: AI Memory Poisoning.** 
+If an attacker injects malicious commands into a public file, an agent reads it, stores it in its long-term vector memory, and is permanently poisoned. Even worse, if an intruder accesses your database, they can silently alter historical memories, causing the agent to act on false facts with no audit trail of what changed. Prompt engineering cannot secure this; the vulnerability must be defended where the state persists.
+
+**The Solution: A Self-Healing, Verifiable Memory Ledger.**
+We asked: *What if the agent's memory validation and integrity checks lived directly inside the database transaction layer?*
+
+**That is Bastion.**
+
+Bastion integrates **AWS KMS** and **CockroachDB's `SERIALIZABLE` transactions** to sign and lock every memory block into a cryptographic HMAC-SHA256 hash chain. If a hacker attempts to poison the agent or alter the database records, the chain breaks. Bastion then uses **CockroachDB's native MVCC time-travel (`AS OF SYSTEM TIME`)** to automatically roll back, audit, and heal the memory ledger to a clean state. The database is no longer a passive table; it is the cryptographic firewall of the agent.
+
+---
+
 ## 🔗 MCP Configuration Quick Links
 
 | Client | Config | Protocol | Server |
@@ -40,7 +56,7 @@ Bastion runs **two distinct MCP servers** that work together:
 
 ### 1. **Bastion Custom MCP Server** (`bastion-memory`)
 **Your memory integrity layer** — runs locally or on your infrastructure.
-- **37 tools** for memory operations with cryptographic guarantees
+- **35 tools** for memory operations with cryptographic guarantees
 - **Hash chains** (HMAC-SHA256) on every memory block
 - **OWASP ASI06 Guard** blocks prompt injection before DB write
 - **Sleep-time consolidation** (Dreaming): dedup, conflict resolution, pattern extraction, LLM lesson synthesis
@@ -50,9 +66,12 @@ Bastion runs **two distinct MCP servers** that work together:
 
 **Tools include:** `memory_store`, `memory_search`, `memory_timetravel`, `memory_heal`, `memory_audit`, `dream`, `ltm_check_reuse`, `invoke_agent_skill`, `ccloud_exec`, `chain_verify`, `forensic_report`, `detect_contradictions`, `multi_signal_search`, `context_pack`, `agent_schema`, `a2a_bridge`, `memory_store_encrypted`, `memory_apply_patch`, `resolve_conflict`, `ltm_store_analysis`, `ltm_invalidate`, `detect_observations`, `scan_all_contradictions`, `dream_history`, `memory_pin`, `memory_get_pinned`, `memory_list`, `memory_correct`, `memory_health`, `forensic_report`, `memory_apply_patch`, `memory_delete`, `memory_store_batch`.
 
+> **💡 CockroachDB Agent Skills execution**: The `invoke_agent_skill` tool integrates the official skills repo. When called by the agent (e.g. to run `reviewing-cluster-health`), the custom MCP server reads the playbook markdown file inside `.agents/skills/`, extracts the raw SQL query blocks, runs them against the live CockroachDB cluster using the connection pool, and returns the query outputs directly to the agent.
+
+
 ### 2. **CockroachDB Cloud Managed MCP** (`cockroachdb-cloud`)
 **Official CockroachDB Cloud control plane** — hosted by Cockroach Labs at `https://cockroachlabs.cloud/mcp`.
-- **13 tools** for cluster operations via the official MCP endpoint
+- **12 tools** for cluster operations via the official MCP endpoint
 - **Direct cluster access**: list clusters, databases, tables, schemas
 - **SQL execution**: `select_query`, `explain_query`, `show_running_queries`
 - **DDL operations**: `create_database`, `create_table`, `insert_rows`
@@ -63,7 +82,7 @@ Bastion runs **two distinct MCP servers** that work together:
 ### How They Work Together
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR AGENT (Cline/Cursor)                │
+│                        YOUR AGENT (Cline/Cursor etc)            │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
         ┌─────────────┴─────────────┐
@@ -96,7 +115,7 @@ Bastion runs **two distinct MCP servers** that work together:
 | **CockroachDB Tool 2** | ✅ | **C-SPANN Distributed Vector Indexing** — Native semantic search via `CREATE VECTOR INDEX` + `multi_signal_search` |
 | **CockroachDB Tool 3** | ✅ | **ccloud CLI (Agent-Ready)** — `ccloud_exec` MCP tool |
 | **CockroachDB Tool 4** | ✅ | **Agent Skills Repo** — 34 playbooks via `invoke_agent_skill` |
-| **AWS Services (6)** | ✅ | **Lambda** (CDC & Webhooks), **KMS** (Key encryption), **S3** (Snapshots & Glacier), **SNS** (Breach alarms), **CloudWatch** (Alarms), **Bedrock** (Titan config fallbacks) |
+| **AWS Services (3)** | ✅ | **KMS** (Envelope encryption & cryptographic signing), **S3** (Cold memory archives), **Bedrock** (Titan embeddings) |
 | **Open Source** | ✅ | Released under the standard **MIT License** |
 
 ---
@@ -124,6 +143,43 @@ AI agents are increasingly executing production tasks—such as updating code re
 - **Recover Trusted History** — Time-travel back to a clean state instantly when tampering is detected.
 - **Prove Every Decision** — Cryptographically trace memory provenance using tamper-evident HMAC hash chains.
 - **Comply with AI Regulations** — Meet EU AI Act Article 12 record-keeping requirements out-of-the-box (enforced August 2026).
+- **Detect Sleeper Poisoning** — Proactive dream consolidation finds dormant injected memories (burst injection, high-importance/low-access, temporal clustering, contradictions).
+
+---
+
+## 🔴 The Problem: Memory Poisoning Is Real
+
+AI agents with persistent memory are vulnerable to **memory poisoning** — attackers inject malicious content that persists across sessions and influences future decisions.
+
+### Proof This Is Happening Now
+
+| Evidence | Source |
+|:---|:---|
+| **98.2% injection success rate** against GPT-4 agents in production | [MINJA — NeurIPS 2025](https://arxiv.org/abs/2503.03704) |
+| **50 poisoning attempts** at 31 companies across 14 industries (Copilot, ChatGPT, Claude, Gemini) | [Microsoft Security Blog, Feb 2026](https://www.microsoft.com/en-us/security/blog/2026/02/10/ai-recommendation-poisoning/) |
+| **Google Gemini** — false memories persisted across all future sessions | [Embrace The Red, Feb 2025](https://embracethered.com/blog/posts/2025/gemini-memory-persistence-prompt-injection/) |
+| **ChatGPT ZombieAgent** — zero-click exploit hijacks Deep Research agent | [Radware, Jan 2026](https://www.globenewswire.com/news-release/2026/01/08/3215156/8980/en/Radware-Unveils-ZombieAgent-A-Newly-Discovered-Zero-Click-AI-Agent-Vulnerability-Enabling-Silent-Takeover-and-Cloud-Based-Data-Exfiltration.html) |
+| **OWASP ASI06** — Memory & Context Poisoning classified in Top 10 for Agentic Applications | [OWASP, Dec 2025](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) |
+
+### Unsolved Research Problems Bastion Addresses
+
+| Problem | Research Gap | Bastion Solution |
+|:---|:---|:---|
+| **No provenance** — "poisoned memory looks identical to legitimate" ([LlamaIndex #21666](https://github.com/run-llama/llama_index/issues/21666)) | No standard for tamper-evident write receipts | HMAC-SHA256 hash chains on every write (`memory.py:264`) |
+| **No recovery** — "once poisoned, no rollback" ([OWASP ASI06](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)) | No rollback to known-good state | CockroachDB `AS OF SYSTEM TIME` queries (`memory.py:1659`) |
+| **Cross-agent propagation** — "one poison spreads through toolchain" ([Morris-II](https://arxiv.org/abs/2403.02817)) | No defense for multi-agent memory integrity | Per-agent chain isolation via Row Level Security (`memory.py:323`) |
+| **Sleeper poisoning** — "dormant memories activate later" ([arXiv:2605.15338](https://arxiv.org/abs/2605.15338)) | Defenses miss delayed-activation payloads | Dream consolidation: burst detection, high-importance/low-access, temporal clustering, contradiction detection (`dreaming.py:424`) |
+| **Injection at scale** — "95%+ success rate" ([MINJA](https://arxiv.org/abs/2503.03704)) | LLM trust scoring fails against confident attacks ([arXiv:2601.05504](https://arxiv.org/abs/2601.05504)) | OWASP ASI06 Guard blocks before DB write (`guard.py:656`) |
+
+### CockroachDB Features powering Bastion
+
+| Feature | Documentation | Use in Bastion |
+|:---|:---|:---|
+| **AS OF SYSTEM TIME** | [CockroachDB Docs](https://www.cockroachlabs.com/docs/v26.2/as-of-system-time) | Verify memory state at any past timestamp |
+| **C-SPANN Vector Index** | [CockroachDB Docs](https://www.cockroachlabs.com/docs/stable/vector-indexes) | Semantic search with cosine similarity |
+| **MVCC** | [CockroachDB Blog](https://www.cockroachlabs.com/blog/mvcc-garbage-collection/) | Time-travel queries |
+| **SERIALIZABLE Isolation** | [CockroachDB Docs](https://www.cockroachlabs.com/docs/stable/transactions) | Hash chain integrity under concurrent writes |
+| **CDC Streams** | [CockroachDB Docs](https://www.cockroachlabs.com/docs/stable/cdc-overview) | Self-healing via `memory_heal` |
 
 ---
 
@@ -283,7 +339,6 @@ For full setup guides, refer to [Local Development](docs/DEVELOPMENT.md) and [Cl
 - **`docs/`** — Deep-dive guides for [MCP tools](docs/MCP_SERVER.md), [A2A skills](docs/A2A_SERVER.md), [AWS services](docs/AWS_SERVICES.md), [Deployment](docs/DEPLOYMENT.md), [Local Development](docs/DEVELOPMENT.md), and [EU AI Act compliance](docs/EU_AI_ACT.md).
 - **`src/bastion/`** — Core python middleware hosting the MCP and A2A servers.
 - **`dashboard/`** — Next.js 16 dashboard visualizing memory health, entropy drift, and hash status.
-- **`lambda/`** — AWS Lambda CDC handlers and webhook dispatchers.
 - **`terraform/`** — Infrastructure as Code (IaC) for AWS S3 and KMS key provisioning.
 - **`mcp_configs/`** — Ready-to-use MCP client configurations for all major clients.
 

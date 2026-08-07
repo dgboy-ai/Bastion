@@ -79,6 +79,8 @@ class DreamJournal:
     patterns_found: int = 0
     insights_generated: int = 0
     precomputed_queries: int = 0
+    sleeper_detected: int = 0
+    sleeper_quarantined: int = 0
     lessons_extracted: list[str] = field(default_factory=list)
     insights: list[str] = field(default_factory=list)
     consolidation_details: list[dict[str, Any]] = field(default_factory=list)
@@ -100,6 +102,8 @@ class DreamJournal:
             "patterns_found": self.patterns_found,
             "insights_generated": self.insights_generated,
             "precomputed_queries": self.precomputed_queries,
+            "sleeper_detected": self.sleeper_detected,
+            "sleeper_quarantined": self.sleeper_quarantined,
             "lessons_extracted": self.lessons_extracted,
             "insights": self.insights,
             "consolidation_details": self.consolidation_details,
@@ -203,7 +207,13 @@ class MemoryDreamer:
             decayed = self._apply_salience_decay(recent, agent_id)
             journal.memories_decayed = decayed
 
-            # Step 4: Find consolidation candidates (duplicates/near-matches)
+            # Step 4: Sleeper poisoning detection — find dormant injected memories
+            sleeper_results = self._detect_sleeper_poisoning(recent, agent_id)
+            journal.sleeper_detected = sleeper_results["detected_count"]
+            journal.sleeper_quarantined = sleeper_results["quarantined_count"]
+            journal.consolidation_details.extend(sleeper_results["details"])
+
+            # Step 5: Find consolidation candidates (duplicates/near-matches)
             candidates = self._find_consolidation_candidates(recent)
             journal.patterns_found = len(candidates)
 
@@ -272,6 +282,8 @@ class MemoryDreamer:
                     "insights": journal.insights_generated,
                     "precomputed": journal.precomputed_queries,
                     "lessons": len(journal.lessons_extracted),
+                    "sleeper_detected": journal.sleeper_detected,
+                    "sleeper_quarantined": journal.sleeper_quarantined,
                 },
                 agent_id=agent_id,
             )
@@ -285,6 +297,8 @@ class MemoryDreamer:
                 pruned=journal.memories_pruned,
                 reinforced=journal.memories_reinforced,
                 insights=journal.insights_generated,
+                sleeper_detected=journal.sleeper_detected,
+                sleeper_quarantined=journal.sleeper_quarantined,
             )
             journal.status = "complete"
 
@@ -387,6 +401,209 @@ class MemoryDreamer:
                     pass
         return decayed
 
+    # ── Sleeper poisoning detection ───────────────────────────────────────────
+
+    def _detect_sleeper_poisoning(
+        self,
+        memories: list[Any],
+        agent_id: str,
+    ) -> dict[str, Any]:
+        """Detect dormant/sleeper poisoned memories.
+
+        Sleeper poisoning: attacker injects memories that lie dormant with
+        high importance but low activation, then activate later via trigger
+        words. This method detects:
+        1. Burst injection patterns — sudden spike in memory writes
+        2. High-importance / low-access ratio — suspicious dormant memories
+        3. Injection pattern re-scan — re-check content at retrieval time
+        4. Temporal clustering — memories created in suspicious time windows
+        5. Content contradiction — memories contradicting established facts
+
+        Returns dict with detected_count, quarantined_count, details.
+        """
+        from bastion.guard import MemoryGuard
+        guard = MemoryGuard()
+
+        detected = 0
+        quarantined = 0
+        details = []
+
+        if not memories:
+            return {"detected_count": 0, "quarantined_count": 0, "details": []}
+
+        now = datetime.now(UTC)
+
+        # 1. BURST INJECTION DETECTION
+        # Group memories by creation hour and look for unusual spikes
+        hourly_counts: dict[str, int] = {}
+        for mem in memories:
+            created = mem.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            hour_key = created.strftime("%Y-%m-%d %H:00")
+            hourly_counts[hour_key] = hourly_counts.get(hour_key, 0) + 1
+
+        if hourly_counts:
+            avg_per_hour = sum(hourly_counts.values()) / len(hourly_counts)
+            for hour, count in hourly_counts.items():
+                # Spike: >3x average (when multiple hours), or >15 absolute
+                if count > max(avg_per_hour * 3, 20) or count > 15:
+                    detected += 1
+                    details.append({
+                        "action": "sleeper_burst_detected",
+                        "hour": hour,
+                        "count": count,
+                        "avg_per_hour": round(avg_per_hour, 1),
+                        "severity": "HIGH" if count > avg_per_hour * 5 else "MEDIUM",
+                    })
+
+        # 2. HIGH-IMPORTANCE / LOW-ACCESS RATIO
+        # Memories with high importance but near-zero access are suspicious
+        for mem in memories:
+            if getattr(mem, "is_pinned", False):
+                continue
+            importance = getattr(mem, "importance_score", 0) or 0
+            access_count = getattr(mem, "access_count", 0) or 0
+            created = mem.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            age_days = max(1.0, (now - created).total_seconds() / 86400.0)
+
+            # Suspicious: high importance (>=7) but very low access rate
+            # Expected access rate for important memory: at least once per 2 days
+            expected_min_access = max(1, age_days / 2)
+            if importance >= 7 and access_count < expected_min_access * 0.2:
+                detected += 1
+                details.append({
+                    "action": "sleeper_high_importance_low_access",
+                    "memory_id": mem.memory_id,
+                    "importance": importance,
+                    "access_count": access_count,
+                    "age_days": round(age_days, 1),
+                    "expected_min_access": round(expected_min_access, 1),
+                    "severity": "HIGH",
+                })
+
+        # 3. INJECTION PATTERN RE-SCAN AT RETRIEVAL TIME
+        # Re-run guard on all memories — catches delayed-activation payloads
+        for mem in memories:
+            if getattr(mem, "is_pinned", False):
+                continue
+            content = mem.content or ""
+            if len(content) < 20:  # Skip very short memories
+                continue
+            report = guard.check(content)
+            if not report.is_safe:
+                detected += 1
+                details.append({
+                    "action": "sleeper_injection_rescan",
+                    "memory_id": mem.memory_id,
+                    "findings": [f.threat_type for f in report.findings],
+                    "poisoning_risk": report.poisoning_risk,
+                    "severity": "CRITICAL" if report.poisoning_risk == "HIGH" else "HIGH",
+                })
+
+        # 4. TEMPORAL CLUSTERING ANALYSIS
+        # Look for memories created in tight time windows with similar content
+        # (indicator of automated injection)
+        time_window_seconds = 300  # 5-minute windows
+        for i, mem_a in enumerate(memories):
+            for mem_b in memories[i + 1:]:
+                created_a = mem_a.created_at
+                created_b = mem_b.created_at
+                if created_a.tzinfo is None:
+                    created_a = created_a.replace(tzinfo=UTC)
+                if created_b.tzinfo is None:
+                    created_b = created_b.replace(tzinfo=UTC)
+                time_diff = abs((created_a - created_b).total_seconds())
+                if time_diff <= time_window_seconds:
+                    # Check content similarity
+                    content_a = (mem_a.content or "").lower()
+                    content_b = (mem_b.content or "").lower()
+                    if content_a and content_b:
+                        words_a = set(content_a.split())
+                        words_b = set(content_b.split())
+                        if words_a and words_b:
+                            jaccard = len(words_a & words_b) / max(1, len(words_a | words_b))
+                            if jaccard > 0.7:  # High similarity in tight time window
+                                detected += 1
+                                details.append({
+                                    "action": "sleeper_temporal_cluster",
+                                    "memory_id_a": mem_a.memory_id,
+                                    "memory_id_b": mem_b.memory_id,
+                                    "time_diff_seconds": int(time_diff),
+                                    "similarity": round(jaccard, 3),
+                                    "severity": "HIGH",
+                                })
+
+        # 5. CONTENT CONTRADICTION DETECTION
+        # Compare high-importance memories against each other for contradictions
+        high_importance = [m for m in memories if (getattr(m, "importance_score", 0) or 0) >= 6]
+        for i, mem_a in enumerate(high_importance):
+            for mem_b in high_importance[i + 1:]:
+                content_a = (mem_a.content or "").lower()
+                content_b = (mem_b.content or "").lower()
+                # Simple negation detection
+                if self._detect_contradiction(content_a, content_b):
+                    detected += 1
+                    details.append({
+                        "action": "sleeper_contradiction",
+                        "memory_id_a": mem_a.memory_id,
+                        "memory_id_b": mem_b.memory_id,
+                        "content_a": content_a[:100],
+                        "content_b": content_b[:100],
+                        "severity": "MEDIUM",
+                    })
+
+        # QUARANTINE: Mark detected sleeper memories as decayed for pruning
+        for detail in details:
+            if detail["action"] in ("sleeper_injection_rescan", "sleeper_high_importance_low_access"):
+                mem_id = detail.get("memory_id") or detail.get("memory_id_a")
+                if mem_id:
+                    try:
+                        self._memory.apply_patch(
+                            mem_id,
+                            [{"op": "replace", "path": "/decayed", "value": True}],
+                        )
+                        quarantined += 1
+                    except Exception:
+                        pass
+
+        return {
+            "detected_count": detected,
+            "quarantined_count": quarantined,
+            "details": details,
+        }
+
+    def _detect_contradiction(self, content_a: str, content_b: str) -> bool:
+        """Simple contradiction detection using negation patterns."""
+        import re
+        # Extract key claims (simple heuristic: look for "X is Y" patterns)
+        # Check if one content negates the other
+        negation_patterns = [
+            (r"\bis not\b", r"\bis\b"),
+            (r"\bdoes not\b", r"\bdoes\b"),
+            (r"\bwill not\b", r"\bwill\b"),
+            (r"\bcannot\b", r"\bcan\b"),
+            (r"\bnever\b", r"\balways\b"),
+            (r"\bfalse\b", r"\btrue\b"),
+            (r"\bwrong\b", r"\bright\b"),
+            (r"\bdeny\b", r"\bconfirm\b"),
+        ]
+        for neg, pos in negation_patterns:
+            if re.search(neg, content_a) and re.search(pos, content_b):
+                # Check if they share the same subject (rough heuristic)
+                words_a = set(re.findall(r"\b\w{3,}\b", content_a))
+                words_b = set(re.findall(r"\b\w{3,}\b", content_b))
+                if len(words_a & words_b) >= 2:
+                    return True
+            if re.search(neg, content_b) and re.search(pos, content_a):
+                words_a = set(re.findall(r"\b\w{3,}\b", content_a))
+                words_b = set(re.findall(r"\b\w{3,}\b", content_b))
+                if len(words_a & words_b) >= 2:
+                    return True
+        return False
+
     # ── Duplicate detection with real content blending ─────────────────────
 
     def _find_consolidation_candidates(
@@ -480,7 +697,7 @@ class MemoryDreamer:
 
         try:
             # Update the primary with blended content (preserving its hash chain)
-            self._memory.correct(
+            self._memory.correct_memory(
                 primary_id,
                 blended,
                 {

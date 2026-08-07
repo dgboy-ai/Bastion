@@ -1,8 +1,8 @@
 """Create CDC changefeeds on CockroachDB. Requires a deployed sink (Kafka or webhook).
 
 Usage:
-    # With Lambda Function URL:
-    python scripts/setup_cdc.py --sink webhook-https://<LAMBDA_URL>
+    # With webhook sink:
+    python scripts/setup_cdc.py --sink webhook-https://<WEBHOOK_URL>
 
     # With local Kafka:
     python scripts/setup_cdc.py --sink "kafka://localhost:9092?topic_prefix=cdc_"

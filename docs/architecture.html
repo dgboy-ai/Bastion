@@ -494,12 +494,12 @@
         <div class="card" style="grid-column: span 2;">
           <div class="card-header">
             <span class="card-icon">🛡️</span>
-            <span class="card-name">CDC Webhook Handler (self-heal)</span>
+            <span class="card-name">Hash-Chain Self-Healing</span>
           </div>
-          <div class="card-desc">Streams real-time updates directly via CockroachDB Changefeeds to a webhook controller (<b>cdc_handler.py</b>).
+          <div class="card-desc">In-process verifier (<b>memory_heal</b>) validates every HMAC-SHA256 hash chain.
           <br>• Validates HMAC security chains to identify unauthorized modification.
           <br>• Automatically triggers memory rollback sequences if validation fails.
-          <br>• Optional deployment target: <b>AWS Lambda</b>.</div>
+          <br>• Integrity signing via <b>AWS KMS</b> (private key never leaves AWS).</div>
         </div>
       </div>
     </div>

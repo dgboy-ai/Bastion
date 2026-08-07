@@ -45,7 +45,7 @@ CREATE TABLE agent_audit (
 ```
 
 ### 3. `agent_coordination` (Distributed Concurrency Lock Table)
-Coordinates locks across stateless, concurrent Vercel/Lambda/Agent processes:
+Coordinates locks across stateless, concurrent Vercel/Agent processes:
 ```sql
 CREATE TABLE agent_coordination (
     lock_id SERIAL PRIMARY KEY,

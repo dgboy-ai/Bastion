@@ -7,7 +7,7 @@
 # - Pre-seeded demo agent with sample memories
 #
 # TLS certificates are auto-generated on first run via the certs-init service.
-# For production, use CockroachDB Cloud + AWS Lambda (see lambda/template.yaml).
+# For production, use CockroachDB Cloud + AWS KMS/S3 (see terraform/main.tf).
 
 services:
   # ── TLS Certificate Initializer ──────────────────────────────────────────

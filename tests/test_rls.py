@@ -56,6 +56,10 @@ class TestRowLevelSecurity:
 
     def test_enable_rls_creates_policies(self):
         conn = MagicMock()
+        cur = MagicMock()
+        cur.fetchone.return_value = ("CockroachDB v23.1",)
+        conn.cursor.return_value.__enter__.return_value = cur
+        conn.commit = MagicMock()
         rls = RowLevelSecurity(conn)
         result = rls.enable_rls()
         assert result["status"] == "enabled"

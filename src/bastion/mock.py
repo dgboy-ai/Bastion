@@ -92,6 +92,12 @@ def mock_store_memory(
         now = datetime.now(UTC)
         expires_at = now + timedelta(seconds=expires_in_seconds) if expires_in_seconds is not None else None
 
+        # Support importance_score from metadata
+        importance_score = float(meta.pop("importance_score", 5.0))
+
+        # Initialize decayed in metadata
+        meta.setdefault("decayed", False)
+
         record = MemoryRecord(
             memory_id=str(uuid.uuid4()),
             agent_id=agent_id,
@@ -104,7 +110,7 @@ def mock_store_memory(
             created_at=now,
             expires_at=expires_at,
             access_count=0,
-            importance_score=5.0,
+            importance_score=importance_score,
         )
 
         record_dict = record.to_dict()

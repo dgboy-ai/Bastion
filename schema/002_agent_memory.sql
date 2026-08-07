@@ -20,11 +20,11 @@ CREATE TABLE IF NOT EXISTS agent_memory (
 CREATE VECTOR INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory (agent_id, embedding);
 
 -- CDC Changefeed: Streams every memory write for real-time anomaly detection and self-healing
--- Lambda handler receives events, checks hash chain integrity, detects poisoning attacks
+-- Downstream processors verify hash chain integrity and detect poisoning attacks
 -- NOTE: CDC changefeeds require a running sink (Kafka, webhook, etc.)
--- Create after deploying the CDC Lambda handler:
+-- Create after deploying a changefeed sink:
 --   CREATE CHANGEFEED FOR TABLE agent_memory
---   INTO 'webhook-https://<LAMBDA_FUNCTION_URL>'
+--   INTO 'webhook-https://<WEBHOOK_URL>'
 --   WITH updated, resolved, on_error=resume, initial_scan='no';
 -- For local development with Kafka:
 --   CREATE CHANGEFEED FOR TABLE agent_memory

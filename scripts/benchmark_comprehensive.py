@@ -398,7 +398,7 @@ _RECALL_TEST_DATA = [
     ("Multi-region replication tested across 3 regions with 42ms latency", "fact"),
     ("User prefers dark mode configuration for all UI components", "preference"),
     ("Memory retention policy set to 90 days for long-term facts", "fact"),
-    ("Lambda cold start mitigated via EventBridge keep-alive scheduler", "fact"),
+    ("Cold start mitigated via keep-alive scheduler", "fact"),
     ("Hash chain integrity verified with SHA-256 cryptographic links", "fact"),
     ("OAuth 2.1 with PKCE implemented for MCP server authentication", "fact"),
     ("SERIALIZABLE isolation used for multi-agent memory coordination", "fact"),

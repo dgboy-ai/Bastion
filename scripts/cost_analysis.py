@@ -30,13 +30,13 @@ FREE_TIER = {
         "reason": "AES-256-GCM envelope encryption for memory content",
     },
     "lambda": {
-        "description": "AWS Lambda Functions",
+        "description": "AWS Lambda Functions (REMOVED - not used)",
         "free_tier": "1M requests, 400K GB-seconds/month",
         "cost_per_1k_requests": "$0.20",
-        "our_usage": "~100 invocations/month",
-        "monthly_cost": "$0.00 (within free tier)",
-        "needed": True,
-        "reason": "CDC handler for self-healing + webhook dispatcher",
+        "our_usage": "none - removed from stack",
+        "monthly_cost": "$0.00",
+        "needed": False,
+        "reason": "REMOVED: not required; KMS + S3 + Bedrock cover the AWS footprint",
     },
 }
 
@@ -50,7 +50,7 @@ RECOMMENDED_SERVICES = {
         "cost": "$0 (free tier)",
         "risk": "Throttling if too many requests",
     },
-    "lambda": {"why": "CDC handler for self-healing - CORE FEATURE", "cost": "$0 (free tier)", "risk": "None"},
+    "kms": {"why": "Hash chain signing + envelope encryption - CORE FEATURE", "cost": "$0 (free tier)", "risk": "None"},
     "s3": {"why": "Memory archives for audit trail - NICE TO HAVE", "cost": "$0 (free tier)", "risk": "None"},
 }
 
@@ -101,11 +101,10 @@ def print_cost_analysis():
     print("  RECOMMENDATION")
     print("=" * 70)
     print()
-    print("  All 4 services are within free tier:")
+    print("  All 3 services are within free tier:")
     print("    1. Bedrock - Core (embeddings)")
-    print("    2. Lambda - Core (CDC handler + webhook dispatcher)")
+    print("    2. KMS - Hash chain signing + envelope encryption")
     print("    3. S3 - Memory archives with Glacier lifecycle")
-    print("    4. KMS - AES-256-GCM envelope encryption")
     print()
     print("  Total monthly cost: $0.00 (all within free tier)")
     print()

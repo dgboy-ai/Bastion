@@ -166,7 +166,6 @@ def create_a2a_server(
         "memory_search_encrypted": "memory_search_encrypted",
         "memory_store_batch": "memory_store_batch",
         "forensic_report": "forensic_report",
-        "chain_verify": "chain_verify",
         "managed_mcp_list_tools": "managed_mcp_list_tools",
         "managed_mcp_call": "managed_mcp_call",
         "invoke_agent_skill": "invoke_agent_skill",
@@ -211,7 +210,6 @@ def create_a2a_server(
         "memory_search_encrypted": "reader",
         "memory_store_batch": "writer",
         "forensic_report": "reader",
-        "chain_verify": "reader",
         "managed_mcp_list_tools": "reader",
         "managed_mcp_call": "writer",
         "invoke_agent_skill": "writer",
@@ -306,16 +304,6 @@ def create_a2a_server(
                 ),
                 "tags": ["memory", "healing", "integrity"],
                 "examples": ["Heal any broken hash chain links in my memories"],
-            },
-            {
-                "id": "chain_verify",
-                "name": "Verify Hash Chain",
-                "description": (
-                    "Verify hash chain integrity for flagged memories. "
-                    "Re-computes HMAC-SHA256 for each row and reports mismatches."
-                ),
-                "tags": ["memory", "hash-chain", "integrity", "verification"],
-                "examples": ["Verify the hash chain integrity for my recent memories"],
             },
             {
                 "id": "memory_delete",
@@ -2123,10 +2111,9 @@ def _execute_skill(mem: Any, method: str, params: dict[str, Any]) -> Any:
         return [e.to_dict() for e in entries]
     elif method == "memory_heal":
         agent_id = params.get("agent_id")
-        return mem.heal(agent_id)
-    elif method == "chain_verify":
-        batch_size = int(params.get("batch_size", 100))
-        return mem.chain_verify(batch_size)
+        result = mem.heal(agent_id)
+        result["hash_chain_verification"] = mem.chain_verify()
+        return result
     elif method == "memory_delete":
         memory_id = params.get("memory_id", "")
         if not memory_id:

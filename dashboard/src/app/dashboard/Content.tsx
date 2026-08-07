@@ -1279,6 +1279,128 @@ function ToolDetailModal({ entry, onClose }: { entry: any; onClose: () => void }
   );
 }
 
+/* ── All Tool Activity Modal ──────────────────────────────── */
+function ToolActivityAllModal({ usage, onClose }: { usage: any[]; onClose: () => void }) {
+  const [filter, setFilter] = useState("");
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", handleEsc); };
+  }, [onClose]);
+
+  const filtered = filter
+    ? usage.filter((t: any) => t.tool_name?.toLowerCase().includes(filter.toLowerCase()) || t.agent_id?.toLowerCase().includes(filter.toLowerCase()))
+    : usage;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+      animation: "fadeIn 0.2s ease",
+    }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: "#ffffff", border: "4px solid #000000",
+        borderRadius: "16px", boxShadow: "8px 8px 0px #000000",
+        width: "94%", maxWidth: "1100px", maxHeight: "90vh",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        animation: "slideInUp 0.25s cubic-bezier(0.16,1,0.3,1)",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "12px",
+          padding: "18px 24px", borderBottom: "3px solid #000000",
+          background: "#f0fdf4",
+        }}>
+          <span style={{ fontSize: "20px" }}>⛶</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "18px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>
+              All Tool Activity
+            </div>
+            <div style={{ fontSize: "12px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+              {usage.length} total calls · {filtered.length} shown
+            </div>
+          </div>
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by tool or agent..."
+            style={{
+              fontSize: "13px", fontFamily: "var(--font-mono)", fontWeight: 700,
+              padding: "6px 12px", borderRadius: "6px", border: "2px solid #000000",
+              background: "#ffffff", width: "200px", outline: "none",
+            }}
+          />
+          <button onClick={onClose} style={{
+            width: "36px", height: "36px", borderRadius: "8px", border: "2px solid #000000",
+            background: "#ffffff", cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: "18px", fontWeight: 900, color: "#000000",
+            boxShadow: "1.5px 1.5px 0px #000000",
+          }}>✕</button>
+        </div>
+
+        {/* Table */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", fontFamily: "var(--font-mono)" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb", borderBottom: "2px solid #000000", position: "sticky", top: 0, zIndex: 1 }}>
+                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>TOOL</th>
+                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>AGENT</th>
+                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>CLIENT</th>
+                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>ARGS</th>
+                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>MS</th>
+                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, fontSize: "11px", letterSpacing: "1px", color: "#6b7280" }}>TIME</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((t: any, i: number) => {
+                const isSearch = t.tool_name?.includes("search");
+                const isStore = t.tool_name?.includes("store");
+                const isMcp = t.tool_name === "managed_mcp_call";
+                const accentColor = isSearch ? "#047857" : isStore ? "#0369a1" : isMcp ? "#b45309" : "#000000";
+                let argsPreview = t.args_summary || "";
+                try {
+                  const parsed = JSON.parse(argsPreview);
+                  argsPreview = Object.entries(parsed).map(([k, v]) => {
+                    const val = typeof v === "string" ? v : JSON.stringify(v);
+                    return `${k}: ${val.length > 50 ? val.slice(0, 50) + "…" : val}`;
+                  }).join(" · ");
+                } catch {}
+                return (
+                  <tr key={i} style={{
+                    borderBottom: "1px solid #e5e7eb",
+                    background: i % 2 === 0 ? "#ffffff" : "#f9fafb",
+                    cursor: "pointer",
+                    transition: "background 0.1s ease",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#eff6ff"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#f9fafb"; }}
+                  >
+                    <td style={{ padding: "10px 16px" }}>
+                      <span style={{
+                        display: "inline-block", fontSize: "11px", fontWeight: 900,
+                        fontFamily: "var(--font-mono)", padding: "2px 8px", borderRadius: "4px",
+                        background: accentColor, color: "#ffffff", border: "1.5px solid #000000",
+                      }}>{t.tool_name}{t.sub_tool ? `:${t.sub_tool}` : ""}</span>
+                    </td>
+                    <td style={{ padding: "10px 16px", fontWeight: 700, color: "#b45309" }}>{t.agent_id}</td>
+                    <td style={{ padding: "10px 16px", fontWeight: 700, color: "#047857", fontSize: "12px" }}>{t.client_name || "—"}</td>
+                    <td style={{ padding: "10px 16px", color: "#374151", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{argsPreview}</td>
+                    <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, color: "#000000" }}>{t.duration_ms}</td>
+                    <td style={{ padding: "10px 16px", textAlign: "right", color: "#9ca3af", fontSize: "12px" }}>{new Date(t.created_at).toLocaleTimeString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Export ───────────────────────────────────────────── */
 export default function DashboardPage() {
   const { isMock, dbName } = useConnection();
@@ -1299,6 +1421,8 @@ export default function DashboardPage() {
   const [selectedTool, setSelectedTool] = useState<any>(null);
   const [selectedCrdbCategory, setSelectedCrdbCategory] = useState<{ label: string; color: string; icon: string; tools: { tool: string; calls: number }[] } | null>(null);
   const [selectedTech, setSelectedTech] = useState<any>(null);
+  const [showAllTools, setShowAllTools] = useState(false);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
 
   const countupRaf = useRef<number>(0);
   const prevMem = useRef(0);
@@ -1318,19 +1442,22 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     const t0 = performance.now();
     try {
-      const [statsRes, driftRes, asiRes, toolRes] = await Promise.all([
+      const [statsRes, driftRes, asiRes, toolRes, auditRes] = await Promise.all([
         fetchWithTimeout("/api/stats"),
         fetchWithTimeout("/api/drift?limit=10"),
         fetchWithTimeout("/api/asi06"),
         fetchWithTimeout("/api/tool-usage?limit=30"),
+        fetchWithTimeout("/api/audit?limit=20"),
       ]);
       if (!statsRes.ok) throw new Error("Stats fetch failed");
       const sd = await statsRes.json();
       const dr = driftRes.ok ? await driftRes.json() : null;
       const ai = asiRes.ok ? await asiRes.json() : null;
       const tu = toolRes.ok ? await toolRes.json() : null;
+      const auditJson = auditRes.ok ? await auditRes.json() : null;
 
       if (tu) setToolUsage(tu.data || tu);
+      if (auditJson?.data?.events) setAuditEvents(auditJson.data.events);
 
       const d: Stats = sd.data || sd;
       setStats(d);
@@ -2189,7 +2316,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── ROW 5: TOOL ACTIVITY (interactive cards) + CRDB + A2A ── */}
+        {/* ── ROW 5: TOOL ACTIVITY (interactive cards) + CRDB + AUDIT TRAIL ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 1.2fr", gap: "20px", alignItems: "stretch" }}>
           {/* Tool Activity Feed — bigger cards, click to expand */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>
@@ -2205,6 +2332,17 @@ export default function DashboardPage() {
               }}>
                 {toolUsage?.crdb?.total ?? 0} calls
               </span>
+              <button onClick={() => setShowAllTools(true)} style={{
+                fontSize: "12px", fontFamily: "var(--font-mono)", fontWeight: 900,
+                background: "#ffffff", color: "#000000", border: "2px solid #000000",
+                padding: "4px 12px", borderRadius: "6px", boxShadow: "1.5px 1.5px 0px #000000",
+                cursor: "pointer", transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000"; }}
+              >
+                ⛶ Expand
+              </button>
             </div>
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
             <div style={{ flex: 1, overflowY: "auto", minHeight: 0, display: "flex", flexDirection: "column", gap: "8px", paddingRight: "4px" }}>
@@ -2330,96 +2468,84 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* A2A Handoffs */}
+          {/* AUDIT TRAIL */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
               <Dot color={C.orange} pulse />
               <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
-                A2A HANDOFFS
+                AUDIT TRAIL
               </span>
-              <div style={{
-                marginLeft: "auto",
-                width: "32px",
-                height: "32px",
-                borderRadius: "50%",
-                background: "#ffffff",
-                border: "2.5px solid #000000",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                boxShadow: "1.5px 1.5px 0px #000000",
-                flexShrink: 0
+              <span style={{
+                marginLeft: "auto", fontSize: "11px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                color: "#000000", background: "#fef3c7", border: "1.5px solid #000000",
+                padding: "2px 8px", borderRadius: "4px"
               }}>
-                <img src="/a2a-logo.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              </div>
+                {auditEvents.length} events
+              </span>
             </div>
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-            
-            {/* Scrollable list container (stretches full height now) */}
             <div style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingRight: "4px", paddingBottom: "10px" }}>
-              {(toolUsage?.a2a_handoffs?.length ?? 0) === 0 ? (
+              {auditEvents.length === 0 ? (
                 <div style={{ padding: "20px", textAlign: "center", fontSize: "13px", color: "#6b7280", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-                  No A2A handoffs yet
+                  No audit events yet
                 </div>
               ) : (
-                toolUsage.a2a_handoffs.map((h: any, i: number) => {
-                  const isCompleted = h.status === "COMPLETED";
-                  const statusBg = isCompleted ? "#f0fdf4" : "#fef2f2";
-                  const statusBorderColor = isCompleted ? "#047857" : "#b91c1c";
-                  const statusTextColor = isCompleted ? "#047857" : "#b91c1c";
-
-                  return (
-                    <div key={i} style={{
-                      display: "flex", flexDirection: "column", gap: "10px",
-                      padding: "14px 16px", background: "#ffffff",
-                      border: "2.5px solid #000000", borderRadius: "10px",
-                      boxShadow: "2px 2px 0px #000000",
-                      marginBottom: "12px",
-                      transition: "all 0.15s ease", cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#047857", fontFamily: "var(--font-sans)" }}>{h.from_agent}</span>
-                        <span style={{ fontSize: "13px", color: "#000000", fontWeight: 900 }}>→</span>
-                        <div style={{
-                          width: "20px",
-                          height: "20px",
-                          borderRadius: "50%",
-                          background: "transparent",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          overflow: "hidden",
-                          flexShrink: 0
-                        }}>
-                          <img src="/a2a-logo.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                (() => {
+                  const typeStyles: Record<string, { color: string; bg: string; icon: string }> = {
+                    store: { color: "#2563eb", bg: "#eff6ff", icon: "●" },
+                    search: { color: "#047857", bg: "#f0fdf4", icon: "◎" },
+                    delete: { color: "#dc2626", bg: "#fef2f2", icon: "✕" },
+                    guard_block: { color: "#b91c1c", bg: "#fef2f2", icon: "⊘" },
+                    time_travel: { color: "#7c3aed", bg: "#faf5ff", icon: "◷" },
+                    recovery: { color: "#047857", bg: "#ecfdf5", icon: "↻" },
+                    audit: { color: "#92400e", bg: "#fef3c7", icon: "◫" },
+                    hash_verify: { color: "#047857", bg: "#f0fdf4", icon: "✓" },
+                  };
+                  return auditEvents.map((ev: any, i: number) => {
+                    const ts = typeStyles[ev.type] || typeStyles.store;
+                    const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "";
+                    return (
+                      <div key={i} style={{
+                        display: "flex", flexDirection: "column", gap: "8px",
+                        padding: "14px 16px", background: "#ffffff",
+                        border: "2px solid #000000", borderRadius: "10px",
+                        marginBottom: "10px", boxShadow: "2px 2px 0px #000000",
+                        transition: "all 0.15s ease", cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px #000000"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{
+                            fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                            color: ts.color, flexShrink: 0
+                          }}>{ts.icon}</span>
+                          <span style={{
+                            fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                            color: "#000000", background: ts.bg,
+                            border: `2px solid ${ts.color}`, borderRadius: "6px",
+                            padding: "3px 10px", letterSpacing: "1px"
+                          }}>{ev.type.toUpperCase()}</span>
+                          <span style={{
+                            fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                            color: "#000000"
+                          }}>{ev.agent_id}</span>
+                          <span style={{
+                            marginLeft: "auto", fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)",
+                            color: "#6b7280", flexShrink: 0
+                          }}>{timeStr}</span>
                         </div>
-                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-sans)" }}>{h.to_agent}</span>
-                        <span style={{
-                          marginLeft: "auto", fontSize: "11px", fontWeight: 900,
-                          color: statusTextColor,
-                          fontFamily: "var(--font-sans)", background: statusBg,
-                          border: `1.5px solid ${statusBorderColor}`,
-                          padding: "2px 8px", borderRadius: "4px"
-                        }}>{h.status}</span>
+                        <div style={{
+                          fontSize: "14px", fontWeight: 700, color: "#374151",
+                          fontFamily: "var(--font-mono)", lineHeight: "1.4",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                        }}>
+                          {ev.content_preview || ev.action}
+                        </div>
                       </div>
-                      <div style={{
-                        fontSize: "13px", fontWeight: 900, color: "#000000",
-                        fontFamily: "var(--font-sans)",
-                        background: "rgba(0, 0, 0, 0.03)",
-                        border: "2px solid #000000",
-                        padding: "8px 12px",
-                        borderRadius: "6px",
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-                      }}>
-                        {h.skill_used || h.message_preview || h.task_type}
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  });
+                })()
               )}
             </div>
           </div>
@@ -2508,6 +2634,12 @@ export default function DashboardPage() {
         {/* Tool Detail Modal — portaled to body so it sits above everything */}
         {selectedTool && createPortal(
           <ToolDetailModal entry={selectedTool} onClose={() => setSelectedTool(null)} />,
+          document.body
+        )}
+
+        {/* All Tool Activity Modal */}
+        {showAllTools && createPortal(
+          <ToolActivityAllModal usage={toolUsage?.usage || []} onClose={() => setShowAllTools(false)} />,
           document.body
         )}
 

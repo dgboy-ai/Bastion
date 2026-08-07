@@ -33,10 +33,9 @@ print("   [PASS] All 4 CockroachDB tools documented")
 # 5. AWS services
 print("5. AWS services used")
 assert "Amazon Bedrock" in readme or "Bedrock" in readme
-assert "AWS Lambda" in readme or "Lambda" in readme
 assert "Amazon S3" in readme or "S3" in readme
 assert "AWS KMS" in readme or "KMS" in readme
-print("   [PASS] All 4 AWS services documented")
+print("   [PASS] All 3 AWS services documented")
 
 # 6. Architecture diagram
 print("6. Architecture diagram")

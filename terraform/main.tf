@@ -13,10 +13,6 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.0"
-    }
   }
 }
 
@@ -53,10 +49,10 @@ resource "aws_kms_key" "bastion_signing" {
         Resource = "*"
       },
       {
-        Sid    = "AllowLambdaSignVerify"
+        Sid    = "AllowAppSignVerify"
         Effect = "Allow"
         Principal = {
-          AWS = aws_iam_role.lambda_role.arn
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
         Action = [
           "kms:Sign",
@@ -98,93 +94,6 @@ resource "cockroachlabs_cockroachcloud_cluster" "bastion" {
       }
     }
   }
-}
-
-# ──────────────────────────────────────────────────────────────
-# VPC for Lambda functions
-# ──────────────────────────────────────────────────────────────
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.0.0"
-
-  name = "bastion-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-}
-
-# ──────────────────────────────────────────────────────────────
-# IAM Role for Lambda
-# ──────────────────────────────────────────────────────────────
-resource "aws_iam_role" "lambda_role" {
-  name = "bastion-lambda-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "bastion-lambda-policy"
-  role = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:Encrypt",
-          "kms:GenerateDataKey",
-          "kms:Sign",
-          "kms:Verify",
-          "kms:GetPublicKey",
-          "kms:DescribeKey"
-        ]
-        Resource = [
-          aws_kms_key.bastion_signing.arn,
-          "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject"
-        ]
-        Resource = "${aws_s3_bucket.bastion_artifacts.arn}/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "sns:Publish"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -230,178 +139,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "bastion_artifacts" {
     expiration {
       days = 365
     }
-  }
-}
-
-# ──────────────────────────────────────────────────────────────
-# Lambda: CDC Handler (Hash verification + self-healing)
-# ──────────────────────────────────────────────────────────────
-data "archive_file" "cdc_lambda" {
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda"
-  output_path = "${path.module}/cdc_lambda.zip"
-}
-
-resource "aws_lambda_function" "cdc_handler" {
-  function_name = "bastion-cdc-handler"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "cdc_handler.handler"
-  runtime       = "python3.12"
-  timeout       = 300
-  memory_size   = 256
-
-  filename         = data.archive_file.cdc_lambda.output_path
-  source_code_hash = data.archive_file.cdc_lambda.output_base64sha256
-
-  environment {
-    variables = {
-      BASTION_CONN          = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
-      BASTION_HMAC_SECRET   = var.bastion_hmac_secret
-      BASTION_S3_BUCKET     = aws_s3_bucket.bastion_artifacts.id
-      AWS_REGION            = var.aws_region
-      BASTION_KMS_KEY_ALIAS = "alias/bastion-hash-chain"
-      BASTION_SIGNING_MODE  = "kms"
-    }
-  }
-}
-
-# ──────────────────────────────────────────────────────────────
-# Lambda: MCP Server (Streamable HTTP via Mangum adapter)
-# NOTE: MCP server uses uvicorn/starlette. Deploy via ECS/EKS
-#       or use Mangum to adapt for Lambda. For hackathon demo,
-#       run as a standalone container instead.
-# ──────────────────────────────────────────────────────────────
-# Uncomment below if using Mangum adapter for Lambda deployment:
-#
-# resource "aws_lambda_function" "mcp_server" {
-#   function_name = "bastion-mcp-server"
-#   role          = aws_iam_role.lambda_role.arn
-#   handler       = "mangum_mcp.handler"  # Requires Mangum adapter
-#   runtime       = "python3.12"
-#   timeout       = 30
-#   memory_size   = 512
-#
-#   filename         = data.archive_file.cdc_lambda.output_path
-#   source_code_hash = data.archive_file.cdc_lambda.output_base64sha256
-#
-#   environment {
-#     variables = {
-#       BASTION_CONN = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
-#       BASTION_MOCK = "false"
-#     }
-#   }
-# }
-
-}
-}
-
-# ──────────────────────────────────────────────────────────────
-# SQS Queues for Real-Time CDC Changefeed (NEW - Real-time)
-# ──────────────────────────────────────────────────────────────
-# FIFO queue ensures ordering per agent_id (message group = agent_id)
-# Dead letter queue for poison pills after 3 retries
-# ──────────────────────────────────────────────────────────────
-
-resource "aws_sqs_queue" "bastion_cdc" {
-  name                      = "bastion-cdc-changefeed.fifo"
-  fifo_queue                = true
-  content_based_deduplication = true
-  message_retention_seconds = 1209600  # 14 days
-  visibility_timeout_seconds = 30
-  receive_wait_time_seconds = 20
-  
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.bastion_cdc_dlq.arn
-    maxReceiveCount     = 3
-  })
-}
-
-resource "aws_sqs_queue" "bastion_cdc_dlq" {
-  name = "bastion-cdc-changefeed-dlq.fifo"
-  fifo_queue = true
-}
-
-# ──────────────────────────────────────────────────────────────
-# Lambda: Real-Time CDC SQS Processor (NEW)
-# ──────────────────────────────────────────────────────────────
-data "archive_file" "cdc_sqs_lambda" {
-  type        = "zip"
-  source_dir  = "${path.module}/../lambda"
-  output_path = "${path.module}/cdc_sqs_lambda.zip"
-}
-
-resource "aws_lambda_function" "cdc_sqs_processor" {
-  function_name = "bastion-cdc-sqs-processor"
-  role          = aws_iam_role.lambda_role.arn
-  handler       = "cdc_sqs_processor.handler"
-  runtime       = "python3.12"
-  timeout       = 30
-  memory_size   = 256
-
-  filename         = data.archive_file.cdc_sqs_lambda.output_path
-  source_code_hash = data.archive_file.cdc_sqs_lambda.output_base64sha256
-
-  environment {
-    variables = {
-      BASTION_CONN           = cockroachlabs_cockroachcloud_cluster.bastion.connection_string
-      BASTION_HMAC_SECRET    = var.bastion_hmac_secret
-      BASTION_S3_BUCKET      = aws_s3_bucket.bastion_artifacts.id
-      AWS_REGION             = var.aws_region
-      BASTION_KMS_KEY_ALIAS  = "alias/bastion-hash-chain"
-      BASTION_SIGNING_MODE   = "kms"
-      BASTION_CDC_QUEUE_URL  = aws_sqs_queue.bastion_cdc.url
-      BASTION_DLQ_URL        = aws_sqs_queue.bastion_cdc_dlq.url
-      BASTION_CDC_BATCH_SIZE = "10"
-      BASTION_CDC_VISIBILITY_TIMEOUT = "30"
-      BASTION_CDC_POLL_WAIT  = "20"
-      BASTION_CDC_MAX_CONCURRENCY = "10"
-    }
-  }
-}
-
-# Lambda event source mapping (SQS -> Lambda)
-resource "aws_lambda_event_source_mapping" "cdc_sqs" {
-  event_source_arn = aws_sqs_queue.bastion_cdc.arn
-  function_name    = aws_lambda_function.cdc_sqs_processor.function_name
-  batch_size       = 10
-  maximum_batching_window_in_seconds = 5
-  maximum_retry_attempts = 3
-}
-
-# ──────────────────────────────────────────────────────────────
-# CockroachDB Changefeed Setup Instructions (Real-time SQS)
-# ──────────────────────────────────────────────────────────────
-# 
-# Run this SQL against your Dedicated CockroachDB cluster to create
-# the real-time changefeed streaming to SQS:
-#
-# CREATE CHANGEFEED INTO 'sqs://${aws_sqs_queue.bastion_cdc.arn}'
-#   WITH updated, resolved='10s', format='json', envelope='row'
-#   FROM TABLE agent_memory;
-#
-# Note: Requires Dedicated (STANDARD/ADVANCED) cluster.
-# Serverless (BASIC) does not support changefeeds to external sinks.
-#
-# The message group ID will be set to agent_id for per-agent ordering.
-# Format: {"Records": [{"value": {...}, "topic": "agent_memory"}]}
-# ──────────────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────────────
-# CloudWatch Alarms
-# ──────────────────────────────────────────────────────────────
-resource "aws_cloudwatch_metric_alarm" "cdc_handler_errors" {
-  alarm_name          = "bastion-cdc-handler-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "Bastion CDC handler errors"
-
-  dimensions = {
-    FunctionName = aws_lambda_function.cdc_handler.function_name
   }
 }
 

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS a2a_tasks (
     INDEX idx_a2a_callback (callback_url) WHERE callback_url IS NOT NULL
 );
 
--- CDC Changefeed: Streams task state changes to Lambda for webhook push notifications.
+-- CDC Changefeed: Streams task state changes for webhook push notifications.
 -- Enables real-time agent notification without polling.
 -- NOTE: CDC changefeeds are configured at runtime, not in schema files
--- Example: CREATE CHANGEFEED FOR TABLE a2a_tasks INTO 'webhook-https://bastion-cdc-handler/cdc' WITH updated, resolved, on_error=resume, initial_scan='no';
+-- Example: CREATE CHANGEFEED FOR TABLE a2a_tasks INTO 'webhook-https://<WEBHOOK_URL>' WITH updated, resolved, on_error=resume, initial_scan='no';

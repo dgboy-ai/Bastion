@@ -5,19 +5,19 @@
 
 -- Access tokens: add TIMESTAMPTZ column
 ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS expires_at_ts TIMESTAMPTZ;
-UPDATE oauth_access_tokens SET expires_at_ts = to_timestamp(expires_at) WHERE expires_at_ts IS NULL;
+UPDATE oauth_access_tokens SET expires_at_ts = timestamp 'epoch' + expires_at * interval '1 second' WHERE expires_at_ts IS NULL;
 
 -- Refresh tokens: add TIMESTAMPTZ column
 ALTER TABLE oauth_refresh_tokens ADD COLUMN IF NOT EXISTS expires_at_ts TIMESTAMPTZ;
-UPDATE oauth_refresh_tokens SET expires_at_ts = to_timestamp(expires_at) WHERE expires_at_ts IS NULL;
+UPDATE oauth_refresh_tokens SET expires_at_ts = timestamp 'epoch' + expires_at * interval '1 second' WHERE expires_at_ts IS NULL;
 
 -- Auth codes: add TIMESTAMPTZ column
 ALTER TABLE oauth_auth_codes ADD COLUMN IF NOT EXISTS expires_at_ts TIMESTAMPTZ;
-UPDATE oauth_auth_codes SET expires_at_ts = to_timestamp(expires_at) WHERE expires_at_ts IS NULL;
+UPDATE oauth_auth_codes SET expires_at_ts = timestamp 'epoch' + expires_at * interval '1 second' WHERE expires_at_ts IS NULL;
 
 -- PKCE verifiers: add TIMESTAMPTZ column
 ALTER TABLE oauth_pkce_verifiers ADD COLUMN IF NOT EXISTS expires_at_ts TIMESTAMPTZ;
-UPDATE oauth_pkce_verifiers SET expires_at_ts = to_timestamp(expires_at) WHERE expires_at_ts IS NULL;
+UPDATE oauth_pkce_verifiers SET expires_at_ts = timestamp 'epoch' + expires_at * interval '1 second' WHERE expires_at_ts IS NULL;
 
 -- GAP-40: Sender key cache table for multi-instance TOFU trust sharing
 CREATE TABLE IF NOT EXISTS sender_key_cache (

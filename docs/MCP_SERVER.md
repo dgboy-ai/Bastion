@@ -40,11 +40,11 @@ The server registers **35 MCP tools organized into nine capability groups**, all
    │
    │ 4. SERIALIZABLE Insert & lock
    │ 5. Compute HMAC(content + prev_hash)
-   │ 6. Commit row & trigger CDC Changefeed
+   │ 6. Commit row (hash chain sealed)
    ▼
-[AWS Lambda Verification]
+[Hash-Chain Verification]
    │
-   │ 7. Audit hash chain integrity
+   │ 7. Audit hash chain integrity (memory_heal / forensic_report)
    │ 8. Generate S3 snapshot on break
 ```
 

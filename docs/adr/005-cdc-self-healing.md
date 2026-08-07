@@ -1,7 +1,7 @@
-# ADR 005: CDC Changefeed for Self-Healing Memory
+# ADR 005: In-Process Self-Healing via Hash-Chain Verification
 
 ## Status
-Accepted
+Accepted (supersedes original CDC-Lambda design)
 
 ## Context
 Agent memory degrades over time through:
@@ -13,7 +13,14 @@ Agent memory degrades over time through:
 Traditional cleanup runs on a schedule (cron), which means corruption can persist for hours before detection. For production agents, this is unacceptable.
 
 ## Decision
-Use CockroachDB CDC changefeeds to stream every memory write to AWS Lambda for real-time processing:
+Self-healing runs **in-process** via `memory_heal` (MCP tool), triggered on demand and during dreaming:
+
+1. Verifies the HMAC-SHA256 hash chain across all memory blocks (detects corruption/tampering)
+2. Detects anomalies (fact turnover, size spikes, rapid forgetting)
+3. Reseals broken hashes / triggers snapshot recovery if corruption is detected
+4. Logs to the audit table (immutable trail)
+
+Optionally, CockroachDB CDC changefeeds can stream writes to external sinks for downstream monitoring:
 
 ```sql
 CREATE CHANGEFEED FOR TABLE agent_memory
@@ -21,26 +28,19 @@ INTO 's3://bucket/prefix'
 WITH updated, resolved, on_error=pause;
 ```
 
-The Lambda handler:
-1. Verifies hash chain integrity (detects corruption)
-2. Detects anomalies (fact turnover, size spikes, rapid forgetting)
-3. Triggers self-healing (snapshot + rollback if corruption detected)
-4. Logs to audit table (immutable trail)
-
 ## Consequences
 
 ### Positive
-- Real-time detection (milliseconds, not hours)
-- No polling overhead (event-driven)
-- Automatic rollback on corruption
+- Deterministic, instant verification (no external function cold start)
+- No additional infrastructure (no Lambda + IAM deployment)
+- Automatic reseal on corruption
 - Immutable audit trail of all healing actions
 
 ### Negative
-- CDC adds infrastructure complexity (Lambda + S3 + IAM)
-- Lambda has 30-second timeout (healing must be fast)
-- CDC lag can be non-zero under high load
+- Verification is on-demand rather than continuous (mitigated by on-write `needs_verification` flags)
+- Large chains take longer to scan (mitigated by batched verification)
 
 ### Mitigations
-- Circuit breaker prevents Lambda invocation storms
-- Healing logic is stateless (idempotent)
+- On-write `needs_verification` flag marks rows for the next heal pass
+- Healing is stateless (idempotent)
 - S3 snapshots provide durable recovery points

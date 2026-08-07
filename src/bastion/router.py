@@ -43,7 +43,7 @@ _RELATIONSHIP_PATTERNS = [
 
 _ENTITY_PATTERNS = [
     r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b",  # Multi-word proper nouns
-    r"\b(CockroachDB|Bedrock|Lambda|KMS|S3|SQS|SNS)\b",
+    r"\b(CockroachDB|Bedrock|KMS|S3)\b",
 ]
 
 _SUMMARY_PATTERNS = [
@@ -125,7 +125,7 @@ class RecallRouter:
 
         # Check entity signals
         entity_matches = re.findall(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b", query)
-        tech_pattern = r"\b(?:CockroachDB|Bedrock|Lambda|KMS|S3|SQS|SNS|API|SQL|HTTP)\b"
+        tech_pattern = r"\b(?:CockroachDB|Bedrock|KMS|S3|API|SQL|HTTP)\b"
         tech_matches = re.findall(tech_pattern, query, re.IGNORECASE)
         entity_score = min(1.0, (len(entity_matches) + len(tech_matches)) * 0.3)
         scores["entity"] = entity_score

@@ -30,6 +30,23 @@ logger = get_logger(__name__)
 _guard_bypass_counter = 0
 _guard_bypass_lock = threading.Lock()
 
+# Per-agent process-local hash chain locks. The hash chain is a single hot
+# row per agent (agent_memory.previous_hash chain), so concurrent writers to
+# the SAME agent serialize in-process before hitting the DB. This converts
+# N-way SERIALIZABLE contention on one row into a single writer per agent,
+# slashing retries while preserving cross-process safety via the DB retry engine.
+_chain_lock_registry: dict[str, threading.Lock] = {}
+_chain_lock_registry_guard = threading.Lock()
+
+
+def _chain_lock_for(agent_id: str) -> threading.Lock:
+    with _chain_lock_registry_guard:
+        lock = _chain_lock_registry.get(agent_id)
+        if lock is None:
+            lock = threading.Lock()
+            _chain_lock_registry[agent_id] = lock
+        return lock
+
 # Modules authorized to bypass the guard (internal system-generated content only)
 _GUARD_BYPASS_ALLOWLIST = frozenset({
     "bastion.capture_hooks",
@@ -915,10 +932,11 @@ class BastionMemory:
                     verified += 1
 
                 # Clear verification flags for all processed rows
+                placeholders = ", ".join(["%s"] * len(rows))
                 cur.execute(
                     "UPDATE agent_memory SET needs_verification = FALSE "
                     "WHERE agent_id = %s AND needs_verification = TRUE "
-                    "AND memory_id IN (%s)" % ", ".join(["%s"] * len(rows)),
+                    "AND memory_id IN (" + placeholders + ")",
                     (self.agent_id, *[str(r[0]) for r in rows]),
                 )
 
@@ -1270,8 +1288,15 @@ class BastionMemory:
         try:
             if should_release:
                 self._set_rls_context(conn)
-            # Use retry engine with SERIALIZABLE isolation for hash chain integrity
-            row, prev_hash, crypto_hash = self._retry_engine.execute(conn, _insert_operation, isolation="serializable")
+            # Use retry engine with SERIALIZABLE isolation for hash chain integrity.
+            # The hash chain is a single hot row per agent: serialize same-agent
+            # writers in-process so N-way contention on one row becomes a single
+            # writer. Cross-process writers still rely on the DB retry engine.
+            chain_lock = _chain_lock_for(self.agent_id)
+            with chain_lock:
+                row, prev_hash, crypto_hash = self._retry_engine.execute(
+                    conn, _insert_operation, isolation="serializable"
+                )
 
             row_map = row._mapping if hasattr(row, "_mapping") else {"memory_id": row[0], "created_at": row[1]}
             return MemoryRecord(
@@ -2147,14 +2172,14 @@ class BastionMemory:
                 if not row:
                     return None
                 cur.execute(
-                    "UPDATE agent_memory SET cryptographic_hash = NULL "
+                    "UPDATE agent_memory SET needs_verification = TRUE "
                     "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
                     "WHERE memory_id = %s)",
                     (self.agent_id, memory_id),
                 )
                 downstream_count = cur.rowcount
                 logger.warning(
-                    "Memory corrected — downstream hash chain invalidated for %d records at memory_id=%s. "
+                    "Memory corrected — %d downstream records flagged for hash re-verification at memory_id=%s. "
                     "Run 'memory_heal' to reseal.",
                     downstream_count,
                     memory_id,
@@ -2227,7 +2252,7 @@ class BastionMemory:
                 )
                 # Invalidate downstream hashes (same pattern as _correct_memory_real)
                 cur.execute(
-                    "UPDATE agent_memory SET cryptographic_hash = NULL "
+                    "UPDATE agent_memory SET needs_verification = TRUE "
                     "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
                     "WHERE memory_id = %s)",
                     (self.agent_id, memory_id),
@@ -2235,7 +2260,7 @@ class BastionMemory:
                 downstream_count = cur.rowcount
                 if downstream_count > 0:
                     logger.warning(
-                        "Metadata patched — downstream hash chain invalidated for %d records. "
+                        "Metadata patched — %d downstream records flagged for hash re-verification. "
                         "Run 'memory_heal' to reseal.",
                         downstream_count,
                     )

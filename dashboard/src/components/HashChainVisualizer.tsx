@@ -49,6 +49,8 @@ export default function HashChainVisualizer() {
 
   useEffect(() => {
     fetchChain();
+    const interval = setInterval(fetchChain, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const truncateHash = (hash: string | null | undefined) => {

@@ -37,6 +37,8 @@ import anyio.to_thread
 import httpx
 import psycopg2
 from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env.local", override=True)
+
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
@@ -54,7 +56,7 @@ from bastion.pool import ConnectionPool
 from bastion.provenance import compute_provenance
 from bastion.spend_manager import SpendManager
 
-load_dotenv()  # loads .env.local or .env
+load_dotenv(dotenv_path=".env.local", override=True)  # .env.local wins over stale OS env vars
 
 # Hard caps for production safety
 MAX_K = 100
@@ -299,7 +301,9 @@ def create_server(
     stateless: bool = False,
     multi_tenant: bool = False,
 ) -> FastMCP:
-    conn = connection_string or os.environ.get("BASTION_CONN", "")
+    from bastion.config import get_settings
+    settings = get_settings()
+    conn = connection_string or settings.connection_string
     is_mock = mock if mock is not None else (not conn)
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
@@ -1497,7 +1501,8 @@ def create_server(
         name="memory_heal",
         title="Memory Self-Healing",
         description=(
-            "Trigger CDC-triggered self-healing: removes expired memories, detects anomalies, compacts storage."
+            "Trigger CDC-triggered self-healing: removes expired memories, detects anomalies, "
+            "compacts storage, and verifies hash-chain integrity for flagged memories."
         ),
         annotations=ToolAnnotations(
             title="Memory Self-Healing",
@@ -1507,42 +1512,20 @@ def create_server(
             openWorldHint=False,
         ),
     )
-    async def memory_heal(ctx: Context, agent_id: str | None = None, background_verify: bool = False) -> str:
+    async def memory_heal(ctx: Context, agent_id: str | None = None, background_verify: bool = False, verify_flagged: bool = True) -> str:
         mem = _resolve_memory(ctx)
         try:
             await _report_progress(ctx, 0, 3, "Pruning expired memories...")
             result = await anyio.to_thread.run_sync(mem.heal, agent_id, background_verify)
+            if verify_flagged:
+                verify_result = await anyio.to_thread.run_sync(mem.chain_verify)
+                result["hash_chain_verification"] = verify_result
             await _report_progress(ctx, 3, 3, "Self-heal complete")
             await _notify_resource_updated(ctx, "bastion://stats")
             return json.dumps(result, indent=2, default=str)
         except Exception:
             logger.exception("memory_heal failed")
             return json.dumps({"error": "Self-heal failed — check server logs"})
-
-    @mcp.tool(
-        name="chain_verify",
-        title="Hash Chain Verification",
-        description=(
-            "Verify hash chain integrity for flagged memories. "
-            "Re-computes HMAC-SHA256 for each flagged row and reports mismatches. "
-            "Use after heal or when tampering is suspected."
-        ),
-        annotations=ToolAnnotations(
-            title="Hash Chain Verification",
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
-    )
-    async def chain_verify(ctx: Context, batch_size: int = 100) -> str:
-        mem = _resolve_memory(ctx)
-        try:
-            result = await anyio.to_thread.run_sync(mem.chain_verify, batch_size)
-            return json.dumps(result, indent=2, default=str)
-        except Exception:
-            logger.exception("chain_verify failed")
-            return json.dumps({"error": "Chain verification failed — check server logs"})
 
     @mcp.tool(
         name="memory_delete",
@@ -1726,6 +1709,11 @@ def create_server(
     ) -> str:
         if not memory_id:
             return json.dumps({"error": "memory_id is required"})
+        try:
+            import uuid as _uuid
+            _uuid.UUID(str(memory_id))
+        except (ValueError, AttributeError):
+            return json.dumps({"error": f"Invalid memory_id format: {memory_id!r} — must be a UUID"})
         if not new_content:
             return json.dumps({"error": "new_content is required"})
         if len(new_content) > _MAX_CONTENT_LENGTH:
@@ -3381,14 +3369,9 @@ def create_server(
             },
             {
                 "name": "memory_heal",
-                "description": "CDC-triggered self-healing: prune expired, detect anomalies, compact",
+                "description": "CDC-triggered self-healing: prune expired, detect anomalies, compact, verify hash chain",
                 "read_only": False,
                 "destructive": True,
-            },
-            {
-                "name": "chain_verify",
-                "description": "Verify hash chain integrity for flagged memories via HMAC-SHA256 re-computation",
-                "read_only": True,
             },
             {
                 "name": "memory_delete",
@@ -4086,6 +4069,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
 
 
 def main() -> None:
+    load_dotenv(dotenv_path=".env.local")
     import argparse
 
     parser = argparse.ArgumentParser(description="Bastion MCP Server")

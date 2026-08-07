@@ -3,11 +3,11 @@
 > Submission requirement: *"Identify which AWS Services tools you used and how."*
 > Deadline: Aug 19, 2026. Prizes up to $8,750. 3 min video + public MIT repo + diagram.
 
-## Decision: Primary = Amazon S3, Bonus = AWS Lambda
+## Decision: Primary = Amazon S3, Core = AWS KMS
 
 We picked **S3 as the primary, dashboard-visible AWS service** (cold archive of agent memory,
-backing up CockroachDB's hot memory tier). **Lambda is documented infra but optional for the demo.**
-Rationale in "Decision" section below.
+backing up CockroachDB's hot memory tier) and **AWS KMS as the integrity core** (hash-chain
+signing + envelope encryption). Self-healing runs in-process via `memory_heal`.
 
 ---
 
@@ -28,8 +28,8 @@ Complements CockroachDB (hot tier, ms latency, vector) with an S3 (cold tier, ar
 ```
 
 ### Existing backend infra (already in repo)
-- `lambda/setup_s3.py` - creates `bastion-memory-archives`, enables versioning, Glacier 90d / expire 365d lifecycle, uploads a sample archive. Bucket ARN `arn:aws:s3:::bastion-memory-archives`.
-- `lambda/cdc_handler.py` - CDC Lambda writes/reads S3 snapshots (`s3://{BASTION_S3_BUCKET}/snapshots/{agent}/{ts}.json`).
+- `src/bastion/archive.py` - writes memory archives to `bastion-memory-archives`, with Glacier 90d / expire 365d lifecycle.
+- `terraform/main.tf` - provisions the bucket + KMS signing key (`alias/bastion-hash-chain`).
 - `docs/memory_architecture.md` Layer 2: "S3 snapshots + Glacier lifecycle."
 
 ### Dashboard-visible demo plan
@@ -44,29 +44,29 @@ Complements CockroachDB (hot tier, ms latency, vector) with an S3 (cold tier, ar
 
 ---
 
-## 2. AWS Lambda - CDC & Webhook Processing (BONUS / documented infra)
-- `lambda/cdc_handler.py`: verifies HMAC-SHA256 hash chain on changes, detects anomalies, writes S3 snapshots, SNS alert on break.
-- `lambda/webhook_dispatcher.py`: SQS + circuit breaker for A2A task webhook dispatch.
-- Requires deployed function + IAM execution role (`deploy_direct.py` / `template.yaml` SAM). Cold start adds latency / risk to a live demo.
+## 2. AWS KMS - Hash-Chain Signing + Envelope Encryption (CORE)
+- `src/bastion/kms.py`: AES-256-GCM envelope encryption with AAD bound to `agent_id`.
+- `src/bastion/kms_signing.py`: ECDSA-P256 asymmetric signing — private key never leaves KMS.
+- `terraform/main.tf`: `aws_kms_key.bastion_signing` (ECC_NIST_P256, SIGN_VERIFY) + alias.
 
 ---
 
 ## 3. Other AWS already used
 | Service | Use |
 |---------|-----|
-| AWS KMS | AES-256-GCM envelope encryption (BastionEncryption key), AAD bound to agent_id |
-| Amazon SNS | `bastion-alerts` topic on broken hash chain / poisoning |
-| CloudWatch | Lambda metrics + `CDCHandlerErrors` alarm |
+| Amazon S3 | Cold memory archives (`bastion-memory-archives`) with Glacier lifecycle |
+| AWS KMS | AES-256-GCM envelope encryption + ECDSA hash-chain signing |
+| Amazon Bedrock | High-fidelity embedding fallback (`amazon.titan-embed-text-v2`) |
 
 ---
 
 ## Decision: S3 (wear now)
 - **S3 ties perfectly to the CockroachDB narrative** (hot vs cold tier) - judges see a meaningful reason for both DBs.
 - **Visible + instant**: click Export -> bucket/key/rows -> open S3 Console. Live demo = low risk.
-- **Cheap/free** and has **no IAM role / cold-start / invocation failure** surface (Lambda deps do).
-- Lambda is more "impressive" but is **heavier & riskier** (role + deployment + concurrency + latency) for a <3min video/live demo, and its payoff is lower than a reliable S3 export.
+- **Cheap/free** and has **no IAM role / cold-start / invocation failure** surface.
+- **KMS is the integrity story**: tamper-evident hash chains signed by a key that never leaves AWS.
 
-**Recommended**: Implement the S3 export proof now (ing visible in playground). Add a Lambda "Run Agent on Lambda"-demo/button later **only if time remains** - treat it as bonus, not required.
+**Recommended**: Implement the S3 export proof now (visible in playground). KMS signing + envelope encryption are already production features.
 
 ---
 

@@ -344,7 +344,7 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
             "guard_total_checks": guard_stats["total_checks"],
             "guard_blocked_count": guard_stats["blocked_count"],
             "guard_blocked_pct": guard_stats["blocked_pct"],
-            # S3 (placeholder — Lambda deployment pending)
+            # S3 export not configured by default
             "s3_export_url": None,
         }
     except Exception as e:

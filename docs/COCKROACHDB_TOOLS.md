@@ -12,7 +12,7 @@ Our MCP server (`src/bastion/mcp_server.py`) implements **35 tools** to manage a
 
 | Category | Tools | CockroachDB Feature Utilized |
 |----------|-------|------------------------------|
-| **Core Memory** | `memory_store`, `memory_search`, `memory_store_encrypted`, `memory_search_encrypted`, `memory_store_batch`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete` | HMAC-SHA256, C-SPANN, MVCC `AS OF SYSTEM TIME` |
+| **Core Memory** | `memory_store`, `memory_search`, `memory_store_encrypted`, `memory_search_encrypted`, `memory_store_batch`, `memory_timetravel`, `memory_audit`, `memory_heal`, `memory_delete` | HMAC-SHA256 hash chain + re-verification, C-SPANN, MVCC `AS OF SYSTEM TIME` |
 | **Pinning** | `memory_pin`, `memory_get_pinned` | Partial indexing on `is_pinned` |
 | **Governance** | `memory_list`, `memory_correct`, `memory_health`, `forensic_report`, `memory_apply_patch`, `compliance_report` | SQL pagination, updates, EU AI Act compliance checks |
 | **Consensus** | `resolve_conflict` | `SERIALIZABLE` isolation transactions |

@@ -1,7 +1,7 @@
 """CDC Cognitive Firewall.
 
 Asynchronous guardrail validation triggered by database writes.
-Offloads safety checks to Lambda via CDC changefeeds, keeping
+Offloads safety checks to background workers, keeping
 agent response latency under 2ms.
 """
 
@@ -145,7 +145,8 @@ class CognitiveFirewall:
                     cur.execute(
                         "SELECT memory_id, agent_id, memory_type, content, embedding, metadata, "
                         "previous_hash, cryptographic_hash, created_at, expires_at, "
-                        "access_count, importance_score, trust_level, source_provenance, overwrite_count "
+                        "access_count, importance_score, trust_level, source_provenance, overwrite_count, "
+                        "is_pinned, pin_priority "
                         "FROM agent_memory WHERE agent_id = %s ORDER BY created_at ASC LIMIT %s",
                         (agent_id, max_memories),
                     )

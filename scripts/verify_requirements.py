@@ -42,20 +42,17 @@ with open("src/bastion/memory.py", encoding="utf-8") as f:
     bedrock = "bedrock-runtime" in f.read()
 print(f"1. Amazon Bedrock: {'VERIFIED' if bedrock else 'MISSING'}")
 
-lambda_files = [f for f in os.listdir("lambda") if f.endswith(".py")]
-print(f"2. AWS Lambda: {len(lambda_files)} handlers -- VERIFIED")
-
-with open("lambda/cdc_handler.py", encoding="utf-8") as f:
-    s3 = "put_object" in f.read()
-print(f"3. Amazon S3: {'VERIFIED' if s3 else 'MISSING'}")
+with open("src/bastion/archive.py", encoding="utf-8") as f:
+    s3 = "boto3.client(\"s3\")" in f.read()
+print(f"2. Amazon S3: {'VERIFIED' if s3 else 'MISSING'}")
 
 with open("src/bastion/kms.py", encoding="utf-8") as f:
     kms = "generate_data_key" in f.read()
-print(f"4. AWS KMS: {'VERIFIED' if kms else 'MISSING'}")
+print(f"3. AWS KMS: {'VERIFIED' if kms else 'MISSING'}")
 
 with open(".env", encoding="utf-8") as f:
     kms_key = "BASTION_AWS_KMS_KEY_ARN" in f.read()
-print(f"5. KMS key configured: {'YES' if kms_key else 'NO'}")
+print(f"4. KMS key configured: {'YES' if kms_key else 'NO'}")
 
 print()
 print("=== SUBMISSION ===")
@@ -67,7 +64,7 @@ with open("DEMO_SCRIPT.md", encoding="utf-8") as f:
 with open("README.md", encoding="utf-8") as f:
     readme = f.read()
 print(f"4. CRDB mentioned: {readme.count('CockroachDB')} times")
-print(f"5. AWS mentioned: {readme.count('Bedrock') + readme.count('Lambda') + readme.count('KMS')} times")
+print(f"5. AWS mentioned: {readme.count('Bedrock') + readme.count('KMS')} times")
 print(f"6. Architecture diagram: {'EXISTS' if os.path.exists('docs/architecture.svg') else 'MISSING'}")
 print("7. Tests: 1258 passing")
 print()

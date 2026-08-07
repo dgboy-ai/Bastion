@@ -58,8 +58,9 @@ export default function MemoryGuardPanel() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchGuardReport();
+    const interval = setInterval(fetchGuardReport, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleScan = async () => {

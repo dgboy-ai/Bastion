@@ -106,21 +106,21 @@ CREATE POLICY thought_graph_isolation ON thought_graph
 -- CDC changefeeds are created at runtime, not in schema migrations.
 -- They require a running sink (Kafka, webhook, etc.).
 --
--- After deploying the CDC Lambda handler, create changefeeds:
+-- After deploying a changefeed sink, create changefeeds:
 --
 --   -- agent_memory: hash chain verification + anomaly detection
 --   CREATE CHANGEFEED cdc_agent_memory
---   INTO 'webhook-https://<LAMBDA_FUNCTION_URL>'
+--   INTO 'webhook-https://<WEBHOOK_URL>'
 --   WITH updated, resolved, on_error=resume, initial_scan='no';
 --
 --   -- agent_audit: compliance monitoring
 --   CREATE CHANGEFEED cdc_agent_audit
---   INTO 'webhook-https://<LAMBDA_FUNCTION_URL>'
+--   INTO 'webhook-https://<WEBHOOK_URL>'
 --   WITH updated, resolved, on_error=resume, initial_scan='no';
 --
 --   -- a2a_tasks: push notifications on task completion
 --   CREATE CHANGEFEED cdc_a2a_tasks
---   INTO 'webhook-https://<LAMBDA_FUNCTION_URL>'
+--   INTO 'webhook-https://<WEBHOOK_URL>'
 --   WITH updated, resolved, on_error=resume, initial_scan='no';
 --
 -- For local development with Kafka:

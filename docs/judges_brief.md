@@ -68,7 +68,7 @@ We satisfy the requirement by using **all four** CockroachDB integrations:
 1.  **"They built a cleaner UI"**:
     *   Our dashboard uses dynamic Canvas trust rings, bento grids, layout wrappers, and a **fully simulated interactive attack workspace** in the `Playground` section. It is designed to impress strict design judges.
 2.  **"Their AWS stack is fully hosted"**:
-    *   We use **Amazon Bedrock** for high-fidelity embedding generation, **psycopg3 connection pools**, and support clean AWS Lambda deployments.
+    *   We use **Amazon Bedrock** for high-fidelity embedding generation, **AWS KMS** for tamper-evident hash-chain signing, and **psycopg3 connection pools** on CockroachDB Cloud.
 3.  **"They have a more complex agent loop"**:
     *   Most teams will build multi-agent chat loops. We built a **database-backed protocol bridge**. A2A communication is signed using base64-encoded `Ed25519` key pairs, creating a secure agent card exchange standard.
 

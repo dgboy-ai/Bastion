@@ -1,13 +1,11 @@
 """Database-Enforced Row-Level Security (RLS).
 
 Enforces agent isolation at the database engine level using
-Postgres RLS policies. Prevents cross-agent data leaks even
+PostgreSQL/CockroachDB RLS policies. Prevents cross-agent data leaks even
 if application code has bugs.
 
-NOTE: CockroachDB does NOT support PostgreSQL-style RLS policies.
-On CockroachDB, this module provides application-level filtering
-via SET LOCAL app.current_agent_id + WHERE agent_id = %s clauses,
-which is enforced in the memory engine's _set_rls_context() method.
+CockroachDB v22.1+ supports PostgreSQL-compatible RLS policies.
+Requires SET LOCAL app.current_agent_id within an active transaction.
 """
 
 from __future__ import annotations
@@ -73,9 +71,8 @@ class RowLevelSecurity:
     def enable_rls(self) -> dict[str, Any]:
         """Enable RLS on all agent tables.
 
-        On PostgreSQL: enables true RLS policies.
-        On CockroachDB: RLS is not supported; falls back to application-level
-        filtering via SET LOCAL app.current_agent_id + WHERE clauses.
+        On PostgreSQL and CockroachDB v22.1+: enables true RLS policies.
+        Uses SET LOCAL app.current_agent_id for session context.
         """
         try:
             with self.conn.cursor() as cur:
@@ -83,33 +80,25 @@ class RowLevelSecurity:
                 cur.execute("SELECT version()")
                 version = cur.fetchone()[0].lower()
                 is_cockroachdb = "cockroachdb" in version
+                is_postgres = "postgresql" in version and not is_cockroachdb
                 
-                if is_cockroachdb:
-                    logger.warning("CockroachDB detected - RLS policies not supported, using application-level isolation")
-                    # Application-level isolation is handled by _set_rls_context in memory.py
-                    self.conn.commit()
-                    return {
-                        "status": "enabled",
-                        "mode": "application_level",
-                        "note": "CockroachDB does not support RLS; using WHERE agent_id = %s filtering",
-                        "tables": [
-                            "agent_memory",
-                            "agent_audit",
-                            "agent_checkpoints",
-                            "agent_entities",
-                            "agent_relations",
-                            "agent_keys",
-                            "agent_budgets",
-                            "agent_region_mapping",
-                        ],
-                    }
+                if not (is_cockroachdb or is_postgres):
+                    logger.warning("Unsupported database for RLS: %s", version)
+                    return {"status": "error", "error": f"Unsupported database: {version}"}
                 
-                # PostgreSQL - enable true RLS
+                db_type = "cockroachdb" if is_cockroachdb else "postgresql"
+                
+                # Enable RLS on all tables
                 for stmt in RLS_ENABLE_SQL.strip().split("\n"):
                     stmt = stmt.strip()
                     if stmt:
-                        cur.execute(stmt)
-
+                        try:
+                            cur.execute(stmt)
+                        except Exception as e:
+                            if "already enabled" not in str(e).lower():
+                                raise
+                
+                # Create policies for each table
                 for stmt in RLS_POLICY_SQL.strip().split("\n\n"):
                     stmt = stmt.strip()
                     if stmt:
@@ -118,22 +107,23 @@ class RowLevelSecurity:
                         except Exception as e:
                             if "already exists" not in str(e).lower():
                                 logger.warning("RLS policy creation: %s", e)
-
-            self.conn.commit()
-            return {
-                "status": "enabled",
-                "mode": "postgres_rls",
-                "tables": [
-                    "agent_memory",
-                    "agent_audit",
-                    "agent_checkpoints",
-                    "agent_entities",
-                    "agent_relations",
-                    "agent_keys",
-                    "agent_budgets",
-                    "agent_region_mapping",
-                ],
-            }
+                
+                self.conn.commit()
+                return {
+                    "status": "enabled",
+                    "mode": f"{db_type}_rls",
+                    "note": f"Native {db_type} RLS policies enabled. Use set_agent_context() within transactions.",
+                    "tables": [
+                        "agent_memory",
+                        "agent_audit",
+                        "agent_checkpoints",
+                        "agent_entities",
+                        "agent_relations",
+                        "agent_keys",
+                        "agent_budgets",
+                        "agent_region_mapping",
+                    ],
+                }
         except Exception as e:
             logger.error("Failed to enable RLS: %s", e)
             return {"status": "error", "error": "RLS enablement failed — check server logs"}
@@ -144,6 +134,8 @@ class RowLevelSecurity:
         Must be called within an active transaction (autocommit must be False).
         Sets app.current_agent_id which is used by all RLS policies to enforce
         agent isolation at the database level.
+        
+        Works on PostgreSQL and CockroachDB v22.1+.
         """
         if getattr(self.conn, "autocommit", False):
             raise RuntimeError("Cannot set local agent context: autocommit is True (no active transaction)")

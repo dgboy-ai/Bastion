@@ -14,6 +14,7 @@ export async function GET(request: Request) {
       conflicts: { detected: 3, resolved: 3 },
       seal: { latestBlock: "#965", chainIntact: true, totalAudits: 1247 },
     });
+    }
   }
 
   try {

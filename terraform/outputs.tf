@@ -8,13 +8,6 @@ output "cluster_region" {
   value       = var.aws_region
 }
 
-output "lambda_function_names" {
-  description = "Deployed Lambda function names"
-  value = {
-    cdc_handler = aws_lambda_function.cdc_handler.function_name
-  }
-}
-
 output "s3_bucket_name" {
   description = "S3 bucket for memory archives"
   value       = aws_s3_bucket.bastion_artifacts.bucket
@@ -42,7 +35,7 @@ output "deployment_instructions" {
     1. CockroachDB cluster is ready
     2. Apply schema: cockroach sql --connection-string="..." < schema/*.sql
     3. Enable multi-region: cockroach sql --execute "ALTER TABLE agent_memory SET LOCALITY REGIONAL BY ROW AS crdb_region"
-    4. MCP server: deploy dashboard to Vercel, run MCP server locally or via ECS
+    4. MCP server: run locally (`python -m bastion.mcp_server --transport http --port 8005`)
     5. Set env vars: BASTION_SIGNING_MODE=kms BASTION_KMS_KEY_ALIAS=alias/bastion-hash-chain
     6. Dashboard: Deploy to Vercel or run locally
   EOT

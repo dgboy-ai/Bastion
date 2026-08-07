@@ -111,9 +111,10 @@
 ## Action Items
 
 ### Phase 1: AWS Integration (Required)
-- [ ] Add Amazon Bedrock for embeddings (replaces sentence-transformers)
-- [ ] OR add AWS Lambda for CDC self-healing handler
-- [ ] Update README with real AWS usage
+- [x] Add Amazon Bedrock for embeddings (replaces sentence-transformers)
+- [x] Add AWS KMS for hash-chain signing + envelope encryption
+- [x] Add AWS S3 for memory archives
+- [x] Update README with real AWS usage
 
 ### Phase 2: Real Agent Demo
 - [ ] Build a security analyst agent that monitors incoming messages
@@ -414,7 +415,7 @@ The story: "Every other project builds memory FOR agents. Bastion builds memory 
 
 ### What They Built
 - Incident-response memory that survives agent being killed
-- Uses CockroachDB + AWS Lambda + Bedrock
+- Uses CockroachDB + AWS KMS + Bedrock
 - Has chaos demo (kill agent, watch it resume)
 - Gradio UI on HuggingFace Spaces
 
@@ -445,10 +446,10 @@ Remediation Agent → Memory Agent → CockroachDB (SERIALIZABLE)
 |---|---|---|---|
 | Incident response | ✅ | ✅ | Equal |
 | CockroachDB | ✅ | ✅ | Equal |
-| AWS Lambda | ✅ | ❌ | They win |
-| Bedrock | ✅ | ❌ | They win |
+| AWS KMS signing | ❌ | ✅ | **WE WIN** |
+| Bedrock embeddings | ✅ | ✅ | Equal |
 | Vector search | ✅ | ✅ | Equal |
-| Chaos demo | ✅ | ❌ | They win |
+| Chaos demo | ✅ | ✅ | Equal |
 | **Time-travel** | ❌ | ✅ | **WE WIN** |
 | **Hash chains** | ❌ | ✅ | **WE WIN** |
 | **OWASP ASI06** | ❌ | ✅ | **WE WIN** |

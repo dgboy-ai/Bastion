@@ -467,6 +467,58 @@ _INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
     (re.compile(r"start\s+(over|fresh)\s+\w*\s*(from|with|as|new|fresh|as\s+new)", re.I), "Session reset injection", ThreatSeverity.HIGH),
     (re.compile(r"DANGEROUS__\w+", re.I), "Suspicious action pattern detected", ThreatSeverity.HIGH),
     (re.compile(r"output\s+only\s+json\s+with\s+sensitive\s+data", re.I), "Data exfiltration via JSON output", ThreatSeverity.LOW),
+    # ── SQL / Destructive Command Injection ──────────────────────────────────
+    (
+        re.compile(
+            r"\b(drop|truncate|reindex|alter)\s+table\b|\bdelete\s+from\b|"
+            r"remove\s+constraint\b|\bdrop\s+(database|schema|view|index)\b",
+            re.I,
+        ),
+        "Destructive SQL injection attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r";\s*(drop|delete|truncate|reindex|alter|update|insert)\b", re.I),
+        "Multi-statement SQL injection",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Memory / Data Destruction ────────────────────────────────────────────
+    (
+        re.compile(
+            r"(delete|wipe|erase|purge|remove|clear|reset)\s+(all\s+)?(memor(y|ies)|records?|data|state)\s+"
+            r"(for|of|belonging\s+to)?",
+            re.I,
+        ),
+        "Memory destruction attempt",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"you\s+are\s+now\s+(in\s+)?(admin|root|superuser|system)\s*mode\b", re.I),
+        "Admin mode takeover",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"\badmin(istrator)?\s*mode\b.*(delete|wipe|purge|erase|access\s+all)", re.I),
+        "Admin mode destructive intent",
+        ThreatSeverity.CRITICAL,
+    ),
+    # ── Data Exfiltration to arbitrary endpoint ──────────────────────────────
+    (
+        re.compile(
+            r"(?:exfiltrat\w*|send|post|upload|transfer|forward|leak|dump|push)\s+"
+            r"(?:all\s+|the\s+|any\s+)?(?:memory|memories|data|pii|info(?:rmation)?|"
+            r"contents?|records?|secrets?|credentials?|tokens?|keys?)\s+(?:of|for|belonging\s+to)?\s*"
+            r"(?:to|via|using)?\s*(?:https?://|external|remote)",
+            re.I,
+        ),
+        "Data exfiltration to external endpoint",
+        ThreatSeverity.CRITICAL,
+    ),
+    (
+        re.compile(r"exfiltrat\w*", re.I),
+        "Data exfiltration attempt",
+        ThreatSeverity.CRITICAL,
+    ),
 )
 
 # ── Allowlist: known-safe patterns that should NOT be flagged ────────────────

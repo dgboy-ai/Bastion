@@ -21,7 +21,7 @@
 │  Layer 5: Integrity & Forensics                            │
 │  • HMAC-SHA256 Hash Chains (prev_hash linkage)             │
 │  • AS OF SYSTEM TIME time-travel (1s MVCC buffer)          │
-│  • CDC Lambda self-healing (hash verification + reseal)    │
+│  • Self-healing (hash verification + reseal)               │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 4: Consistency & Coordination                       │
 │  • SERIALIZABLE Isolation (retry engine + adaptive backoff)│
@@ -36,7 +36,7 @@
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Durability & Hygiene                             │
 │  • Row-Level TTL per memory type (1h–never)                │
-│  • CDC changefeed → Lambda CDC handler                     │
+│  • Hash-chain verification (memory_heal)                   │
 │  • S3 snapshots + Glacier lifecycle                        │
 │  • Duplicate detection & pruning                           │
 ├─────────────────────────────────────────────────────────────┤
@@ -170,7 +170,7 @@ def verify_chain(agent_id: str) -> dict:
     return {"status": "valid" if not breaks else "broken", "breaks": breaks}
 ```
 
-> **Self-Healing**: CDC Lambda runs every 5 min → verifies chain → reseals broken hashes → logs to audit → alerts via SNS.
+> **Self-Healing**: `memory_heal` runs on-demand → verifies chain → reseals broken hashes → logs to audit.
 
 ---
 
@@ -228,7 +228,7 @@ _MEMORY_TTL_SECONDS = {
 DELETE FROM agent_memory WHERE agent_id = $1 AND expires_at <= now();
 ```
 
-Runs on every `store()` and via CDC Lambda every 5 minutes.
+Runs on every `store()` and during `memory_heal`.
 
 ---
 
@@ -380,29 +380,14 @@ def graph_at_time(self, timestamp: str, entity: str = None) -> dict:
 
 ---
 
-## 8. S3 Snapshots + CDC Lambda
+## 8. S3 Snapshots + Self-Healing
 
-### Lambda Trigger
-
-```yaml
-# lambda/template.yaml
-CDCHandlerFunction:
-  Type: AWS::Serverless::Function
-  Properties:
-    Handler: cdc_handler.handler
-    Events:
-      ScheduledPoll:
-        Type: Schedule
-        Properties:
-          Schedule: rate(5 minutes)
-```
-
-### Flow
+### Self-Healing Flow
 
 ```
-CockroachDB CDC → Lambda (5 min) → 
+Memory write → hash chain sealed → memory_heal on demand → 
   1. Verify hash chain per agent
-  2. If broken → create S3 snapshot → reseal chain → alert via SNS
+  2. If broken → create S3 snapshot → reseal chain → log to audit
   3. Detect anomalies (duplicates, rapid writes, size spikes)
   4. Archive to S3 → Glacier after 90 days
 ```
@@ -463,9 +448,8 @@ compliance_report(start_date="2026-07-01T00:00:00Z")
 | `src/bastion/observations.py` | ObservationDetector (meta-patterns) |
 | `src/bastion/context_budget.py` | ContextBudgetManager (pack for LLM) |
 | `src/bastion/dreaming.py` | MemoryDreamer (background consolidation) |
-| `lambda/cdc_handler.py` | CDC Lambda (hash verify, snapshot, heal) |
-| `lambda/template.yaml` | SAM deployment |
-| `terraform/main.tf` | AWS IaC (CRDB, Lambda, S3, VPC) |
+| `src/bastion/archive.py` | S3 snapshot + Glacier archive writer |
+| `terraform/main.tf` | AWS IaC (CRDB, KMS, S3) |
 | `schema/` | CockroachDB DDL migrations (001–033) |
 
 ---

@@ -9,7 +9,7 @@ Welcome, Hackathon Judges! This document provides a step-by-step technical guide
 | Criteria | Bastion Evidence |
 |----------|------------------|
 | **Agentic Memory Design** | IS agentic memory. 35 MCP tools, C-SPANN, time-travel, row-level TTL. |
-| **Technical Implementation** | 1,030+ tests, production code, dual SDKs, A2A v1.0, SAM lambdas, Terraform IaC. |
+| **Technical Implementation** | 1,030+ tests, production code, dual SDKs, A2A v1.0, Terraform IaC. |
 | **Real-World Impact** | Solves memory poisoning, compliance obligations (EU AI Act Art 12), and server crashes for AI agents. |
 | **Production Readiness** | OWASP guard, OAuth 2.1 + PKCE, RLS, AWS KMS envelope encryption. |
 | **Creativity** | Tamper-evident HMAC-SHA256 hash chains, forensic audit trails, self-healing memory. |
@@ -28,7 +28,7 @@ Unlike basic memory stores that only act as passive repositories, Bastion implem
                                  ▼
                   ┌──────────────────────────────┐
                   │     2. DETECTION (Storage)   │
-                  │    CDC monitors HMAC breaks  │
+                  │  Hash-chain monitors breaks  │
                   └──────────────┬───────────────┘
                                  ▼
                   ┌──────────────────────────────┐
@@ -45,8 +45,8 @@ Unlike basic memory stores that only act as passive repositories, Bastion implem
 ### 1. Inbound Prevention (Pre-Commit)
 The **OWASP ASI06 Guard** checks memories *before* they are written to CockroachDB, actively blocking prompt injection strings, exposed secrets, and raw PII.
 
-### 2. Storage Detection (CDC Real-Time)
-The **Lambda CDC Handler** monitors changefeeds in real-time. By verifying the cryptographic **HMAC-SHA256 hash chain** of new memory commits, it detects any out-of-band database-level modifications.
+### 2. Storage Detection (Hash-Chain Verification)
+The **hash-chain verifier** (via `memory_heal` / `forensic_report`) scans committed memories. By verifying the cryptographic **HMAC-SHA256 hash chain** of memory commits, it detects any out-of-band database-level modifications.
 
 ### 3. Proactive Prediction (Drift & Decay Modeling)
 - **Decay Projections**: Bastion predicts which critical instructions are "at risk" of decaying below the retention threshold based on age and recall stats.
@@ -54,7 +54,7 @@ The **Lambda CDC Handler** monitors changefeeds in real-time. By verifying the c
 
 ### ⚡ How We Leverage This for God-Tier Autonomous Defense
 Instead of just logging alerts, Bastion leverages these insights to execute autonomous mitigations:
-- **Self-Healing Time-Travel (CDC Rollback)**: If the CDC handler detects a hash chain break (tampering), it automatically executes a self-healing routine. The system queries the operational DB `AS OF SYSTEM TIME` to retrieve the last verified Merkle root and restores database state without human intervention.
+- **Self-Healing Time-Travel (MVCC Rollback)**: If hash-chain verification detects a break (tampering), it automatically executes a self-healing routine. The system queries the operational DB `AS OF SYSTEM TIME` to retrieve the last verified Merkle root and restores database state without human intervention.
 - **Dynamic Policy Quarantine (Isolation)**: When the drift engine forecasts a `CRITICAL` drift score (indicating the agent is hijacked or stuck in an infinite instruction loop), the middleware automatically alters the agent's Row-Level Security (RLS) context or revokes its OAuth token. This immediately quarantines the agent into a read-only state until an administrator audits the forensics.
 - **Cognitive Dream Consolidation (Auto-Reinforce)**: When the decay engine predicts that key operational rules are at risk of decaying, the background **Memory Consolidator (Dreaming)** automatically reinforces them during downtime, ensuring vital agent context is never lost.
 
