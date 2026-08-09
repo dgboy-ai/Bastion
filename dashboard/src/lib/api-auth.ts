@@ -236,7 +236,7 @@ export function requireAuth(request: Request): NextResponse | null {
 
   // Public read-only endpoints — GET only, returns aggregate counts (no sensitive data)
   const url = new URL(request.url);
-  const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/stats", "/api/tool-usage", "/api/memories", "/api/asi06", "/api/drift", "/api/audit", "/api/graph", "/api/observations", "/api/region-stats", "/api/trust", "/api/entity-memories"];
+  const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/stats", "/api/tool-usage", "/api/memories", "/api/asi06", "/api/drift", "/api/audit", "/api/graph", "/api/observations", "/api/region-stats", "/api/trust", "/api/entity-memories", "/api/cdc-feed"];
   if (request.method === "GET" && PUBLIC_GET_ENDPOINTS.some(ep => url.pathname.startsWith(ep))) {
     return null;
   }

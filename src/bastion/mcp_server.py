@@ -89,6 +89,7 @@ async def _notify_resource_updated(ctx: Context, uri: str) -> None:
 
 _SHARED_POOL: ConnectionPool | None = None
 _SHARED_MEMORY: BastionMemory | None = None
+_SHARED_CDC_TAILER: Any | None = None
 _API_KEYS: set[str] | None = None
 _RATE_LIMITER: RequestLimiter | None = None
 _SPEND_MANAGER: SpendManager | None = None
@@ -376,6 +377,25 @@ def create_server(
             "Background auto-consolidation started (every %d min)",
             _consolidation_interval,
         )
+
+        # CDC event-driven consumer: tail the S3 changefeed stream and
+        # (a) forward audit events to the dashboard bus for the real-time
+        #     feed, and (b) trigger async hash-chain verification on memory
+        #     changes. Enabled unless explicitly disabled via env.
+        if os.environ.get("BASTION_CDC_ENABLED", "1") not in ("0", "false", "False"):
+            try:
+                from bastion.cdc_consumer import S3CdcTailer, build_cdc_handlers, get_bus
+
+                _cdc_bus = get_bus()
+                _cdc_tailer = S3CdcTailer()
+                for _handler in build_cdc_handlers(_cdc_bus, _shared):
+                    _cdc_tailer.on(_handler)
+                _cdc_tailer.start()
+                global _SHARED_CDC_TAILER
+                _SHARED_CDC_TAILER = _cdc_tailer
+                logger.info("CDC S3 tailer started (bucket=%s prefix=%s)", _cdc_tailer.bucket, _cdc_tailer.prefix)
+            except Exception as exc:
+                logger.warning("CDC tailer startup failed (continuing without it): %s", exc)
 
     # Store shared memory globally for health check routes (thread-safe)
     global _SHARED_MEMORY, _SHARED_POOL
@@ -3639,6 +3659,35 @@ def create_server(
             return JSONResponse({"status": "ok", "database": "connected"})
         except Exception as e:
             return JSONResponse({"status": "not ready", "reason": str(e)[:200]}, status_code=503)
+
+    @mcp.custom_route("/cdc/events", methods=["GET"])
+    async def cdc_events_route(request: Any) -> Any:
+        """Return CDC-streamed events for the dashboard real-time feed.
+
+        Query params:
+          after=<seq>   only events newer than the given sequence (polling cursor)
+          limit=<n>     max events to return (default 50)
+        """
+        from starlette.responses import JSONResponse
+
+        try:
+            from bastion.cdc_consumer import get_bus
+
+            bus = get_bus()
+            params = request.query_params
+            after = int(params.get("after", "0") or "0")
+            limit = min(int(params.get("limit", "50") or "50"), 200)
+            events = bus.since(after_seq=after, limit=limit)
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "source": "cdc",
+                    "last_seq": bus.last_seq,
+                    "events": events,
+                }
+            )
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)[:300], "events": []}, status_code=500)
 
     @mcp.custom_route("/metrics", methods=["GET"])
     async def metrics_route(request: Any) -> Any:

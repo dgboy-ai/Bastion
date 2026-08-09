@@ -1368,7 +1368,35 @@ class BastionMemory:
                 region_param = [region_filter]
 
             # Hybrid signal: fuse keyword (BM25-like) boost into the vector ranking
-            kw_sql, kw_terms = _keyword_boost_sql(_hybrid_keywords(query))
+            kw_terms = _hybrid_keywords(query)
+
+            # Prefer C-SPANN accelerated two-stage search: the vector index can only
+            # serve pure `ORDER BY embedding <-> %s::vector` queries on the agent_id
+            # prefix, so we retrieve a candidate pool through the index (ANN) plus
+            # keyword-matched rows, then re-rank the pool in Python with the exact
+            # same hybrid formula the SQL below uses. Falls back to the full scan
+            # when the index is absent/older-version.
+            try:
+                return self._search_cspann_hybrid(
+                    conn=conn,
+                    query_vector=query_vector,
+                    query_vector_str=query_vector_str,
+                    decay_rate=decay_rate,
+                    kw_terms=kw_terms,
+                    k=k,
+                    threshold=threshold,
+                    memory_type=memory_type,
+                    agent_param=agent_param,
+                    region_filter=region_filter,
+                    offset=offset,
+                )
+            except Exception as e:
+                logger.warning(
+                    "C-SPANN hybrid search unavailable (%s), using full scan hybrid", str(e)[:160],
+                    extra={"agent_id": self.agent_id, "query": query[:100]},
+                )
+
+            kw_sql, _ = _keyword_boost_sql(kw_terms)
 
             with conn.cursor() as cur:
                 if memory_type:
@@ -1433,6 +1461,128 @@ class BastionMemory:
             raise RuntimeError(f"Search failed for agent {self.agent_id}") from e
         finally:
             pool.release(conn)
+
+    def _search_cspann_hybrid(
+        self,
+        *,
+        conn: Any,
+        query_vector: list[float],
+        query_vector_str: str,
+        decay_rate: float,
+        kw_terms: list[str],
+        k: int,
+        threshold: float,
+        memory_type: str | None,
+        agent_param: str,
+        region_filter: str | None,
+        offset: int,
+    ) -> list[MemoryRecord]:
+        """Two-stage hybrid search accelerated by the C-SPANN vector index.
+
+        Stage 1 (in SQL): candidate generation.
+          - ANN: `ORDER BY embedding <-> %s::vector` on the agent_id prefix — the
+            only query shape the vector index can serve — plus keyword-matched rows.
+          - Filters that would disqualify the index (memory_type, expires_at, region)
+            are applied on the candidate pool *after* ANN retrieval.
+        Stage 2 (in Python): re-rank the pool with the exact hybrid formula the
+        full-scan path uses:
+            sim(content, q) * importance / (1 + decay_rate * age_hours)
+            + KEYWORD_WEIGHT * (fraction of query keywords present)
+
+        Candidate pool is over-retrieved (k * pool_multiplier) so the re-rank has
+        headroom after filters; if fewer candidates survive we keep what we have.
+        """
+        import json as _json
+
+        def _cosine_sim(a: list[float], b: list[float]) -> float:
+            try:
+                import numpy as _np
+                return float(_np.dot(_np.asarray(a, dtype=_np.float64), _np.asarray(b, dtype=_np.float64)))
+            except Exception:
+                dot = 0.0
+                for x, y in zip(a, b):
+                    dot += x * y
+                return dot
+
+        pool_multiplier = max(8, min(30, 2 * k + 8))
+        pool_size = max(k * pool_multiplier, 50)
+
+        candidate_ids: list[object] = []
+        with conn.cursor() as cur:
+            # ANN candidates through the C-SPANN vector index (pure L2 on agent prefix)
+            cur.execute(
+                "SELECT memory_id FROM agent_memory "
+                "WHERE agent_id = %s "
+                "ORDER BY embedding <-> %s::vector LIMIT %s",
+                (agent_param, query_vector_str, pool_size),
+            )
+            ann_ids = [r[0] for r in cur.fetchall()]
+            candidate_ids.extend(ann_ids)
+
+            # Keyword-matched candidates so a memory that is lexically strong but
+            # vector-distant still reaches the re-rank (hybrid recall).
+            if kw_terms:
+                like_conds = " OR ".join(["content ILIKE %s"] * len(kw_terms))
+                cur.execute(
+                    f"SELECT memory_id FROM agent_memory "
+                    f"WHERE agent_id = %s AND ({like_conds}) "
+                    "AND (expires_at IS NULL OR expires_at > now()) "
+                    "ORDER BY importance_score DESC LIMIT %s",
+                    (agent_param, *[f"%{t}%" for t in kw_terms], pool_size),
+                )
+                candidate_ids.extend(r[0] for r in cur.fetchall())
+
+        # Dedupe preserving order (ANN first, keyword second)
+        seen: set[object] = set()
+        ids_ordered: list[object] = []
+        for cid in candidate_ids:
+            if cid not in seen:
+                seen.add(cid)
+                ids_ordered.append(cid)
+
+        if not ids_ordered:
+            return []
+
+        # Stage 2: load the pool and re-rank in Python with the hybrid formula.
+        placeholders = ",".join(["%s"] * len(ids_ordered))
+        params: list[Any] = [*ids_ordered]
+        where = f"memory_id IN ({placeholders}) AND (expires_at IS NULL OR expires_at > now())"
+        if memory_type is not None:
+            where += " AND memory_type = %s"
+            params.append(memory_type)
+        if region_filter is not None:
+            where += " AND crdb_region = %s"
+            params.append(region_filter)
+
+        from datetime import UTC as _UTC
+
+        now = datetime.now(_UTC)
+        scored: list[tuple[float, MemoryRecord]] = []
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {_MEMORY_COLS} FROM agent_memory WHERE {where}",
+                params,
+            )
+            for r in cur.fetchall():
+                rec = MemoryRecord.from_row(r)
+                emb = rec.embedding
+                if not emb:
+                    continue
+                sim = max(0.0, _cosine_sim(query_vector, emb))
+                age_hours = 0.0
+                if rec.created_at is not None:
+                    age_hours = max(0.0, (now - rec.created_at).total_seconds() / 3600.0)
+                importance = float(rec.importance_score or 1.0)
+                base = sim * importance / (1.0 + decay_rate * age_hours)
+                if kw_terms:
+                    content_lower = (rec.content or "").lower()
+                    hits = sum(1 for t in kw_terms if t in content_lower)
+                    base += _KEYWORD_WEIGHT * (hits / len(kw_terms))
+                scored.append((base, rec))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        results = [rec for score, rec in scored if score >= threshold]
+        return results[offset : offset + k]
 
     def _list_all_real(
         self,
@@ -1820,31 +1970,47 @@ class BastionMemory:
                 tampered_records = []
                 for mid, content, metadata, stored_prev, stored_hash in rows:
                     meta_dict = dict(metadata) if metadata else {}
-                    expected_hash = compute_hash(content, meta_dict, prev_hash_chain)
-                    expected_prev = prev_hash_chain or ""
-                    if stored_hash != expected_hash or stored_prev != expected_prev:
-                        # Preserve old hash values for forensic audit trail
+                    # 1) Content-integrity check: does the stored hash match the
+                    #    row's own content + stored previous link? If not, the row
+                    #    itself was tampered — prune it (never bless tampered data).
+                    own_hash = compute_hash(content, meta_dict, stored_prev)
+                    if stored_hash != own_hash:
                         tampered_records.append({
                             "memory_id": str(mid),
                             "old_hash": str(stored_hash) if stored_hash else None,
                             "old_prev_hash": str(stored_prev) if stored_prev else None,
-                            "new_hash": str(expected_hash),
                             "content_snippet": (content or "")[:200],
                         })
                         cur.execute(
-                            "UPDATE agent_memory SET cryptographic_hash = %s, previous_hash = %s WHERE memory_id = %s",
-                            (expected_hash, expected_prev, mid),
+                            "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                            (mid, agent_id),
+                        )
+                        pruned += 1
+                        # Chain continues from the last valid row (this row is gone)
+                        continue
+                    # 2) Link-integrity check: a preceding row was pruned, so this
+                    #    valid row's previous link is stale — reseal it to the new
+                    #    chain (content is intact, only the linkage needs repair).
+                    if stored_prev != prev_hash_chain:
+                        new_hash = compute_hash(content, meta_dict, prev_hash_chain)
+                        cur.execute(
+                            "UPDATE agent_memory SET previous_hash = %s, cryptographic_hash = %s "
+                            "WHERE memory_id = %s",
+                            (prev_hash_chain, new_hash, mid),
                         )
                         resealed += 1
-                    prev_hash_chain = expected_hash
+                        prev_hash_chain = new_hash
+                    else:
+                        prev_hash_chain = stored_hash
                 # Log full forensic audit record with all tampered hashes preserved
                 if tampered_records:
                     cur.execute(
                         "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
                         "VALUES (%s, %s, %s, %s)",
                         (
-                            agent_id, str(_uuid.uuid4()), "heal_hash_reseal",
+                            agent_id, str(_uuid.uuid4()), "heal_pruned_tampered",
                             json.dumps({
+                                "pruned_count": len(tampered_records),
                                 "resealed_count": resealed,
                                 "tampered_records": tampered_records[:50],  # cap at 50 for audit size
                                 "total_tampered": len(tampered_records),
@@ -1852,8 +2018,9 @@ class BastionMemory:
                         ),
                     )
                     logger.warning(
-                        "Hash chain repair: resealed %d memories for agent %s "
+                        "Hash chain repair: pruned %d tampered memories and resealed %d links for agent %s "
                         "(forensic audit trail preserved)",
+                        len(tampered_records),
                         resealed,
                         agent_id,
                     )
@@ -1861,6 +2028,7 @@ class BastionMemory:
                     "agent_id": agent_id,
                     "pruned": pruned,
                     "resealed": resealed,
+                    "tampered_pruned": len(tampered_records),
                     "status": "healed",
                 }
             return self._retry_write(conn, _op)

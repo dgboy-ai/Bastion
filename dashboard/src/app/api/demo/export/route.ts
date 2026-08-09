@@ -1,34 +1,26 @@
-import { safeQueryStatic } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
 import { exportAgentMemory } from "@/lib/s3";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {
   try {
-    let body: { agentId?: string } = {};
-    try {
-      const text = await request.text();
-      if (text.length > 10000) return apiError("Body too large", 413);
-      if (text) body = JSON.parse(text);
-    } catch { /* empty body OK */ }
-
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
 
     const [memoriesRes, trustRes, auditRes, entitiesRes] = await Promise.all([
-      safeQueryStatic(
-        "SELECT memory_id, agent_id, memory_type, content::varchar(1000) AS content, metadata::varchar(500) AS metadata, trust_level, importance_score, source_provenance, is_pinned, cryptographic_hash, previous_hash, created_at, expires_at, crdb_region FROM agent_memory WHERE agent_id = $1 ORDER BY created_at ASC",
-        [agentId]
+      safeQuery(
+        "SELECT memory_id, agent_id, memory_type, content::varchar(1000) AS content, metadata::varchar(500) AS metadata, trust_level, importance_score, source_provenance, is_pinned, cryptographic_hash, previous_hash, created_at, expires_at, crdb_region FROM agent_memory ORDER BY created_at ASC",
+        []
       ),
-      safeQueryStatic(
-        "SELECT AVG(trust_level)::float AS avg_trust, COUNT(*) AS total_memories FROM agent_memory WHERE agent_id = $1",
-        [agentId]
+      safeQuery(
+        "SELECT AVG(trust_level)::float AS avg_trust, COUNT(*) AS total_memories FROM agent_memory",
+        []
       ),
-      safeQueryStatic(
-        "SELECT action, details::varchar(500) AS details, recorded_at FROM agent_audit WHERE agent_id = $1 ORDER BY recorded_at ASC",
-        [agentId]
+      safeQuery(
+        "SELECT action, details::varchar(500) AS details, recorded_at FROM agent_audit ORDER BY recorded_at ASC",
+        []
       ),
-      safeQueryStatic(
-        "SELECT entity_id, entity_type, name FROM agent_entities WHERE agent_id = $1 ORDER BY created_at ASC",
-        [agentId]
+      safeQuery(
+        "SELECT entity_id, entity_type, name FROM agent_entities ORDER BY created_at ASC",
+        []
       ),
     ]);
 
@@ -36,7 +28,6 @@ export async function POST(request: Request) {
       schemaVersion: "1.0",
       exportedAt: new Date().toISOString(),
       sourceSystem: "Bastion / CockroachDB Cloud",
-      agentId,
       summary: {
         memoryCount: memoriesRes.rowCount,
         avgTrust: trustRes.rows[0]?.avg_trust,
@@ -48,7 +39,7 @@ export async function POST(request: Request) {
       entities: entitiesRes.rows,
     };
 
-    const exported = await exportAgentMemory(agentId, payload);
+    const exported = await exportAgentMemory("all-agents", payload);
 
     return apiSuccess({
       ...exported,

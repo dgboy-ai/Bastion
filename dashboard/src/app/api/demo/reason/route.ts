@@ -1,4 +1,4 @@
-import { safeQueryStatic } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, cosineSimilarity } from "@/lib/embeddings";
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
     const searchSql = `SELECT memory_id, content::varchar(500) AS content, memory_type, trust_level, embedding_384::text AS embedding_384, created_at FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 100`;
     sqlQueries.push(searchSql);
-    const mems = await safeQueryStatic(searchSql, [agentId]);
+    const mems = await safeQuery(searchSql, [agentId]);
 
     const rows = mems.rows as unknown as MemoryRow[];
     let similarMemories: { memoryId: string; content: string; similarity: number; trustLevel: number; type: string }[] = [];
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       const contraSql = `SELECT memory_id, content::varchar(300) AS content, trust_level FROM agent_memory WHERE agent_id = $1 AND memory_id != $2 AND content ILIKE '%' || (SELECT split_part(content, ' ', 1) FROM agent_memory WHERE memory_id = $2) || '%' LIMIT 5`;
       sqlQueries.push(contraSql);
       try {
-        const contraRes = await safeQueryStatic(contraSql, [agentId, memoryId]);
+        const contraRes = await safeQuery(contraSql, [agentId, memoryId]);
         contradictions = contraRes.rows.map((r: Record<string, unknown>) => ({
           memoryId: String(r.memory_id).slice(0, 8) + "...",
           content: String(r.content || "").slice(0, 100),
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
     const kgSql = `SELECT e.name, e.entity_type, r.confidence FROM agent_entities e JOIN agent_relations r ON e.entity_id = r.source_entity_id OR e.entity_id = r.target_entity_id LIMIT 10`;
     sqlQueries.push(kgSql);
     try {
-      const kgRes = await safeQueryStatic(kgSql);
+      const kgRes = await safeQuery(kgSql);
       relatedEntities = kgRes.rows.map((r: Record<string, unknown>) => ({
         name: String(r.name || ""),
         type: String(r.entity_type || ""),

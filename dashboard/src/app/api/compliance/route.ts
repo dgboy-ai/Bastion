@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { apiSuccess, apiError } from "@/lib/api-response";
-import { safeQuery, isMockMode } from "@/lib/db";
-import { getMockCompliance } from "@/lib/mock-data";
+import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
@@ -9,15 +8,18 @@ export async function GET(request: Request) {
   if (!hasUserConn) {
     const authError = requireAuth(request);
     if (authError) return authError;
-    if (isMockMode()) {
-      return apiSuccess(getMockCompliance(), 'short', { mock: true });
-    }
   }
 
   try {
+    let auditSql = `
+      SELECT a.action, a.recorded_at, a.details, a.agent_id
+      FROM agent_audit a
+      WHERE 1=1
+    `;
+    const params: unknown[] = [];
+
     const { searchParams } = new URL(request.url);
-    const rawAgentId = searchParams.get("agent_id") || "e2e-test-agent";
-    const agentId = rawAgentId.slice(0, 255).replace(/[^a-zA-Z0-9_:@.-]/g, "");
+    const rawAgentId = searchParams.get("agent_id");
     const month = searchParams.get("month");
 
     let startDate: string | null = null;
@@ -36,12 +38,11 @@ export async function GET(request: Request) {
       endDate = `${year}-${String(mon).padStart(2, "0")}-${lastDay}T23:59:59Z`;
     }
 
-    let auditSql = `
-      SELECT a.action, a.recorded_at, a.details, a.agent_id
-      FROM agent_audit a
-      WHERE a.agent_id = $1
-    `;
-    const params: unknown[] = [agentId];
+    if (rawAgentId) {
+      const agentId = rawAgentId.slice(0, 255).replace(/[^a-zA-Z0-9_:@.-]/g, "");
+      auditSql += ` AND a.agent_id = $${params.length + 1}`;
+      params.push(agentId);
+    }
 
     if (startDate) {
       auditSql += ` AND a.recorded_at >= $${params.length + 1}`;
@@ -55,9 +56,6 @@ export async function GET(request: Request) {
     auditSql += ` ORDER BY a.recorded_at DESC LIMIT 1000`;
 
     const auditResult = await safeQuery(auditSql, params);
-    if (auditResult.mock || auditResult.rows.length === 0) {
-      return apiSuccess(getMockCompliance(), 'short', { mock: true });
-    }
 
     const operationsByType: Record<string, number> = {};
     for (const row of auditResult.rows) {
@@ -70,17 +68,17 @@ export async function GET(request: Request) {
              COUNT(DISTINCT memory_type) as memory_types,
              MIN(created_at) as earliest,
              MAX(created_at) as latest
-      FROM agent_memory WHERE agent_id = $1
+      FROM agent_memory
     `;
-    const memoryResult = await safeQuery(memorySql, [agentId]);
+    const memoryResult = await safeQuery(memorySql, []);
     const memStats = memoryResult.rows?.[0] ?? { total: "0", memory_types: "0" };
 
     const hashChainSql = `
       SELECT COUNT(*) as total,
              SUM(CASE WHEN previous_hash IS NOT NULL THEN 1 ELSE 0 END) as chained
-      FROM agent_memory WHERE agent_id = $1
+      FROM agent_memory
     `;
-    const hashResult = await safeQuery(hashChainSql, [agentId]);
+    const hashResult = await safeQuery(hashChainSql, []);
     const hashStats = hashResult.rows?.[0] ?? { total: "0", chained: "0" };
 
     const hashChainCoverage = parseInt(String(hashStats.total ?? "0")) > 0
@@ -92,7 +90,7 @@ export async function GET(request: Request) {
 
     return apiSuccess({
       report_id: crypto.randomUUID(),
-      agent_id: agentId,
+      agent_id: rawAgentId || "all-agents",
       status: isCompliant ? "COMPLIANT" : "NON_COMPLIANT",
       generated_at: new Date().toISOString(),
       period: {
@@ -129,12 +127,6 @@ export async function GET(request: Request) {
     }, 'short');
   } catch (error) {
     console.error("[api/compliance] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {
-
-      return apiSuccess(getMockCompliance(), "short", { mock: true });
-
-    }
-
     return apiError("Query failed — try again later", 503, "DB_ERROR");
   }
 }

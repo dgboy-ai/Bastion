@@ -1,4 +1,4 @@
-import { safeQueryStatic } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {
@@ -13,27 +13,27 @@ export async function POST(request: Request) {
     const agentId = String(body.agentId || "agent-demo").slice(0, 128);
 
     const [memoriesRes, entitiesRes, relationsRes, auditRes, hashChainRes, trustRes] = await Promise.all([
-      safeQueryStatic(
+      safeQuery(
         "SELECT memory_id, memory_type, content::varchar(200) AS content, trust_level, source_provenance, created_at, cryptographic_hash, previous_hash FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 20",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT entity_id, entity_type, name, attributes FROM agent_entities WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 10",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT r.relation_type, r.confidence, e1.name AS source, e2.name AS target FROM agent_relations r JOIN agent_entities e1 ON r.source_entity_id = e1.entity_id JOIN agent_entities e2 ON r.target_entity_id = e2.entity_id WHERE r.agent_id = $1 LIMIT 10",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT action, details::varchar(200) AS details, recorded_at FROM agent_audit WHERE agent_id = $1 ORDER BY recorded_at DESC LIMIT 10",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT memory_id, cryptographic_hash, previous_hash FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 10",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT AVG(trust_level)::float AS avg_trust, MIN(trust_level)::int AS min_trust, MAX(trust_level)::int AS max_trust, COUNT(*) AS total_memories FROM agent_memory WHERE agent_id = $1",
         [agentId]
       ),

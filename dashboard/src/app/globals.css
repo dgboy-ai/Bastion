@@ -136,3 +136,33 @@
   .page-container { padding: 20px; }
   .viewport-header { padding: 0 20px; }
 }
+
+/* Bento Panel Styles from Dashboard */
+.bento-panel {
+  background: var(--canvas-card) !important;
+  border: 3px solid #000000 !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 22px 24px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.15s ease !important;
+  box-shadow: var(--shadow-md) !important;
+}
+.bento-panel:hover {
+  transform: translate(-2px, -2px) !important;
+  border-color: #000000 !important;
+  box-shadow: 5px 5px 0px 0px #000000 !important;
+}
+
+.bento-kpi {
+  background: var(--canvas-card) !important;
+  border: 3px solid #000000 !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all 0.15s ease !important;
+}
+.bento-kpi:hover {
+  transform: translate(-1.5px, -1.5px) !important;
+  border-color: #000000 !important;
+  box-shadow: var(--shadow-md) !important;
+}

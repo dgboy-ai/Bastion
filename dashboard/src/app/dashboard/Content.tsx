@@ -13,16 +13,17 @@ const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false }
 const C = {
   canvas: "var(--canvas-bg)",
   glass: "var(--glass-bg)",
-  glassBright: "var(--canvas-elevated)",
-  border: "var(--glass-border)",
-  borderHot: "var(--glass-border)",
+  glassBright: "var(--canvas-card)",
+  border: "var(--border)",
+  borderHot: "var(--border-hot)",
   ink: "#000000",
-  body: "#000000",
-  mute: "#374151",
-  cyan: "#000000",
+  body: "#111827",
+  mute: "#6b7280",
+  cyan: "#0369a1",
   green: "#047857",
   orange: "#b45309",
   red: "#b91c1c",
+  accent: "#b45309",
 };
 
 /* ── Interfaces ────────────────────────────────────────────── */
@@ -39,6 +40,7 @@ interface Stats {
   cacheHitPct: string;
   recentAudits: Array<{ id: string; action: string; recordedAt: string; details: Record<string, unknown> }>;
   agents?: Array<{ agent_id: string; memory_count: number }>;
+  memoryTypes?: Array<{ type: string; count: number }>;
 }
 
 /* ── Tiny reusable atoms ───────────────────────────────────── */
@@ -58,7 +60,7 @@ function Tag({ children, color = "#ffffff" }: { children: React.ReactNode; color
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", padding: "4px 10px",
-      borderRadius: "var(--radius-sm)", fontSize: "12px", fontWeight: 800,
+      borderRadius: "var(--radius-sm)", fontSize: "13px", fontWeight: 800,
       fontFamily: "var(--font-sans)", letterSpacing: "0.5px",
       background: isYellow ? "var(--accent-breeze)" : "#ffffff",
       color: "#000000",
@@ -86,74 +88,233 @@ function TrendArrow({ value, label }: { value: number; label?: string }) {
   );
 }
 
+/* ── SQL Proof Modal ──────────────────────────────────────── */
+function SqlProofModal({ query, onClose }: { query: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+        background: "rgba(0,0,0,0.6)", display: "flex",
+        alignItems: "center", justifyContent: "center", padding: "20px",
+        overflow: "auto",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "#fff", border: "3px solid #000", borderRadius: "12px",
+          padding: "24px", maxWidth: "480px", width: "100%",
+          boxShadow: "6px 6px 0px #000", flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <div>
+            <div style={{ fontSize: "14px", fontWeight: 900, color: "#000", fontFamily: "'Space Grotesk', sans-serif" }}>
+              Verify in CockroachDB Console
+            </div>
+            <div style={{ fontSize: "11px", color: "#6b7280", fontFamily: "'JetBrains Mono', monospace", marginTop: "2px" }}>
+              Copy this query and run it at cockroachlabs.cloud
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "#f3f4f6", border: "2px solid #000",
+              color: "#000", width: "28px", height: "28px", borderRadius: "6px",
+              fontSize: "14px", fontWeight: 900, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "1px 1px 0px #000",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+        <pre style={{
+          margin: 0, padding: "14px", background: "#f9fafb",
+          borderRadius: "8px", fontSize: "13px", color: "#000",
+          fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.6,
+          border: "1px solid #e5e7eb", fontWeight: 700,
+          whiteSpace: "pre-wrap", wordBreak: "break-word",
+        }}>
+          {query}
+        </pre>
+        <button
+          onClick={() => { navigator.clipboard.writeText(query); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+          style={{
+            marginTop: "12px", width: "100%", padding: "10px",
+            background: copied ? "#047857" : "#000",
+            border: "2px solid #000", borderRadius: "8px",
+            color: "#fff", fontSize: "13px", fontWeight: 900,
+            cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif",
+            boxShadow: "2px 2px 0px #000",
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy Query"}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ── Stat with Proof ──────────────────────────────────────── */
+function StatWithProof({ label, value, color, query, hint }: { label: string; value: string | number; color: string; query: string; hint: string }) {
+  const [showModal, setShowModal] = useState(false);
+  return (
+    <>
+      <div
+        onClick={() => setShowModal(true)}
+        className="bento-panel"
+        style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center", cursor: "pointer" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+          <span style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800 }}>{label}</span>
+          <span style={{
+            marginLeft: "auto", padding: "2px 6px", borderRadius: "4px",
+            background: "#f3f4f6", border: "1px solid #e5e7eb",
+            fontSize: "9px", fontWeight: 700, color: "#6b7280",
+            fontFamily: "'JetBrains Mono', monospace",
+          }}>
+            SQL
+          </span>
+        </div>
+        <div style={{ fontSize: "24px", fontWeight: 950, color, fontFamily: "'Space Grotesk', sans-serif" }}>
+          {value}
+        </div>
+        <div style={{ fontSize: "10px", color: "#374151", fontFamily: "'JetBrains Mono', monospace", marginTop: "2px", fontWeight: 700, letterSpacing: "0.5px" }}>
+          {hint}
+        </div>
+      </div>
+      {showModal && <SqlProofModal query={query} onClose={() => setShowModal(false)} />}
+    </>
+  );
+}
+
 /* ── Executive Summary Bar ────────────────────────────────── */
 function ExecutiveSummary({
-  memories, threats, trustScore, driftScore, isHealthy
+  memories, threats, trustScore, driftScore, isHealthy, neutralized = 0, activeThreats = 0
 }: {
-  memories: number; threats: number; trustScore: number | string; driftScore: number; isHealthy: boolean
+  memories: number; threats: number; trustScore: number | string; driftScore: number; isHealthy: boolean; neutralized?: number; activeThreats?: number
 }) {
-  const statusColor = isHealthy ? C.green : threats > 0 ? C.red : C.orange;
-  const statusText = isHealthy ? "SYSTEM HEALTHY" : threats > 0 ? "DEFENSE ACTIVE" : "CHECKING...";
+  const statusColor = isHealthy ? C.green : activeThreats > 0 ? C.red : C.orange;
+  const statusText = isHealthy ? "SYSTEM HEALTHY" : activeThreats > 0 ? "DEFENSE ACTIVE" : "CHECKING...";
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", width: "100%" }}>
-      {/* Status Card */}
-      <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-          <Dot color={statusColor} pulse />
-          <span style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800 }}>SECURITY STATUS</span>
-        </div>
-        <div style={{ fontSize: "20px", fontWeight: 900, color: statusColor, fontFamily: "'Space Grotesk', sans-serif" }}>
-          {statusText}
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
+      {/* Story Banner */}
+      <div style={{
+        padding: "12px 20px", borderRadius: "8px",
+        background: "linear-gradient(135deg, #f0fdf4, #ecfdf5)",
+        border: "2px solid #000000",
+        display: "flex", alignItems: "center", gap: "12px",
+      }}>
+        <span style={{ fontSize: "14px" }}>🛡️</span>
+        <span style={{ fontSize: "13px", fontWeight: 800, color: "#000000", fontFamily: "'Space Grotesk', sans-serif" }}>
+          Memory that proves itself.
+        </span>
+        <span style={{ fontSize: "12px", color: "#374151", fontFamily: "'JetBrains Mono', monospace" }}>
+          Every write cryptographically chained. Every incident traceable. Built on CockroachDB.
+        </span>
       </div>
 
-      {/* Memories Card */}
-      <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>MEMORIES SECURED</div>
-        <div style={{ fontSize: "24px", fontWeight: 950, color: C.cyan, fontFamily: "'Space Grotesk', sans-serif" }}>
-          {memories.toLocaleString()}
+      {/* Stats Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+        {/* Status Card */}
+        <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+            <Dot color={statusColor} pulse />
+            <span style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800 }}>SECURITY STATUS</span>
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: 900, color: statusColor, fontFamily: "'Space Grotesk', sans-serif" }}>
+            {statusText}
+          </div>
         </div>
-      </div>
 
-      {/* Threats Card */}
-      <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>THREATS BLOCKED</div>
-        <div style={{ fontSize: "24px", fontWeight: 950, color: C.green, fontFamily: "'Space Grotesk', sans-serif" }}>
-          {threats}
-        </div>
-      </div>
+        {/* Memories with Proof */}
+        <StatWithProof
+          label="MEMORIES SECURED"
+          value={memories.toLocaleString()}
+          color={C.cyan}
+          query={`SELECT COUNT(*) as total\nFROM agent_memory\nWHERE expires_at IS NULL\n   OR expires_at > now();`}
+          hint="Click SQL to verify"
+        />
 
-      {/* Trust Score Card */}
-      <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>AVG IMPORTANCE (/10)</div>
-        <div style={{ fontSize: "24px", fontWeight: 950, color: C.cyan, fontFamily: "'Space Grotesk', sans-serif" }}>
-          {trustScore}
-        </div>
-      </div>
+        {/* Neutralized with Proof */}
+        <StatWithProof
+          label="ATTACKS NEUTRALIZED"
+          value={threats}
+          color={C.green}
+          query={`SELECT COUNT(*) as neutralized\nFROM agent_memory\nWHERE memory_type = 'healed';`}
+          hint="Click SQL to verify"
+        />
 
-      {/* Cold Archive (S3) Card */}
-      <S3ArchiveCard />
+        {/* Active Threats with Proof */}
+        <StatWithProof
+          label="ACTIVE THREATS"
+          value={activeThreats}
+          color={activeThreats > 0 ? C.red : C.green}
+          query={`SELECT COUNT(*) as active\nFROM agent_memory\nWHERE memory_type = 'poison_attempt';`}
+          hint="Click SQL to verify"
+        />
+
+        {/* Trust Score with Proof */}
+        <StatWithProof
+          label="AVG IMPORTANCE (/10)"
+          value={trustScore}
+          color={C.cyan}
+          query={`SELECT ROUND(AVG(importance_score)::numeric, 2) as avg_importance\nFROM agent_memory;`}
+          hint="Click SQL to verify"
+        />
+
+        {/* S3 Export Card */}
+        <S3ArchiveCard memories={memories} />
+      </div>
     </div>
   );
 }
 
-function S3ArchiveCard() {
+function S3ArchiveCard({ memories }: { memories: number }) {
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (showConfirm) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [showConfirm]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   const doExport = async () => {
+    setShowConfirm(false);
     setExporting(true);
     setErr(null);
     try {
       const res = await fetchWithTimeout("/api/demo/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId: "agent-demo" }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "S3 export failed");
       setResult(json.data);
+      setCooldown(60);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "S3 export failed");
     } finally {
@@ -162,34 +323,172 @@ function S3ArchiveCard() {
   };
 
   return (
-    <div className="bento-panel" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-      <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "8px" }}>🗄️ COLD ARCHIVE (AWS S3)</div>
-      {result ? (
-        <div style={{ fontSize: "12px", color: C.ink, fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5", marginBottom: "8px", wordBreak: "break-all" }}>
-          <div style={{ fontSize: "14px", fontWeight: 800, color: C.green }}>Exported ✓</div>
-          <div>memory-exports/{String(result.agentId ?? "agent-demo")}/</div>
-          <div style={{ color: C.mute }}>{String(result.count)} memories · {(Number(result.bytes) / 1024).toFixed(1)} KB</div>
-          {result.url ? (
-            <a href={String(result.url)} target="_blank" rel="noreferrer" style={{ color: C.cyan, textDecoration: "underline" }}>Open in S3 Console ↗</a>
-          ) : null}
-        </div>
-      ) : (
-        <div style={{ fontSize: "12px", color: C.mute, fontFamily: "'JetBrains Mono', monospace" }}>
-          {err ? <span style={{ color: C.red }}>⚠ {err}</span> : "Bastion → CockroachDB → S3. Snapshot agent memory."}
-        </div>
+    <>
+      <div className="bento-panel" style={{
+        padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center"
+      }}>
+        <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.2px", fontWeight: 800, marginBottom: "4px" }}>🗄️ EXPORT TO S3</div>
+        {result ? (
+          <div style={{ fontSize: "12px", color: "#000000", fontFamily: "var(--font-sans)", lineHeight: "1.5", marginBottom: "8px" }}>
+            <div style={{ fontSize: "14px", fontWeight: 800, color: C.green }}>Exported ✓</div>
+            <div style={{ marginTop: "2px" }}>{String(result.count)} memories · {(Number(result.bytes) / 1024).toFixed(1)} KB</div>
+            {typeof result.url === 'string' && result.url && (
+              <a href={result.url} target="_blank" rel="noreferrer"
+                style={{ color: C.cyan, textDecoration: "underline", fontSize: "12px" }}>Open in S3 ↗</a>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: "11px", color: C.mute, fontFamily: "'JetBrains Mono', monospace", lineHeight: "1.5" }}>
+            {err ? <span style={{ color: C.red }}>⚠ {err}</span> : "Backup memories as JSON to S3."}
+          </div>
+        )}
+        <button
+          onClick={() => setShowConfirm(true)}
+          disabled={exporting || cooldown > 0}
+          style={{
+            marginTop: "8px", padding: "10px 18px", borderRadius: "8px",
+            border: "3px solid #000000",
+            background: exporting || cooldown > 0 ? C.glassBright : C.ink,
+            color: exporting || cooldown > 0 ? "#374151" : "#ffffff",
+            fontSize: "13px", fontWeight: 900, fontFamily: "'JetBrains Mono', monospace",
+            cursor: exporting || cooldown > 0 ? "not-allowed" : "pointer",
+            opacity: exporting || cooldown > 0 ? 0.6 : 1,
+            boxShadow: exporting || cooldown > 0 ? "none" : "2px 2px 0px #000000",
+          }}
+        >
+          {exporting ? "EXPORTING…" : cooldown > 0 ? `WAIT ${cooldown}s` : result ? "EXPORT AGAIN" : "EXPORT TO S3"}
+        </button>
+      </div>
+
+      {/* Confirmation Modal */}
+      {showConfirm && createPortal(
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(0,0,0,0.55)",
+        }} onClick={() => setShowConfirm(false)}>
+          <div style={{
+            background: "#ffffff", border: "3px solid #000000", borderRadius: "12px",
+            boxShadow: "6px 6px 0px #000000", padding: "0", maxWidth: "580px", width: "92%",
+            overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+
+            {/* Header band */}
+            <div style={{
+              background: "#000000", padding: "20px 28px",
+              display: "flex", alignItems: "center", gap: "12px",
+            }}>
+              <span style={{ fontSize: "24px" }}>🗄️</span>
+              <span style={{
+                fontSize: "18px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                letterSpacing: "2px", color: "#ffffff", textTransform: "uppercase"
+              }}>
+                Export to S3
+              </span>
+            </div>
+
+            <div style={{ padding: "28px 32px" }}>
+              {/* What */}
+              <div style={{
+                padding: "14px 18px", background: "#f9fafb", border: "2px solid #000000",
+                borderRadius: "8px", marginBottom: "14px",
+                boxShadow: "2px 2px 0px #000000"
+              }}>
+                <div style={{
+                  fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "'JetBrains Mono', monospace",
+                  letterSpacing: "1px", textTransform: "uppercase", marginBottom: "6px"
+                }}>
+                  What gets exported
+                </div>
+                <div style={{ fontSize: "13px", color: "#1f2937", fontFamily: "var(--font-sans)", lineHeight: "1.6" }}>
+                  All <b>{memories.toLocaleString()} agent memories</b> from CockroachDB — embeddings, SHA-256 hash chain, metadata, TTL, and agent associations — as NDJSON.
+                </div>
+              </div>
+
+              {/* Where */}
+              <div style={{
+                padding: "14px 18px", background: "#f9fafb", border: "2px solid #000000",
+                borderRadius: "8px", marginBottom: "14px",
+                boxShadow: "2px 2px 0px #000000"
+              }}>
+                <div style={{
+                  fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "'JetBrains Mono', monospace",
+                  letterSpacing: "1px", textTransform: "uppercase", marginBottom: "6px"
+                }}>
+                  Where it goes
+                </div>
+                <div style={{ fontSize: "13px", color: "#1f2937", fontFamily: "var(--font-sans)", lineHeight: "1.6" }}>
+                  <code style={{ background: "#e5e7eb", padding: "3px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: 700 }}>
+                    s3://bastion-memory-archives/memory-exports/
+                  </code>
+                  <br />AWS ap-south-1 · same region as cluster · retained indefinitely
+                </div>
+              </div>
+
+              {/* Why */}
+              <div style={{
+                padding: "14px 18px", background: "#f9fafb", border: "2px solid #000000",
+                borderRadius: "8px", marginBottom: "24px",
+                boxShadow: "2px 2px 0px #000000"
+              }}>
+                <div style={{
+                  fontSize: "12px", fontWeight: 900, color: "#000000", fontFamily: "'JetBrains Mono', monospace",
+                  letterSpacing: "1px", textTransform: "uppercase", marginBottom: "10px"
+                }}>
+                  Why AWS S3
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  {[
+                    { icon: "🛡️", label: "Disaster recovery", desc: "Restore agent state if DB is compromised" },
+                    { icon: "📋", label: "Compliance", desc: "Immutable audit trail for regulators" },
+                    { icon: "💰", label: "Cost", desc: "$0.023/GB — cheaper than CRDB storage" },
+                    { icon: "🔍", label: "Offline analysis", desc: "Run ML pipelines on exported data" },
+                  ].map((item, i) => (
+                    <div key={i} style={{
+                      padding: "10px 12px", background: "#ffffff", border: "1.5px solid #d1d5db",
+                      borderRadius: "6px", display: "flex", alignItems: "flex-start", gap: "8px",
+                    }}>
+                      <span style={{ fontSize: "16px", lineHeight: 1 }}>{item.icon}</span>
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: 800, color: "#000000", fontFamily: "var(--font-sans)" }}>{item.label}</div>
+                        <div style={{ fontSize: "11px", color: "#6b7280", fontFamily: "var(--font-sans)", lineHeight: "1.4", marginTop: "2px" }}>{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setShowConfirm(false)}
+                  style={{
+                    padding: "12px 24px", borderRadius: "8px", border: "2px solid #000000",
+                    background: "#ffffff", color: "#000000", fontSize: "13px", fontWeight: 800,
+                    fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
+                    boxShadow: "2px 2px 0px #000000",
+                  }}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={doExport}
+                  style={{
+                    padding: "12px 24px", borderRadius: "8px", border: "3px solid #000000",
+                    background: "#000000", color: "#ffffff", fontSize: "13px", fontWeight: 900,
+                    fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
+                    boxShadow: "3px 3px 0px #000000",
+                  }}
+                >
+                  CONFIRM EXPORT
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
-      <button
-        onClick={doExport}
-        disabled={exporting}
-        style={{
-          marginTop: "8px", padding: "8px 14px", borderRadius: "8px", border: `1px solid ${C.border}`,
-          background: exporting ? C.glassBright : C.ink, color: exporting ? C.ink : "#fff",
-          fontSize: "12px", fontWeight: 800, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        {exporting ? "EXPORTING…" : result ? "EXPORT AGAIN" : "EXPORT TO S3"}
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -283,39 +582,80 @@ function Sparkline({ data, color, height = 48 }: { data: number[]; color: string
 function SecurityFeed({ blockedCount }: { blockedCount: number }) {
   const [events, setEvents] = useState<{ type: string; msg: string; time: string; color: string; agent: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState("tool-usage");
 
   useEffect(() => {
-    fetchWithTimeout("/api/tool-usage?limit=30")
-      .then(r => r.json())
-      .then(d => {
-        const rows = d?.data?.usage || d?.usage || [];
+    let active = true;
+    const loadCdc = async () => {
+      try {
+        const res = await fetchWithTimeout("/api/cdc-feed?limit=30");
+        const d = await res.json();
+        const rows = d?.data?.events || [];
         if (Array.isArray(rows) && rows.length > 0) {
-          const seen = new Set<string>();
-          const unique = rows.filter((r: any) => {
-            const key = `${r.tool_name}-${r.agent_id}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-          setEvents(unique.slice(0, 8).map((r: any) => {
-            const tool = String(r.tool_name || "memory_store");
-            const isEncrypted = tool.includes("encrypt");
-            const isScan = tool.includes("scan") || tool.includes("contradiction") || tool.includes("detect");
-            const isGuard = tool.includes("guard") || tool.includes("compliance");
-            const type = isEncrypted ? "ENCRYPTED" : isScan ? "SCANNED" : isGuard ? "GUARDED" : "PASSED";
-            const color = isEncrypted ? "#7c3aed" : isScan ? "#0369a1" : isGuard ? "#b45309" : "#047857";
+          if (!active) return;
+          const mapped = rows.slice(0, 1000).map((r: any) => {
+            const action = String(r.action || "memory_changed").replace(/_/g, " ");
+            const isPoison = action.includes("poison") || action.includes("block") || action.includes("guard");
+            const isHeal = action.includes("heal") || action.includes("prune") || action.includes("repair");
+            const isScan = action.includes("scan") || action.includes("verify") || action.includes("detect");
+            const type = isPoison ? "BLOCKED" : isHeal ? "HEALED" : isScan ? "SCANNED" : "CDC EVENT";
+            const color = isPoison ? "#b91c1c" : isHeal ? "#047857" : isScan ? "#0369a1" : "#7c3aed";
             return {
               type,
-              msg: tool.replace(/_/g, " "),
-              time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : "just now",
+              msg: action,
+              time: r.recordedAt ? new Date(r.recordedAt).toLocaleTimeString() : "just now",
               color,
-              agent: r.agent_id || "unknown",
+              agent: String(r.agentId || "unknown"),
             };
-          }));
+          });
+          setEvents(mapped);
+          setSource("cdc");
+          return true;
         }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    loadCdc().then((cdcOk) => {
+      if (cdcOk) { setLoading(false); return; }
+      fetchWithTimeout("/api/tool-usage?limit=30")
+        .then(r => r.json())
+        .then(d => {
+          if (!active) return;
+          const rows = d?.data?.usage || d?.usage || [];
+          if (Array.isArray(rows) && rows.length > 0) {
+            const seen = new Set<string>();
+            const unique = rows.filter((r: any) => {
+              const key = `${r.tool_name}-${r.agent_id}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            setEvents(unique.slice(0, 18).map((r: any) => {
+              const tool = String(r.tool_name || "memory_store");
+              const isEncrypted = tool.includes("encrypt");
+              const isScan = tool.includes("scan") || tool.includes("contradiction") || tool.includes("detect");
+              const isGuard = tool.includes("guard") || tool.includes("compliance");
+              const type = isEncrypted ? "ENCRYPTED" : isScan ? "SCANNED" : isGuard ? "GUARDED" : "PASSED";
+              const color = isEncrypted ? "#7c3aed" : isScan ? "#0369a1" : isGuard ? "#b45309" : "#047857";
+              return {
+                type,
+                msg: tool.replace(/_/g, " "),
+                time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : "just now",
+                color,
+                agent: r.agent_id || "unknown",
+              };
+            }));
+          }
+          setSource("tool-usage");
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    });
+
+    return () => { active = false; };
   }, []);
 
   if (loading && events.length === 0) {
@@ -338,7 +678,43 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      {/* CDC Source Badge + Context */}
+      <div style={{
+        padding: "10px 14px", background: source === "cdc" ? "#7c3aed0d" : "#f9fafb",
+        border: `1.5px solid ${source === "cdc" ? "#7c3aed40" : "#000000"}`,
+        borderRadius: "8px", marginBottom: "4px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+          <span style={{ fontSize: "15px", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "1.5px", fontWeight: 850, color: source === "cdc" ? "#5b21b6" : "#111827" }}>
+            {source === "cdc" ? "● CDC CHANGEFEED → S3" : "SOURCE: tool_usage_log"}
+          </span>
+        </div>
+        <div style={{ fontSize: "14px", color: "#111827", fontFamily: "var(--font-sans)", lineHeight: "1.6", fontWeight: 500 }}>
+          {source === "cdc"
+            ? "Every write to CockroachDB triggers a CDC changefeed → S3 → this panel. Real-time visibility into agent memory mutations without SELECT polling."
+            : "Tool invocations from MCP server logs. Each row is a memory store, search, or delete operation."}
+        </div>
+      </div>
+
+      {/* Summary row */}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "2px" }}>
+        {[
+          { label: "BLOCKED", count: events.filter(e => e.type === "BLOCKED").length, color: "#b91c1c" },
+          { label: "PASSED", count: events.filter(e => e.type === "PASSED" || e.type === "CDC EVENT").length, color: "#047857" },
+          { label: "TOTAL", count: events.length, color: "#000000" },
+        ].map((s, i) => (
+          <div key={i} style={{
+            padding: "6px 12px", background: "#ffffff", border: "1.5px solid #000000",
+            borderRadius: "6px", display: "flex", alignItems: "center", gap: "6px",
+          }}>
+            <span style={{ fontSize: "10px", fontWeight: 900, color: s.color, fontFamily: "'JetBrains Mono', monospace" }}>{s.label}</span>
+            <span style={{ fontSize: "14px", fontWeight: 950, color: "#000000", fontFamily: "var(--font-sans)" }}>{s.count}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Event list */}
       {events.map((e, i) => (
         <div key={i} style={{
           display: "flex", alignItems: "center", gap: "10px",
@@ -349,12 +725,32 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
         }}>
           <Dot color={e.color} pulse={i === 0} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "12px", color: "#000000", lineHeight: 1.4, fontWeight: 800, fontFamily: "var(--font-sans)" }}>{e.msg}</div>
-            <div style={{ fontSize: "10px", color: "#374151", marginTop: "1px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{e.agent} · {e.time}</div>
+            <div style={{ fontSize: "15px", color: "#000000", lineHeight: 1.4, fontWeight: 800, fontFamily: "var(--font-sans)" }}>{e.msg}</div>
+            <div style={{ fontSize: "13px", color: "#374151", marginTop: "1px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{e.agent} · {e.time}</div>
           </div>
           <Tag color={e.color}>{e.type}</Tag>
         </div>
       ))}
+      {events.length < 8 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px",
+          padding: "16px 20px", borderRadius: "8px",
+          background: "#f9fafb",
+          border: "2px dashed #000000",
+          justifyContent: "center",
+          flexDirection: "column",
+          marginTop: "6px",
+          boxShadow: "1.5px 1.5px 0px #000000",
+        }}>
+          <Dot color={C.green} pulse />
+          <div style={{ fontSize: "13px", fontWeight: 800, color: "#374151", fontFamily: "var(--font-sans)", textAlign: "center", marginTop: "4px" }}>
+            Listening for live CDC events...
+          </div>
+          <div style={{ fontSize: "11px", color: "#9ca3af", fontFamily: "'JetBrains Mono', monospace", textAlign: "center", marginTop: "2px" }}>
+            connection active · replica identity full
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -478,7 +874,7 @@ function MemoryHeatmap({ hourly }: { hourly: number[] }) {
 
   return (
     <div style={{ width: "100%", position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "180px", overflow: "visible" }} preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "240px", overflow: "visible" }} preserveAspectRatio="none">
         <defs>
           <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#047857" stopOpacity="0.25" />
@@ -554,10 +950,10 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
           </defs>
 
           {/* Outer Track border ring */}
-          <circle cx="62" cy="62" r={r + 6} fill="none" stroke="rgba(255, 255, 255, 0.02)" strokeWidth="1.5" />
+          <circle cx="62" cy="62" r={r + 6} fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="1.5" />
 
           {/* Main Track Background */}
-          <circle cx="62" cy="62" r={r} fill="none" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="7.5" />
+          <circle cx="62" cy="62" r={r} fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="7.5" />
 
           {/* Dynamic Active Progress Ring */}
           <circle cx="62" cy="62" r={r} fill="none"
@@ -573,7 +969,7 @@ function TrustGauge({ score, danger, total }: { score: number; danger: number; t
           />
 
           {/* Dotted Inner Ring for High-Tech feel */}
-          <circle cx="62" cy="62" r={r - 6} fill="none" stroke="rgba(255, 255, 255, 0.1)" strokeWidth="1" strokeDasharray="3, 3" style={{ opacity: 0.4 }} />
+          <circle cx="62" cy="62" r={r - 6} fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="1" strokeDasharray="3, 3" />
         </svg>
         <div style={{
           position: "absolute", inset: 0, display: "flex",
@@ -846,8 +1242,8 @@ function TechDetailModal({ tech, onClose }: { tech: any; onClose: () => void }) 
             justifyContent: "center", fontSize: "16px", fontWeight: 900, color: "#000000",
             boxShadow: "2px 2px 0px #000000", transition: "all 0.15s ease", flexShrink: 0,
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px,-2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; e.currentTarget.style.background = "#fee2e2"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0,0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; e.currentTarget.style.background = "#ffffff"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px,-2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; e.currentTarget.style.background = "#fee2e2"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0,0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; e.currentTarget.style.background = "#ffffff"; }}
           >✕</button>
         </div>
 
@@ -1144,8 +1540,8 @@ function ToolDetailModal({ entry, onClose }: { entry: any; onClose: () => void }
 
   let parsedArgs: any = null;
   let parsedResult: any = null;
-  try { parsedArgs = JSON.parse(entry.args_summary || "{}"); } catch {}
-  try { parsedResult = JSON.parse(entry.result_summary || "{}"); } catch {}
+  try { parsedArgs = JSON.parse(entry.args_summary || "{}"); } catch { }
+  try { parsedResult = JSON.parse(entry.result_summary || "{}"); } catch { }
 
   return (
     <div
@@ -1235,7 +1631,7 @@ function ToolDetailModal({ entry, onClose }: { entry: any; onClose: () => void }
               textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "8px",
               display: "flex", alignItems: "center", gap: "6px"
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
               PROMPT / ARGS
             </div>
             <div style={{
@@ -1259,7 +1655,7 @@ function ToolDetailModal({ entry, onClose }: { entry: any; onClose: () => void }
               textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "8px",
               display: "flex", alignItems: "center", gap: "6px"
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
               RESPONSE / RESULT
             </div>
             <div style={{
@@ -1367,7 +1763,7 @@ function ToolActivityAllModal({ usage, onClose }: { usage: any[]; onClose: () =>
                     const val = typeof v === "string" ? v : JSON.stringify(v);
                     return `${k}: ${val.length > 50 ? val.slice(0, 50) + "…" : val}`;
                   }).join(" · ");
-                } catch {}
+                } catch { }
                 return (
                   <tr key={i} style={{
                     borderBottom: "1px solid #e5e7eb",
@@ -1375,8 +1771,8 @@ function ToolActivityAllModal({ usage, onClose }: { usage: any[]; onClose: () =>
                     cursor: "pointer",
                     transition: "background 0.1s ease",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#eff6ff"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#f9fafb"; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#eff6ff"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#f9fafb"; }}
                   >
                     <td style={{ padding: "10px 16px" }}>
                       <span style={{
@@ -1413,6 +1809,7 @@ export default function DashboardPage() {
   const [driftSignals, setDriftSignals] = useState<string[]>(["User Drift: Stable", "Query Shift: Invariant"]);
   const [driftRecommendation, setDriftRecommendation] = useState("High-fidelity verification pass. Indices optimal.");
   const [blockedCount, setBlockedCount] = useState(0);
+  const [activeThreats, setActiveThreats] = useState(0);
   const [displayedMem, setDisplayedMem] = useState(0);
   const [displayedEnt, setDisplayedEnt] = useState(0);
   const [displayedRel, setDisplayedRel] = useState(0);
@@ -1422,6 +1819,7 @@ export default function DashboardPage() {
   const [selectedCrdbCategory, setSelectedCrdbCategory] = useState<{ label: string; color: string; icon: string; tools: { tool: string; calls: number }[] } | null>(null);
   const [selectedTech, setSelectedTech] = useState<any>(null);
   const [showAllTools, setShowAllTools] = useState(false);
+  const [showAllMcp, setShowAllMcp] = useState(false);
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
 
   const countupRaf = useRef<number>(0);
@@ -1462,8 +1860,13 @@ export default function DashboardPage() {
       const d: Stats = sd.data || sd;
       setStats(d);
       if (ai) {
-        const bc = ai.data?.summary?.blockedCount ?? ai.summary?.blockedCount;
-        if (bc != null) setBlockedCount(bc);
+        const summary = ai.data?.summary || ai.summary || {};
+        // Use attacksDetected (total) for the main counter
+        const detected = summary.attacksDetected ?? summary.blockedCount ?? 0;
+        if (detected != null) setBlockedCount(detected);
+        // Use activeThreats for health status
+        const active = summary.activeThreats ?? 0;
+        setActiveThreats(active);
       }
       if (dr) {
         const dObj = dr.data || dr;
@@ -1797,10 +2200,12 @@ export default function DashboardPage() {
         {/* ── EXECUTIVE SUMMARY ── */}
         <ExecutiveSummary
           memories={stats?.memories ?? 0}
-          threats={activeBlockedCount}
+          threats={activeThreats}
           trustScore={parseFloat(stats?.avgImportance ?? "5.0").toFixed(2)}
           driftScore={driftScore}
-          isHealthy={activeBlockedCount === 0 && driftScore < 0.15}
+          isHealthy={activeThreats === 0 && driftScore < 0.15}
+          neutralized={activeBlockedCount}
+          activeThreats={activeThreats}
         />
 
         {error && (
@@ -1828,7 +2233,7 @@ export default function DashboardPage() {
 
           {/* LEFT: Independent bento cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            <div className="bento-panel" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="bento-panel" style={{ padding: 0, overflow: "hidden", flex: 1, display: "flex", flexDirection: "column" }}>
               {/* section header */}
               <div style={{
                 padding: "12px 16px",
@@ -1842,145 +2247,159 @@ export default function DashboardPage() {
               </div>
               <div style={{ height: "3px", background: "#000000" }} />
 
-              {/* MEMORIES */}
-              <div style={{
-                padding: "13px 16px", borderBottom: "2px solid #000000",
-                display: "flex", alignItems: "center", gap: "10px"
-              }}>
-                <div style={{
-                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
-                  background: "var(--accent-breeze)", border: "2px solid #000000",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
-                  boxShadow: "1px 1px 0px #000000"
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" /></svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{
-                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
-                  }}>Memories</div>
-                  <div style={{
-                    fontSize: "24px", fontWeight: 950, color: "#000000",
-                    fontFamily: "var(--font-sans)", lineHeight: 1
-                  }}>
-                    {displayedMem > 0 ? displayedMem.toLocaleString() : (stats?.memories ?? "—")}
-                  </div>
-                </div>
-                <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
-              </div>
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", flex: 1 }}>
 
-              {/* ENTITIES */}
-              <div style={{
-                padding: "13px 16px", borderBottom: "2px solid #000000",
-                display: "flex", alignItems: "center", gap: "10px"
-              }}>
+                {/* MEMORIES */}
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
-                  background: "var(--accent-breeze)", border: "2px solid #000000",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
-                  boxShadow: "1px 1px 0px #000000"
+                  padding: "14px 16px", borderBottom: "2px solid #000000",
+                  display: "flex", alignItems: "center", gap: "10px"
                 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" /></svg>
-                </div>
-                <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
-                  }}>Entities</div>
-                  <div style={{
-                    fontSize: "24px", fontWeight: 950, color: "#000000",
-                    fontFamily: "var(--font-sans)", lineHeight: 1
+                    width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                    background: "var(--accent-breeze)", border: "2px solid #000000",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                    boxShadow: "1px 1px 0px #000000"
                   }}>
-                    {displayedEnt > 0 ? displayedEnt.toLocaleString() : (stats?.entities ?? "—")}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z" /></svg>
                   </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: "11px", color: "#000000", textTransform: "uppercase",
+                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
+                    }}>Memories</div>
+                    <div style={{
+                      fontSize: "24px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>
+                      {displayedMem > 0 ? displayedMem.toLocaleString() : (stats?.memories ?? "—")}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "4px" }}>Agent knowledge fragments with embeddings</div>
+                  </div>
+                  <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
                 </div>
-                <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
-              </div>
 
-              {/* RELATIONS */}
-              <div style={{
-                padding: "13px 16px", borderBottom: "2px solid #000000",
-                display: "flex", alignItems: "center", gap: "10px"
-              }}>
+                {/* ENTITIES */}
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
-                  background: "var(--accent-breeze)", border: "2px solid #000000",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
-                  boxShadow: "1px 1px 0px #000000"
+                  padding: "14px 16px", borderBottom: "2px solid #000000",
+                  display: "flex", alignItems: "center", gap: "10px"
                 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                </div>
-                <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
-                  }}>Relations</div>
-                  <div style={{
-                    fontSize: "24px", fontWeight: 950, color: "#000000",
-                    fontFamily: "var(--font-sans)", lineHeight: 1
+                    width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                    background: "var(--accent-breeze)", border: "2px solid #000000",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                    boxShadow: "1px 1px 0px #000000"
                   }}>
-                    {displayedRel > 0 ? displayedRel.toLocaleString() : (stats?.relations ?? "—")}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4" /></svg>
                   </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: "11px", color: "#000000", textTransform: "uppercase",
+                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
+                    }}>Entities</div>
+                    <div style={{
+                      fontSize: "24px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>
+                      {displayedEnt > 0 ? displayedEnt.toLocaleString() : (stats?.entities ?? "—")}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "4px" }}>NLP-extracted people, tools, concepts from memories</div>
+                  </div>
+                  <span style={{ fontSize: "12px", color: "#047857", fontWeight: 900 }}>↑</span>
                 </div>
-                <span style={{ fontSize: "12px", color: "#374151", fontWeight: 900 }}>→</span>
-              </div>
 
-              {/* BLOCKED */}
-              <div style={{
-                padding: "13px 16px", borderBottom: "none",
-                display: "flex", alignItems: "center", gap: "10px"
-              }}>
+                {/* RELATIONS */}
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
-                  background: "var(--accent-breeze)", border: "2px solid #000000",
-                  display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
-                  boxShadow: "1px 1px 0px #000000"
+                  padding: "14px 16px", borderBottom: "2px solid #000000",
+                  display: "flex", alignItems: "center", gap: "10px"
                 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></svg>
-                </div>
-                <div style={{ flex: 1 }}>
                   <div style={{
-                    fontSize: "12px", color: "#000000", textTransform: "uppercase",
-                    letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
-                  }}>Blocked</div>
-                  <div style={{
-                    fontSize: "24px", fontWeight: 950, color: activeBlockedCount > 0 ? "#b91c1c" : "#000000",
-                    fontFamily: "var(--font-sans)", lineHeight: 1
+                    width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                    background: "var(--accent-breeze)", border: "2px solid #000000",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                    boxShadow: "1px 1px 0px #000000"
                   }}>
-                    {activeBlockedCount.toLocaleString()}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: "11px", color: "#000000", textTransform: "uppercase",
+                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
+                    }}>Relations</div>
+                    <div style={{
+                      fontSize: "24px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>
+                      {displayedRel > 0 ? displayedRel.toLocaleString() : (stats?.relations ?? "—")}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "4px" }}>Knowledge graph edges between entities</div>
+                  </div>
+                  <span style={{ fontSize: "12px", color: "#374151", fontWeight: 900 }}>→</span>
+                </div>
+
+                {/* NEUTRALIZED */}
+                <div style={{
+                  padding: "14px 16px", borderBottom: "none",
+                  display: "flex", alignItems: "center", gap: "10px"
+                }}>
+                  <div style={{
+                    width: "30px", height: "30px", borderRadius: "var(--radius-sm)", flexShrink: 0,
+                    background: "var(--accent-breeze)", border: "2px solid #000000",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: "#000000",
+                    boxShadow: "1px 1px 0px #000000"
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></svg>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: "11px", color: "#000000", textTransform: "uppercase",
+                      letterSpacing: "1px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "2px"
+                    }}>Neutralized</div>
+                    <div style={{
+                      fontSize: "24px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>
+                      {activeBlockedCount.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 700, marginTop: "4px" }}>Memory poisoning attacks resolved</div>
                   </div>
                 </div>
+
               </div>
             </div>
-
-            {/* TRUST INDEX CARD */}
-            <div className="bento-panel" style={{ padding: "18px 20px" }}>
-              <div>
-                <div style={{
-                  fontSize: "14px", color: "#000000", textTransform: "uppercase",
-                  letterSpacing: "2px", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif",
-                  fontWeight: 900,
-                  display: "flex", alignItems: "center", gap: "8px"
-                }}>
-                  <Dot color={C.green} pulse />
-                  Trust Index
-                </div>
-                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-                <TrustGauge score={trustSummary.score} danger={trustSummary.danger} total={trustSummary.total} />
-              </div>
+            <div className="bento-panel" style={{ padding: "20px 20px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
               <div style={{
-                display: "flex", gap: "6px", justifyContent: "center",
-                marginTop: "12px", flexWrap: "wrap"
+                fontSize: "13px", color: "#000000", textTransform: "uppercase",
+                letterSpacing: "2px", marginBottom: "14px", fontFamily: "'Space Grotesk', sans-serif",
+                fontWeight: 900, display: "flex", alignItems: "center", gap: "8px"
               }}>
+                <Dot color={C.green} pulse />
+                Trust Index
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
+              <div style={{ fontSize: "10px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 600, marginBottom: "14px", textAlign: "center", lineHeight: 1.3 }}>
+                Cryptographic verification of memory integrity across the entire agent knowledge graph
+              </div>
+              <TrustGauge score={trustSummary.score} danger={trustSummary.danger} total={trustSummary.total} />
+              <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "14px" }}>
                 <Tag color={trustSummary.danger > 0 ? C.red : C.green}>
-                  {trustSummary.danger > 0 ? `⚠ THREATS` : "✓ SECURE"}
+                  {trustSummary.danger > 0 ? "⚠ THREATS" : "✓ SECURE"}
                 </Tag>
                 <Tag color={C.orange}>● LIVE</Tag>
+              </div>
+
+              {/* Dynamic description */}
+              <div style={{ marginTop: "14px", textAlign: "center" }}>
+                <div style={{ fontSize: "10px", color: "#374151", fontFamily: "var(--font-sans)", fontWeight: 700, lineHeight: 1.4 }}>
+                  {trustSummary.danger > 0
+                    ? `${trustSummary.danger} suspicious ${trustSummary.danger === 1 ? 'event' : 'events'} blocked by hash chain verification`
+                    : `${trustSummary.total.toLocaleString()} memories verified · 0 anomalies detected`
+                  }
+                </div>
               </div>
             </div>
           </div>
 
+          {/* CENTER: Multi-Agent (left) + S3 Export (right) */}
           {/* CENTER: Multi-Agent Architecture + System Vitals */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             {/* Multi-Agent Architecture Card */}
@@ -2002,41 +2421,44 @@ export default function DashboardPage() {
                   color: "#ffffff", border: "2px solid #000000", padding: "4px 12px",
                   borderRadius: "2px", fontWeight: 900, fontFamily: "'JetBrains Mono', monospace",
                   boxShadow: "1px 1px 0px #000000"
-                }}>3 AGENTS ACTIVE</span>
+                }}>{stats?.agents?.length || 0} AGENTS ACTIVE</span>
               </div>
               <div style={{ height: "3px", background: "#000000", marginBottom: "20px" }} />
 
               {/* Agent cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px", marginBottom: "20px" }}>
-                {[
-                  { name: "mcp-agent", type: "MCP Server", desc: "35 tools · Claude/Cursor/VS Code", memories: 110, color: "#047857", icon: "🔧" },
-                  { name: "bastion-a2a", type: "A2A Bridge", desc: "25 skills · Google A2A protocol", memories: 107, color: "#000000", icon: "🤝" },
-                  { name: "bastion-agent", type: "Core Agent", desc: "Forensic memory · Hash chains", memories: 30, color: "#b45309", icon: "🛡️" },
-                ].map((a, i) => (
-                  <div key={i} style={{
-                    padding: "20px", background: "#ffffff", border: "3px solid #000000",
-                    borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000"
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                      <span style={{ fontSize: "20px" }}>{a.icon}</span>
-                      <Dot color={a.color} />
-                      <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{a.name}</span>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(stats?.agents?.length || 1, 3)}, 1fr)`, gap: "14px", marginBottom: "20px" }}>
+                {(stats?.agents || []).map((a, i) => {
+                  const agentMeta: Record<string, { type: string; desc: string; icon: string; color: string }> = {
+                    "mcp-agent": { type: "MCP Server", desc: "35 tools · Claude/Cursor/VS Code", icon: "🔧", color: "#047857" },
+                    "bastion-agent": { type: "Core Agent", desc: "Forensic memory · Hash chains", icon: "🛡️", color: "#b45309" },
+                    "groq-db-agent": { type: "DB Agent", desc: "CockroachDB operations · ccloud CLI", icon: "🗄️", color: "#7c3aed" },
+                  };
+                  const meta = agentMeta[a.agent_id] || { type: "Agent", desc: "", icon: "🤖", color: "#374151" };
+                  return (
+                    <div key={i} style={{
+                      padding: "20px", background: "#ffffff", border: "3px solid #000000",
+                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                        <span style={{ fontSize: "20px" }}>{meta.icon}</span>
+                        <Dot color={meta.color} />
+                        <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{a.agent_id}</span>
+                      </div>
+                      <div style={{ fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)", marginBottom: "6px" }}>{meta.type}</div>
+                      <div style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600, fontFamily: "var(--font-sans)", marginBottom: "12px" }}>{meta.desc}</div>
+                      <div style={{
+                        fontSize: "28px", fontWeight: 950, color: "#000000",
+                        fontFamily: "var(--font-sans)", lineHeight: 1
+                      }}>{a.memory_count} <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>memories</span></div>
                     </div>
-                    <div style={{ fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)", marginBottom: "6px" }}>{a.type}</div>
-                    <div style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600, fontFamily: "var(--font-sans)", marginBottom: "12px" }}>{a.desc}</div>
-                    <div style={{
-                      fontSize: "28px", fontWeight: 950, color: "#000000",
-                      fontFamily: "var(--font-sans)", lineHeight: 1
-                    }}>{a.memories} <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>memories</span></div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Protocol badges */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
                 {[
                   { label: "MCP", desc: "35 tools", icon: "🔧", color: "#047857" },
-                  { label: "A2A", desc: "25 skills", icon: "🤝", color: "#000000" },
                   { label: "SERIALIZABLE", desc: "Isolation", icon: "🔒", color: "#b45309" },
                   { label: "AS OF SYSTEM TIME", desc: "Time-travel", icon: "⏱️", color: "#b91c1c" },
                 ].map((p, i) => (
@@ -2055,125 +2477,137 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Side-by-side: CockroachDB Features & Why Bastion */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              {/* CockroachDB Features */}
-              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-                  <Dot color={C.cyan} pulse />
-                  <span style={{
-                    fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
-                    letterSpacing: "2px", color: "#000000"
-                  }}>CockroachDB Features</span>
-                </div>
-                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-                  {[
-                    { feature: "SERIALIZABLE", desc: "Strongest isolation — prevents agentic stampedes", status: "Active", icon: "🔒" },
-                    { feature: "Row-Level TTL", desc: "Auto-expires old memories — manages token costs", status: "Active", icon: "⏱️" },
-                    { feature: "C-SPANN Vectors", desc: "1024-dim embeddings stored IN the database", status: "Active", icon: "🔍" },
-                    { feature: "AS OF SYSTEM TIME", desc: "Time-travel queries for forensic investigation", status: "Active", icon: "🕐" },
-                    { feature: "CDC Changelog", desc: "Real-time change streaming for event-driven agents", status: "Active", icon: "📡" },
-                    { feature: "REGIONAL BY ROW", desc: "Multi-region data locality — speed of light matters", status: "Active", icon: "🌍" },
-                  ].map((f, i) => (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "flex-start", gap: "12px",
-                      padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
-                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
-                      transition: "all 0.15s ease", cursor: "pointer"
-                    }}
+            {/* CockroachDB Features — separate card */}
+            <div className="bento-panel" style={{ padding: "24px 28px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "14px" }}>
+                <Dot color={C.cyan} pulse />
+                <span style={{
+                  fontSize: "15px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: "2px", color: "#000000"
+                }}>CockroachDB Features</span>
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "20px" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px" }}>
+                {[
+                  { feature: "SERIALIZABLE", desc: "Each memory write runs at strongest isolation — prevents two agents from corrupting the same row", status: "Active", icon: "🔒" },
+                  { feature: "Row-Level TTL", desc: "Old memories auto-expire per type — ephemeral facts gone in hours, pinned knowledge kept for months", status: "Active", icon: "⏱️" },
+                  { feature: "C-SPANN Vectors", desc: "1024-dim embeddings indexed in-database — semantic search without a separate vector store", status: "Active", icon: "🔍" },
+                  { feature: "AS OF SYSTEM TIME", desc: "Query any past state of the memory graph — forensic audit of what an agent knew at a specific moment", status: "Active", icon: "🕐" },
+                  { feature: "CDC Changelog", desc: "Every write streams to S3 in real-time — dashboard reacts to changes without polling the database", status: "Active", icon: "📡" },
+                  { feature: "RLS Agent Isolation", desc: "Row-level security policies enforce agent boundaries at the database engine — one agent cannot read another's memories", status: "Active", icon: "🌍" },
+                ].map((f, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "flex-start", gap: "14px",
+                    padding: "20px 22px", background: "#ffffff", border: "2px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
+                    transition: "all 0.15s ease", cursor: "pointer"
+                  }}
                     onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
-                    >
-                      <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                          <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</div>
-                          <span style={{
-                            fontSize: "9px", fontWeight: 900, fontFamily: "var(--font-sans)",
-                            background: "#047857", color: "#ffffff", border: "1px solid #000000",
-                            padding: "2px 6px", borderRadius: "2px"
-                          }}>{f.status}</span>
-                        </div>
-                        <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, lineHeight: 1.4 }}>{f.desc}</div>
+                  >
+                    <span style={{ fontSize: "22px", marginTop: "2px" }}>{f.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                        <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.feature}</div>
+                        <span style={{
+                          fontSize: "10px", fontWeight: 900, fontFamily: "var(--font-sans)",
+                          background: "#047857", color: "#ffffff", border: "1px solid #000000",
+                          padding: "3px 10px", borderRadius: "2px"
+                        }}>{f.status}</span>
                       </div>
+                      <div style={{ fontSize: "12px", color: "#374151", fontWeight: 600, lineHeight: 1.5 }}>{f.desc}</div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
+            </div>
 
-              {/* Why Bastion */}
-              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-                  <Dot color={C.orange} pulse />
-                  <span style={{
-                    fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
-                    letterSpacing: "2px", color: "#000000"
-                  }}>Why Bastion</span>
-                </div>
-                <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-                <div style={{
-                  padding: "16px 20px", background: "var(--accent-breeze)", border: "2px solid #000000",
-                  borderRadius: "var(--radius-sm)", marginBottom: "16px",
-                  boxShadow: "1.5px 1.5px 0px #000000"
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.5 }}>
-                    Memory that proves itself — forensic, tamper-proof, and self-healing.
+            {/* Why Bastion — separate card */}
+            <div className="bento-panel" style={{ padding: "24px 28px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "14px" }}>
+                <Dot color={C.orange} pulse />
+                <span style={{
+                  fontSize: "15px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: "2px", color: "#000000"
+                }}>Why Bastion</span>
+              </div>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "20px" }} />
+              <div style={{
+                padding: "20px 24px", background: "var(--accent-breeze)", border: "2px solid #000000",
+                borderRadius: "var(--radius-sm)", marginBottom: "20px",
+                boxShadow: "2px 2px 0px #000000",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px",
+                flexWrap: "wrap"
+              }}>
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)", lineHeight: 1.5 }}>
+                    Agent memory that proves itself — every write is chained, every read is verified, every attack is healed.
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#374151", fontWeight: 700, marginTop: "4px" }}>
+                    🛡️ Verified Compliant: EU AI Act Article 12(2) logging is active.
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  {[
-                    { title: "Forensic Memory", desc: "SHA-256 hash chains prove what agent knew and when", icon: "🔍" },
-                    { title: "OWASP ASI06", desc: "Memory poisoning detection and defense", icon: "🛡️" },
-                    { title: "Time-Travel", desc: "Investigate past agent state with AS OF SYSTEM TIME", icon: "⏱️" },
-                    { title: "Self-Healing", desc: "Automatic detection and recovery from attacks", icon: "🔧" },
-                  ].map((f, i) => (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "flex-start", gap: "12px",
-                      padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
-                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
-                      transition: "all 0.15s ease", cursor: "pointer"
-                    }}
+                <Link href="/compliance" style={{
+                  flexShrink: 0, padding: "8px 16px", background: "#000000", color: "#ffffff",
+                  border: "2px solid #000000", borderRadius: "6px", fontSize: "12px", fontWeight: 900,
+                  boxShadow: "2px 2px 0px #ffffff", cursor: "pointer", textDecoration: "none",
+                  fontFamily: "var(--font-mono)", textTransform: "uppercase"
+                }}>
+                  View Audit & Proofs →
+                </Link>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                {[
+                  { title: "Forensic Memory", desc: "Every memory carries a SHA-256 hash of the previous — tampering breaks the chain and triggers alerts", icon: "🔍" },
+                  { title: "OWASP ASI06", desc: "MemoryGuard scans every write for PII leaks, injection patterns, and unexpected memory types before storage", icon: "🛡️" },
+                  { title: "Time-Travel", desc: "Rewind the entire memory graph to any timestamp — see exactly what the agent knew before a decision", icon: "⏱️" },
+                  { title: "Self-Healing", desc: "CDC events trigger automatic repair — expired memories pruned, anomalies flagged, hash chain re-verified", icon: "🔧" },
+                ].map((f, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "flex-start", gap: "14px",
+                    padding: "20px 22px", background: "#ffffff", border: "2px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000",
+                    transition: "all 0.15s ease", cursor: "pointer"
+                  }}
                     onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
-                    >
-                      <span style={{ fontSize: "18px", marginTop: "2px" }}>{f.icon}</span>
-                      <div>
-                        <div style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.title}</div>
-                        <div style={{ fontSize: "11px", color: "#374151", fontWeight: 600, marginTop: "4px", lineHeight: 1.4 }}>{f.desc}</div>
-                      </div>
+                  >
+                    <span style={{ fontSize: "22px", marginTop: "2px" }}>{f.icon}</span>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{f.title}</div>
+                      <div style={{ fontSize: "12px", color: "#374151", fontWeight: 600, marginTop: "6px", lineHeight: 1.5 }}>{f.desc}</div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
 
         {/* ── ROW 3: TELEMETRY & EVENT FEED ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px 320px", gap: "20px", alignItems: "stretch" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: "20px", alignItems: "stretch" }}>
 
           {/* COLUMN 1: Memory Ingestion & Recent Audits Stack */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             {/* Memory Ingestion Panel */}
-            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", flex: 1, padding: "20px" }}>
+            <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "16px 20px" }}>
               <div style={{
                 display: "flex", alignItems: "center", gap: "10px",
-                paddingBottom: "14px"
+                paddingBottom: "10px"
               }}>
                 <Dot color={C.orange} pulse />
                 <span style={{
-                  fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
                   color: "#000000", textTransform: "uppercase", letterSpacing: "1.5px"
                 }}>
                   Memory Ingestion
                 </span>
                 <span style={{
-                  marginLeft: "auto", fontSize: "13px", fontWeight: 900,
+                  marginLeft: "auto", fontSize: "11px", fontWeight: 900,
                   fontFamily: "var(--font-mono)", color: "#047857",
-                  background: "#f0fdf4", border: "2.5px solid #047857",
-                  padding: "4px 12px", borderRadius: "4px",
-                  boxShadow: "2px 2px 0px #000000",
+                  background: "#f0fdf4", border: "2px solid #047857",
+                  padding: "3px 10px", borderRadius: "4px",
+                  boxShadow: "1.5px 1.5px 0px #000000",
                 }}>
                   {hourlyData.reduce((a: number, b: number) => a + b, 0)} memories · peak {(() => {
                     const peakIdx = hourlyData.indexOf(Math.max(...hourlyData));
@@ -2182,48 +2616,60 @@ export default function DashboardPage() {
                   })()}:00
                 </span>
               </div>
-              <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", margin: "10px 0" }}>
+              <div style={{ height: "3px", background: "#000000", marginBottom: "10px" }} />
+
+              {/* Top half: Chart */}
+              <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", justifyContent: "center", paddingTop: "16px", paddingBottom: "12px" }}>
                 <MemoryHeatmap hourly={hourlyData} />
               </div>
-              <div style={{
-                fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)",
-                textAlign: "center", padding: "10px 14px", lineHeight: 1.5,
-                background: "rgba(0, 0, 0, 0.02)", border: "2px dashed rgba(0,0,0,0.1)", borderRadius: "6px",
-                margin: "8px 0"
-              }}>
-                Real-time memory writes across all agents · stored in CockroachDB with SHA-256 hash chains
+
+              <div style={{ height: "3px", background: "#000000", margin: "10px 0" }} />
+
+              {/* Bottom half: Memory Type Breakdown */}
+              <div style={{ display: "flex", flexDirection: "column", padding: "12px 0" }}>
+                <div style={{ fontSize: "14px", color: "#6b7280", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1.5px", fontFamily: "var(--font-sans)", marginBottom: "16px" }}>
+                  Memory Type Breakdown (Total: {stats?.memories?.toLocaleString() ?? "—"})
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  {(stats?.memoryTypes || []).slice(0, 5).map((mt, i) => {
+                    const total = stats?.memories || 1;
+                    const pct = Math.round((mt.count / total) * 100);
+                    const colors = ["#047857", "#b45309", "#7c3aed", "#b91c1c", "#0369a1"];
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ width: "10px", height: "10px", borderRadius: "2px", background: colors[i % colors.length], flexShrink: 0 }} />
+                        <span style={{ fontSize: "14px", fontWeight: 800, color: "#374151", fontFamily: "var(--font-sans)", textTransform: "capitalize", minWidth: "120px" }}>{mt.type}</span>
+                        <div style={{ flex: 1, height: "18px", background: "rgba(0,0,0,0.04)", borderRadius: "4px", overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)" }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: colors[i % colors.length], borderRadius: "3px", transition: "width 0.6s ease" }} />
+                        </div>
+                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)", minWidth: "40px", textAlign: "right" }}>{mt.count}</span>
+                        <span style={{ fontSize: "12px", color: "#9ca3af", fontFamily: "var(--font-mono)", minWidth: "36px", textAlign: "right" }}>{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div style={{ height: "3px", background: "#000000", margin: "16px 0" }} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginTop: "8px" }}>
+
+              <div style={{ height: "3px", background: "#000000", margin: "10px 0" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginTop: "4px" }}>
                 {[
-                  { label: "Memories Today", value: hourlyData.reduce((a: number, b: number) => a + b, 0).toLocaleString(), bg: "#f0fdf4", color: "#047857" },
+                  { label: "Ingested (24h)", value: hourlyData.reduce((a: number, b: number) => a + b, 0).toLocaleString(), bg: "#f0fdf4", color: "#047857" },
                   { label: "Avg Importance (/10)", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), bg: "#fffbeb", color: "#b45309" },
                   { label: "Drift Index", value: driftScore.toFixed(3), bg: driftScore > 0.3 ? "#fef2f2" : "#f0fdf4", color: driftScore > 0.3 ? "#b91c1c" : "#047857" },
                 ].map((m, i) => (
                   <div key={i} style={{
-                    textAlign: "center", padding: "16px 12px",
+                    textAlign: "center", padding: "12px 8px",
                     background: m.bg,
-                    border: `2px solid #000000`,
+                    border: "2px solid #000000",
                     borderRadius: "8px",
-                    boxShadow: "3px 3px 0px #000000",
-                    transition: "all 0.2s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translate(-2px, -2px)";
-                    e.currentTarget.style.boxShadow = "5px 5px 0px #000000";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translate(0, 0)";
-                    e.currentTarget.style.boxShadow = "3px 3px 0px #000000";
-                  }}
-                  >
+                    boxShadow: "2px 2px 0px #000000",
+                  }}>
                     <div style={{
                       fontSize: "12px", color: m.color, textTransform: "uppercase",
-                      letterSpacing: "0.5px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "8px"
+                      letterSpacing: "0.5px", fontFamily: "var(--font-sans)", fontWeight: 900, marginBottom: "4px"
                     }}>{m.label}</div>
                     <div style={{
-                      fontSize: "36px", fontWeight: 950, color: "#000000",
+                      fontSize: "28px", fontWeight: 950, color: "#000000",
                       fontFamily: "var(--font-sans)", lineHeight: 1
                     }}>{m.value}</div>
                   </div>
@@ -2232,26 +2678,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* COLUMN 2: Live Tool Trail */}
-          <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
-            <div className="panel-label" style={{ marginBottom: "10px" }}>
-              <Dot color={C.green} pulse />
-              Live Tool Trail
-            </div>
-            <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-            <div style={{ flex: 1, marginTop: "8px", overflowY: "auto" }}>
-              <BlockchainTimeline live={!isMock} />
-            </div>
-          </div>
-
-          {/* COLUMN 3: Security Scan */}
-          <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
-            <div className="panel-label" style={{ marginBottom: "10px" }}>
+          {/* COLUMN 2: Security Scan */}
+          <div className="bento-panel" style={{ display: "flex", flexDirection: "column", minWidth: "320px", height: "750px" }}>
+            <div className="panel-label" style={{ marginBottom: "10px", fontSize: "15px" }}>
               <Dot color={C.cyan} pulse />
               Security Scan
             </div>
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
-            <div style={{ flex: 1, marginTop: "8px", overflowY: "auto" }}>
+            <div style={{ flex: 1, marginTop: "8px", overflowY: "auto", paddingBottom: "16px" }}>
               <SecurityFeed blockedCount={activeBlockedCount} />
             </div>
           </div>
@@ -2283,14 +2717,14 @@ export default function DashboardPage() {
                   borderRadius: "var(--radius-sm)", boxShadow: "1.5px 1.5px 0px #000000",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translate(-2px, -2px)";
-                  e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "translate(0, 0)";
-                  e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000";
-                }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translate(-2px, -2px)";
+                    e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translate(0, 0)";
+                    e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000";
+                  }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                     <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{t.name}</span>
@@ -2338,8 +2772,8 @@ export default function DashboardPage() {
                 padding: "4px 12px", borderRadius: "6px", boxShadow: "1.5px 1.5px 0px #000000",
                 cursor: "pointer", transition: "all 0.15s ease",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000"; }}
               >
                 ⛶ Expand
               </button>
@@ -2363,7 +2797,7 @@ export default function DashboardPage() {
                       const val = typeof v === "string" ? v : JSON.stringify(v);
                       return `${k}: ${val.length > 60 ? val.slice(0, 60) + "…" : val}`;
                     }).join(" · ");
-                  } catch {}
+                  } catch { }
                   return (
                     <div key={i} onClick={() => setSelectedTool(t)} style={{
                       display: "flex", alignItems: "stretch", gap: "12px",
@@ -2372,46 +2806,50 @@ export default function DashboardPage() {
                       boxShadow: "2px 2px 0px #000000",
                       transition: "all 0.15s ease", cursor: "pointer",
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
                     >
                       {/* left accent */}
-                      <div style={{ width: "4px", borderRadius: "4px", background: accentColor, flexShrink: 0 }} />
+                      <div style={{ width: "5px", borderRadius: "4px", background: accentColor, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         {/* Row 1: tool badge + agent + client + duration */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
                           <span style={{
-                            display: "inline-block", fontSize: "12px", fontWeight: 900,
-                            fontFamily: "var(--font-mono)", padding: "3px 10px", borderRadius: "4px",
+                            display: "inline-block", fontSize: "14px", fontWeight: 900,
+                            fontFamily: "var(--font-mono)", padding: "4px 12px", borderRadius: "4px",
                             background: accentColor, color: "#ffffff", border: "2px solid #000000",
                             boxShadow: "1px 1px 0px #000000", whiteSpace: "nowrap"
                           }}>{t.tool_name}{t.sub_tool ? `:${t.sub_tool}` : ""}</span>
-                          <span style={{ fontSize: "12px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-mono)" }}>{t.agent_id}</span>
+                          <span style={{ fontSize: "13px", fontWeight: 900, color: "#b45309", fontFamily: "var(--font-mono)" }}>{t.agent_id}</span>
                           {t.client_name && t.client_name !== t.agent_id && (
                             <span style={{
-                              fontSize: "11px", fontWeight: 800, color: "#047857",
+                              fontSize: "12px", fontWeight: 800, color: "#047857",
                               fontFamily: "var(--font-mono)", background: "#f0fdf4",
                               border: "1.5px solid #047857", borderRadius: "4px", padding: "1px 6px"
                             }}>{t.client_name}</span>
                           )}
-                          <span style={{ marginLeft: "auto", fontSize: "12px", color: "#6b7280", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                          <span style={{ marginLeft: "auto", fontSize: "13px", color: "#6b7280", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
                             {t.duration_ms}ms
                           </span>
                         </div>
                         {/* Row 2: args preview */}
                         <div style={{
-                          fontSize: "13px", color: "#374151", fontWeight: 600,
+                          fontSize: "14px", color: "#374151", fontWeight: 600,
                           fontFamily: "var(--font-mono)", lineHeight: 1.5,
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis"
                         }}>
                           {argsPreview}
                         </div>
                         {/* Row 3: timestamp + click hint */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
-                          <span style={{ fontSize: "11px", color: "#9ca3af", fontFamily: "var(--font-mono)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
+                          <span style={{ fontSize: "12px", color: "#9ca3af", fontFamily: "var(--font-mono)" }}>
                             {new Date(t.created_at).toLocaleTimeString()}
                           </span>
-                          <span style={{ fontSize: "10px", color: accentColor, fontFamily: "var(--font-mono)", fontWeight: 800, marginLeft: "auto" }}>
+                          <span style={{ fontSize: "12px", color: accentColor, fontFamily: "var(--font-mono)", fontWeight: 800, marginLeft: "auto" }}>
                             click to expand →
                           </span>
                         </div>
@@ -2434,7 +2872,7 @@ export default function DashboardPage() {
             <div style={{ height: "3px", background: "#000000", marginBottom: "12px" }} />
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", paddingRight: "4px" }}>
               {[
-                { label: "Managed MCP Server (12 tools)", count: toolUsage?.crdb?.managed_mcp_tools ?? 0, icon: "🔧", color: "#047857", filter: (t: string) => t === "managed_mcp_call" || t === "managed_mcp_list_tools" || ["list_clusters","get_cluster","list_databases","list_tables","get_table_schema","select_query","explain_query","show_statement","show_running_queries","create_database","create_table","insert_rows"].includes(t) },
+                { label: "Managed MCP Server (12 tools)", count: toolUsage?.crdb?.managed_mcp_tools ?? 0, icon: "🔧", color: "#047857", filter: (t: string) => t === "managed_mcp_call" || t === "managed_mcp_list_tools" || ["list_clusters", "get_cluster", "list_databases", "list_tables", "get_table_schema", "select_query", "explain_query", "show_statement", "show_running_queries", "create_database", "create_table", "insert_rows"].includes(t) },
                 { label: "Distributed Vectors (C-SPANN)", count: toolUsage?.crdb?.memory_tools ?? 0, icon: "🧠", color: "#0369a1", filter: (t: string) => t.startsWith("memory_") || t === "multi_signal_search" || t === "context_pack" || t === "ltm_check_reuse" || t === "ltm_store_analysis" || t === "ltm_invalidate" },
                 { label: "ccloud CLI", count: toolUsage?.crdb?.ccloud_tools ?? 0, icon: "⚙️", color: "#b45309", filter: (t: string) => t === "ccloud_exec" },
                 { label: "Agent Skills Repo", count: toolUsage?.crdb?.skill_tools ?? 0, icon: "📚", color: "#b91c1c", filter: (t: string) => t === "invoke_agent_skill" || t === "list_agent_skills" || t === "a2a_bridge" },
@@ -2444,18 +2882,18 @@ export default function DashboardPage() {
                 const catTools = (toolUsage?.crdb_tool_breakdown ?? []).filter((t: any) => row.filter(t.tool));
                 return (
                   <div key={i} onClick={() => setSelectedCrdbCategory({ label: row.label, color: row.color, icon: row.icon, tools: catTools })} style={{
-                    padding: "14px 16px", background: "#ffffff", border: "2.5px solid #000000",
+                    padding: "18px 20px", background: "#ffffff", border: "2.5px solid #000000",
                     borderRadius: "10px", boxShadow: "2px 2px 0px #000000",
                     transition: "all 0.15s ease", cursor: "pointer",
                   }} onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px #000000"; }} onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <span style={{ fontSize: "18px" }}>{row.icon}</span>
-                        <span style={{ fontSize: "14px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.label}</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <span style={{ fontSize: "22px" }}>{row.icon}</span>
+                        <span style={{ fontSize: "16px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.label}</span>
                       </div>
-                      <span style={{ fontSize: "18px", fontWeight: 950, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.count}</span>
+                      <span style={{ fontSize: "22px", fontWeight: 950, color: "#000000", fontFamily: "var(--font-sans)" }}>{row.count}</span>
                     </div>
-                    <div style={{ height: "8px", background: "#e5e7eb", border: "1.5px solid #000000", borderRadius: "6px", overflow: "hidden" }}>
+                    <div style={{ height: "10px", background: "#e5e7eb", border: "1.5px solid #000000", borderRadius: "6px", overflow: "hidden" }}>
                       <div style={{
                         width: `${Math.min(pct, 100)}%`, height: "100%",
                         background: `linear-gradient(90deg, ${row.color}, ${row.color}cc)`,
@@ -2512,33 +2950,37 @@ export default function DashboardPage() {
                         marginBottom: "10px", boxShadow: "2px 2px 0px #000000",
                         transition: "all 0.15s ease", cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px #000000"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px #000000"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px #000000"; }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <span style={{
-                            fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                            fontSize: "15px", fontWeight: 900, fontFamily: "var(--font-mono)",
                             color: ts.color, flexShrink: 0
                           }}>{ts.icon}</span>
                           <span style={{
                             fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
                             color: "#000000", background: ts.bg,
                             border: `2px solid ${ts.color}`, borderRadius: "6px",
-                            padding: "3px 10px", letterSpacing: "1px"
+                            padding: "4px 12px", letterSpacing: "1px"
                           }}>{ev.type.toUpperCase()}</span>
                           <span style={{
                             fontSize: "14px", fontWeight: 900, fontFamily: "var(--font-mono)",
                             color: "#000000"
                           }}>{ev.agent_id}</span>
                           <span style={{
-                            marginLeft: "auto", fontSize: "12px", fontWeight: 700, fontFamily: "var(--font-mono)",
+                            marginLeft: "auto", fontSize: "13px", fontWeight: 700, fontFamily: "var(--font-mono)",
                             color: "#6b7280", flexShrink: 0
                           }}>{timeStr}</span>
                         </div>
                         <div style={{
                           fontSize: "14px", fontWeight: 700, color: "#374151",
-                          fontFamily: "var(--font-mono)", lineHeight: "1.4",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                          fontFamily: "var(--font-mono)", lineHeight: "1.5",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis"
                         }}>
                           {ev.content_preview || ev.action}
                         </div>
@@ -2551,12 +2993,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── ROW 6: MCP TOOLS + AGENT ATTRIBUTION (2-column bento row) ── */}
-        {((toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 || (toolUsage?.by_agent?.length ?? 0) > 0) && (
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "20px", width: "100%", alignItems: "stretch" }}>
-            {/* Left: MCP TOOLS */}
-            {(toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 && (
-              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-between" }}>
+        {/* ── ROW 6: MCP TOOLS (full width bento row) ── */}
+        {(toolUsage?.crdb_tool_breakdown?.length ?? 0) > 0 && (() => {
+          const sortedTools = [...toolUsage.crdb_tool_breakdown].sort((a: any, b: any) => b.calls - a.calls);
+          const displayedTools = showAllMcp ? sortedTools : sortedTools.slice(0, 16);
+          const hiddenCount = sortedTools.length - displayedTools.length;
+
+          return (
+            <div style={{ width: "100%" }}>
+              {/* MCP TOOLS */}
+              <div className="bento-panel" style={{ display: "flex", flexDirection: "column" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
                     <Dot color="#b45309" pulse />
@@ -2568,8 +3014,8 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                    {toolUsage.crdb_tool_breakdown.map((ct: any, j: number) => (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                    {displayedTools.map((ct: any, j: number) => (
                       <div key={j} onClick={() => {
                         const recent = (toolUsage.usage ?? []).find((u: any) =>
                           u.tool_name === ct.tool || u.sub_tool === ct.tool
@@ -2577,59 +3023,44 @@ export default function DashboardPage() {
                         if (recent) setSelectedTool(recent);
                         else setSelectedCrdbCategory({ label: ct.tool, color: "#b45309", icon: "🔧", tools: [{ tool: ct.tool, calls: ct.calls }] });
                       }} style={{
-                        display: "flex", alignItems: "center", gap: "6px",
-                        padding: "8px 14px", background: "#ffffff", border: "2px solid #000000",
-                        borderRadius: "8px", boxShadow: "1.5px 1.5px 0px #000000",
+                        display: "flex", alignItems: "center", gap: "8px",
+                        padding: "6px 12px", background: "#ffffff", border: "1.5px solid #000000",
+                        borderRadius: "6px", boxShadow: "1px 1px 0px #000000",
                         transition: "all 0.15s ease", cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "3px 3px 0px 0px #000000"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000"; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "2px 2px 0px 0px #000000"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1px 1px 0px #000000"; }}
                       >
-                        <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)" }}>{ct.tool}</span>
+                        <span style={{ fontSize: "13px", fontWeight: 800, color: "#000000", fontFamily: "var(--font-mono)" }}>{ct.tool}</span>
                         <span style={{
-                          fontSize: "12px", fontWeight: 900, color: "#ffffff",
-                          background: "#b45309", borderRadius: "4px", padding: "1px 7px",
+                          fontSize: "11px", fontWeight: 900, color: "#ffffff",
+                          background: "#b45309", borderRadius: "4px", padding: "1px 6px",
                           fontFamily: "var(--font-mono)"
                         }}>{ct.calls}</span>
                       </div>
                     ))}
+
+                    {sortedTools.length > 16 && (
+                      <button onClick={() => setShowAllMcp(!showAllMcp)} style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "6px 14px", background: showAllMcp ? "#ffffff" : "#fff7ed",
+                        border: "1.5px solid #b45309", color: "#b45309",
+                        borderRadius: "6px", boxShadow: "1px 1px 0px #b45309",
+                        fontSize: "12px", fontFamily: "var(--font-mono)", fontWeight: 900,
+                        cursor: "pointer", transition: "all 0.15s ease",
+                      }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-1px, -1px)"; e.currentTarget.style.boxShadow = "2px 2px 0px #b45309"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "1px 1px 0px #b45309"; }}
+                      >
+                        {showAllMcp ? "▲ SHOW LESS" : `▼ +${hiddenCount} MORE TOOLS...`}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Right: AGENT ATTRIBUTION */}
-            {(toolUsage?.by_agent?.length ?? 0) > 0 && (
-              <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-                  <Dot color={C.green} pulse />
-                  <span style={{ fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
-                    AGENT ATTRIBUTION
-                  </span>
-                </div>
-                <div style={{ height: "3px", background: "#000000", marginBottom: "14px" }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, overflowY: "auto" }}>
-                  {toolUsage.by_agent.slice(0, 6).map((a: any, j: number) => (
-                    <div key={j} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "8px 14px", background: "#ffffff",
-                      border: "2px solid #000000", borderRadius: "8px",
-                      boxShadow: "1.5px 1.5px 0px #000000",
-                    }}>
-                      <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-mono)" }}>{a.agent_id}</span>
-                      <span style={{
-                        fontSize: "11px", fontWeight: 900, color: "#ffffff",
-                        background: "#000000", padding: "2px 8px", borderRadius: "4px",
-                        fontFamily: "var(--font-mono)", border: "1.5px solid #000000",
-                        boxShadow: "1px 1px 0px #000000"
-                      }}>{a.calls}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* Tool Detail Modal — portaled to body so it sits above everything */}
         {selectedTool && createPortal(

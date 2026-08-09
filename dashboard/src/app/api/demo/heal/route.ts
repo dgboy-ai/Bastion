@@ -1,4 +1,4 @@
-import { safeQueryStatic } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
 import { createHash, randomUUID } from "crypto";
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const startTime = Date.now();
 
     // ─── 1. FIND THE POISON MEMORY ──────────────────────────
-    const poisonRes = await safeQueryStatic(
+    const poisonRes = await safeQuery(
       "SELECT memory_id, content::varchar(200) AS content, cryptographic_hash, previous_hash, created_at FROM agent_memory WHERE agent_id = $1 AND memory_type = 'poison_attempt' ORDER BY created_at DESC LIMIT 1",
       [agentId]
     );
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     // ─── 2. TIME TRAVEL: GET CLEAN STATE ─────────────────────
     // Query the state 5 seconds before the poison was inserted
-    const timeTravelRes = await safeQueryStatic(
+    const timeTravelRes = await safeQuery(
       "SELECT content::varchar(200) AS content, cryptographic_hash, trust_level, created_at FROM agent_memory AS OF SYSTEM TIME '-5s' WHERE agent_id = $1 AND memory_type != 'poison_attempt' ORDER BY created_at DESC LIMIT 1",
       [agentId]
     );
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       : createHash("sha256").update("genesis-" + agentId).digest("hex");
 
     // ─── 3. VERIFY HASH CHAIN BEFORE HEALING ─────────────────
-    const chainBeforeRes = await safeQueryStatic(
+    const chainBeforeRes = await safeQuery(
       "SELECT memory_id, memory_type, cryptographic_hash, previous_hash, trust_level FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 5",
       [agentId]
     );
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
     // ─── 4. DELETE POISON + INSERT HEALED MEMORY ─────────────
     // Compute trust BEFORE heal (current state with poison)
-    const trustBeforeHealRes = await safeQueryStatic(
+    const trustBeforeHealRes = await safeQuery(
       "SELECT AVG(trust_level)::float AS avg_trust FROM agent_memory WHERE agent_id = $1",
       [agentId]
     );
@@ -86,25 +86,25 @@ export async function POST(request: Request) {
     const embeddingStr = vecToString(healEmbedding.slice(0, 384));
 
     // Delete the poison
-    await safeQueryStatic(
+    await safeQuery(
       "DELETE FROM agent_memory WHERE memory_id = $1",
       [poisonId]
     );
 
     // Insert healed memory
-    await safeQueryStatic(
+    await safeQuery(
       `INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding, embedding_384, previous_hash, cryptographic_hash, trust_level, source_provenance, importance_score, crdb_region)
-       VALUES ($1, $2, 'healed', $3, NULL::vector, $4::vector, $5, $6, 4, 'system', 1.0, $7)`,
+       VALUES ($1, $2, 'healed', $3, NULL::vector, $4::vector, $5, $6, 2, 'system_healed', 0.8, $7)`,
       [newId, agentId, restoredContent, embeddingStr, restoredHash, newHash, BASTION_REGION]
     );
 
     // ─── 5. VERIFY HASH CHAIN AFTER HEALING ──────────────────
     const [chainAfterRes, trustAfterRes] = await Promise.all([
-      safeQueryStatic(
+      safeQuery(
         "SELECT memory_id, memory_type, cryptographic_hash, previous_hash, trust_level FROM agent_memory WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 5",
         [agentId]
       ),
-      safeQueryStatic(
+      safeQuery(
         "SELECT AVG(trust_level)::float AS avg_trust FROM agent_memory WHERE agent_id = $1",
         [agentId]
       ),

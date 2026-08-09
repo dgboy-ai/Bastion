@@ -83,3 +83,13 @@ lambda/list_*
 
 # Render config — secrets should use sync: false (set in dashboard)
 AGENTS.md
+
+# Internal planning and development documents
+INSIGHTS.md
+introduction.md
+pattern_library.md
+risk.md
+research.md
+for_me.md
+agent_app.py
+broad_area_of_work.md

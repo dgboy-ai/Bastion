@@ -53,48 +53,50 @@ function LoginForm() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0a0508",
-        fontFamily: "'Inter', 'Space Grotesk', system-ui, sans-serif",
+        background: "#f8f9fa",
+        fontFamily: "'Space Grotesk', system-ui, sans-serif",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: 400,
-          padding: 40,
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 16,
-          backdropFilter: "blur(20px)",
+          maxWidth: 420,
+          padding: "48px 44px",
+          background: "#ffffff",
+          border: "3px solid #000000",
+          borderRadius: "16px",
+          boxShadow: "6px 6px 0px #000000",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div
             style={{
-              fontSize: 32,
-              fontWeight: 700,
-              color: "#fff",
+              fontSize: 36,
+              fontWeight: 900,
+              color: "#000",
               marginBottom: 8,
+              fontFamily: "'Space Grotesk', sans-serif",
+              letterSpacing: "-0.02em",
             }}
           >
             Bastion
           </div>
-          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>
+          <div style={{ fontSize: 13, color: "#6b7280", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase" }}>
             Forensic Memory System
           </div>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 20 }}>
             <label
               style={{
                 display: "block",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.6)",
-                marginBottom: 6,
+                fontSize: 11,
+                fontWeight: 900,
+                color: "#374151",
+                marginBottom: 8,
                 textTransform: "uppercase",
-                letterSpacing: "0.05em",
+                letterSpacing: "0.08em",
               }}
             >
               Passphrase
@@ -107,20 +109,25 @@ function LoginForm() {
               autoFocus
               style={{
                 width: "100%",
-                padding: "12px 16px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 8,
-                color: "#fff",
+                padding: "14px 18px",
+                background: "#f9fafb",
+                border: "2.5px solid #000000",
+                borderRadius: "8px",
+                color: "#000",
                 fontSize: 14,
+                fontWeight: 600,
                 outline: "none",
                 boxSizing: "border-box",
+                boxShadow: "2px 2px 0px #000000",
+                fontFamily: "'Space Grotesk', system-ui, sans-serif",
               }}
               onFocus={(e) => {
-                e.target.style.borderColor = "rgba(139, 92, 246, 0.5)";
+                e.target.style.boxShadow = "3px 3px 0px #000000";
+                e.target.style.background = "#fff";
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = "rgba(255,255,255,0.1)";
+                e.target.style.boxShadow = "2px 2px 0px #000000";
+                e.target.style.background = "#f9fafb";
               }}
             />
           </div>
@@ -128,13 +135,14 @@ function LoginForm() {
           {error && (
             <div
               style={{
-                padding: "10px 14px",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
-                borderRadius: 8,
-                color: "#ef4444",
+                padding: "12px 16px",
+                background: "#fef2f2",
+                border: "2px solid #b91c1c",
+                borderRadius: "8px",
+                color: "#b91c1c",
                 fontSize: 13,
-                marginBottom: 16,
+                fontWeight: 800,
+                marginBottom: 20,
               }}
             >
               {error}
@@ -146,15 +154,19 @@ function LoginForm() {
             disabled={loading || !passphrase}
             style={{
               width: "100%",
-              padding: "12px 16px",
-              background: loading ? "rgba(139, 92, 246, 0.5)" : "#8b5cf6",
-              border: "none",
-              borderRadius: 8,
-              color: "#fff",
+              padding: "14px 18px",
+              background: loading ? "#9ca3af" : "#000000",
+              border: "2.5px solid #000000",
+              borderRadius: "8px",
+              color: "#ffffff",
               fontSize: 14,
-              fontWeight: 600,
+              fontWeight: 900,
               cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.2s",
+              boxShadow: "3px 3px 0px #000000",
+              fontFamily: "'Space Grotesk', system-ui, sans-serif",
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
+              transition: "all 0.15s",
             }}
           >
             {loading ? "Authenticating..." : "Enter Dashboard"}
@@ -163,10 +175,13 @@ function LoginForm() {
 
         <div
           style={{
-            marginTop: 24,
+            marginTop: 28,
             textAlign: "center",
-            fontSize: 12,
-            color: "rgba(255,255,255,0.3)",
+            fontSize: 10,
+            color: "#9ca3af",
+            fontWeight: 700,
+            fontFamily: "'JetBrains Mono', monospace",
+            letterSpacing: "0.5px",
           }}
         >
           SHA-256 hash chains · CockroachDB · OWASP ASI06
@@ -186,9 +201,9 @@ export default function LoginPage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: "#0a0508",
-            color: "rgba(255,255,255,0.5)",
-            fontFamily: "'Inter', system-ui, sans-serif",
+            background: "#f8f9fa",
+            color: "#9ca3af",
+            fontFamily: "'Space Grotesk', system-ui, sans-serif",
           }}
         >
           Loading...

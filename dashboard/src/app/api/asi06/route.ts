@@ -45,13 +45,15 @@ export async function GET(request: Request) {
     const totalChecksRes = await safeQuery(
       "SELECT COUNT(*) as count FROM agent_audit"
     );
-    // Count OWASP defended attacks from poison_attempt memories (actual blocked attacks)
-    const blockedRes = await safeQuery(
+    // Count ALL attacks detected: poison_attempt (active) + healed (neutralized)
+    const activeThreatsRes = await safeQuery(
       "SELECT COUNT(*) as count FROM agent_memory WHERE memory_type = 'poison_attempt'"
     );
-    // Count healed memories (attacks that were healed by the system)
-    const healedRes = await safeQuery(
+    const neutralizedRes = await safeQuery(
       "SELECT COUNT(*) as count FROM agent_memory WHERE memory_type = 'healed'"
+    );
+    const securityIncidentsRes = await safeQuery(
+      "SELECT COUNT(*) as count FROM agent_memory WHERE memory_type = 'security_incident'"
     );
     const trustRes = await safeQuery(
       "SELECT AVG(importance_score) as avg_trust FROM agent_memory"
@@ -66,10 +68,11 @@ export async function GET(request: Request) {
     );
 
     const totalChecks = parseInt(String(totalChecksRes.rows[0]?.count || "0"), 10);
-    const blockedCount = parseInt(String(blockedRes.rows[0]?.count || "0"), 10);
-    const healedCount = parseInt(String(healedRes.rows[0]?.count || "0"), 10);
+    const activeThreats = parseInt(String(activeThreatsRes.rows[0]?.count || "0"), 10);
+    const neutralized = parseInt(String(neutralizedRes.rows[0]?.count || "0"), 10);
+    const securityIncidents = parseInt(String(securityIncidentsRes.rows[0]?.count || "0"), 10);
+    const attacksDetected = activeThreats + neutralized + securityIncidents;
     const avgTrust = parseFloat(String(trustRes.rows[0]?.avg_trust || "0.87"));
-    const blockedPct = totalChecks > 0 ? Math.round((blockedCount / totalChecks) * 10000) / 100 : 0;
 
     const recentFindings = recentRes.rows.map((row: Record<string, unknown>) => ({
       detector: String(row.action || "unknown"),
@@ -83,11 +86,11 @@ export async function GET(request: Request) {
     return apiSuccess({
       summary: {
         totalChecks,
-        blockedCount,
-        healedCount,
-        blockedPct,
+        attacksDetected,
+        activeThreats,
+        neutralized,
+        securityIncidents,
         avgTrustScore: Math.round(avgTrust * 100) / 100,
-        poisoningRiskDistribution: { NONE: totalChecks - blockedCount, LOW: 0, MEDIUM: 0, HIGH: blockedCount },
       },
       recentFindings: recentFindings.length > 0 ? recentFindings : [
         { detector: "system", threatType: "ASI06: System Active", severity: "info", detail: "Guard operational — no threats detected", confidence: 1.0, timestamp: new Date().toISOString() },

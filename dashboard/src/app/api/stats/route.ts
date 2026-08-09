@@ -66,6 +66,15 @@ export async function GET(request: Request) {
         SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
       ) dupes
     `);
+
+    // Fetch only the production agents (exclude test/benchmark/dev agents)
+    const agentsRes = await safeQuery(`
+      SELECT agent_id, COUNT(*) as memory_count 
+      FROM agent_memory 
+      WHERE agent_id IN ('mcp-agent', 'bastion-agent', 'groq-db-agent')
+      GROUP BY agent_id 
+      ORDER BY memory_count DESC
+    `);
     // Mask exact duplicate count to avoid revealing data quality patterns
     const rawDuplicates = parseInt(String(anomalyCountRes.rows[0]?.count || "0"), 10);
     const duplicateCount = rawDuplicates === 0 ? 0 : rawDuplicates <= 5 ? "few" : rawDuplicates <= 20 ? "some" : "many";
@@ -116,6 +125,19 @@ export async function GET(request: Request) {
       alerts.push({ type: "size_spike", severity: "info", count: totalMem });
     }
 
+    // Memory type breakdown
+    const typeBreakdownRes = await safeQuery(`
+      SELECT memory_type, COUNT(*) as cnt
+      FROM agent_memory
+      GROUP BY memory_type
+      ORDER BY cnt DESC
+      LIMIT 8
+    `);
+    const memoryTypes = typeBreakdownRes.rows.map((row) => ({
+      type: String(row.memory_type),
+      count: parseInt(String(row.cnt), 10),
+    }));
+
     return apiSuccess({
       alerts,
       memories: parseInt(String(memoryCountRes.rows[0]?.count || "0"), 10),
@@ -143,6 +165,11 @@ export async function GET(request: Request) {
       })),
       mcpTools: 35,
       resources: 4,
+      agents: agentsRes.rows.map((row) => ({
+        agent_id: String(row.agent_id),
+        memory_count: parseInt(String(row.memory_count), 10),
+      })),
+      memoryTypes,
     }, "short");
   } catch (error) {
     console.error("[api/stats] Query failed:", error instanceof Error ? error.message : 'Unknown error');

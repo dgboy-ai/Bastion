@@ -19,9 +19,7 @@ export async function fetchWithTimeout(
   if (typeof window !== "undefined") {
     try {
       const savedConn = sessionStorage.getItem("bastion_db_conn");
-      const url = typeof input === "string" ? input : (input as Request).url || "";
-      const isDemoApi = url.includes("/api/demo/");
-      if (savedConn && !headers.has("x-bastion-conn") && !isDemoApi) {
+      if (savedConn && !headers.has("x-bastion-conn")) {
         headers.set("x-bastion-conn", savedConn);
       }
     } catch {}
