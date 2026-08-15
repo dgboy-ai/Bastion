@@ -95,6 +95,11 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
     error: "FAILED",
   };
 
+  // Mirrors MCP_WRITE_TOOLS in the chat route — writes require human approval (HITL),
+  // reads execute autonomously. Surfacing this keeps the demo honest about the policy.
+  const WRITE_TOOLS = new Set(["memory_store", "memory_correct", "memory_delete", "memory_pin"]);
+  const isWrite = WRITE_TOOLS.has(tool.name);
+
   return (
     <div style={{
       background: C.card,
@@ -119,6 +124,35 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
           }}>
             {tool.name}
           </span>
+          {isWrite ? (
+            <span style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "15px",
+              fontWeight: 700,
+              background: C.red,
+              color: "#fff",
+              border: `2px solid ${C.ink}`,
+              borderRadius: "4px",
+              padding: "2px 8px",
+              boxShadow: C.shadowSm,
+            }}>
+              ✋ HITL · APPROVAL
+            </span>
+          ) : (
+            <span style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "15px",
+              fontWeight: 700,
+              background: "#d1fae5",
+              color: "#065f46",
+              border: `2px solid ${C.green}`,
+              borderRadius: "4px",
+              padding: "2px 8px",
+              boxShadow: C.shadowSm,
+            }}>
+              ↻ AUTONOMOUS READ
+            </span>
+          )}
           <span style={{
             fontFamily: "var(--font-mono)",
             fontSize: "15px",
@@ -155,6 +189,21 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
               boxShadow: C.shadowSm,
             }}>
               ✓ MCP SERVER
+            </span>
+          )}
+          {tool.result?.source === "HITL" && (
+            <span style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "15px",
+              fontWeight: 700,
+              background: C.purple,
+              color: "#fff",
+              border: `2px solid ${C.ink}`,
+              borderRadius: "4px",
+              padding: "2px 8px",
+              boxShadow: C.shadowSm,
+            }}>
+              ✍ DIRECT SQL
             </span>
           )}
         </div>
@@ -695,6 +744,19 @@ function loadChatMessages(): ChatMessage[] {
   return [];
 }
 
+const CHAIN_STORAGE_KEY = "bastion_agent_chain";
+
+function loadChainHashes(): string[] {
+  if (typeof window === "undefined") return ["a1b2c3d4"];
+  try {
+    const raw = window.sessionStorage.getItem(CHAIN_STORAGE_KEY);
+    if (!raw) return ["a1b2c3d4"];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {}
+  return ["a1b2c3d4"];
+}
+
 export default function AgentContent({ initialStats }: { initialStats: { memories: number; auditLogs: number; chainIntact: boolean } }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -714,7 +776,15 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     if (persisted.length > 0) {
       setMessages(persisted);
     }
+    setChainHashes(loadChainHashes());
   }, []);
+
+  // Persist chain hashes across reloads so the sidebar stays in sync
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(CHAIN_STORAGE_KEY, JSON.stringify(chainHashes));
+    } catch {}
+  }, [chainHashes]);
 
   const checkMcp = useCallback(async () => {
     try {
@@ -1037,6 +1107,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     setActiveModel("");
     try {
       window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      window.sessionStorage.removeItem(CHAIN_STORAGE_KEY);
     } catch {
       // best-effort
     }
@@ -1309,6 +1380,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
                   lineHeight: "1.6",
                 }}>
                   I can search, store, and retrieve memories with cryptographic proof.
+                  Reads run autonomously; writes require your approval (human-in-the-loop).
                   Every action is logged, every memory is chained, and the OWASP ASI06 guard screens every write.
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center", marginTop: "8px" }}>

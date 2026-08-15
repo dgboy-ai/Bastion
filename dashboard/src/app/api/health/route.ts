@@ -54,7 +54,16 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[api/health] Query failed:", error instanceof Error ? error.message : 'Unknown error');
-    // Return OK with zeros so login page redirects (dashboard will show empty state)
+    // A user-provided connection that fails should surface the real error to the
+    // Connect Cluster modal, not silently succeed with zeros.
+    if (hasUserConn) {
+      return apiError(
+        error instanceof Error ? `Connection rejected: ${error.message}` : "Connection rejected — check credentials",
+        400,
+        "CONNECTION_FAILED",
+      );
+    }
+    // No user connection: return OK with zeros so login page redirects (dashboard will show empty state)
     return apiSuccess(defaultHealth, "short", { mock: false, db_error: true });
   }
 }

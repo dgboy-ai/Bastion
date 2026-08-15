@@ -7,6 +7,9 @@ type QueryResultRow = Record<string, unknown>;
 
 export type SafeQueryResult = QueryResult<QueryResultRow> & { mock?: boolean };
 
+/** A pg Pool that caches its schema-bootstrap promise so concurrent callers await the same run. */
+type SchemaPool = Pool & { _schemaPromise?: Promise<void> };
+
 const mockResult = (): SafeQueryResult => ({
   rows: [],
   rowCount: 0,
@@ -94,10 +97,12 @@ function splitSqlStatements(sql: string): string[] {
   return statements;
 }
 
-async function ensureSchema(pool: any) {
-  if (pool.schemaEnsured) return;
-  pool.schemaEnsured = true;
-  try {
+async function ensureSchema(pool: SchemaPool) {
+  // Cache the bootstrap promise so concurrent callers await the SAME run
+  // instead of racing migrations with their first query.
+  if (pool._schemaPromise) return pool._schemaPromise;
+  pool._schemaPromise = (async () => {
+    try {
     // 1. Ensure migrations table exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS _schema_migrations (
@@ -174,11 +179,13 @@ async function ensureSchema(pool: any) {
     }
 
     if (appliedCount > 0) {
-      console.log(`[DB Bootstrap] Successfully applied ${appliedCount} schema migration(s).`);
+        console.log(`[DB Bootstrap] Successfully applied ${appliedCount} schema migration(s).`);
+      }
+    } catch (err) {
+      console.error("[DB Bootstrap] Failed to check or apply migrations:", err instanceof Error ? err.message : String(err));
     }
-} catch (err) {
-    console.error("[DB Bootstrap] Failed to check or apply migrations:", err instanceof Error ? err.message : String(err));
-  }
+  })();
+  return pool._schemaPromise;
 }
 
 // Static pool from environment variable — rejects self-signed certs in production
@@ -212,13 +219,13 @@ async function getDynamicConnectionString(): Promise<string | null> {
     const h = await headers();
     const conn = h.get("x-bastion-conn");
     if (!conn) return null;
-    // Validate connection string format
-    if (!conn.startsWith("postgresql://") && !conn.startsWith("cockroachdb://")) {
+    // Validate connection string format (accept postgresql://, postgres://, cockroachdb://)
+    if (!conn.startsWith("postgresql://") && !conn.startsWith("postgres://") && !conn.startsWith("cockroachdb://")) {
       console.warn("[DB] Dynamic connection rejected: invalid protocol");
       return null;
     }
     return conn;
-  } catch (err: unknown) {
+  } catch {
     return null;
   }
 }
@@ -248,7 +255,7 @@ async function getActivePool(): Promise<Pool | null> {
       });
       poolCache.set(dynamicConn, pool);
     }
-    ensureSchema(pool).catch(err => console.error("Dynamic pool schema bootstrap failed:", err));
+    await ensureSchema(pool);
     return pool;
   }
 
@@ -257,7 +264,7 @@ async function getActivePool(): Promise<Pool | null> {
   }
 
   if (staticPool) {
-    ensureSchema(staticPool).catch(err => console.error("Static pool schema bootstrap failed:", err));
+    await ensureSchema(staticPool);
   }
   return staticPool;
 }

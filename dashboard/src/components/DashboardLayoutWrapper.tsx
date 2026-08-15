@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, Suspense, createContext, useContext } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import BackgroundParticles from "@/components/BackgroundParticles";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import { fetchWithTimeout } from "@/lib/fetch";
 import Link from "next/link";
+import Image from "next/image";
 
 export interface ConnectionContextType {
   isMock: boolean;
@@ -26,7 +27,6 @@ export function useConnection() {
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const pathname = usePathname();
 
   const [isMock, setIsMock] = useState(true);
   const [dbName, setDbName] = useState("Simulated Mock");
@@ -41,14 +41,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState("");
 
   // Onboarding tour state
-  const [tourStep, setTourStep] = useState<number | null>(null);
-
-  useEffect(() => {
-    // Check if onboarding tour is requested in URL
-    if (searchParams.get("tour") === "start") {
-      setTourStep(1);
-    }
-  }, [searchParams]);
+  const [tourStep, setTourStep] = useState<number | null>(() =>
+    searchParams.get("tour") === "start" ? 1 : null,
+  );
 
   const checkConnectionStatus = async () => {
     try {
@@ -80,6 +75,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Async data fetching — all setState calls happen after `await` (post-hydration),
+    // so this is not a synchronous setState-in-effect. The rule cannot see through
+    // the async function boundary.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkConnectionStatus();
     
     try {
@@ -106,8 +105,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!dbConnInput.startsWith("postgresql://") && !dbConnInput.startsWith("postgres://")) {
-      setConnError("Invalid protocol. Must begin with postgresql://");
+    if (!dbConnInput.startsWith("postgresql://") && !dbConnInput.startsWith("postgres://") && !dbConnInput.startsWith("cockroachdb://")) {
+      setConnError("Invalid protocol. Must begin with postgresql://, postgres://, or cockroachdb://");
       setTestingConn(false);
       return;
     }
@@ -116,7 +115,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       // Save temporarily so fetchWithTimeout sends x-bastion-conn header
       sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
 
-      const res = await fetchWithTimeout("/api/health");
+      // Fresh clusters need to run all schema migrations on first connect, so
+      // allow extra time for the health check to complete.
+      const res = await fetchWithTimeout("/api/health", { timeout: 90_000 });
       const json = await res.json();
 
       if (res.status === 401 || json.code === "UNAUTHORIZED") {
@@ -377,7 +378,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     padding: "2px", 
                     flexShrink: 0 
                   }}>
-                    <img src="/cockroachdb-icon.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain", filter: isMock ? "grayscale(0.5)" : "none" }} />
+                    <Image src="/cockroachdb-icon.png" alt="" width={20} height={20} style={{ width: "100%", height: "100%", objectFit: "contain", filter: isMock ? "grayscale(0.5)" : "none" }} />
                   </span>
                   {isMock ? "CockroachDB (Demo)" : dbName}
                 </span>

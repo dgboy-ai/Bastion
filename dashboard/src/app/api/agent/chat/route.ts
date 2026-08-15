@@ -8,6 +8,7 @@ import { computeHmacHash } from "@/lib/hash-chain";
 import { embedToVectorString } from "@/lib/embeddings";
 import { callLocalMcpTool } from "@/lib/local-mcp";
 import { randomUUID } from "crypto";
+import { callGroq as groqCall } from "@/lib/groq";
 
 const REGION = process.env.AWS_REGION || "ap-south-1";
 const GEO_PREFIX = REGION.startsWith("ap-") ? "apac" : REGION.startsWith("eu-") ? "eu" : REGION.startsWith("us-") ? "us" : "apac";
@@ -689,7 +690,11 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 
   // Write tools go through the inline path to preserve HITL approval gating.
   if (MCP_WRITE_TOOLS.has(name)) {
-    return executeToolInline(name, args);
+    const r = await executeToolInline(name, args);
+    if (r.result && typeof r.result === "object") {
+      r.result.source = "HITL";
+    }
+    return r;
   }
 
   // Read tools: try the real MCP server over HTTP first.
@@ -831,41 +836,8 @@ async function callBedrock(payload: Record<string, unknown>): Promise<string> {
 }
 
 async function callGroq(system: string, messages: Array<{ role: string; content: string }>): Promise<{ text: string; provider: string; model: string }> {
-  const groqKey = process.env.GROQ_API_KEY;
-  const groqModel = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try {
-    const llmRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${groqKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: groqModel,
-        messages: [
-          { role: "system", content: system },
-          ...messages,
-        ],
-        temperature: 0.3,
-        max_tokens: 4096,
-      }),
-    });
-    if (!llmRes.ok) throw new Error(`Groq API ${llmRes.status}`);
-    const llmData = await llmRes.json();
-    const choice = llmData.choices?.[0];
-    const rawContent = choice?.message?.content || "";
-    const rawReasoning = choice?.message?.reasoning || "";
-    return {
-      text: rawContent.trim() || rawReasoning.trim(),
-      provider: "Groq",
-      model: groqModel,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+  const result = await groqCall(system, messages, { timeoutMs: 15000 });
+  return { text: result.text, provider: "Groq", model: result.model };
 }
 
 async function callLLM(system: string, messages: Array<{ role: string; content: string }>): Promise<{ text: string; provider: string; model: string }> {
@@ -904,7 +876,6 @@ export async function POST(request: Request) {
     }
 
     const steps: AgentStep[] = [];
-    let currentMessage = message;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
     let lastProvider = "";

@@ -1,6 +1,7 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, cosineSimilarity } from "@/lib/embeddings";
+import { callGroq } from "@/lib/groq";
 
 interface MemoryRow {
   memory_id: string;
@@ -188,7 +189,6 @@ export async function POST(request: Request) {
     let llmReasoning: string | null = null;
 
     const groqKey = process.env.GROQ_API_KEY;
-    const groqModel = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 
     if (groqKey) {
       // Use Groq LLM for real reasoning
@@ -202,62 +202,31 @@ export async function POST(request: Request) {
       ].join("\n");
 
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
-        const llmRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${groqKey}`,
-            "Content-Type": "application/json",
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: groqModel,
-            messages: [
-              {
-                role: "system",
-                content: "You are a security analyst AI. Given an incident and memory context, decide the appropriate response. Return JSON with: recommendation (string), confidence (0-1), actionItems (string[3]), reasoning (string). Be concise.",
-              },
-              {
-                role: "user",
-                content: `Analyze this incident and decide:\n\n${contextForLLM}`,
-              },
-            ],
-            temperature: 0.3,
-            max_tokens: 800,
-          }),
-        });
+        const result = await callGroq(
+          "You are a security analyst AI. Given an incident and memory context, decide the appropriate response. Return JSON with: recommendation (string), confidence (0-1), actionItems (string[3]), reasoning (string). Be concise.",
+          [{ role: "user", content: `Analyze this incident and decide:\n\n${contextForLLM}` }],
+          { temperature: 0.3, maxTokens: 800, timeoutMs: 10000 },
+        );
+        const llmContent = result.text;
 
-        clearTimeout(timeout);
-
-        if (llmRes.ok) {
-          const llmData = await llmRes.json();
-          const choice = llmData.choices?.[0];
-          // Reasoning models (GPT-OSS, Qwen) put analysis in 'reasoning' field, final answer in 'content'
-          const rawContent = choice?.message?.content || "";
-          const rawReasoning = choice?.message?.reasoning || "";
-          const llmContent = rawContent.trim() || rawReasoning.trim();
-          // Try to parse JSON from LLM response
-          const jsonMatch = llmContent.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            recommendation = parsed.recommendation || "ANALYZE — LLM provided analysis";
-            decisionConfidence = Math.min(1, Math.max(0, parsed.confidence || 0.8));
-            actionItems = Array.isArray(parsed.actionItems) ? parsed.actionItems.slice(0, 3) : ["Review LLM analysis", "Take recommended action", "Monitor outcomes"];
-            llmReasoning = parsed.reasoning || rawReasoning.slice(0, 500) || rawContent.slice(0, 500);
-          } else {
-            // LLM returned text, not JSON — use it as reasoning
-            recommendation = `LLM ANALYSIS — See reasoning below`;
-            decisionConfidence = 0.85;
-            actionItems = ["Review LLM analysis", "Take recommended action", "Monitor outcomes"];
-            llmReasoning = rawReasoning.slice(0, 500) || rawContent.slice(0, 500);
-          }
+        // Try to parse JSON from LLM response
+        const jsonMatch = llmContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          recommendation = parsed.recommendation || "ANALYZE — LLM provided analysis";
+          decisionConfidence = Math.min(1, Math.max(0, parsed.confidence || 0.8));
+          actionItems = Array.isArray(parsed.actionItems) ? parsed.actionItems.slice(0, 3) : ["Review LLM analysis", "Take recommended action", "Monitor outcomes"];
+          llmReasoning = parsed.reasoning || llmContent.slice(0, 500);
         } else {
-          throw new Error(`Groq API ${llmRes.status}`);
+          // LLM returned text, not JSON — use it as reasoning
+          recommendation = `LLM ANALYSIS — See reasoning below`;
+          decisionConfidence = 0.85;
+          actionItems = ["Review LLM analysis", "Take recommended action", "Monitor outcomes"];
+          llmReasoning = llmContent.slice(0, 500);
         }
       } catch (llmErr) {
         // Fallback to pattern-based logic
-        groqKey && console.warn("[reason] Groq LLM failed, falling back to pattern logic:", llmErr instanceof Error ? llmErr.message : llmErr);
+        if (groqKey) console.warn("[reason] Groq LLM failed, falling back to pattern logic:", llmErr instanceof Error ? llmErr.message : llmErr);
       }
     }
 

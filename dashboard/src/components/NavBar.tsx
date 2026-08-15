@@ -144,6 +144,7 @@ const NavBar = memo(function NavBar() {
               <Link 
                 key={link.href} 
                 href={link.href} 
+                prefetch={true}
                 className={`sidebar-link ${isActive ? "active" : ""}`}
                 style={{
                   display: "flex",
