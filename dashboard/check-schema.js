@@ -3,7 +3,7 @@ const { Client } = require("pg");
 
 async function main() {
   const client = new Client({
-    connectionString: "postgresql://among:CRDB_PASSWORD_REMOVED@bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb",
+    connectionString: "postgresql://user:CRDB_PASSWORD_REMOVED@<cluster>.cockroachlabs.cloud:26257/defaultdb",
     ssl: { rejectUnauthorized: false }
   });
 

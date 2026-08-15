@@ -121,10 +121,14 @@ class ComplianceReporter:
         audit_entries = self.memory.audit(agent_id=agent_id)
 
         if start_date:
-            start_dt = datetime.fromisoformat(start_date)
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=UTC)
             audit_entries = [e for e in audit_entries if e.recorded_at >= start_dt]
         if end_date:
-            end_dt = datetime.fromisoformat(end_date)
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=UTC)
             audit_entries = [e for e in audit_entries if e.recorded_at <= end_dt]
 
         total_operations = len(audit_entries)

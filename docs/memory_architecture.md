@@ -1,491 +1,249 @@
-# Bastion Memory Architecture — Detailed Specification
+# Bastion Memory Architecture
 
-> Complete technical reference for Bastion's memory integrity layer.
+> One store, one hash chain, three memory tiers. Full claim reference — compact.
 
 ---
 
-## 1. Memory Stack Overview
+## 0. The Three Memory Tiers
+
+All memory lives in **one CockroachDB store, on one HMAC-SHA256 chain**, partitioned by lifecycle (`schema/018_native_ttl.sql`):
+
+| Tier | Types | Lifecycle |
+|------|-------|-----------|
+| **Short-term** | `session` (1h), `conversation`/`episodic` (24h), `task` (7d) | Expires via `expires_at` TTL; pruned by `memory_heal` |
+| **Long-term** | `fact`, `semantic`, `procedural`, `preference`, `learned`, `thought_node` | Never (`expires_at = NULL`) |
+| **Forensic** | `agent_audit` ledger + hash-chain metadata | **Never, no TTL** — append-only, tamper-evident |
+
+Shared `agent_id` RLS boundary + same chain → a forensic record proves *what the agent knew at time T*, and a tampered short/long-term row is caught by the same chain walk.
+
+---
+
+## 1. Memory Stack
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Layer 7: Knowledge Graph Layer                            │
-│  • Entity/Relation extraction (spaCy + custom)             │
-│  • Graph queries with time-travel (graph_at_time)          │
-│  • RGA/OR-Set CRDTs for distributed agent coordination     │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Semantic Retrieval Layer                         │
-│  • Multi-signal: Vector + BM25 + Entity + Temporal         │
-│  • Decay-weighted scoring (importance / recency)           │
-│  • Keyword fallback when vector index unavailable          │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 5: Integrity & Forensics                            │
-│  • HMAC-SHA256 Hash Chains (prev_hash linkage)             │
-│  • AS OF SYSTEM TIME time-travel (1s MVCC buffer)          │
-│  • Self-healing (hash verification + reseal)               │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 4: Consistency & Coordination                       │
-│  • SERIALIZABLE Isolation (retry engine + adaptive backoff)│
-│   • Row-Level Security (SET LOCAL app.current_agent_id)    │
-│  • CRDTs: RGA, LWW-Register, OR-Set, OR-Map, PN-Counter   │
-│   • Saga boundaries for multi-step operations              │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 3: Retrieval & Context                              │
-│  • Multi-signal retrieval (vector + BM25 + entity + time)  │
-│  • Context budget packing (pinned → query-relevant → filler)│
-│  • Semantic cache (threshold-based LLM response reuse)     │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 2: Durability & Hygiene                             │
-│  • Row-Level TTL per memory type (1h–never)                │
-│  • Hash-chain verification (memory_heal)                   │
-│  • S3 snapshots + Glacier lifecycle                        │
-│  • Duplicate detection & pruning                           │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 1: Storage (CockroachDB)                            │
-│  • agent_memory table (16 columns, 1024-dim vectors)       │
-│  • C-SPANN HNSW index (cosine distance)                    │
-│  • SHA-256 HMAC hash chains (HMAC-SHA256 + server secret)  │
-│  • agent_audit, agent_relations, agent_entities tables    │
-└─────────────────────────────────────────────────────────────┘
+Layer 7  Knowledge Graph       LLM+regex triples · graph_at_time · CRDT coordination
+Layer 6  Semantic Retrieval    Vector+BM25+Entity+Temporal · decay-weighted · keyword fallback
+Layer 5  Integrity & Forensics HMAC-SHA256 chains · AS OF SYSTEM TIME (1s MVCC buffer) · self-heal
+Layer 4  Consistency           SERIALIZABLE + retry · RLS (SET LOCAL app.current_agent_id) · 5 CRDTs
+Layer 3  Retrieval & Context   Multi-signal fusion · budget packing (pinned→relevant→filler) · semantic cache
+Layer 2  Durability & Hygiene  Row-level TTL (1h–never) · chain verify · S3+Glacier · dedup/prune
+Layer 1  Storage (CRDB)        agent_memory (18 cols, 1024-dim) · C-SPANN · HMAC chain · audit/entities/relations
 ```
 
 ---
 
-## 2. Core Tables Schema
+## 2. Core Tables
 
-### agent_memory
+### agent_memory — base (`schema/002`) + migrations (`007`,`009`,`013`,`016`,`033`)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `memory_id` | `UUID PRIMARY KEY DEFAULT gen_random_uuid()` | |
+| `agent_id` | `STRING NOT NULL` | RLS key |
+| `memory_type` | `STRING NOT NULL` | TTL selector |
+| `content` | `TEXT NOT NULL` | |
+| `embedding` | `VECTOR(1024) NOT NULL` | C-SPANN indexed |
+| `metadata` | `JSONB` | |
+| `previous_hash` / `cryptographic_hash` | `STRING` | HMAC-SHA256 hex |
+| `created_at` / `expires_at` | `TIMESTAMPTZ` | TTL enforcement |
+| `access_count` | `INT` | |
+| `importance_score` (007) · `trust_level` (009) · `source_provenance` (009) · `overwrite_count` (009) | | trust = 0..2 |
+| `crdb_region` (013) | | REGIONAL BY ROW |
+| `is_pinned` · `pin_priority` (016) | | pin 0..2 |
+| `needs_verification` (033) | | CDC flag |
 
 ```sql
-CREATE TABLE agent_memory (
-    memory_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id       VARCHAR(255) NOT NULL,
-    memory_type    VARCHAR(100) NOT NULL,
-    content        TEXT NOT NULL,
-    embedding      VECTOR(1024),                    -- C-SPANN index
-    metadata       JSONB DEFAULT '{}',
-    previous_hash  VARCHAR(64),                    -- HMAC-SHA256 hex
-    cryptographic_hash VARCHAR(64) NOT NULL,       -- HMAC-SHA256 hex
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at     TIMESTAMPTZ,                    -- TTL enforcement
-    access_count   INT DEFAULT 0,
-    importance_score FLOAT DEFAULT 5.0,
-    trust_level    INT DEFAULT 2,                  -- 0=untrusted, 2=trusted
-    source_provenance VARCHAR(50) DEFAULT 'agent_direct',
-    overwrite_count INT DEFAULT 0,
-    is_pinned      BOOL DEFAULT FALSE,
-    pin_priority   INT DEFAULT 0,                  -- 0=normal,1=important,2=CRITICAL
-    needs_verification BOOL DEFAULT FALSE,         -- CDC flag
-    crdb_region    VARCHAR(50)                     -- REGIONAL BY ROW
-);
-
-CREATE INDEX idx_agent_memory_vector 
-  ON agent_memory USING vector (embedding vector_cosine_ops);
-CREATE INDEX idx_agent_memory_agent_type 
-  ON agent_memory (agent_id, memory_type);
+CREATE VECTOR INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory (agent_id, embedding);  -- C-SPANN, v25.2+
 ```
 
-### agent_audit (Append-Only)
+### agent_audit — append-only forensic ledger (`schema/003`)
+`audit_id UUID PK` · `agent_id` · `workflow_id UUID` · `action` · `details JSONB` · `recorded_at`
 
-```sql
-CREATE TABLE agent_audit (
-    audit_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id      VARCHAR(255) NOT NULL,
-    workflow_id   UUID NOT NULL,
-    action        VARCHAR(50) NOT NULL,
-    details       JSONB,
-    recorded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+### agent_entities — KG nodes (`schema/005`)
+`entity_id UUID PK` · `agent_id` · `entity_type` · `name` · `attributes JSONB` · `valid_from/valid_until` · `created_at`
 
-### agent_entities / agent_relations (Knowledge Graph)
-
-```sql
-CREATE TABLE agent_entities (
-    entity_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id      VARCHAR(255) NOT NULL,
-    entity_type   VARCHAR(50) NOT NULL,    -- PERSON, ORG, CONCEPT, etc.
-    name          VARCHAR(255) NOT NULL,
-    canonical_name VARCHAR(255),
-    properties    JSONB DEFAULT '{}',
-    created_at    TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE TABLE agent_relations (
-    relation_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id      VARCHAR(255) NOT NULL,
-    source_entity UUID REFERENCES agent_entities(entity_id),
-    target_entity UUID REFERENCES agent_entities(entity_id),
-    relation_type VARCHAR(50) NOT NULL,     -- "works_at", "knows", "part_of", etc.
-    properties    JSONB DEFAULT '{}',
-    created_at    TIMESTAMPTZ DEFAULT now()
-);
-```
+### agent_relations — KG edges (`schema/006`)
+`relation_id UUID PK` · `source_entity_id → agent_entities` · `target_entity_id → agent_entities` · `relation_type` · `confidence FLOAT` · `valid_from/valid_until` · `source_memory_id → agent_memory`
 
 ---
 
-## 2. Memory Types & TTL
+## 3. Memory Types & TTL
 
-| Type | TTL | Use Case |
-|------|-----|----------|
-| `session` | 1 hour (3600s) | Working memory, ephemeral context |
-| `conversation` / `episodic` | 24 hours (86400s) | Chat history, recent interactions |
-| `task` | 7 days (604800s) | Task state, workflow progress |
-| `fact` / `semantic` / `procedural` / `preference` / `learned` / `system_event` / `security` / `thought_node` / `saga` | **Never** (NULL) | Long-term knowledge, facts, skills, audit records |
+| Type | TTL |
+|------|-----|
+| `session` | 1h (3600s) |
+| `conversation` / `episodic` | 24h (86400s) |
+| `task` | 7d (604800s) |
+| `fact` / `semantic` / `procedural` / `preference` / `learned` / `system_event` / `security` / `thought_node` / `saga` | **Never** (`NULL`) |
 
-> **EU AI Act Mode**: When `compliance_mode="eu_ai_act"`, all TTLs are overridden to minimum **6 months (15,552,000s)** per Article 12.
+> **EU AI Act Mode** (`compliance_mode="eu_ai_act"`): all TTLs overridden to minimum **6 months (15,552,000s)** — Article 12 (`memory.py:394`).
+
+Cleanup: `DELETE FROM agent_memory WHERE agent_id=$1 AND expires_at <= now()` on every `store()` + during `memory_heal`.
 
 ---
 
-## 3. Hash Chain Integrity
-
-### Algorithm: HMAC-SHA256 with Server Secret
-
-```python
-def compute_hash(content: str, metadata: dict, previous_hash: str | None) -> str:
-    meta_str = json.dumps(metadata, sort_keys=True) if metadata else ""
-    payload = content + meta_str + (previous_hash or "")
-    return hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
-```
-
-### Chain Structure
+## 4. Hash Chain Integrity
 
 ```
+hash_n = HMAC-SHA256(server_secret, content_n + json(meta_n) + hash_(n-1))
 Memory 1: hash_1 = HMAC(content_1 + meta_1 + "")
 Memory 2: hash_2 = HMAC(content_2 + meta_2 + hash_1)
-Memory 3: hash_3 = HMAC(content_3 + meta_3 + hash_2)
-...
+Memory 3: hash_3 = HMAC(content_3 + meta_3 + hash_2) ...
 ```
 
-### Verification (Self-Healing)
-
-```python
-def verify_chain(agent_id: str) -> dict:
-    rows = fetch_all_memories(agent_id, order_by="created_at ASC")
-    prev_hash = None
-    breaks = []
-    for row in rows:
-        expected = compute_hash(row.content, row.metadata, prev_hash)
-        if row.cryptographic_hash != expected or row.previous_hash != prev_hash:
-            breaks.append({"memory_id": row.memory_id, "type": "hash_mismatch"})
-        prev_hash = row.cryptographic_hash
-    return {"status": "valid" if not breaks else "broken", "breaks": breaks}
-```
-
-> **Self-Healing**: `memory_heal` runs on-demand → verifies chain → reseals broken hashes → logs to audit.
+Verify = walk rows ASC, recompute each hash, compare `cryptographic_hash` + `previous_hash`; any mismatch = tampered link. **Self-heal**: `memory_heal` verifies chain → creates S3 snapshot → reseals broken hashes → logs to audit.
 
 ---
 
-## 4. Time-Travel (AS OF SYSTEM TIME)
-
-### Query
+## 5. Time-Travel — AS OF SYSTEM TIME
 
 ```sql
 SELECT content, cryptographic_hash, created_at
-FROM agent_memory
-AS OF SYSTEM TIME '2026-07-29 14:30:00+00:00'
-WHERE agent_id = 'soc-analyst'
-ORDER BY created_at DESC;
+FROM agent_memory AS OF SYSTEM TIME '2026-07-29 14:30:00+00:00'
+WHERE agent_id = 'soc-analyst' ORDER BY created_at DESC;
 ```
 
-### Implementation Details
-
-```python
-def get_at_time(self, timestamp: str) -> list[MemoryRecord]:
-    # 1. Parse & validate timestamp (relative or absolute)
-    # 2. Add 1-second buffer for MVCC clock skew
-    # 3. Try: SELECT ... AS OF SYSTEM TIME 'literal_timestamp'
-    # 4. Fallback: WHERE created_at <= timestamp (created_at filter)
-```
-
-> **MVCC Buffer**: CockroachDB commit timestamps can slightly precede application timestamps. A **1-second buffer** prevents "future read" errors.
+`get_at_time(t)` adds a **1-second MVCC buffer** (commit timestamps can lag app timestamps → prevents "future read"), fallback `WHERE created_at <= t`. *"CockroachDB MVCC time-travel restoring the ledger to its last known-good state."*
 
 ---
 
-## 5. Row-Level TTL
-
-### Configuration
-
-```python
-_MEMORY_TTL_SECONDS = {
-    "episodic": 86400,      # 24h
-    "conversation": 86400,  # 24h
-    "session": 3600,        # 1h
-    "task": 604800,         # 7d
-    "fact": None,           # never
-    "semantic": None,
-    "procedural": None,
-    "preference": None,
-    "learned": None,
-    "system_event": None,
-    "security": None,
-    "thought_node": None,
-    "saga": None,
-}
-```
-
-### Automatic Cleanup
-
-```sql
-DELETE FROM agent_memory WHERE agent_id = $1 AND expires_at <= now();
-```
-
-Runs on every `store()` and during `memory_heal`.
-
----
-
-## 5. SERIALIZABLE Isolation & Retry Engine
-
-### Why SERIALIZABLE?
+## 6. SERIALIZABLE Isolation & Retry
 
 > "AI agents plow on with wrong info if data is inconsistent — SERIALIZABLE stops this." — Rob Reid, Cockroach Labs
 
-### Retry Engine
-
-```python
-class SerializationRetryEngine:
-    def __init__(self, max_retries=5, base_delay_ms=50, 
-                 max_delay_ms=5000, jitter_factor=0.3):
-        ...
-    
-    def execute(self, conn, operation, isolation="serializable"):
-        for attempt in range(max_retries):
-            try:
-                conn.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation}")
-                result = operation(conn)
-                conn.commit()
-                return result
-            except SerializationError:
-                conn.rollback()
-                sleep(exponential_backoff(attempt))
-        raise MaxRetriesExceeded()
-```
-
-### Why Not REPEATABLE READ?
-
-| Isolation | Phantom Reads | Hash Chain Fork Risk |
-|-----------|---------------|---------------------|
-| REPEATABLE READ | Possible | High (concurrent appends) |
-| SERIALIZABLE | Impossible | None |
+Every write runs `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE` under a retry engine (5 retries, 50ms→5s exponential + jitter, rollback + backoff on `40001`). Why not REPEATABLE READ: phantom reads possible → hash-chain fork risk; SERIALIZABLE → no phantoms, no forks.
 
 ---
 
-## 6. Row-Level Security (RLS)
-
-### Policy
+## 7. Row-Level Security (RLS)
 
 ```sql
 CREATE POLICY agent_isolation ON agent_memory
   USING (agent_id = current_setting('app.current_agent_id'));
+-- per-transaction: SET LOCAL app.current_agent_id = 'soc-analyst'
 ```
 
-### Per-Transaction Context
-
-```python
-def _set_rls_context(self, conn):
-    with conn.cursor() as cur:
-        cur.execute("SET LOCAL app.current_agent_id = %s", (self.agent_id,))
-```
-
-> **Auto-refresh**: After every `COMMIT`, `SET LOCAL` is lost. Bastion re-applies in `_refresh_rls_context()` called after every commit.
+`SET LOCAL` dies after `COMMIT` → Bastion re-applies via `_refresh_rls_context()` after every commit.
 
 ---
 
-## 6. Vector Search (C-SPANN)
-
-### Index
-
-```sql
-CREATE INDEX idx_agent_memory_vector 
-  ON agent_memory USING vector (embedding vector_cosine_ops);
-```
-
-### Hybrid Search (Single Query)
+## 8. Vector Search (C-SPANN) + Decay
 
 ```sql
 SELECT memory_id, content, importance_score,
        (1.0 - (embedding <=> $1::vector)) * importance_score /
        (1.0 + decay_rate * EXTRACT(EPOCH FROM (now() - created_at)) / 3600) AS decay_score
-FROM agent_memory
-WHERE agent_id = $agent
-  AND memory_type = $type
+FROM agent_memory WHERE agent_id=$agent
   AND (expires_at IS NULL OR expires_at > now())
-ORDER BY decay_score DESC
-LIMIT $k;
+ORDER BY decay_score DESC LIMIT $k;
 ```
 
-### Decay Formula
-
 ```
-score = cosine_similarity * importance_score / (1 + decay_rate * hours_since_creation)
+score = cosine_similarity × importance / (1 + decay_rate × hours_since_creation)
 ```
-
-> Recency + importance = better ranking than pure cosine similarity.
-
-### Fallback
-
-If vector index unavailable → **BM25 keyword search** → ILIKE fallback.
+Fallback: vector index unavailable → BM25 → ILIKE.
 
 ---
 
-## 7. Multi-Signal Retrieval
+## 9. Multi-Signal Retrieval
 
-```python
-def search(query, k=10, threshold=0.8, memory_type=None):
-    # 1. Vector search (cosine + decay)
-    vector_results = vector_search(query, k*3, threshold)
-    
-    # 2. BM25 keyword scoring
-    keyword_scores = bm25_score(query_terms, doc_terms)
-    
-    # 3. Entity overlap
-    entity_scores = entity_overlap(query_entities, doc_entities)
-    
-    # 4. Temporal recency
-    temporal_score = exp(-days_old / 30)
-    
-    # 5. Weighted fusion
-    final = 0.4*vector + 0.3*keyword + 0.15*entity + 0.15*temporal
-    return top_k(filter(threshold), k)
-```
+Fused score = **0.4×vector + 0.3×keyword(BM25) + 0.15×entity-overlap + 0.15×temporal**(`exp(-days/30)`), threshold-filtered. Weights = `retrieval.py:52`.
 
 ---
 
-## 7. Knowledge Graph Layer
+## 10. Knowledge Graph + CRDTs
 
-### Extraction
+- **Extraction**: LLM (Groq) triples → regex fallback (`knowledge_graph.py:146`) — no spaCy. `"Alice works at Google" → (Alice, works_at, Google)`.
+- **Time-travel graph**: `graph_at_time(t, entity)` → memory snapshot → reconstruct entity/relation state at that moment.
+- **CRDTs** (`crdt_memory.py`, for distributed agent coordination):
 
-```python
-def _extract_triples(self, content: str) -> list[Triple]:
-    # spaCy NER + dependency parsing → (subject, predicate, object)
-    # Example: "Alice works at Google" → (Alice, works_at, Google)
-```
-
-### Time-Travel Graph Queries
-
-```python
-def graph_at_time(self, timestamp: str, entity: str = None) -> dict:
-    # 1. Get memory snapshot at timestamp
-    # 2. Reconstruct entity/relation state at that moment
-    # 3. Return subgraph
-```
-
-### CRDTs for Distributed Agents
-
-| CRDT | Use Case |
-|------|----------|
-| RGA | Ordered conversation logs |
-| LWW-Register | Last-writer-wins preferences |
-| OR-Set | Tags, entity sets |
-| OR-Map | Agent state maps |
-| PN-Counter | Access counts, usage stats |
+| CRDT | Use | | CRDT | Use |
+|------|-----|-|------|-----|
+| RGA | ordered conversation logs | | OR-Map | agent state maps |
+| LWW-Register | last-writer-wins prefs | | PN-Counter | access counts |
+| OR-Set | tags / entity sets | | | |
 
 ---
 
-## 8. S3 Snapshots + Self-Healing
-
-### Self-Healing Flow
+## 11. Self-Healing + S3 Archive
 
 ```
-Memory write → hash chain sealed → memory_heal on demand → 
-  1. Verify hash chain per agent
-  2. If broken → create S3 snapshot → reseal chain → log to audit
-  3. Detect anomalies (duplicates, rapid writes, size spikes)
-  4. Archive to S3 → Glacier after 90 days
+write → chain sealed → memory_heal: 1) verify chain  2) broken? S3 snapshot → reseal → audit
+                                     3) anomalies (dups, rapid writes, size spikes)  4) archive → Glacier @90d
 ```
-
-### S3 Structure
 
 ```
 s3://bastion-artifacts-<env>-<suffix>/
-  snapshots/
-    agent_id/
-      2026-07-29T14:30:00Z.json  (full memory snapshot)
-  archives/
-    agent_id/
-      2026-06-01/... (Glacier)
+  snapshots/{agent_id}/2026-07-29T14:30:00Z.json
+  archives/{agent_id}/2026-06-01/...            (Glacier)
 ```
 
 ---
 
-## 9. EU AI Act Compliance (Article 12)
+## 12. EU AI Act (Article 12)
 
 | Requirement | Implementation |
 |-------------|----------------|
-| Automatic event recording | `agent_audit` table + `store_audit()` on every op |
-| Tamper-evident logs | HMAC hash chain — forgery requires server secret |
+| Automatic event recording | `agent_audit` + `store_audit()` every op |
+| Tamper-evident logs | HMAC chain — forgery needs server secret |
 | Traceability | `compliance_report()` + `forensic_report()` MCP tools |
-| 6-month retention | `compliance_mode="eu_ai_act"` → minimum 180-day TTL |
-| Time-travel reconstruction | `AS OF SYSTEM TIME` + `diff(t1, t2)` |
-
-```python
-# Generate regulator-ready report
-compliance_report(start_date="2026-07-01T00:00:00Z")
-```
+| 6-month retention | `compliance_mode="eu_ai_act"` → 180-day minimum TTL |
+| Time-travel reconstruction | `AS OF SYSTEM TIME` + `diff(t1,t2)` |
 
 ---
 
-## 10. Performance (Live AWS ap-south-1)
+## 13. Performance — Live Cluster
 
-| Operation | p50 | p99 |
+Real MiniLM embeddings, **no mocks** ([`benchmark_results.json`](../benchmark_results.json)):
+
+| Operation | p50 | p90 |
 |-----------|-----|-----|
-| `memory_store` (with hash chain) | ~45ms | ~120ms |
-| `memory_search` (C-SPANN vector) | ~38ms | ~95ms |
-| OWASP ASI06 guard scan | ~10ms | ~30ms |
-| `AS OF SYSTEM TIME` read | ~25ms | ~60ms |
+| `memory_store` (hash chain + guard) | 909ms | 1021ms |
+| `memory_search` (C-SPANN) | 307ms | 409ms |
+| `memory_timetravel` (AS OF SYSTEM TIME) | 310ms | 512ms |
+| `memory_audit` (chain integrity) | 305ms | 411ms |
+| OWASP ASI06 guard scan | 6.7ms | 19.9ms |
+| Hash-chain verify (1000-link) | 0.03ms | 0.05ms |
 
-> Cluster: **CockroachDB Cloud BASIC**, AWS ap-south-1, v26.2.1  
-> Memories stored: **1,430+** in production cluster
+**Accuracy**: Recall@1 **65%** · Recall@5 **70%** · Recall@10 **75%** · OWASP TPR **88.2%** (426/483, 9 obfuscation families) · FPR **0%** (0/25).
+
+> Cluster: **CockroachDB Cloud Serverless**, AWS ap-south-1, v26.2.5 · ~3,800+ memories live.
 
 ---
 
-## 11. Key Files Reference
+## 14. Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/bastion/memory.py` | Core `BastionMemory` class (2152 lines) |
-| `src/bastion/crypto.py` | HMAC-SHA256 hash chain, DPAPI secret protection |
-| `src/bastion/guard.py` | OWASP ASI06 MemoryGuard (40+ detectors) |
-| `src/bastion/retrieval.py` | MultiSignalRetriever (vector+BM25+entity+temporal) |
-| `src/bastion/observations.py` | ObservationDetector (meta-patterns) |
-| `src/bastion/context_budget.py` | ContextBudgetManager (pack for LLM) |
-| `src/bastion/dreaming.py` | MemoryDreamer (background consolidation) |
-| `src/bastion/archive.py` | S3 snapshot + Glacier archive writer |
-| `terraform/main.tf` | AWS IaC (CRDB, KMS, S3) |
-| `schema/` | CockroachDB DDL migrations (001–033) |
+| `src/bastion/memory.py` | Core `BastionMemory` (~2400 lines) |
+| `src/bastion/crypto.py` | HMAC-SHA256 chain · KMS signing · DPAPI secret |
+| `src/bastion/guard.py` | OWASP ASI06 MemoryGuard (multi-detector) |
+| `src/bastion/retrieval.py` | MultiSignalRetriever (4-signal fusion) |
+| `src/bastion/knowledge_graph.py` | LLM+regex triples · `graph_at_time` |
+| `src/bastion/crdt_memory.py` | RGA · LWW-Register · OR-Set · OR-Map · PN-Counter |
+| `src/bastion/context_budget.py` · `dreaming.py` · `observations.py` · `archive.py` | context packing · consolidation · patterns · S3/Glacier |
+| `schema/` | DDL migrations 001-036 |
 
 ---
 
-## 12. Quick API Reference
+## 15. Quick API
 
 ```python
-from bastion import BastionMemory
-
+from bastion.memory import BastionMemory
 mem = BastionMemory(agent_id="soc-analyst")
 
-# Store (with guard, hash chain, TTL)
-record = mem.store("fact", "User prefers Python", importance=8.0)
-
-# Search (hybrid vector + keyword + entity + temporal)
+record = mem.store("fact", "User prefers Python", metadata={"importance_score": 8.0})
 results = mem.search("Python preferences", k=5, threshold=0.8)
-
-# Time-travel
 past = mem.get_at_time("2026-07-28T10:00:00Z")
-
-# Hash chain verification
-report = mem.forensic_report()
-
-# Self-heal
-result = mem.heal()
-
-# Compliance
-report = mem.compliance_report(start_date="2026-07-01")
+report = mem.chain_verify()          # hash-chain walk
+forensic = mem.forensic_report()     # live integrity report
+result = mem.heal()                  # verify → snapshot → reseal
+from bastion.compliance import ComplianceReporter
+report = ComplianceReporter(mem).generate_report(agent_id="soc-analyst", start_date="2026-07-01")
 ```
 
 ---
 
-## Related Documentation
+## Related Docs
 
-- [MCP Server (35 tools)](MCP_SERVER.md)
-- [A2A Server (25 skills)](A2A_SERVER.md)
-- [AWS Services](AWS_SERVICES.md)
-- [EU AI Act Compliance](EU_AI_ACT.md)
-- [Architecture Decisions](adr/)
+[MCP Server (35 tools)](MCP_SERVER.md) · [A2A Server (25 skills)](A2A_SERVER.md) · [AWS Services](AWS_SERVICES.md) · [EU AI Act](EU_AI_ACT.md) · [System & DB Architecture](ARCHITECTURE.md)

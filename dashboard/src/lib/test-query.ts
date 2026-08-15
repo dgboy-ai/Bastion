@@ -1,7 +1,7 @@
 import { Client } from "pg";
 
 async function main() {
-  const connectionString = "postgresql://among:CRDB_PASSWORD_REMOVED@bastion-memory-29951.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=require";
+  const connectionString = "postgresql://user:CRDB_PASSWORD_REMOVED@<cluster>.cockroachlabs.cloud:26257/defaultdb?sslmode=require";
   const client = new Client({
     connectionString,
     ssl: { rejectUnauthorized: false }
