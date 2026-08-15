@@ -7,5 +7,8 @@
                 "agent-host-copilotcli:auto"
             ]
         }
+    },
+    "files.exclude": {
+        "**/*.log": true
     }
 }

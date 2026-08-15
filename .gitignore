@@ -54,12 +54,9 @@ win.md
 msme_ideas*.md
 docs/archive/*.md
 # Dev logs and temporary files
-dev_err.log
-dev_out.log
-dev_stdout.log
-dev_stderr.log
-mcp_stderr.log
-mcp_stdout.log
+*.log
+response.json
+benchmark*.json
 verify_features.py
 run_remaining_migrations.py
 count_tools.py
