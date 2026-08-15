@@ -2253,7 +2253,7 @@ export default function Page() {
     fetch("/api/stats").then(r=>r.json()).then(d=>{
       if (d?.success && d?.data) {
         const s = d.data;
-        setLiveStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0, mcpTools: s.mcpTools ?? 35, resources: s.resources ?? 4 });
+        setLiveStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0, mcpTools: s.mcpTools ?? 35, resources: s.resources ?? 3 });
         setStatsOk(true);
       } else {
         setStatsOk(false);
@@ -2432,7 +2432,7 @@ export default function Page() {
               {[
                 (()=>{ const offline = statsOk === false; const val = liveStats !== null ? liveStats.memories : (offline ? null : undefined); return { e: val, s: "", l: offline ? "Cluster Offline" : "Memories Stored", c: "#00ff66" }; })(),
                 {e:liveStats?.mcpTools ?? 35,s:"",l:"MCP Tools",c:P.gold},
-                {e:liveStats?.resources ?? 4,s:"",l:"Resources",c:P.cyan},
+                {e:liveStats?.resources ?? 3,s:"",l:"Resources",c:P.cyan},
               ].map(({e,s="",l,c})=>(
                 <div key={l} style={{textAlign:"center",minWidth:"120px"}}>
                   <div style={{fontSize:"clamp(36px,4.5vw,52px)",fontWeight:900,color:c,fontFamily:"var(--font-sg)",lineHeight:1,letterSpacing:"-1.5px",textShadow:`0 0 35px ${c}45`}}>

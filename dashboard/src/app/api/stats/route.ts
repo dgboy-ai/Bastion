@@ -174,7 +174,7 @@ export async function GET(request: Request) {
         details: row.details,
       })),
       mcpTools: 35,
-      resources: 4,
+      resources: 3,
       agents: agentsRes.rows.map((row) => ({
         agent_id: String(row.agent_id),
         memory_count: parseInt(String(row.memory_count), 10),
