@@ -203,19 +203,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     window.location.reload();
   };
 
-  const handleNextTourStep = () => {
+const handleNextTourStep = () => {
     if (tourStep === 1) {
-      router.push("/graph");
+      router.push("/logs");
       setTourStep(2);
     } else if (tourStep === 2) {
-      router.push("/logs");
-      setTourStep(3);
-    } else if (tourStep === 3) {
       router.push("/dashboard");
-      setTourStep(4);
+      setTourStep(3);
     } else {
       setTourStep(null);
-      router.push("/dashboard");
     }
   };
 
@@ -423,7 +419,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                   <span style={{ color: "#ff9100", fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
-                    GUIDED TOUR — STEP {tourStep} OF 4
+                    GUIDED TOUR — STEP {tourStep} OF 3
                   </span>
                   <button 
                     onClick={() => setTourStep(null)} 
@@ -434,17 +430,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 </div>
 
                 <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", margin: "0 0 8px 0" }}>
-                  {tourStep === 1 && "Telemetry command center"}
-                  {tourStep === 2 && "Temporal Graph Explorer"}
-                  {tourStep === 3 && "Cryptographic logs registry"}
-                  {tourStep === 4 && "MemoryGuard OWASP Guard"}
+                  {tourStep === 1 && "Audit Trail"}
+                  {tourStep === 2 && "Command Center"}
+                  {tourStep === 3 && "MemoryGuard OWASP Guard"}
                 </h3>
 
                 <p style={{ fontSize: "13px", color: "#b0a899", lineHeight: "1.6", margin: "0 0 20px 0" }}>
-                  {tourStep === 1 && "This dashboard shows live telemetry including active memories, entity relations, cognitive decay curves, global sync times, and cache hit ratios."}
-                  {tourStep === 2 && "Here you can explore the relationships between memory nodes in D3. Click on a node to view its cryptographic history chain."}
-                  {tourStep === 3 && "View the ledger of raw memories recorded on CockroachDB. Search and inspect the access count, importance weights, and signature hashes."}
-                  {tourStep === 4 && "Try typing input in the Test Guard panel at the bottom to check how Bastion sanitizes injection prompts, redacts PII, and seals the memory block."}
+                  {tourStep === 1 && "View the ledger of raw memories recorded on CockroachDB. Search and inspect the access count, importance weights, and signature hashes."}
+                  {tourStep === 2 && "This dashboard shows live telemetry including active memories, entity relations, cognitive decay curves, global sync times, and cache hit ratios."}
+                  {tourStep === 3 && "Try typing input in the Test Guard panel at the bottom to check how Bastion sanitizes injection prompts, redacts PII, and seals the memory block."}
                 </p>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -468,7 +462,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                       boxShadow: "1px 1px 0px 0px #000000"
                     }}
                   >
-                    {tourStep === 4 ? "Complete Tour" : "Next View →"}
+                    {tourStep === 3 ? "Complete Tour" : "Next View →"}
                   </button>
                 </div>
               </div>
