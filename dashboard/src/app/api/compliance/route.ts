@@ -55,6 +55,10 @@ export async function GET(request: Request) {
 
     auditSql += ` ORDER BY a.recorded_at DESC LIMIT 1000`;
 
+    const countSql = auditSql.replace("SELECT a.action, a.recorded_at, a.details, a.agent_id", "SELECT COUNT(*) as total").replace("ORDER BY a.recorded_at DESC LIMIT 1000", "");
+    const countResult = await safeQuery(countSql, params);
+    const totalOperations = parseInt(String(countResult.rows?.[0]?.total ?? "0"));
+
     const auditResult = await safeQuery(auditSql, params);
 
     const operationsByType: Record<string, number> = {};
@@ -98,7 +102,7 @@ export async function GET(request: Request) {
         end: endDate || "now",
       },
       summary: {
-        total_operations: auditResult.rowCount ?? 0,
+        total_operations: totalOperations,
         operations_by_type: operationsByType,
         total_memories: parseInt(String(memStats.total ?? "0")),
         memory_types: parseInt(String(memStats.memory_types ?? "0")),
