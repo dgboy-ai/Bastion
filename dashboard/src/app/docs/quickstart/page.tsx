@@ -21,7 +21,7 @@ export default function QuickStartPage() {
 
         <h2 style={{ fontSize: "22px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "36px 0 12px" }}>1. Install</h2>
         <p style={{ marginBottom: "12px" }}>Install the Bastion memory library:</p>
-        <CodeBlock code="pip install bastion-memory" lang="bash" />
+        <CodeBlock code="pip install git+https://github.com/dgboy-ai/Bastion.git" lang="bash" />
 
         <h2 style={{ fontSize: "22px", fontWeight: 800, color: "#fff", fontFamily: "var(--font-sg)", margin: "36px 0 12px" }}>2. Mock Mode (No Database)</h2>
         <p style={{ marginBottom: "12px" }}>Test immediately with in-memory storage:</p>

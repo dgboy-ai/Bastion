@@ -1453,7 +1453,7 @@ function TypingBlock({ code, file, accent }: { code:string; file?:string; accent
 function ConnectSection() {
   const [active, setActive] = useState(0);
   const client = CLIENTS[active];
-  const cmd = `pip install bastion-memory`;
+  const cmd = `pip install git+https://github.com/dgboy-ai/Bastion.git`;
   const [copied, setCopied] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(client.cfg); setCopied(true); setTimeout(()=>setCopied(false),1500); } catch {} };
   return (
