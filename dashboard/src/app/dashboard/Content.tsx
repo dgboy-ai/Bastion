@@ -159,6 +159,19 @@ function SqlProofModal({ query, onClose }: { query: string; onClose: () => void 
         >
           {copied ? "Copied ✓" : "Copy Query"}
         </button>
+        <button
+          onClick={() => window.open(`https://cockroachlabs.cloud/sql?query=${encodeURIComponent(query)}`, "_blank")}
+          style={{
+            marginTop: "8px", width: "100%", padding: "10px",
+            background: "#047857",
+            border: "2px solid #000", borderRadius: "8px",
+            color: "#fff", fontSize: "13px", fontWeight: 900,
+            cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif",
+            boxShadow: "2px 2px 0px #000",
+          }}
+        >
+          ▶ Run This Query in Console
+        </button>
       </div>
     </div>,
     document.body
@@ -2401,59 +2414,51 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* CENTER: Multi-Agent (left) + S3 Export (right) */}
-          {/* CENTER: Multi-Agent Architecture + System Vitals */}
+          {/* CENTER: Memory Layer Architecture */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* Multi-Agent Architecture Card */}
+            {/* Memory Layer Architecture Card */}
             <div className="bento-panel" style={{ display: "flex", flexDirection: "column", padding: "24px" }}>
-              {/* header */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: "10px",
-                paddingBottom: "14px"
-              }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "14px" }}>
                 <Dot color={C.green} pulse />
                 <span style={{
                   fontSize: "16px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif",
                   letterSpacing: "2px", color: "#000000", textTransform: "uppercase"
                 }}>
-                  Multi-Agent Architecture
+                  Memory Layer Architecture
                 </span>
                 <span style={{
                   marginLeft: "auto", fontSize: "11px", background: C.green,
                   color: "#ffffff", border: "2px solid #000000", padding: "4px 12px",
                   borderRadius: "2px", fontWeight: 900, fontFamily: "'JetBrains Mono', monospace",
                   boxShadow: "1px 1px 0px #000000"
-                }}>{stats?.agents?.length || 0} AGENTS ACTIVE</span>
+                }}>BASTION IS THE MEMORY LAYER</span>
               </div>
               <div style={{ height: "3px", background: "#000000", marginBottom: "20px" }} />
 
-              {/* Agent cards */}
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(stats?.agents?.length || 1, 3)}, 1fr)`, gap: "14px", marginBottom: "20px" }}>
-                {(stats?.agents || []).map((a, i) => {
-                  const agentMeta: Record<string, { type: string; desc: string; icon: string; color: string }> = {
-                    "mcp-agent": { type: "MCP Server", desc: "35 tools · Groq LLM · CockroachDB", icon: "🔧", color: "#047857" },
-                    "bastion-agent": { type: "Core Agent", desc: "Forensic memory · Hash chains", icon: "🛡️", color: "#b45309" },
-                  };
-                  const meta = agentMeta[a.agent_id] || { type: "Agent", desc: "", icon: "🤖", color: "#374151" };
-                  return (
-                    <div key={i} style={{
-                      padding: "20px", background: "#ffffff", border: "3px solid #000000",
-                      borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000"
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                        <span style={{ fontSize: "20px" }}>{meta.icon}</span>
-                        <Dot color={meta.color} />
-                        <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{a.agent_id}</span>
-                      </div>
-                      <div style={{ fontSize: "13px", color: "#374151", fontWeight: 700, fontFamily: "var(--font-sans)", marginBottom: "6px" }}>{meta.type}</div>
-                      <div style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600, fontFamily: "var(--font-sans)", marginBottom: "12px" }}>{meta.desc}</div>
-                      <div style={{
-                        fontSize: "28px", fontWeight: 950, color: "#000000",
-                        fontFamily: "var(--font-sans)", lineHeight: 1
-                      }}>{a.memory_count} <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>memories</span></div>
+              {/* 3-tier memory architecture */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", marginBottom: "20px" }}>
+                {[
+                  { tier: "Short-Term", desc: "Session buffer · 200-entry window · TTL 1h", count: "—", icon: "⚡", color: "#0369a1", detail: "Sliding window for active conversations" },
+                  { tier: "Long-Term", desc: "C-SPANN vectors · 30+ memory types · embeddings", count: (stats?.memories ?? 0).toLocaleString(), icon: "🧠", color: "#047857", detail: "Semantic search across all agent knowledge" },
+                  { tier: "Forensic Trail", desc: "Append-only · SHA-256 chained · no UPDATE/DELETE", count: (stats?.auditLogs ?? 0).toLocaleString(), icon: "🔍", color: "#b45309", detail: "Tamper-evident audit log for EU AI Act" },
+                ].map((t, i) => (
+                  <div key={i} style={{
+                    padding: "20px", background: "#ffffff", border: "3px solid #000000",
+                    borderRadius: "var(--radius-sm)", boxShadow: "2px 2px 0px #000000"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                      <span style={{ fontSize: "20px" }}>{t.icon}</span>
+                      <Dot color={t.color} />
+                      <span style={{ fontSize: "15px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{t.tier}</span>
                     </div>
-                  );
-                })}
+                    <div style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600, fontFamily: "var(--font-sans)", marginBottom: "12px" }}>{t.desc}</div>
+                    <div style={{
+                      fontSize: "28px", fontWeight: 950, color: "#000000",
+                      fontFamily: "var(--font-sans)", lineHeight: 1
+                    }}>{t.count} <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>{i === 0 ? "" : "memories"}</span></div>
+                    <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "8px", fontWeight: 600 }}>{t.detail}</div>
+                  </div>
+                ))}
               </div>
 
               {/* Protocol badges */}
@@ -2652,11 +2657,10 @@ export default function DashboardPage() {
               </div>
 
               <div style={{ height: "3px", background: "#000000", margin: "10px 0" }} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginTop: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "4px" }}>
                 {[
                   { label: "Ingested (24h)", value: hourlyData.reduce((a: number, b: number) => a + b, 0).toLocaleString(), bg: "#f0fdf4", color: "#047857" },
                   { label: "Avg Importance (/10)", value: parseFloat(stats?.avgImportance ?? "0").toFixed(2), bg: "#fffbeb", color: "#b45309" },
-                  { label: "Drift Index", value: driftScore.toFixed(3), bg: driftScore > 0.3 ? "#fef2f2" : "#f0fdf4", color: driftScore > 0.3 ? "#b91c1c" : "#047857" },
                 ].map((m, i) => (
                   <div key={i} style={{
                     textAlign: "center", padding: "12px 8px",
@@ -2692,66 +2696,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── ROW 4: CRDB TOOLS + AWS SERVICES (FULL WIDTH) ── */}
-        <div style={{ width: "100%" }}>
-          <div className="bento-panel" style={{ width: "100%" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "10px" }}>
-              <Dot color={C.green} />
-              <span style={{ fontSize: "14px", fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "2px", color: "#000000" }}>
-                COCKROACHDB TOOLS & AWS SERVICES
-              </span>
-            </div>
-            <div style={{ height: "3px", background: "#000000", marginBottom: "16px" }} />
-
-            {/* Tools Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "20px" }}>
-              {[
-                { name: "Managed MCP Server", desc: "35 tools · Claude/Cursor/VS Code native", badge: "MCP", badgeColor: "#047857", key: "mcp" },
-                { name: "Distributed Vector Indexing", desc: "C-SPANN · 1024-dim embeddings · cosine search", badge: "Vector", badgeColor: "#000000", key: "vector" },
-                { name: "ccloud CLI", desc: "Cluster management · audit logs · backups", badge: "CLI", badgeColor: "#b45309", key: "ccloud" },
-                { name: "Agent Skills Repo", desc: "35+ skills · onboarding/security/performance", badge: "Skills", badgeColor: "#047857", key: "skills" },
-                { name: "AWS KMS", desc: "AES-256-GCM envelope encryption for memories", badge: "KMS", badgeColor: "#b45309", key: "kms" },
-                { name: "AWS ap-south-1", desc: "CockroachDB cluster deployed in Mumbai region", badge: "Region", badgeColor: "#b91c1c", key: "region" },
-              ].map((t, i) => (
-                <div key={i} onClick={() => setSelectedTech(t)} style={{
-                  padding: "14px 16px", background: "#ffffff", border: "2px solid #000000",
-                  borderRadius: "var(--radius-sm)", boxShadow: "1.5px 1.5px 0px #000000",
-                  transition: "all 0.15s ease", cursor: "pointer",
-                }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translate(-2px, -2px)";
-                    e.currentTarget.style.boxShadow = "4px 4px 0px 0px #000000";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translate(0, 0)";
-                    e.currentTarget.style.boxShadow = "1.5px 1.5px 0px #000000";
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 900, color: "#000000", fontFamily: "var(--font-sans)" }}>{t.name}</span>
-                    <span style={{
-                      fontSize: "10px", fontWeight: 900, fontFamily: "var(--font-sans)",
-                      background: t.badgeColor, color: "#ffffff",
-                      border: "1.5px solid #000000", padding: "2px 8px",
-                      borderRadius: "2px", whiteSpace: "nowrap",
-                      boxShadow: "1px 1px 0px #000000"
-                    }}>{t.badge}</span>
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#374151", fontWeight: 700, lineHeight: 1.4 }}>{t.desc}</div>
-                  <div style={{
-                    marginTop: "8px", fontSize: "10px", fontWeight: 900,
-                    fontFamily: "var(--font-mono)", color: "#047857",
-                    textDecoration: "underline", letterSpacing: "1px",
-                  }}>
-                    CLICK TO VIEW DETAILS →
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── ROW 5: TOOL ACTIVITY (interactive cards) + CRDB + AUDIT TRAIL ── */}
+        {/* ── ROW 4: TOOL ACTIVITY (interactive cards) + CRDB + AUDIT TRAIL ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 1.2fr", gap: "20px", alignItems: "stretch" }}>
           {/* Tool Activity Feed — bigger cards, click to expand */}
           <div className="bento-panel" style={{ display: "flex", flexDirection: "column", height: "580px" }}>

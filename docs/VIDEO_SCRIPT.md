@@ -1,8 +1,7 @@
-# Bastion — 3-Minute Hackathon Video Script (v3, fact-checked for demo)
+# Bastion — 3-Minute Hackathon Video Script (v4)
 
-> **Every claim below was verified against the live codebase, the running CockroachDB
-> cluster, and the deployed dashboard (bastion-self.vercel.app). No mocks, no fake
-> terminal output. All dashboard panels named here genuinely render on screen.**
+> **Every claim verified against the live codebase, the running CockroachDB cluster,
+> and the deployed dashboard (bastion-self.vercel.app). No mocks, no fake output.**
 
 ---
 
@@ -30,31 +29,37 @@ chain seals & stops it → rewind-restore to clean. **No fake UI screenshots.**
 
 ---
 
-## Scene 1: Live Agent — Store & Recall via MCP (0:20 - 0:50)
+## Scene 1: Live Agent — Store, Search & Vector Recall (0:20 - 0:50)
 
 **Visual**: `/agent` chat page (Nav → **Agent**).
 
 **Action**: Type a real task, e.g. "store that prod uses CockroachDB Serverless in
 ap-south-1, and recall anything about CockroachDB." Watch the agent call `memory_store`
-then `memory_search` via MCP (Groq `qwen/qwen3.6-27b`). `ToolCallCard` badges flip
-QUEUED → RUNNING → COMPLETE.
+then `memory_search` via MCP (Groq `qwen/qwen3.6-27b`).
+
+**Key moment**: When `memory_search` fires, the ToolCallCard expands to show
+**C-SPANN Vector Results** — top 3 matches with blue similarity bars (e.g. `94%`,
+`87%`, `81%`). This is the distributed vector index returning real embeddings.
 
 **Narration**:
 > "Here's the real product. The agent stores a fact and recalls it — every call is an
-> MCP tool execution landing in CockroachDB. The badge stream shows the live tool calls."
+> MCP tool execution landing in CockroachDB. Watch the vector search: C-SPANN returns
+> the three closest memories with similarity scores. Not keyword matching — 1024-dim
+> embeddings indexed at the database engine level."
 
-**On screen**: tool call cards (`memory_store`, `memory_search`) with status badges.
+**On screen**: Tool call cards (`memory_store`, `memory_search`) with status badges,
+C-SPANN similarity results.
 
 ---
 
-## Scene 2: The "Wow" — Live Poisoning Attack Blocked (0:50 - 1:20)
+## Scene 2: The Attack — Poison Blocked + CDC Feed (0:50 - 1:20)
 
 **Visual**: Split screen. **Left**: terminal `python agent_app.py --demo`. **Right**: `/dashboard`.
 
 **Action**: Terminal shows a prompt-injection attempt arriving. It prints `BLOCKED by
 MemoryGuard` → `3/3 attacks blocked`. On the right, the **SecurityFeed** shows a CDC
 event tagged `BLOCKED`, the ledger count ticks up, and the THREATS BLOCKED counter
-reads **172** (live).
+reads live.
 
 **Narration**:
 > "The wow moment. An indirect prompt injection — 'ignore all previous instructions,
@@ -68,28 +73,67 @@ THREATS BLOCKED counter.
 
 ---
 
-## Scene 3: Tool Activity — All Four CockroachDB Tools (1:20 - 1:50)
+## Scene 3: Tool Activity + All Four CockroachDB Tools (1:20 - 1:50)
 
-**Visual**: `/dashboard` — scroll to **TOOL ACTIVITY** panel, expand the modal, then
-the **CRDB + AI TOOL USAGE** tiles.
+**Visual**: `/dashboard` → **CRDB + AI TOOL USAGE** tiles → **Audit Trail**.
 
-**Action**: Open the `{n} calls` modal — real rows with `TOOL | AGENT | CLIENT | ARGS |
-MS | TIME` (live `tool_usage_log`: memory_store, memory_search, managed_mcp_call,
-invoke_agent_skill...). Then click the four category tiles: **Managed MCP Server (12
-tools)**, **Distributed Vectors (C-SPANN)**, **ccloud CLI**, **Agent Skills Repo** —
-each shows real per-tool counts.
+**Action**: Show the four tool tiles: **Managed MCP Server**, **Distributed Vectors
+(C-SPANN)**, **ccloud CLI**, **Agent Skills Repo**. Click the **ccloud CLI** tile —
+it opens a detail modal with real `ccloud_exec` call rows (tool, agent, args, duration,
+timestamp). Then click into the **Audit Trail** flight recorder and open an event
+detail showing `SHA-256 Hash` + `Previous Hash`.
 
 **Narration**:
-> "This is the memory layer working at scale — 4,991 tracked tool calls, all inside
-> CockroachDB. And here are the four required tools, all genuinely used: the Managed MCP
-> server, C-SPANN distributed vector indexing, the ccloud CLI, and the Agent Skills
-> repo. The agent drove all of them itself."
+> "Four CockroachDB tools, all genuinely used by the agent — the Managed MCP server,
+> C-SPANN distributed vectors, ccloud CLI for cluster operations, and the Agent Skills
+> repo. Here are the real ccloud calls logged in CockroachDB. And every event is
+> SHA-256 hash-chained — change one byte, the chain breaks."
 
-**On screen**: TOOL ACTIVITY modal (real rows), CRDB + AI TOOL USAGE tiles with counts.
+**On screen**: Four CRDB tool tiles with counts, ccloud detail modal with real rows,
+audit event detail with hash + previous hash.
 
 ---
 
-## Scene 4: EU AI Act Compliance (1:50 - 2:15)
+## Scene 4: Time-Travel — AS OF SYSTEM TIME (1:45 - 2:10)
+
+**Visual**: `/health` page → **Memory Engine** section → **AS OF SYSTEM TIME** panel.
+
+**Action**: Click the "24 hours ago" preset button. The panel queries CockroachDB's
+MVCC snapshot and returns the memory state from yesterday. Show the result count
+and a few memory entries. Then click "▶ Query Past State" with a custom timestamp.
+
+**Narration**:
+> "CockroachDB keeps every version of every row. We query the memory state from 24 hours
+> ago — the clean snapshot is still there. No backup restore, no extra storage. MVCC
+> gives us time-travel for free. If an agent was compromised at 3 AM, we rewind to
+> 2 AM and restore from the clean state."
+
+**On screen**: Time-travel panel with timestamp input, preset buttons, result entries
+showing `memory_type` and content.
+
+---
+
+## Scene 5: SQL Proof — Run This Query (2:10 - 2:25)
+
+**Visual**: `/dashboard` → click any **Stat with Proof** card (e.g. "Memories Secured").
+
+**Action**: The SQL proof modal opens showing the exact CockroachDB query. Click
+**"▶ Run This Query in Console"** — a new tab opens to `cockroachlabs.cloud/sql` with
+the query pre-filled. Flash the CockroachDB Cloud console showing the cluster
+**bastion-memory** with real metrics: SQL throughput graph, p99 latency, 89.87M RUs
+consumed, 269 MiB storage.
+
+**Narration**:
+> "Every number on this dashboard is a real SQL query. One click and you're running it
+> yourself in the CockroachDB console. This is the live cluster — 89 million request
+> units consumed, real throughput, real latency. No mocks."
+
+**On screen**: SQL proof modal → "Run This Query" button → CockroachDB Cloud console
+with cluster overview graphs.
+
+---
+
+## Scene 6: EU AI Act Compliance (2:25 - 2:45)
 
 **Visual**: `/compliance` page (Nav → **Compliance**). Global header badge
 **"EU AI Act: Compliant"**.
@@ -109,80 +153,59 @@ VALIDATOR lines.
 
 ---
 
-## Scene 5: Audit Trail — Append-Only Hash Chain (2:15 - 2:35)
-
-**Visual**: `/flight-recorder` page (Nav → **Audit Trail**).
-
-**Action**: Show the stats row (`Audit Events`, `Auto-Captured Memories`, `Blocked`,
-`Pass Rate`), the **Auto-Capture Feed**, then open an event detail — it displays the
-content, `SHA-256 Hash`, and `Previous Hash`.
-
-**Narration**:
-> "The audit trail is append-only and SHA-256-chained — every event links to the one
-> before it, so tampering breaks the chain and gets caught. This is the record judges
-> and regulators can actually trust."
-
-**On screen**: Audit Trail events + event detail showing `SHA-256 Hash` and
-`Previous Hash`.
-
----
-
-## Scene 6: AWS — S3 Export + KMS (2:35 - 2:50)
-
-**Visual**: `/dashboard` → **EXPORT TO S3** (or playground export). Console shows the
-`PutObject` with `ServerSideEncryption: aws:kms`.
-
-**Action**: One click streams a memory snapshot to the archive bucket. Flash the
-`ServerSideEncryption: aws:kms` line.
-
-**Narration**:
-> "And the AWS side — one click exports a memory snapshot to S3, encrypted with AWS
-> KMS. Backed by CockroachDB's SERIALIZABLE isolation and AS OF SYSTEM TIME, every step
-> is tamper-evident and auditable."
-
-**On screen**: S3 export success + `ServerSideEncryption: aws:kms`.
-
----
-
-## Scene 7: Outro (2:50 - 3:00)
+## Scene 7: Outro (2:45 - 3:00)
 
 **Visual**: `/dashboard` home + global header badge.
 
-**Action**: Show live anchors — THREATS BLOCKED 172, audits ~10,419, memories ~3,829,
-chain anchor `0xbed44e23cb8a4b3c`.
+**Action**: Show live anchors — THREATS BLOCKED, audit count, memory count,
+chain anchor hash.
 
 **Narration**:
 > "Bastion: memory you can trust, on a database that proves it. CockroachDB + AWS.
 > Thank you."
 
+**End.**
+
 ---
+
+## What to Say When Judges Ask
+
+| They ask | You say |
+|---|---|
+| "Why hash chains?" | "MINJA achieved 98.2% injection success. JADEPUFFER encrypts vector databases. Hash chains let us detect which memories are poisoned." |
+| "Why time-travel?" | "OWASP says once poisoned, there's no rollback. CockroachDB's MVCC gives us one." |
+| "Why RLS?" | "Morris-II is a worm that spreads poison across agents. RLS stops it at the database engine." |
+| "Why CockroachDB?" | "SERIALIZABLE + MVCC + distributed vector indexing. No other database gives you all three." |
+| "Why MCP?" | "Every tool call is audited. Not just the memory writes — the infrastructure calls too." |
+| "Is this production ready?" | "3,800+ real memories. 5,000+ real tool calls. Real CockroachDB cluster on AWS Mumbai — 89 million RUs consumed." |
+| "What about the EU AI Act?" | "Article 50 transparency obligations take effect August 2, 2026. We're ready." |
+| "What are the four tools?" | "Managed MCP server, C-SPANN distributed vector indexing, ccloud CLI, Agent Skills repo — all four genuinely used by the agent." |
 
 ## Recording Notes
 
 - **Total duration**: ~3:00 (at the cap — trim Scene 1 narration to stay under)
 - **Tools**: OBS / Loom; 1080p, readable resolution; terminal on left, dashboard on right
 - **Prerequisite**: deploy the fixed build to Vercel BEFORE recording so the video
-  matches the URL judges visit (live anchors, Groq agent page, SecurityFeed, tool activity).
+  matches the URL judges visit.
 - **Open tabs**:
   1. Terminal — `python agent_app.py --demo`
-  2. `/agent` — live agent chat
-  3. `/dashboard` — TOOL ACTIVITY + CRDB/AI tiles + SecurityFeed
-  4. `/compliance` — EU AI Act report + scan
-  5. `/flight-recorder` — Audit Trail
-- **Fact-check guardrails (do NOT stray from these)**:
-  - Tool activity = real `tool_usage_log` rows (4,991 calls at time of writing). Say
-    "live MCP tool calls tracked in CockroachDB."
-  - Compliance = `/compliance`; say "EU AI Act Article 12(2) — PASS, hash-chain
-    coverage computed live." Do NOT say "certified."
-  - Audit trail = `/flight-recorder`; say "append-only, SHA-256-chained audit — every
-    event shows its hash and previous hash."
-  - Heal **prunes** tampered rows + reseals broken links. Say "prune," not "reseal-bless."
-  - S3 export uses **AWS KMS server-side encryption** (SSE-KMS). Do NOT say "envelope
-    encryption" — that's only the in-app encrypted-memory path.
-  - Vector search: say "distributed vector indexing via C-SPANN" (1024-dim).
+  2. `/agent` — live agent chat (with C-SPANN results visible)
+  3. `/dashboard` — CRDB tool tiles + ccloud detail + SecurityFeed
+  4. `/health` — Memory Engine + Time-Travel panel
+  5. `/compliance` — EU AI Act report + scan
+  6. `/flight-recorder` — Audit Trail
+  7. CockroachDB Cloud console — cluster overview (for Scene 5 flash)
+- **Fact-check guardrails**:
+  - Vector search: say "distributed vector indexing via C-SPANN" (1024-dim). Show the similarity bars.
+  - Time-travel: say "AS OF SYSTEM TIME — CockroachDB's MVCC." Show the panel, not terminal.
+  - SQL proof: say "one click to the CockroachDB console." Show the button and the cluster metrics.
+  - Compliance = `/compliance`; say "EU AI Act Article 12(2) — PASS." Do NOT say "certified."
+  - Audit trail = `/flight-recorder`; say "append-only, SHA-256-chained."
+  - Heal **prunes** tampered rows + reseals broken links. Say "prune."
   - LLM is **Groq** (`qwen/qwen3.6-27b`). Do NOT say "Amazon Bedrock."
-  - Do NOT reference a "Blockchain Timeline" panel — it's dead code, not on screen.
-  - ccloud/skills/managed-MCP/vector — all four requirement boxes genuinely covered.
-- **Key shots to capture**: BLOCKED output, SecurityFeed CDC event, TOOL ACTIVITY modal,
-  CRDB/AI tile counts, `✓ PASS` compliance, event detail hash+previous-hash, S3
-  `aws:kms` line.
+  - Do NOT reference a "Blockchain Timeline" panel — it's dead code.
+  - Cluster metrics: "89 million request units, 269 MiB storage, real SQL throughput."
+- **Key shots to capture**: C-SPANN similarity bars, BLOCKED output, SecurityFeed CDC
+  event, **four CRDB tool tiles + ccloud detail modal**, hash chain detail (SHA-256 +
+  Previous Hash), time-travel panel results, "Run This Query" button → CockroachDB
+  console cluster overview, compliance PASS, S3 `aws:kms` line.

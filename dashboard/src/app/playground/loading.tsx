@@ -1,22 +1,20 @@
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
+import NeoSkeleton from "@/components/NeoSkeleton";
+
 export default function PlaygroundLoading() {
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      minHeight: "75vh", gap: "16px", background: "transparent",
-    }}>
-      <div style={{
-        width: "48px", height: "48px", border: "4px solid #000000",
-        borderTop: "4px solid #ff5e00", borderRadius: "50%",
-        animation: "spin 0.8s linear infinite",
-        boxShadow: "2px 2px 0px #000000"
-      }} />
-      <div style={{
-        fontFamily: "'Space Grotesk', sans-serif", fontSize: "13px", fontWeight: 900,
-        color: "#000000", letterSpacing: "1.5px", textTransform: "uppercase",
-      }}>
-        Loading Live Demo...
+    <DashboardLayoutWrapper>
+      <div style={{ padding: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "20px" }}>
+          {[...Array(4)].map((_, i) => (
+            <NeoSkeleton key={i} style={{ height: "80px" }} />
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+          <NeoSkeleton style={{ height: "400px" }} />
+          <NeoSkeleton style={{ height: "400px" }} />
+        </div>
       </div>
-      <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
-    </div>
+    </DashboardLayoutWrapper>
   );
 }

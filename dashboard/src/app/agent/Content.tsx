@@ -285,6 +285,26 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
         </details>
       )}
 
+      {/* Vector Search Results — C-SPANN */}
+      {tool.name === "memory_search" && Array.isArray(tool.result?.results) && (
+        <div style={{ marginBottom: "6px" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "12px", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "6px" }}>
+            C-SPANN Vector Results ({String(tool.result.total)} hits · {String(tool.result.latency)})
+          </div>
+          {(tool.result.results as any[]).slice(0, 3).map((r: any, i: number) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "4px", fontFamily: "var(--font-mono)", fontSize: "13px" }}>
+              <span style={{ background: "#0369a1", color: "#fff", padding: "1px 6px", borderRadius: "3px", fontSize: "11px", fontWeight: 800, flexShrink: 0 }}>
+                {r.similarity != null ? `${Math.round(r.similarity * 100)}%` : "—"}
+              </span>
+              <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#1e3a5f", fontWeight: 600 }}>
+                {r.content}
+              </div>
+              <span style={{ fontSize: "10px", color: "#6b7280", flexShrink: 0 }}>{r.memoryType}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* MCP offline note */}
       {tool.result?.source === "SQL" && (
         <div style={{
@@ -767,6 +787,9 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   const [activeModel, setActiveModel] = useState<string>("");
   const [mcpStatus, setMcpStatus] = useState<"checking" | "connected" | "offline">("checking");
   const [mcpDetail, setMcpDetail] = useState("");
+  const [slashTools, setSlashTools] = useState<{ name: string; description: string }[]>([]);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -806,6 +829,15 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   useEffect(() => {
     checkMcp();
   }, [checkMcp]);
+
+  useEffect(() => {
+    if (mcpStatus === "connected") {
+      fetch("/api/mcp/tools")
+        .then(r => r.json())
+        .then(d => { if (d.tools?.length) setSlashTools(d.tools); })
+        .catch(() => {});
+    }
+  }, [mcpStatus]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1559,40 +1591,34 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           </div>
 
           {/* Input */}
-          <form onSubmit={handleSubmit} style={{
-            padding: "12px 16px",
-            borderTop: C.border,
-            background: C.card,
-            display: "flex",
-            gap: "8px",
-          }}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleSubmit(e as any);
-                }
-              }}
-              placeholder="Type a message... (search, store, time-travel, audit, health)"
-              disabled={isProcessing}
-              style={{
-                flex: 1,
-                fontFamily: "var(--font-mono)",
-                fontSize: "15px",
-                fontWeight: 700,
-                color: C.body,
-                background: "#f9f9f7",
-                border: C.border,
-                borderRadius: "4px",
-                padding: "10px 14px",
-                outline: "none",
-                boxShadow: C.shadowSm,
-              }}
-            />
+          <div style={{ position: "relative" }}>
+            {input.startsWith("/") && slashTools.length > 0 && (
+              <div style={{ position: "absolute", bottom: "100%", left: "16px", right: "16px", maxHeight: "240px", overflowY: "auto", background: "#fff", border: C.border, borderRadius: "4px", boxShadow: C.shadow, zIndex: 100, marginBottom: "4px" }}>
+                {slashTools.filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase())).slice(0, 8).map((tool, i) => (
+                  <div key={tool.name} onClick={() => { setInput(`/${tool.name} `); setSlashFilter(""); inputRef.current?.focus(); }}
+                    style={{ padding: "8px 12px", cursor: "pointer", background: i === slashIndex ? "#fef3c7" : "transparent", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 800, color: C.purple, minWidth: "180px" }}>/{tool.name}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: C.mute, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.description}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <form onSubmit={handleSubmit} style={{ padding: "12px 16px", borderTop: C.border, background: C.card, display: "flex", gap: "8px" }}>
+              <input ref={inputRef} type="text" value={input}
+                onChange={e => { const val = e.target.value; setInput(val); if (val.startsWith("/")) { setSlashFilter(val.slice(1)); setSlashIndex(0); } else { setSlashFilter(""); } }}
+                onKeyDown={e => {
+                  const filtered = slashTools.filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase()));
+                  if (input.startsWith("/") && filtered.length > 0) {
+                    if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, filtered.length - 1)); return; }
+                    if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }
+                    if (e.key === "Tab" || (e.key === "Enter" && filtered[slashIndex])) { e.preventDefault(); const s = filtered[slashIndex] || filtered[0]; setInput(`/${s.name} `); setSlashFilter(""); return; }
+                  }
+                  if (e.key === "Enter") { e.preventDefault(); handleSubmit(e as any); }
+                }}
+                placeholder={slashTools.length > 0 ? "Type / for MCP tools..." : "Type a message... (search, store, time-travel, audit, health)"}
+                disabled={isProcessing}
+                style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: "15px", fontWeight: 700, color: C.body, background: input.startsWith("/") ? "#f5f3ff" : "#f9f9f7", border: input.startsWith("/") ? `2px solid ${C.purple}` : C.border, borderRadius: "4px", padding: "10px 14px", outline: "none", boxShadow: C.shadowSm }}
+              />
             <button
               type="button"
               onClick={handleClearChat}
@@ -1634,6 +1660,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
               {isProcessing ? "⟳" : "→"}
             </button>
           </form>
+          </div>
         </div>
 
         {/* Operations Panel */}

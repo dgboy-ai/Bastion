@@ -58,6 +58,8 @@ export default function FlightRecorderContent({
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>(initialEvents[0]?.id || "");
   const [showAll, setShowAll] = useState(false);
+  const [hoveredCaptureId, setHoveredCaptureId] = useState<string | null>(null);
+  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [captures, setCaptures] = useState<CapturedMemory[]>(initialCaptures);
   const [capturesLoading, setCapturesLoading] = useState(initialCaptures.length === 0);
   const [captureFilter, setCaptureFilter] = useState("all");
@@ -266,20 +268,34 @@ export default function FlightRecorderContent({
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
                     {c.tool && <span style={{ fontSize: "11px", fontWeight: 900, color: "#0891b2", fontFamily: "var(--font-mono)" }}>{c.tool}</span>}
                     {c.error_type && <span style={{ fontSize: "11px", fontWeight: 900, color: "#b91c1c", fontFamily: "var(--font-mono)" }}>{c.error_type}</span>}
-                    <span style={{ fontSize: "11px", color: "#374151", fontWeight: 850, fontFamily: "var(--font-mono)" }}>
+                    <span style={{ fontSize: "12px", color: "#111827", fontWeight: 850, fontFamily: "var(--font-mono)" }}>
                       {c.created_at ? new Date(c.created_at).toLocaleString() : ""}
                     </span>
-                    <span style={{ fontSize: "10px", color: "#374151", fontWeight: 800 }}>trust {Math.round((Number(c.trust_level) / 4) * 100)}%</span>
+                    <span style={{ fontSize: "12px", color: "#111827", fontWeight: 800 }}>trust {Math.round((Number(c.trust_level) / 4) * 100)}%</span>
                   </div>
-                  <div style={{
-                    fontSize: "11.5px", color: "#374151", fontWeight: 550, fontFamily: "var(--font-mono)",
-                    wordBreak: "break-all", lineHeight: "1.5", overflow: "hidden",
-                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-                  }}>
-                    {c.content}
+                  <div 
+                    onMouseEnter={() => setHoveredCaptureId(c.id)}
+                    onMouseLeave={() => setHoveredCaptureId(null)}
+                    style={{
+                      fontSize: hoveredCaptureId === c.id ? "16px" : "13px", 
+                      color: "#000000", fontWeight: 700, fontFamily: "var(--font-mono)",
+                      wordBreak: "break-all", 
+                      lineHeight: hoveredCaptureId === c.id ? "1.8" : "1.5", 
+                      overflow: "hidden",
+                      display: hoveredCaptureId === c.id ? "block" : "-webkit-box", 
+                      WebkitLineClamp: hoveredCaptureId === c.id ? "unset" : 2, 
+                      WebkitBoxOrient: "vertical",
+                      background: hoveredCaptureId === c.id ? "#f3f4f6" : "#ffffff", 
+                      padding: hoveredCaptureId === c.id ? "16px" : "10px 14px", 
+                      borderRadius: "6px",
+                      border: "2px solid #000000", boxShadow: "2px 2px 0px rgba(0,0,0,0.1)",
+                      cursor: hoveredCaptureId === c.id ? "text" : "pointer",
+                      transition: "all 0.2s ease"
+                    }}>
+                      {c.content}
                   </div>
                   {c.hash && (
-                    <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "#ff5e00", fontWeight: 900, marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "#ff5e00", fontWeight: 900, marginTop: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {c.hash}
                     </div>
                   )}
@@ -384,20 +400,21 @@ export default function FlightRecorderContent({
                     }}>
                       {TYPE_LABELS[e.type] || e.type}
                     </span>
-                    <span style={{ fontSize: "11px", color: "#374151", fontWeight: 850, fontFamily: "var(--font-mono)" }}>
+                    <span style={{ fontSize: "12px", color: "#111827", fontWeight: 850, fontFamily: "var(--font-mono)" }}>
                       {e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : ""}
                     </span>
                   </div>
                   <div style={{
-                    fontSize: "12px", fontWeight: 550, color: "#374151",
+                    fontSize: "14px", fontWeight: 700, color: "#000000",
                     fontFamily: "var(--font-mono)",
-                    background: "#f9f9f7",
+                    background: "#ffffff",
                     border: "2px solid #000000",
-                    padding: "10px 14px",
+                    padding: "12px 14px",
                     borderRadius: "6px",
                     wordBreak: "break-all",
-                    lineHeight: "1.5",
-                    marginBottom: "12px"
+                    lineHeight: "1.6",
+                    marginBottom: "12px",
+                    boxShadow: "2px 2px 0px rgba(0,0,0,0.1)"
                   }}>
                     {e.content_preview}
                   </div>

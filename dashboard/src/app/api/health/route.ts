@@ -10,6 +10,10 @@ const defaultHealth = {
   freshness_ratio: 0,
   avg_access_count: 0,
   avg_importance_score: 0,
+  stm_total: 0,
+  stm_active: 0,
+  audit_total: 0,
+  audit_recent: 0
 };
 
 export async function GET(request: Request) {
@@ -25,24 +29,32 @@ export async function GET(request: Request) {
   }
 
   try {
-    const res = await safeQuery(`
-      SELECT
-        COUNT(*) as total_memories,
-        COUNT(*) FILTER (WHERE is_pinned) as pinned_memories,
-        COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '7 days') as memories_last_7_days,
-        COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '30 days') as memories_last_30_days,
-        AVG(access_count) as avg_access_count,
-        AVG(importance_score) as avg_importance_score
-      FROM agent_memory
-    `);
+    const [memoryRes, stmRes, auditRes] = await Promise.all([
+      safeQuery(`
+        SELECT
+          COUNT(*) as total_memories,
+          COUNT(*) FILTER (WHERE is_pinned) as pinned_memories,
+          COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '7 days') as memories_last_7_days,
+          COUNT(*) FILTER (WHERE created_at > now() - INTERVAL '30 days') as memories_last_30_days,
+          AVG(access_count) as avg_access_count,
+          AVG(importance_score) as avg_importance_score
+        FROM agent_memory
+      `),
+      safeQuery(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE expires_at > now()) as active FROM agent_messages`).catch(() => ({ rows: [{ total: 0, active: 0 }] })),
+      safeQuery(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE recorded_at > now() - INTERVAL '7 days') as recent FROM agent_audit`).catch(() => ({ rows: [{ total: 0, recent: 0 }] }))
+    ]);
 
-    if (res.mock) {
+    if ((memoryRes as any).mock) {
       return apiSuccess(defaultHealth, "short", { mock: true });
     }
 
-    const row = res.rows[0];
+    const row = memoryRes.rows[0];
     const total = Number(row.total_memories) || 0;
     const week = Number(row.memories_last_7_days) || 0;
+    
+    const stmRow = (stmRes as any).rows?.[0] || { total: 0, active: 0 };
+    const auditRow = (auditRes as any).rows?.[0] || { total: 0, recent: 0 };
+
     return apiSuccess({
       total_memories: total,
       pinned_memories: Number(row.pinned_memories) || 0,
@@ -51,6 +63,10 @@ export async function GET(request: Request) {
       freshness_ratio: total > 0 ? Number((week / total).toFixed(4)) : 0,
       avg_access_count: Number(Number(row.avg_access_count || 0).toFixed(2)),
       avg_importance_score: Number(Number(row.avg_importance_score || 0).toFixed(2)),
+      stm_total: Number(stmRow.total) || 0,
+      stm_active: Number(stmRow.active) || 0,
+      audit_total: Number(auditRow.total) || 0,
+      audit_recent: Number(auditRow.recent) || 0
     });
   } catch (error) {
     console.error("[api/health] Query failed:", error instanceof Error ? error.message : 'Unknown error');

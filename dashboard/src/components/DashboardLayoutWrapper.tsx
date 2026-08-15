@@ -235,7 +235,9 @@ const handleNextTourStep = () => {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "14px 32px"
+            padding: "0 32px",
+            height: "72px",
+            boxSizing: "border-box"
           }}>
             {/* Left: Hackathon Branding */}
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

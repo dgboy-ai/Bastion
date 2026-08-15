@@ -60,37 +60,7 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
   const typeCounts = memories.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] || 0) + 1; return acc; }, {} as Record<string, number>);
   const uniqueTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
 
-  // Lock Viewport Scroll Effect
-  useEffect(() => {
-    const viewport = document.querySelector(".main-viewport") as HTMLElement;
-    const pageContainer = document.querySelector(".page-container") as HTMLElement;
-    
-    if (viewport) {
-      viewport.style.height = "100vh";
-      viewport.style.overflow = "hidden";
-    }
-    if (pageContainer) {
-      pageContainer.style.height = "calc(100vh - 140px)";
-      pageContainer.style.overflow = "hidden";
-      pageContainer.style.display = "flex";
-      pageContainer.style.flexDirection = "column";
-      pageContainer.style.padding = "20px 24px";
-    }
-    
-    return () => {
-      if (viewport) {
-        viewport.style.height = "";
-        viewport.style.overflow = "";
-      }
-      if (pageContainer) {
-        pageContainer.style.height = "";
-        pageContainer.style.overflow = "";
-        pageContainer.style.display = "";
-        pageContainer.style.flexDirection = "";
-        pageContainer.style.padding = "";
-      }
-    };
-  }, []);
+  // Removed Viewport Scroll Lock for embeddability
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
@@ -245,9 +215,10 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
         )}
 
         {/* Main content */}
-        {cleanContent && (() => {
+        {raw && (() => {
           const isLong = raw.length > CONTENT_LIMIT;
-          const displayText = isLong && !isContentExpanded ? cleanContent.slice(0, CONTENT_LIMIT) + "..." : cleanContent;
+          const displayRaw = isLong ? raw.slice(0, CONTENT_LIMIT) + "..." : raw;
+          const displayText = toHtml(displayRaw);
           return (
             <div>
               <div
@@ -255,12 +226,32 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
                 dangerouslySetInnerHTML={{ __html: displayText }}
               />
               {isLong && (
-                <div onClick={(e) => toggleContent(memoryId, e)} style={{
-                  display: "inline-flex", alignItems: "center", gap: "3px",
-                  fontSize: "10px", fontWeight: 800, color: C.cyan, cursor: "pointer",
-                  marginTop: "2px", fontFamily: "var(--font-mono)"
-                }}>
-                  {isContentExpanded ? "▲ less" : "▼ more"}
+                <div style={{ position: "relative", display: "inline-block", marginTop: "4px" }} className="hover-expand-trigger">
+                  <style>{`
+                    .hover-expand-trigger:hover .hover-expand-popover {
+                      opacity: 1;
+                      visibility: visible;
+                      transform: translateY(0);
+                    }
+                  `}</style>
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: "3px",
+                    fontSize: "10px", fontWeight: 800, color: C.cyan, cursor: "help",
+                    fontFamily: "var(--font-mono)", padding: "2px 6px", borderRadius: "4px", background: "#f0f9ff", border: "1px solid #bae6fd"
+                  }}>
+                    🔍 Hover to read full memory
+                  </div>
+                  
+                  {/* Floating Popover */}
+                  <div className="hover-expand-popover" style={{
+                    opacity: 0, visibility: "hidden", transform: "translateY(5px)", transition: "all 0.2s ease",
+                    position: "absolute", top: "100%", left: "0", zIndex: 100, width: "350px", marginTop: "8px",
+                    background: "#ffffff", border: "3px solid #000000", borderRadius: "8px", padding: "16px",
+                    boxShadow: "4px 4px 0px #000000", maxHeight: "300px", overflowY: "auto", cursor: "default"
+                  }}>
+                    <div style={{ fontSize: "11px", fontWeight: 900, color: C.purple, fontFamily: "var(--font-mono)", marginBottom: "8px", textTransform: "uppercase" }}>Full Content</div>
+                    <div style={{ fontSize: "13px", color: "#1f2937", lineHeight: "1.5", fontWeight: 600, fontFamily: "var(--font-sans)" }} dangerouslySetInnerHTML={{ __html: toHtml(raw) }} />
+                  </div>
                 </div>
               )}
             </div>
@@ -325,22 +316,23 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
             <span style={{ fontSize: "12px", color: C.green }}>✓</span>
             <span style={{ fontSize: "11px", fontWeight: 900, color: C.green, fontFamily: "var(--font-mono)" }}>CHAIN VERIFIED</span>
           </div>
-          {stats.poisonedCount > 0 && (
-            <button
-              onClick={healAll}
-              style={{
-                padding: "5px 14px", borderRadius: "6px",
-                background: "#fef2f2",
-                border: `2px solid ${C.red}`,
-                color: C.red,
-                fontSize: "11px", fontWeight: 900, cursor: "pointer",
-                fontFamily: "var(--font-mono)",
-                boxShadow: "1.5px 1.5px 0px #000000",
-              }}
-            >
-              🛡 Heal {stats.poisonedCount} Poison{stats.poisonedCount !== 1 ? "s" : ""}
-            </button>
-          )}
+          <button
+            onClick={healAll}
+            disabled={stats.poisonedCount === 0}
+            style={{
+              padding: "5px 14px", borderRadius: "6px",
+              background: stats.poisonedCount > 0 ? "#fef2f2" : "#f3f4f6",
+              border: stats.poisonedCount > 0 ? `2px solid ${C.red}` : "2px solid #d1d5db",
+              color: stats.poisonedCount > 0 ? C.red : "#9ca3af",
+              fontSize: "11px", fontWeight: 900, 
+              cursor: stats.poisonedCount > 0 ? "pointer" : "not-allowed",
+              fontFamily: "var(--font-mono)",
+              boxShadow: stats.poisonedCount > 0 ? "1.5px 1.5px 0px #000000" : "none",
+              transition: "all 0.2s"
+            }}
+          >
+            🛡 Heal {stats.poisonedCount} Poison{stats.poisonedCount !== 1 ? "s" : ""}
+          </button>
         </div>
       </div>
       {/* 2-Column Layout: Chain (left) + Detail Panel (right) */}
@@ -417,7 +409,7 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
           <div style={{ height: "3px", background: "#000000", margin: "14px 0", flexShrink: 0 }} />
 
           {/* Chain Timeline Scroll Container */}
-          <div style={{ flex: 1, overflowY: "auto", paddingRight: "4px", paddingBottom: "30px" }}>
+          <div style={{ flex: 1, overflowY: "auto", paddingRight: "14px", paddingLeft: "4px", paddingBottom: "30px" }}>
             <div style={{ position: "relative" }}>
             {/* Vertical chain line */}
             <div style={{ position: "absolute", left: "15px", top: "0", bottom: "0", width: "3px", background: "#000000", zIndex: 1 }} />
@@ -450,10 +442,12 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
                 const trust = m.trustLevel != null ? Math.round((m.trustLevel / 4) * 100) : null;
                 const isPoison = m.memoryType === "poison_attempt";
                 const isHealed = m.memoryType === "healed";
-                // Check chain integrity: does previous_hash match prior memory's cryptographic_hash?
-                const prevMemory = i > 0 ? filteredMemories[i - 1] : null;
-                const prevIsHealed = prevMemory?.memoryType === "healed";
-                const chainBroken = prevMemory && m.previousHash && prevMemory.cryptographicHash !== m.previousHash && !prevIsHealed;
+                // Check chain integrity: does previous_hash match the older memory's cryptographic_hash?
+                // We must use the original unfiltered 'memories' array to prevent false breaks when filtering.
+                const originalIndex = memories.findIndex(mem => mem.memoryId === m.memoryId);
+                const olderMemory = originalIndex >= 0 && originalIndex < memories.length - 1 ? memories[originalIndex + 1] : null;
+                const olderIsHealed = olderMemory?.memoryType === "healed";
+                const chainBroken = olderMemory && m.previousHash && olderMemory.cryptographicHash !== m.previousHash && !olderIsHealed;
                 const isGenesis = !m.previousHash;
 
                 return (
@@ -492,10 +486,10 @@ export default function LogsPage({ initialMemories = [], initialTotal = 0, total
                     {/* Block Card */}
                     <div style={{
                       flex: 1, padding: "20px 24px", borderRadius: "10px",
-                      background: "#ffffff", marginLeft: "32px",
+                      background: "#ffffff", marginLeft: "36px",
                       border: isSelected ? `3px solid #000000` : `2.5px solid #000000`,
-                      boxShadow: isSelected ? "5px 5px 0px #000000" : "1.5px 1.5px 0px #000000",
-                      transform: isSelected ? "translate(-3px, -3px)" : "none",
+                      boxShadow: isSelected ? "6px 6px 0px #000000" : "2px 2px 0px #000000",
+                      transform: isSelected ? "translate(-2px, -4px)" : "none",
                       transition: "all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
                     }}>
                       {/* Top row: type + time + trust badge */}

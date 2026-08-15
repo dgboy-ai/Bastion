@@ -3,7 +3,7 @@ export interface McpToolResult {
   isError?: boolean;
 }
 
-const MCP_URL = process.env.BASTION_MCP_URL || "http://localhost:9997/mcp";
+export const MCP_URL = process.env.BASTION_MCP_URL || "http://localhost:9997/mcp";
 const MCP_TIMEOUT_MS = Number(process.env.BASTION_MCP_TIMEOUT || "30") * 1000;
 
 function authHeader(): string {
@@ -11,7 +11,7 @@ function authHeader(): string {
   return key ? `Bearer ${key}` : "";
 }
 
-async function mcpPost(
+export async function mcpPost(
   url: string,
   body: unknown,
   sessionId?: string,

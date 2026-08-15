@@ -6,10 +6,26 @@ function getCsrfToken(): string | null {
   return match ? match[1] : null;
 }
 
+const globalCache = new Map<string, { data: unknown, expiry: number }>();
+
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
   init?: RequestInit & { timeout?: number },
 ): Promise<Response> {
+  const method = (init?.method || "GET").toUpperCase();
+  const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+  // Client-side cache for GET requests to speed up page transitions
+  if (method === "GET" && typeof window !== "undefined") {
+    const cached = globalCache.get(urlStr);
+    if (cached && Date.now() < cached.expiry) {
+      return new Response(JSON.stringify(cached.data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }
+
   const timeout = init?.timeout ?? DEFAULT_TIMEOUT;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeout);
@@ -24,7 +40,6 @@ export async function fetchWithTimeout(
       }
     } catch {}
 
-    const method = (init?.method || "GET").toUpperCase();
     if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
       const csrfToken = getCsrfToken();
       if (csrfToken && !headers.has("x-csrf-token")) {
@@ -40,6 +55,14 @@ export async function fetchWithTimeout(
       signal: ac.signal,
       credentials: "include",
     });
+
+    if (method === "GET" && res.ok && typeof window !== "undefined") {
+      const cloned = res.clone();
+      cloned.json().then(data => {
+        globalCache.set(urlStr, { data, expiry: Date.now() + 15000 }); // Cache for 15s
+      }).catch(() => {});
+    }
+
     return res;
   } catch (e: unknown) {
     if (e instanceof DOMException && e.name === "AbortError") {

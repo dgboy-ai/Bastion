@@ -332,6 +332,8 @@ export async function safeQueryStatic(text: string, params?: unknown[]): Promise
  * When DB is unavailable and mock mode is off, throws instead of silently returning empty data.
  * This prevents security dashboards from lying during database outages.
  */
+const selectCache = new Map<string, { result: SafeQueryResult, expiry: number }>();
+
 export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQueryResult> {
   const pool = await getActivePool();
   if (!pool) {
@@ -340,11 +342,24 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     }
     throw new Error("Database not available (BASTION_CONN not configured and BASTION_MOCK not enabled)");
   }
+  
+  const isSelect = text.trim().toUpperCase().startsWith("SELECT");
+  const cacheKey = isSelect ? `${text}::${JSON.stringify(params || [])}` : null;
+  if (cacheKey) {
+    const cached = selectCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.result;
+    }
+  }
+
   const start = Date.now();
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
+    if (cacheKey && res) {
+      selectCache.set(cacheKey, { result: res, expiry: Date.now() + 5000 }); // 5s cache
+    }
     return res;
   } catch (err) {
     const duration = Date.now() - start;

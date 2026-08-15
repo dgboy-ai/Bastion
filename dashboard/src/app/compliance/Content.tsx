@@ -41,9 +41,9 @@ export default function CompliancePage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   
-  // Integrity Scanner State
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [animatedCov, setAnimatedCov] = useState(0);
   
   const cancelledRef = useRef(false);
 
@@ -67,6 +67,17 @@ export default function CompliancePage() {
         article12: d.art12_requirements ?? {},
         recentAuditTrail: d.recent_audit_trail ?? [],
       });
+      let start = 0;
+      const target = d.compliance_status?.hash_chain_coverage ?? 0;
+      const int = setInterval(() => {
+        start += Math.ceil(target / 20);
+        if (start >= target) {
+          setAnimatedCov(target);
+          clearInterval(int);
+        } else {
+          setAnimatedCov(start);
+        }
+      }, 40);
     } catch (e: unknown) {
       if (!cancelledRef.current) setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -178,16 +189,16 @@ export default function CompliancePage() {
           <div style={{ fontSize: "16px", fontWeight: 900, color: C.mute, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>EU AI Act Article 12(2)</div>
           
           {/* Ring */}
-          <div style={{ position: "relative", width: "150px", height: "150px" }}>
-            <svg width="150" height="150" viewBox="0 0 124 124" style={{ transform: "rotate(-90deg)" }}>
-              <circle cx="62" cy="62" r={52} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="8" />
-              <circle cx="62" cy="62" r={52} fill="none" stroke={cov >= 95 ? C.green : C.red} strokeWidth="8"
-                strokeDasharray={2 * Math.PI * 52} strokeDashoffset={((100 - cov) / 100) * 2 * Math.PI * 52}
-                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1.2s ease" }} />
+          <div style={{ position: "relative", width: "180px", height: "180px" }}>
+            <svg width="180" height="180" viewBox="0 0 160 160" style={{ transform: "rotate(-90deg)" }}>
+              <circle cx="80" cy="80" r={70} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="10" />
+              <circle cx="80" cy="80" r={70} fill="none" stroke={cov >= 95 ? C.green : C.red} strokeWidth="10"
+                strokeDasharray={2 * Math.PI * 70} strokeDashoffset={((100 - animatedCov) / 100) * 2 * Math.PI * 70}
+                strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.22, 1, 0.36, 1)" }} />
             </svg>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: "40px", fontWeight: 955, color: cov >= 95 ? C.green : C.red, fontFamily: "var(--font-sans)", letterSpacing: "-1px" }}>{cov}%</span>
-              <span style={{ fontSize: "16px", color: C.mute, fontWeight: 900, letterSpacing: "1.5px", fontFamily: "var(--font-mono)" }}>HASH CHAIN</span>
+              <span style={{ fontSize: "52px", fontWeight: 955, color: cov >= 95 ? C.green : C.red, fontFamily: "var(--font-sans)", letterSpacing: "-2px" }}>{animatedCov}%</span>
+              <span style={{ fontSize: "16px", color: C.mute, fontWeight: 900, letterSpacing: "1px", fontFamily: "var(--font-mono)", marginTop: "-4px" }}>HASH CHAIN</span>
             </div>
           </div>
 
@@ -199,19 +210,34 @@ export default function CompliancePage() {
               { label: "Hash Chain Coverage", value: `${cov}%` },
               { label: "Scope", value: r.agentId },
             ].map((s, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#f9fafb", borderRadius: "6px", border: "2px solid #000000" }}>
-                <span style={{ fontSize: "16px", color: C.mute, fontWeight: 900 }}>{s.label}</span>
-                <span style={{ fontSize: "16px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-mono)" }}>{s.value}</span>
+              <div key={i} style={{ 
+                display: "flex", justifyContent: "space-between", padding: "14px 18px", 
+                background: "#ffffff", borderRadius: "8px", border: "2px solid #000000",
+                boxShadow: "2px 2px 0px rgba(0,0,0,0.1)", transition: "all 0.15s ease", cursor: "default"
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "4px 4px 0px rgba(0,0,0,0.2)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "2px 2px 0px rgba(0,0,0,0.1)"; }}
+              >
+                <span style={{ fontSize: "18px", color: C.mute, fontWeight: 900 }}>{s.label}</span>
+                <span style={{ fontSize: "18px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-mono)" }}>{s.value}</span>
               </div>
             ))}
           </div>
 
           {/* Verdict Box */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes passPulse {
+              0% { box-shadow: 3px 3px 0px #000000, 0 0 0 0 rgba(16, 185, 129, 0.4); }
+              70% { box-shadow: 3px 3px 0px #000000, 0 0 0 10px rgba(16, 185, 129, 0); }
+              100% { box-shadow: 3px 3px 0px #000000, 0 0 0 0 rgba(16, 185, 129, 0); }
+            }
+          `}} />
           <div style={{
             width: "100%", padding: "16px", borderRadius: "8px", textAlign: "center",
             background: r.status === "COMPLIANT" ? "#f0fdf4" : "#fef2f2",
             border: `2.5px solid #000000`,
-            boxShadow: "3px 3px 0px #000000"
+            boxShadow: "3px 3px 0px #000000",
+            animation: r.status === "COMPLIANT" ? "passPulse 2s infinite" : "none"
           }}>
             <div style={{ fontSize: "22px", fontWeight: 955, color: r.status === "COMPLIANT" ? C.green : C.red, fontFamily: "var(--font-sans)" }}>
               {r.status === "COMPLIANT" ? "✓ PASS" : "✗ FAIL"}
@@ -221,30 +247,30 @@ export default function CompliancePage() {
         </div>
 
         {/* Right column: Requirements Grid (6 cards, height matches content) */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", alignContent: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", alignContent: "start" }}>
           {requirements.map((req, i) => (
             <div key={i} className="bento-panel" style={{
               background: "#ffffff",
               display: "flex",
               flexDirection: "column",
-              gap: "8px",
-              padding: "16px 20px",
+              gap: "12px",
+              padding: "24px 28px",
               transition: "all 0.15s ease",
             }}
               onMouseEnter={(e) => { e.currentTarget.style.transform = "translate(-2px, -2px)"; e.currentTarget.style.boxShadow = "6px 6px 0px #000000"; }}
               onMouseLeave={(e) => { e.currentTarget.style.transform = "translate(0, 0)"; e.currentTarget.style.boxShadow = "4px 4px 0px #000000"; }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "24px" }}>{req.icon}</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                <span style={{ fontSize: "28px" }}>{req.icon}</span>
                 <span style={{
-                  fontSize: "16px", fontWeight: 900, background: "#d1fae5", color: C.green,
-                  padding: "3px 10px", borderRadius: "4px", letterSpacing: "0.5px", border: "2px solid #000000",
+                  fontSize: "18px", fontWeight: 900, background: "#d1fae5", color: C.green,
+                  padding: "6px 14px", borderRadius: "6px", letterSpacing: "1px", border: "2px solid #000000",
                   fontFamily: "var(--font-mono)"
                 }}>ACTIVE</span>
               </div>
-              <div style={{ fontSize: "16px", fontWeight: 950, color: C.ink, fontFamily: "var(--font-sans)", marginTop: "4px" }}>{req.label}</div>
-              <div style={{ fontSize: "16px", color: "#1c1917", lineHeight: 1.5, flex: 1, fontWeight: 750 }}>{req.desc}</div>
-              <div style={{ fontSize: "16px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginTop: "6px" }}>📍 {req.code}</div>
+              <div style={{ fontSize: "20px", fontWeight: 950, color: C.ink, fontFamily: "var(--font-sans)", marginTop: "4px" }}>{req.label}</div>
+              <div style={{ fontSize: "18px", color: "#1c1917", lineHeight: 1.6, flex: 1, fontWeight: 750 }}>{req.desc}</div>
+              <div style={{ fontSize: "18px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginTop: "8px" }}>📍 {req.code}</div>
             </div>
           ))}
         </div>

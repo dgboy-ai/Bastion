@@ -1,21 +1,33 @@
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
+import NeoSkeleton from "@/components/NeoSkeleton";
+
 export default function HealthLoading() {
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      minHeight: "60vh", gap: "16px",
-    }}>
-      <div style={{
-        width: "48px", height: "48px", border: "3px solid rgba(255,170,0,.15)",
-        borderTop: "3px solid #ffaa00", borderRadius: "50%",
-        animation: "spin 0.8s linear infinite",
-      }} />
-      <div style={{
-        fontFamily: "var(--font-mono)", fontSize: "12px",
-        color: "#8a8290", letterSpacing: "2px", textTransform: "uppercase",
-      }}>
-        Loading Health Metrics...
+    <DashboardLayoutWrapper>
+      <div style={{ padding: "20px" }}>
+        {/* Header Area */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}>
+           <NeoSkeleton style={{ height: "40px", width: "200px" }} />
+           <div style={{ display: "flex", gap: "10px" }}>
+              <NeoSkeleton style={{ height: "40px", width: "100px", borderRadius: "20px" }} />
+              <NeoSkeleton style={{ height: "40px", width: "100px", borderRadius: "20px" }} />
+           </div>
+        </div>
+
+        {/* Macro Telemetry Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
+          {[...Array(4)].map((_, i) => (
+            <NeoSkeleton key={i} style={{ height: "120px" }} />
+          ))}
+        </div>
+
+        {/* List of blocks */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {[...Array(5)].map((_, i) => (
+            <NeoSkeleton key={i} style={{ height: "80px" }} />
+          ))}
+        </div>
       </div>
-      <style>{`@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
-    </div>
+    </DashboardLayoutWrapper>
   );
 }
