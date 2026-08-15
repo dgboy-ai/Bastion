@@ -1221,8 +1221,8 @@ function TrustBar() {
     },
     {
       n:"OWASP", tag:"ASI06 Injection Guard", c:P.cyan, mon:"ASI06", k:"owasp",
-      stat:"483 payloads", spell:"88.2% TPR",
-      proof:"Adversarially evaluated against 483 payloads: 88.2% detection on obfuscated prompt-injection, with 0 false positives on benign input.",
+      stat:"483 payloads", spell:"87.0% TPR",
+      proof:"Adversarially evaluated against 483 payloads: 87.0% detection on obfuscated prompt-injection, with 0 false positives on benign input.",
     },
     {
       n:"MCP", tag:"Model Context Protocol", c:P.purple, mon:"MCP", k:"mcp",
@@ -1790,10 +1790,10 @@ function Benchmarks() {
     const calculatedMetrics = [
       { 
         c: "#00ff66", 
-        v: guardSweep?.extra?.true_positive ? guardSweep.extra.true_positive.split(" ")[1]?.replace("(", "")?.replace(")", "") || "88.2%" : "88.2%", 
+        v: guardSweep?.extra?.true_positive ? guardSweep.extra.true_positive.split(" ")[1]?.replace("(", "")?.replace(")", "") || "87.0%" : "87.0%", 
         l: "Adversarial TPR", 
-        d: guardSweep?.extra?.true_positive ? `${guardSweep.extra.true_positive.split(" ")[0]} raw + obfuscated payloads caught` : "426/483 raw + obfuscated payloads caught", 
-        raw: guardSweep?.extra?.true_positive ? guardSweep.extra.true_positive : "426/483 (88.2%)" 
+        d: guardSweep?.extra?.true_positive ? `${guardSweep.extra.true_positive.split(" ")[0]} raw + obfuscated payloads caught` : "420/483 raw + obfuscated payloads caught", 
+        raw: guardSweep?.extra?.true_positive ? guardSweep.extra.true_positive : "420/483 (87.0%)" 
       },
       { 
         c: P.cyan, 
@@ -1804,17 +1804,17 @@ function Benchmarks() {
       },
       { 
         c: P.gold, 
-        v: hashChain?.extra?.verify_throughput_ops_sec ? `${(Number(hashChain.extra.verify_throughput_ops_sec) / 1000).toFixed(1)}k` : "28.5k", 
+        v: hashChain?.extra?.verify_throughput_ops_sec ? `${(Number(hashChain.extra.verify_throughput_ops_sec) / 1000).toFixed(1)}k` : "24.4k", 
         l: "Verify / sec", 
         d: hashChain?.extra?.chain_length ? `${hashChain.extra.chain_length}-link SHA-256 chain` : "1000-link SHA-256 chain", 
-        raw: hashChain?.extra?.verify_throughput_ops_sec ? `${Number(hashChain.extra.verify_throughput_ops_sec).toLocaleString()} / s` : "28,536 / s" 
+        raw: hashChain?.extra?.verify_throughput_ops_sec ? `${Number(hashChain.extra.verify_throughput_ops_sec).toLocaleString()} / s` : "24,431 / s" 
       },
       { 
         c: P.magma, 
-        v: recall?.extra?.recall_at_5 ? recall.extra.recall_at_5 : "70.0%", 
+        v: recall?.extra?.recall_at_5 ? recall.extra.recall_at_5 : "100.0%", 
         l: "Recall@5", 
-        d: recall?.extra?.recall_at_1 ? `Recall@1: ${recall.extra.recall_at_1}, MRR ${recall.extra.mrr || '0.67'}` : "Recall@1: 65.0%, MRR 0.67", 
-        raw: recall?.extra?.recall_at_5 ? `Recall@5: ${recall.extra.recall_at_5}` : "70.0%" 
+        d: recall?.extra?.recall_at_1 ? `Recall@1: ${recall.extra.recall_at_1}, MRR ${recall.extra.mrr || '0.95'}` : "Recall@1: 90.0%, MRR 0.95", 
+        raw: recall?.extra?.recall_at_5 ? `Recall@5: ${recall.extra.recall_at_5}` : "100.0%" 
       },
       { 
         c: P.purple, 
@@ -1836,26 +1836,26 @@ function Benchmarks() {
       },
       { 
         l: "Time-travel", 
-        v: timeTravel ? timeTravel.p50_ms : 311, 
+        v: timeTravel ? timeTravel.p50_ms : 284, 
         max: 1000, 
         c: P.purple, 
-        label: timeTravel ? `${timeTravel.p50_ms.toFixed(0)} ms` : "311 ms", 
+        label: timeTravel ? `${timeTravel.p50_ms.toFixed(0)} ms` : "284 ms", 
         d: "Native CockroachDB MVCC point-in-time state reconstruction query." 
       },
       { 
         l: "Search", 
-        v: memSearch ? memSearch.p50_ms : 308, 
+        v: memSearch ? memSearch.p50_ms : 598, 
         max: 1000, 
         c: P.gold, 
-        label: memSearch ? `${memSearch.p50_ms.toFixed(0)} ms` : "308 ms", 
+        label: memSearch ? `${memSearch.p50_ms.toFixed(0)} ms` : "598 ms", 
         d: "Cosine similarity scan over 1024-dimensional C-SPANN vector indexing." 
       },
       { 
         l: "Store", 
-        v: memStore ? memStore.p50_ms : 910, 
+        v: memStore ? memStore.p50_ms : 855, 
         max: 3000, 
         c: P.magma, 
-        label: memStore ? `${memStore.p50_ms.toFixed(0)} ms` : "910 ms", 
+        label: memStore ? `${memStore.p50_ms.toFixed(0)} ms` : "855 ms", 
         d: "SERIALIZABLE isolation write committed on a live CockroachDB Cloud Serverless cluster (AWS ap-south-1)." 
       },
     ];
@@ -2101,7 +2101,7 @@ function Benchmarks() {
                   <div style={{fontSize:"17px",fontWeight:800,color:"#fff",fontFamily:"var(--font-sg)",marginTop:"3px",letterSpacing:.3}}>Live Cluster Telemetry // AWS ap-south-1</div>
                 </div>
                 <div style={{fontFamily:"var(--font-mono)",fontSize:"11.5px",color:P.mute,letterSpacing:".8px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",padding:"5px 12px",borderRadius:"6px"}}>
-                  TPR <span style={{color:"#00ff66",fontWeight:800}}>88.2%</span> · FP <span style={{color:P.gold,fontWeight:800}}>0</span> · LEDGER <span style={{color:P.cyan,fontWeight:800}}>SECURED</span>
+                  TPR <span style={{color:"#00ff66",fontWeight:800}}>87.0%</span> · FP <span style={{color:P.gold,fontWeight:800}}>0</span> · LEDGER <span style={{color:P.cyan,fontWeight:800}}>SECURED</span>
                 </div>
               </div>
               
@@ -2316,8 +2316,8 @@ export default function Page() {
             <span style={{width:"5px",height:"5px",borderRadius:"50%",background:clusterStatus==="online"?"#00ff66":clusterStatus==="offline"?"#ff3306":"#ffaa00",boxShadow:clusterStatus==="online"?"0 0 6px #00ff66":clusterStatus==="offline"?"0 0 6px #ff3306":"0 0 6px #ffaa00",display:"inline-block",animation:clusterStatus==="checking"?"pulse 1.5s infinite":"none"}}/>
             CLUSTER: {clusterStatus==="online"?"ONLINE":clusterStatus==="offline"?"OFFLINE":"CHECKING"}
           </span>
-          <Link href="/playground" className="cta-btn" style={{padding:"9px 20px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,color:"#fff",fontSize:"12.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px"}}>
-            Enter Live Demo
+          <Link href="/agent" className="cta-btn" style={{padding:"9px 20px",borderRadius:"3px",background:`linear-gradient(135deg,#ffea00,${P.magma})`,color:"#fff",fontSize:"12.5px",fontWeight:800,textDecoration:"none",textTransform:"uppercase",letterSpacing:"1px"}}>
+            Chat with Agent
           </Link>
         </div>
       </nav>
@@ -2398,7 +2398,7 @@ export default function Page() {
 
             {/* CTA Buttons */}
             <div style={{display:"flex",gap:"16px",justifyContent:"center",flexWrap:"wrap",marginBottom:"52px"}}>
-              <Link href="/playground" style={{
+              <Link href="/agent" style={{
                 padding:"18px 40px",borderRadius:"10px",
                 background:"linear-gradient(135deg,#ffea00,#ff5500)",
                 color:"#fff",fontSize:"15px",fontWeight:800,textDecoration:"none",
@@ -2407,7 +2407,7 @@ export default function Page() {
                 boxShadow:"0 6px 30px rgba(255,85,0,.4),0 0 80px rgba(255,170,0,.12)",
                 transition:"all .3s",
               }}>
-                Enter Live Demo
+                Chat with Agent
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </Link>
               <Link href="/docs/introduction" style={{
@@ -2473,7 +2473,7 @@ export default function Page() {
                   </div>
                   <div style={{width:"1px",background:"rgba(255,255,255,0.1)"}}/>
                   <div>
-                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>308ms</div>
+                    <div style={{fontSize:"24px",fontWeight:800,color:P.cyan,fontFamily:"var(--font-sg)"}}>598ms</div>
                     <div style={{fontSize:"9px",fontFamily:"var(--font-mono)",color:P.mute,textTransform:"uppercase",letterSpacing:"1px"}}>Vector Search p50</div>
                   </div>
                 </div>
