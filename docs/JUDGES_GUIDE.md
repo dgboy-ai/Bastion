@@ -85,7 +85,7 @@ Instead of just logging alerts, Bastion leverages these insights to execute auto
 | Tool | Implementation |
 |------|---------------|
 | **Managed MCP Server** | Live SQL queries via the official `cockroachlabs.cloud/mcp` endpoint (10/12 tools verified). |
-| **Vector Indexing** | C-SPANN index on `VECTOR(384)` with cosine distance (`<=>`). |
+| **Vector Indexing** | C-SPANN index on `VECTOR(1024)` with cosine distance (`<=>`). |
 | **ccloud CLI** | Introspects cluster lists, region locality, and metrics via python `dba.py` wrappers. |
 | **Agent Skills Repo** | Executes all 34 playbooks from `cockroachdb-skills` via `invoke_agent_skill`. |
 

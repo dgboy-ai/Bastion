@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const content = String(body.content || "").slice(0, 2000);
     const severity = String(body.severity || "medium").slice(0, 20);
     const memoryId = String(body.memoryId || "").slice(0, 128);
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const agentId = String(body.agentId || "mcp-agent").slice(0, 128);
     const startTime = Date.now();
 
     if (!content) {

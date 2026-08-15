@@ -9,8 +9,16 @@ CREATE TABLE IF NOT EXISTS agent_region_mapping (
 -- Add region column to agent_memory if not present
 ALTER TABLE agent_memory ADD COLUMN IF NOT EXISTS crdb_region STRING NOT NULL DEFAULT 'us-east-1';
 
--- Enable REGIONAL BY ROW so CRDB auto-routes rows to correct serverless zone
-ALTER TABLE agent_memory SET LOCALITY REGIONAL BY ROW AS crdb_region;
+-- Enable REGIONAL BY ROW so CRDB auto-routes rows to correct serverless zone.
+-- Only valid on multi-region databases — guarded so single-region (Basic/Serverless)
+-- clusters skip this statement instead of failing the migration run.
+DO $$
+BEGIN
+    IF (SELECT count(*) FROM crdb_internal.cluster_regions) > 1 THEN
+        EXECUTE 'ALTER TABLE agent_memory SET LOCALITY REGIONAL BY ROW AS crdb_region';
+    END IF;
+END
+$$;
 
 -- Index for fast region-scoped queries
 CREATE INDEX IF NOT EXISTS idx_memory_region ON agent_memory (crdb_region);

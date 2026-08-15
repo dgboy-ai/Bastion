@@ -859,6 +859,8 @@ def create_server(
                 "tools_available": [
                     "memory_search",
                     "memory_store",
+                    "memory_store_encrypted",
+                    "memory_search_encrypted",
                     "memory_store_batch",
                     "memory_timetravel",
                     "memory_audit",
@@ -869,6 +871,7 @@ def create_server(
                     "memory_list",
                     "memory_correct",
                     "memory_health",
+                    "forensic_report",
                     "memory_apply_patch",
                     "resolve_conflict",
                     "ltm_check_reuse",
@@ -883,6 +886,12 @@ def create_server(
                     "context_pack",
                     "agent_schema",
                     "a2a_bridge",
+                    "managed_mcp_list_tools",
+                    "managed_mcp_call",
+                    "invoke_agent_skill",
+                    "list_agent_skills",
+                    "ccloud_exec",
+                    "compliance_report",
                 ],
             },
             indent=2,
@@ -2741,18 +2750,28 @@ def create_server(
             headers["Authorization"] = f"Bearer {api_key}"
         elif oauth_token:
             headers["Authorization"] = f"Bearer {oauth_token}"
+        # Allow managed MCP write tools (create_database/create_table/insert_rows)
+        headers["crdb-mcp-enable-write-queries"] = "true"
         # Scope to our cluster
         if cluster_id:
             headers["mcp-cluster-id"] = cluster_id
 
         # MCP JSON-RPC payload
+        call_args = dict(params or {})
+        # Default database/schema for table-facing tools so agents don't need to
+        # know the exact param names (list_tables/get_table_schema/select_query).
+        if tool in {"list_tables", "get_table_schema", "select_query", "explain_query", "insert_rows", "create_table"}:
+            if not call_args.get("database") and not call_args.get("database_name"):
+                call_args["database"] = "defaultdb"
+            if tool in {"list_tables", "get_table_schema"} and not call_args.get("schema"):
+                call_args["schema"] = "public"
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
             "params": {
                 "name": tool,
-                "arguments": params or {},
+                "arguments": call_args,
             },
         }
         try:

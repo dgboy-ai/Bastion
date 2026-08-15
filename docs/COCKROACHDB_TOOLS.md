@@ -34,9 +34,9 @@ CREATE TABLE public.agent_memory (
     agent_id STRING NOT NULL,
     memory_type STRING NOT NULL,
     content STRING NOT NULL,
-    embedding VECTOR(1024) NULL,  -- Amazon Bedrock Titan v2 (1024-dim)
-    embedding_384 VECTOR(384) NULL, -- local MiniLM fallback
+    embedding VECTOR(1024) NOT NULL,  -- HuggingFace BGE / local MiniLM (1024-dim)
     metadata JSONB NULL,
+    previous_hash STRING NULL,
     cryptographic_hash STRING NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     expires_at TIMESTAMPTZ NULL,
@@ -46,15 +46,15 @@ CREATE TABLE public.agent_memory (
     pin_priority INT8 DEFAULT 0
 );
 
--- Indexing C-SPANN vector distance
-CREATE INDEX idx_memory_embedding_384 ON agent_memory (agent_id, embedding_384);
+-- C-SPANN distributed vector index (live on the cluster, v26.2)
+CREATE VECTOR INDEX idx_memory_embedding ON agent_memory (agent_id, embedding);
 ```
 
 ### Hybrid Query Pattern
-We combine vector search with relational filters (tenant ID, expiry, importance) in a single SQL statement:
+We combine vector search with relational filters (tenant ID, expiry, importance) in a single SQL statement, accelerated by the C-SPANN index:
 ```sql
 SELECT memory_id, content, importance_score,
-       embedding_384 <=> $1 AS distance
+       embedding <-> $1::vector(1024) AS distance
 FROM agent_memory
 WHERE agent_id = $2
   AND (expires_at IS NULL OR expires_at > now())

@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS oauth_revoked_tokens (
 );
 
 -- Auto-expire revocation records after 8 days (max token lifetime + 1 day buffer)
-ALTER TABLE oauth_revoked_tokens SET (ttl_expiration_expression = 'INTERVAL ''8 days''');
+ALTER TABLE oauth_revoked_tokens SET (ttl_expire_after = INTERVAL '8 days');

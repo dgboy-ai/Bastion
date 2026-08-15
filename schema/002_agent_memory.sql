@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS agent_memory (
 -- Requires CockroachDB v25.2+ with vector indexing (Preview)
 -- On older versions, this will fail gracefully — vector search falls back to keyword search
 -- Reference: https://www.cockroachlabs.com/docs/stable/vector-indexes
+-- NOTE: On an already-populated table the backfill can take a long time. If the
+-- index build hangs on an existing cluster, apply it separately with:
+--   BASTION_CONN="..." python scripts/create_vector_index.py
 CREATE VECTOR INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory (agent_id, embedding);
 
 -- CDC Changefeed: Streams every memory write for real-time anomaly detection and self-healing

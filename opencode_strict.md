@@ -30,7 +30,7 @@ The memory design is solid engineering but the demo doesn't prove it works at sc
 
 ### What's Actually Good
 - 25 MCP tools is genuinely impressive
-- CDC pipeline with Lambda verification is real
+- CDC pipeline with S3 CDC tailer + in-process hash-chain verification is real
 - Vector index + cosine similarity queries work
 
 ### What's Weak

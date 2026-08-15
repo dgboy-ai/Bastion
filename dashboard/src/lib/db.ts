@@ -188,8 +188,8 @@ const staticPool = connectionString && !isMockForced
       ssl: process.env.NODE_ENV === "production"
         ? { rejectUnauthorized: true }
         : { rejectUnauthorized: false },
-      connectionTimeoutMillis: 15000,
-      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 60000,
+      idleTimeoutMillis: 60000,
       max: 5,
     })
   : null;
@@ -242,8 +242,8 @@ async function getActivePool(): Promise<Pool | null> {
       pool = new Pool({
         connectionString: dynamicConn,
         ssl: { rejectUnauthorized: false },
-        connectionTimeoutMillis: 15000,
-        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 60000,
+        idleTimeoutMillis: 60000,
         max: 3,
       });
       poolCache.set(dynamicConn, pool);

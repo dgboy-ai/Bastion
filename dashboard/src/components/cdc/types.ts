@@ -1,6 +1,6 @@
 export interface PipelineEvent {
   id: string;
-  type: "write" | "cdc" | "lambda" | "memory" | "anomaly";
+  type: "write" | "cdc" | "tailer" | "memory" | "anomaly";
   agentId: string;
   content: string;
   timestamp: string;

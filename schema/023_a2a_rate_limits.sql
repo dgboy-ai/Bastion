@@ -6,6 +6,6 @@ CREATE TABLE IF NOT EXISTS a2a_rate_limits (
     PRIMARY KEY (ip_address, request_time)
 );
 
-ALTER TABLE a2a_rate_limits SET (ttl_expiration_expression = 'request_time + INTERVAL ''120 seconds''');
+ALTER TABLE a2a_rate_limits SET (ttl_expire_after = INTERVAL '120 seconds');
 
 CREATE INDEX IF NOT EXISTS idx_a2a_rate_limits_ip ON a2a_rate_limits (ip_address, request_time DESC);

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bastion": {
+      "command": "python",
+      "args": ["-m", "bastion.mcp_server"],
+      "env": {
+        "BASTION_CONN": "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+      }
+    }
+  }
+}

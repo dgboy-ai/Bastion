@@ -242,7 +242,7 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
                 "SELECT memory_id, previous_hash, cryptographic_hash "
                 "FROM agent_memory "
                 "WHERE agent_id = %s AND cryptographic_hash IS NOT NULL "
-                "ORDER BY created_at ASC",
+                "ORDER BY created_at ASC, memory_id ASC",
                 (mem.agent_id,),
             )
             chain_rows = cur.fetchall()
@@ -264,7 +264,7 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
                 "SELECT memory_id, content, metadata, previous_hash, cryptographic_hash "
                 "FROM agent_memory "
                 "WHERE agent_id = %s AND cryptographic_hash IS NOT NULL "
-                "ORDER BY created_at ASC",
+                "ORDER BY created_at ASC, memory_id ASC",
                 (mem.agent_id,),
             )
             hash_mismatches = []

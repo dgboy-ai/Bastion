@@ -100,7 +100,7 @@ class BastionVectorStore(VectorStore):
 ```python
 from bastion.mcp_server import create_server
 
-# Creates a FastMCP server with 35 tools, 3 resources, 3 prompts
+# Creates a FastMCP server with 35 tools, 4 resources, 3 prompts
 mcp = create_server()
 ```
 

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tool_usage_log (
     INDEX idx_tool_usage_agent (agent_id),
     INDEX idx_tool_usage_tool (tool_name),
     INDEX idx_tool_usage_time (created_at DESC)
-) USING TTL 30 days ON DELETE;
+) WITH (ttl_expire_after = INTERVAL '30 days' ON DELETE);
 
 -- A2A handoff tracking for multi-agent collaboration visibility.
 CREATE TABLE IF NOT EXISTS a2a_handoffs (
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS a2a_handoffs (
     INDEX idx_a2a_from (from_agent),
     INDEX idx_a2a_to (to_agent),
     INDEX idx_a2a_time (created_at DESC)
-) USING TTL 30 days ON DELETE;
+) WITH (ttl_expire_after = INTERVAL '30 days' ON DELETE);
 
 -- CockroachDB tools usage summary (populated by dashboard queries).
 CREATE TABLE IF NOT EXISTS crdb_tools_usage (
@@ -42,4 +42,4 @@ CREATE TABLE IF NOT EXISTS crdb_tools_usage (
     agent_breakdown JSONB DEFAULT '{}',
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE INDEX idx_crdb_tools_name (tool_name)
-) USING TTL 90 days ON DELETE;
+) WITH (ttl_expire_after = INTERVAL '90 days' ON DELETE);

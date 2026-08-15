@@ -19,6 +19,16 @@ const NavBar = memo(function NavBar() {
 
   const links = [
     {
+      href: "/agent",
+      label: "Agent",
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+      )
+    },
+    {
       href: "/playground",
       label: "Live Demo",
       icon: (

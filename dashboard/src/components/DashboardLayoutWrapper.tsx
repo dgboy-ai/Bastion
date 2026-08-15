@@ -7,6 +7,7 @@ import BackgroundParticles from "@/components/BackgroundParticles";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import { fetchWithTimeout } from "@/lib/fetch";
+import Link from "next/link";
 
 export interface ConnectionContextType {
   isMock: boolean;
@@ -292,6 +293,41 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
               }}>
                 Memory Integrity Shield
               </span>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "#f0fdf4",
+                border: "1.5px solid #16a34a",
+                borderRadius: "4px",
+                padding: "3px 8px",
+                marginLeft: "8px",
+                boxShadow: "0 2px 4px rgba(22, 163, 74, 0.1)"
+              }}>
+                <span style={{
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  color: "#166534",
+                  fontFamily: "var(--font-mono)"
+                }}>
+                  EU AI Act: Compliant
+                </span>
+                <Link href="/compliance" style={{
+                  fontSize: "10px",
+                  fontWeight: 800,
+                  color: "#ffffff",
+                  background: "#16a34a",
+                  padding: "2px 6px",
+                  borderRadius: "3px",
+                  textDecoration: "none",
+                  fontFamily: "var(--font-mono)",
+                  display: "inline-block",
+                  border: "1px solid #14532d",
+                  transition: "background 0.2s"
+                }}>
+                  View Proof →
+                </Link>
+              </div>
             </div>
 
             <div className="header-actions">

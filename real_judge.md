@@ -31,7 +31,7 @@ Existing memory frameworks (Mem0, Zep, Cognee, Letta) focus primarily on memory 
 | **Time-Travel Recovery** | **Yes** (`AS OF SYSTEM TIME` + MVCC) | No | Limited (History lists) | No | No (Snapshot/Rollback) |
 | **Poisoning Defense** | **Yes** (OWASP ASI06 Guard) | No | No | No | No |
 | **Consistency Control** | **Yes** (SERIALIZABLE + CRDTs) | No | No | No | No |
-| **Infrastructure Integration** | CockroachDB + AWS KMS/Lambda | Vector + Graph DBs | Postgres / Vector DBs | Graph + Vector DBs | SQLite / Postgres |
+| **Infrastructure Integration** | CockroachDB + AWS KMS/S3 (CDC tailer) | Vector + Graph DBs | Postgres / Vector DBs | Graph + Vector DBs | SQLite / Postgres |
 
 ---
 
@@ -108,7 +108,7 @@ Bastion leverages CockroachDB's distributed features to build a resilient, multi
 
 ### 5.3 AWS Security & Integration Suite
 * **KMS Key Management**: Found in `kms.py`, Bastion supports envelope encryption. Memory contents can be encrypted at rest using `AES-256-GCM` using AWS KMS, GCP KMS, or local encryption providers, ensuring database compromises do not leak memory content.
-* **AWS Lambda CDC & Self-Healing**: Real-time memory writes are streamed via CockroachDB CDC changefeeds to an AWS Lambda function. The Lambda verifies the integrity of the hash chain out-of-band. If a mismatch is detected, it triggers `memory_heal()`, which reconstructs the true chain from MVCC history and reseals the ledger, logging the tampering in `agent_audit`.
+* **S3 CDC Tailer & Self-Healing**: Real-time memory writes are streamed via CockroachDB CDC changefeeds to AWS S3 (`cdc-live/` prefix), which `S3CdcTailer` tails for out-of-band events. Self-healing runs in-process via `memory_heal()` (see `docs/adr/005` — supersedes the original Lambda-based CDC design): it reconstructs the true chain from MVCC history and reseals the ledger, logging the tampering in `agent_audit`.
 
 ### 5.4 OWASP ASI06 Guard (`guard.py` & `firewall.py`)
 The `MemoryGuard` class sits in front of all write operations. It processes content through a strict sanitization pipeline:
@@ -169,9 +169,9 @@ Use the following formatted copy-paste responses when submitting your project to
 * **CockroachDB Agent Skills Repo (Open Source)**: Exposes 34 structured playbooks (onboarding, query profiling, security hardening) enabling modular, multi-step actions across various MCP and A2A clients.
 
 ### 8.2 Identify which AWS Services tools you used and how:
-* **AWS Lambda**: Serves as our out-of-band CDC verification engine. It receives memory update events streamed from CockroachDB changefeeds, cryptographically checks the chain's hash sequences, and triggers automated state restoration on drift detection.
+* **AWS S3 (CDC Tailer)**: Serves as the CDC sink for our changefeed events. Memory writes streamed from CockroachDB changefeeds land in the `cdc-live/` S3 prefix, tailed by `S3CdcTailer`; hash-chain verification and state restoration on drift detection run in-process via `memory_heal()`.
 * **AWS KMS**: Secures memory contents at rest using `AES-256-GCM` envelope encryption. Key rotation is handled through AWS KMS interfaces, ensuring database compromises do not leak plaintext records.
-* **Amazon Bedrock**: Power our text-to-vector embedding chain using Titan embedding models to populate the C-SPANN index coordinates.
+* **Embeddings (local MiniLM / HuggingFace)**: Power the text-to-vector embedding chain that populates the C-SPANN vector index coordinates — computed locally or via HuggingFace Inference, with a deterministic SHA-256 fallback (no external API required).
 * **Amazon S3**: Acts as our long-term archiving repository, utilizing S3 lifecycle policies to automatically push old memory dumps to Glacier storage classes.
 
 ---

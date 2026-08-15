@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { agentId = "agent-demo", limit = 20 } = body;
+    const { agentId = "mcp-agent", limit = 20 } = body;
 
     const startTime = Date.now();
 

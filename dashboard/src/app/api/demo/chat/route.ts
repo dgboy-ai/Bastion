@@ -168,7 +168,7 @@ export async function POST(request: Request) {
       return apiError("Invalid JSON body", 400);
     }
     const query = String(body.query || "What do I know about deployments?").slice(0, 500);
-    const requestedAgentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const requestedAgentId = String(body.agentId || "mcp-agent").slice(0, 128);
     const startTime = Date.now();
 
     // ─── 1. CALL MCP MEMORY_SEARCH TOOL (hybrid: vector <=> + tenant + decay + TTL) ──

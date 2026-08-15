@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -78,6 +79,128 @@ def _discover_migrations(schema_dir: str) -> list[tuple[str, str, str]]:
     return migrations
 
 
+def _split_statements(sql: str) -> list[str]:
+    """Split a SQL script into individual statements.
+
+    Unlike a naive ``split(";")`` this is aware of:
+    - single-quoted strings ('' escapes),
+    - double-quoted identifiers,
+    - dollar-quoted blocks (``$$ ... $$`` / ``$tag$ ... $tag$``),
+    - ``--`` line comments and ``/* */`` block comments.
+
+    Returns a list of stripped statements (comments-only chunks removed).
+    """
+
+    statements: list[str] = []
+    buf: list[str] = []
+    i = 0
+    n = len(sql)
+    state = "code"  # code | sq | dq | dollar | line_comment | block_comment
+    dollar_tag: str | None = None
+
+    def flush() -> None:
+        nonlocal buf
+        stmt = "".join(buf).strip()
+        buf = []
+        if stmt:
+            statements.append(stmt)
+
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+
+        if state == "line_comment":
+            if ch == "\n":
+                state = "code"
+            buf.append(ch)
+            i += 1
+            continue
+
+        if state == "block_comment":
+            if ch == "*" and nxt == "/":
+                buf.append("*/")
+                i += 2
+                state = "code"
+                continue
+            buf.append(ch)
+            i += 1
+            continue
+
+        if state == "sq":
+            buf.append(ch)
+            if ch == "'" and nxt == "'":
+                buf.append(nxt)
+                i += 2
+                continue
+            if ch == "'":
+                state = "code"
+            i += 1
+            continue
+
+        if state == "dq":
+            buf.append(ch)
+            if ch == '"' and nxt == '"':
+                buf.append(nxt)
+                i += 2
+                continue
+            if ch == '"':
+                state = "code"
+            i += 1
+            continue
+
+        if state == "dollar":
+            # Inside a dollar-quoted block: look for the closing tag.
+            if sql.startswith(dollar_tag or "$$", i):
+                buf.append(dollar_tag or "$$")
+                i += len(dollar_tag or "$$")
+                dollar_tag = None
+                state = "code"
+                continue
+            buf.append(ch)
+            i += 1
+            continue
+
+        # state == "code"
+        if ch == "-" and nxt == "-":
+            state = "line_comment"
+            buf.append("--")
+            i += 2
+            continue
+        if ch == "/" and nxt == "*":
+            state = "block_comment"
+            buf.append("/*")
+            i += 2
+            continue
+        if ch == "'":
+            state = "sq"
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            state = "dq"
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "$":
+            # Detect $$ or $tag$ opener.
+            m = re.match(r"\$[A-Za-z_0-9]*\$", sql[i:])
+            if m:
+                dollar_tag = m.group(0)
+                state = "dollar"
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                continue
+        if ch == ";":
+            flush()
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+
+    flush()
+    return statements
+
+
 def _apply_migration(conn, version: str, filepath: str, checksum: str) -> int:
     """Apply a single migration file. Returns execution time in ms."""
 
@@ -86,8 +209,8 @@ def _apply_migration(conn, version: str, filepath: str, checksum: str) -> int:
 
     start = time.monotonic()
     with conn.cursor() as cur:
-        # Split by semicolons and execute each statement
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        # Split by semicolons (statement-aware) and execute each statement
+        statements = _split_statements(sql)
         for stmt in statements:
             # Skip empty statements and comments-only
             lines = [line for line in stmt.split("\n") if line.strip() and not line.strip().startswith("--")]
@@ -144,7 +267,7 @@ def _rollback_migration(conn, version: str, schema_dir: str) -> bool:
 
     start = time.monotonic()
     with conn.cursor() as cur:
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        statements = _split_statements(sql)
         for stmt in statements:
             lines = [line for line in stmt.split("\n") if line.strip() and not line.strip().startswith("--")]
             if not lines:

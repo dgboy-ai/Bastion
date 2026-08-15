@@ -1,0 +1,400 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Bastion — Agentic Memory API",
+    "description": "Forensic-grade agentic memory backed by CockroachDB. Provides hash-chain integrity, C-SPANN vector search, AS OF SYSTEM TIME queries, OWASP ASI06 security guard, and human-in-the-loop approval for write operations.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Bastion Team",
+      "url": "https://github.com/dgboy-ai/Bastion"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/dgboy-ai/Bastion/blob/main/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://bastion-self.vercel.app",
+      "description": "Production (Vercel)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/api/mcp/memory_search": {
+      "post": {
+        "operationId": "memory_search",
+        "summary": "Search memories by semantic similarity",
+        "description": "Finds the most relevant memories using C-SPANN vector similarity search on CockroachDB. Returns memories ranked by cosine distance. Safe for automatic execution — read-only operation.",
+        "x-amazon-bedrock-guard": "auto",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Natural language search query to find semantically similar memories",
+                    "example": "How do I prevent SQL injection in a web app?"
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "description": "Agent ID to scope the search to",
+                    "default": "agent-demo"
+                  },
+                  "k": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (1-20)",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results with similarity scores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/memory_store": {
+      "post": {
+        "operationId": "memory_store",
+        "summary": "Store a new memory",
+        "description": "Stores a memory with automatic hash chain integrity, C-SPANN vector embedding, OWASP ASI06 security guard screening, and PII detection. WRITE operation — requires human approval before execution.",
+        "x-amazon-bedrock-guard": "human-approval",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["content"],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "Memory content to store. Will be screened by OWASP ASI06 guard for prompt injection, PII, and secrets.",
+                    "example": "SQL injection is prevented by using parameterized queries instead of string concatenation."
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "description": "Agent ID to associate the memory with",
+                    "default": "agent-demo"
+                  },
+                  "memoryType": {
+                    "type": "string",
+                    "description": "Type of memory",
+                    "enum": ["fact", "episodic", "semantic", "procedural", "safety_rule", "observation"],
+                    "default": "fact"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory stored successfully with hash chain details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Guard blocked the memory (prompt injection, PII, or secrets detected)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/memory_audit": {
+      "post": {
+        "operationId": "memory_audit",
+        "summary": "View the append-only audit log",
+        "description": "Returns the tamper-evident audit log for an agent. Each entry is hash-chained for forensic integrity. Safe for automatic execution — read-only.",
+        "x-amazon-bedrock-guard": "auto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "default": "agent-demo"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Audit log entries with hash chain verification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/memory_timetravel": {
+      "post": {
+        "operationId": "memory_timetravel",
+        "summary": "Query memory state at a past timestamp",
+        "description": "Uses CockroachDB's AS OF SYSTEM TIME to query the exact memory state at any point in the past. Enables forensic reconstruction of what an agent knew at any moment. Safe for automatic execution — read-only.",
+        "x-amazon-bedrock-guard": "auto",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["timestamp"],
+                "properties": {
+                  "timestamp": {
+                    "type": "string",
+                    "description": "ISO 8601 timestamp to query (e.g., '2026-08-10T12:00:00Z'). CockroachDB will return the exact state at that moment.",
+                    "example": "2026-08-10T12:00:00Z"
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "default": "agent-demo"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory state at the requested timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimetravelResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/memory_health": {
+      "post": {
+        "operationId": "memory_health",
+        "summary": "Check memory system health",
+        "description": "Returns health metrics: total memories, pinned count, freshness ratio, average importance scores, and hash chain integrity status. Safe for automatic execution — read-only.",
+        "x-amazon-bedrock-guard": "auto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "default": "agent-demo"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Health metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/memory_correct": {
+      "post": {
+        "operationId": "memory_correct",
+        "summary": "Correct an existing memory's content",
+        "description": "Updates a memory's content while preserving the hash chain. Creates an audit trail entry. The new content is guard-screened. WRITE operation — requires human approval.",
+        "x-amazon-bedrock-guard": "human-approval",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["memoryId", "newContent"],
+                "properties": {
+                  "memoryId": {
+                    "type": "string",
+                    "description": "UUID of the memory to correct"
+                  },
+                  "newContent": {
+                    "type": "string",
+                    "description": "Corrected memory content. Will be guard-screened."
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "default": "agent-demo"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory corrected with new hash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "query": { "type": "string" },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "memoryId": { "type": "string" },
+                "content": { "type": "string" },
+                "memoryType": { "type": "string" },
+                "trustLevel": { "type": "integer" },
+                "similarity": { "type": "number" },
+                "createdAt": { "type": "string" }
+              }
+            }
+          },
+          "total": { "type": "integer" },
+          "latency": { "type": "string" }
+        }
+      },
+      "StoreResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "memoryId": { "type": "string" },
+          "agentId": { "type": "string" },
+          "memoryType": { "type": "string" },
+          "previousHash": { "type": "string" },
+          "cryptographicHash": { "type": "string" },
+          "trustLevel": { "type": "integer" },
+          "latency": { "type": "string" }
+        }
+      },
+      "AuditResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "agentId": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": { "type": "string" },
+                "memoryId": { "type": "string" },
+                "previousHash": { "type": "string" },
+                "cryptographicHash": { "type": "string" },
+                "recordedAt": { "type": "string" }
+              }
+            }
+          },
+          "total": { "type": "integer" },
+          "latency": { "type": "string" }
+        }
+      },
+      "TimetravelResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "timestamp": { "type": "string" },
+          "agentId": { "type": "string" },
+          "memories": { "type": "array" },
+          "total": { "type": "integer" },
+          "latency": { "type": "string" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "totalMemories": { "type": "integer" },
+          "pinnedCount": { "type": "integer" },
+          "freshnessRatio": { "type": "number" },
+          "hashChainIntegrity": { "type": "string" },
+          "latency": { "type": "string" }
+        }
+      },
+      "CorrectResponse": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "memoryId": { "type": "string" },
+          "previousHash": { "type": "string" },
+          "newHash": { "type": "string" },
+          "latency": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

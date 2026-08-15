@@ -12,11 +12,14 @@
   --canvas-elevated: #f9f9f7;
 
   /* Accent Palette — Flat Primary Colors */
-  --accent-breeze: #facc15; /* Retro Yellow Gold */
+  --accent-breeze: #facc15;
+  /* Retro Yellow Gold */
   --accent-breeze-glow: rgba(250, 204, 21, 0.2);
-  --accent-emerald: #10b981; /* High-Contrast Emerald */
+  --accent-emerald: #10b981;
+  /* High-Contrast Emerald */
   --accent-emerald-glow: rgba(16, 185, 129, 0.2);
-  --accent-sunset: #ef4444; /* Retro Red Alert */
+  --accent-sunset: #ef4444;
+  /* Retro Red Alert */
   --accent-sunset-glow: rgba(239, 68, 68, 0.2);
   --accent-magenta: #ec4899;
   --accent-dusk: #e2e8f0;
@@ -55,22 +58,36 @@
 
 /* ── Chain Card Animations ── */
 @keyframes chainDotPulse {
-  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
-  50% { box-shadow: 0 0 8px 3px currentColor; }
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+
+  50% {
+    box-shadow: 0 0 8px 3px currentColor;
+  }
 }
 
 @keyframes chainCardHover {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(-3px); }
+  0% {
+    transform: translateY(0);
+  }
+
+  100% {
+    transform: translateY(-3px);
+  }
 }
 
 .chain-card {
   transition: all 0.2s var(--ease-spring);
 }
+
 .chain-card:hover {
   transform: translateY(-3px) !important;
   box-shadow: 4px 6px 0px #000000 !important;
 }
+
 .chain-card:active {
   transform: translateY(-1px) !important;
   box-shadow: 2px 3px 0px #000000 !important;
@@ -79,6 +96,7 @@
 .chain-dot {
   transition: all 0.3s var(--ease-spring);
 }
+
 .chain-card:hover .chain-dot {
   animation: chainDotPulse 1.2s ease-in-out infinite;
 }

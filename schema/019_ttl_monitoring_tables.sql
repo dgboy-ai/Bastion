@@ -6,10 +6,10 @@ ALTER TABLE cache_stats
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '7 days');
 
 ALTER TABLE cache_stats
-  SET (ttl_expiration_expression = 'expires_at');
+  SET (ttl_expire_after = INTERVAL '7 days');
 
 ALTER TABLE agent_drift_scores
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '30 days');
 
 ALTER TABLE agent_drift_scores
-  SET (ttl_expiration_expression = 'expires_at');
+  SET (ttl_expire_after = INTERVAL '30 days');

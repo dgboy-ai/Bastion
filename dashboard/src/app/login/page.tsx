@@ -12,9 +12,12 @@ function LoginForm() {
   const redirect = searchParams.get("redirect") || "/dashboard";
 
   useEffect(() => {
-    fetch("/api/health", { credentials: "same-origin" })
-      .then((res) => {
-        if (res.ok) router.replace(redirect);
+    // Only skip the login form if we already hold a valid session cookie.
+    // (Do NOT check /api/health — it's public and would loop with the proxy.)
+    fetch("/api/auth/session", { credentials: "same-origin" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.authenticated) router.replace(redirect);
       })
       .catch(() => {});
   }, [router, redirect]);

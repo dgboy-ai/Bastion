@@ -166,3 +166,11 @@
   border-color: #000000 !important;
   box-shadow: var(--shadow-md) !important;
 }
+
+.brutal-hover {
+  transition: all 0.15s ease;
+}
+.brutal-hover:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0px 0px #000000 !important;
+}

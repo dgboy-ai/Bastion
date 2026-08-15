@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS auth_brute_force (
 );
 
 -- TTL: auto-expire rows after 1 hour (lockout + window)
-ALTER TABLE auth_brute_force SET (ttl_expiration_expression = 'INTERVAL ''1 hour''');
+ALTER TABLE auth_brute_force SET (ttl_expire_after = INTERVAL '1 hour');

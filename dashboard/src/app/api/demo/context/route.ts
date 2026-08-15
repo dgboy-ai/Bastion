@@ -10,7 +10,7 @@ export async function POST(request: Request) {
       if (text) body = JSON.parse(text);
     } catch { /* empty body OK */ }
 
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const agentId = String(body.agentId || "mcp-agent").slice(0, 128);
 
     const [memoriesRes, entitiesRes, relationsRes, auditRes, hashChainRes, trustRes] = await Promise.all([
       safeQuery(

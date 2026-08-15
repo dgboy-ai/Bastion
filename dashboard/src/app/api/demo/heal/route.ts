@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     } catch {
       return apiError("Invalid JSON body", 400);
     }
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const agentId = String(body.agentId || "mcp-agent").slice(0, 128);
     const startTime = Date.now();
 
     // ─── 1. FIND THE POISON MEMORY ──────────────────────────

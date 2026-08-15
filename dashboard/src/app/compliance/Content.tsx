@@ -92,34 +92,20 @@ export default function CompliancePage() {
     if (scanning) return;
     setScanning(true);
     setScanLogs([]);
-    const logs = [
-      "[INFO] Initializing memory ledger integrity check...",
-      "[DB] Connecting to CockroachDB Cluster...",
-      "[DB] Connection established. Isolation level: SERIALIZABLE.",
-      "[VERIFY] Scanning Hash Chain on 3,733 records...",
-      "[VERIFY] Row #1 to #3733 cryptographically linked. Coverage: 95%.",
-      "[VERIFY] Hash chain validation: PASS.",
-      "[VERIFY] Auditing Row-Level Security: checking active policies...",
-      "[VERIFY] Policy 'agent_memory_isolation' detected on 'agent_memory'.",
-      "[VERIFY] Policy enforcement check: current_setting('bastion.current_agent_id') validated.",
-      "[VERIFY] Row-Level Security verification: PASS.",
-      "[VERIFY] Auditing append-only constraints: checking agent_audit schema...",
-      "[VERIFY] Table 'agent_audit' verified append-only (No UPDATE/DELETE allowed).",
-      "[VERIFY] Append-only audit check: PASS.",
-      "[SUCCESS] All checks completed. Bastion Ledger Integrity is SECURE."
-    ];
     
-    let i = 0;
-    const nextLog = () => {
-      if (i < logs.length) {
-        setScanLogs(prev => [...prev, logs[i]]);
-        i++;
-        setTimeout(nextLog, 250);
-      } else {
-        setScanning(false);
-      }
+    // Connect to the real-time SSE scan endpoint
+    const eventSource = new EventSource("/api/compliance/scan");
+    
+    eventSource.onmessage = (event) => {
+      // EventSource receives messages with the 'data' payload
+      setScanLogs(prev => [...prev, event.data]);
     };
-    nextLog();
+    
+    eventSource.onerror = () => {
+      // Stream ends or connection errors out
+      eventSource.close();
+      setScanning(false);
+    };
   };
 
   if (loading) return <div style={{ padding: "60px", textAlign: "center", color: C.mute, fontWeight: 900, fontFamily: "var(--font-mono)", fontSize: "16px" }}>Loading compliance report…</div>;
@@ -165,13 +151,13 @@ export default function CompliancePage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div className="welcome-title" style={{ margin: 0 }}>Compliance Audit Report</div>
-          <div style={{ fontSize: "14px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>
+          <div style={{ fontSize: "16px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>
             Report {r.reportId.slice(0, 16)}… · Generated {r.generatedAt ? new Date(r.generatedAt).toLocaleString() : "—"} · {r.totalMemories?.toLocaleString()} memories · {r.totalOperations?.toLocaleString()} audit entries
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={{
-            fontSize: "14px", fontWeight: 955, fontFamily: "var(--font-mono)",
+            fontSize: "16px", fontWeight: 955, fontFamily: "var(--font-mono)",
             background: r.status === "COMPLIANT" ? "#d1fae5" : "#fee2e2",
             color: r.status === "COMPLIANT" ? C.green : C.red,
             padding: "8px 20px", borderRadius: "6px", border: "2.5px solid #000000",
@@ -189,7 +175,7 @@ export default function CompliancePage() {
         <div className="bento-panel" style={{
           background: "#ffffff", display: "flex", flexDirection: "column", alignItems: "center", gap: "24px",
         }}>
-          <div style={{ fontSize: "13px", fontWeight: 900, color: C.mute, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>EU AI Act Article 12(2)</div>
+          <div style={{ fontSize: "16px", fontWeight: 900, color: C.mute, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>EU AI Act Article 12(2)</div>
           
           {/* Ring */}
           <div style={{ position: "relative", width: "150px", height: "150px" }}>
@@ -201,7 +187,7 @@ export default function CompliancePage() {
             </svg>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
               <span style={{ fontSize: "40px", fontWeight: 955, color: cov >= 95 ? C.green : C.red, fontFamily: "var(--font-sans)", letterSpacing: "-1px" }}>{cov}%</span>
-              <span style={{ fontSize: "9px", color: C.mute, fontWeight: 900, letterSpacing: "1.5px", fontFamily: "var(--font-mono)" }}>HASH CHAIN</span>
+              <span style={{ fontSize: "16px", color: C.mute, fontWeight: 900, letterSpacing: "1.5px", fontFamily: "var(--font-mono)" }}>HASH CHAIN</span>
             </div>
           </div>
 
@@ -214,8 +200,8 @@ export default function CompliancePage() {
               { label: "Scope", value: r.agentId },
             ].map((s, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#f9fafb", borderRadius: "6px", border: "2px solid #000000" }}>
-                <span style={{ fontSize: "12px", color: C.mute, fontWeight: 900 }}>{s.label}</span>
-                <span style={{ fontSize: "13px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-mono)" }}>{s.value}</span>
+                <span style={{ fontSize: "16px", color: C.mute, fontWeight: 900 }}>{s.label}</span>
+                <span style={{ fontSize: "16px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-mono)" }}>{s.value}</span>
               </div>
             ))}
           </div>
@@ -230,7 +216,7 @@ export default function CompliancePage() {
             <div style={{ fontSize: "22px", fontWeight: 955, color: r.status === "COMPLIANT" ? C.green : C.red, fontFamily: "var(--font-sans)" }}>
               {r.status === "COMPLIANT" ? "✓ PASS" : "✗ FAIL"}
             </div>
-            <div style={{ fontSize: "12px", color: C.mute, marginTop: "6px", fontWeight: 800 }}>All Article 12(2) requirements met</div>
+            <div style={{ fontSize: "16px", color: C.mute, marginTop: "6px", fontWeight: 800 }}>All Article 12(2) requirements met</div>
           </div>
         </div>
 
@@ -251,14 +237,14 @@ export default function CompliancePage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: "24px" }}>{req.icon}</span>
                 <span style={{
-                  fontSize: "10px", fontWeight: 900, background: "#d1fae5", color: C.green,
+                  fontSize: "16px", fontWeight: 900, background: "#d1fae5", color: C.green,
                   padding: "3px 10px", borderRadius: "4px", letterSpacing: "0.5px", border: "2px solid #000000",
                   fontFamily: "var(--font-mono)"
                 }}>ACTIVE</span>
               </div>
-              <div style={{ fontSize: "15px", fontWeight: 950, color: C.ink, fontFamily: "var(--font-sans)", marginTop: "4px" }}>{req.label}</div>
-              <div style={{ fontSize: "13px", color: "#1c1917", lineHeight: 1.5, flex: 1, fontWeight: 750 }}>{req.desc}</div>
-              <div style={{ fontSize: "11px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginTop: "6px" }}>📍 {req.code}</div>
+              <div style={{ fontSize: "16px", fontWeight: 950, color: C.ink, fontFamily: "var(--font-sans)", marginTop: "4px" }}>{req.label}</div>
+              <div style={{ fontSize: "16px", color: "#1c1917", lineHeight: 1.5, flex: 1, fontWeight: 750 }}>{req.desc}</div>
+              <div style={{ fontSize: "16px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginTop: "6px" }}>📍 {req.code}</div>
             </div>
           ))}
         </div>
@@ -274,7 +260,7 @@ export default function CompliancePage() {
               <span style={{ fontSize: "20px" }}>📡</span>
               <span style={{ fontSize: "16px", fontWeight: 950, color: C.ink, fontFamily: "var(--font-sans)", letterSpacing: "0.5px" }}>LIVE INTEGRITY VALIDATOR</span>
             </div>
-            <div style={{ fontSize: "13px", color: "#1c1917", fontWeight: 750, lineHeight: 1.5 }}>
+            <div style={{ fontSize: "16px", color: "#1c1917", fontWeight: 750, lineHeight: 1.5 }}>
               Trigger a live cryptographic verification across all CockroachDB nodes. This queries row hashes, examines session properties, and checks access policy boundaries in real-time.
             </div>
           </div>
@@ -285,7 +271,7 @@ export default function CompliancePage() {
             style={{
               alignSelf: "flex-start",
               padding: "10px 24px", background: scanning ? "#f3f4f6" : "var(--accent-breeze)",
-              border: "2px solid #000000", borderRadius: "6px", fontSize: "13px",
+              border: "2px solid #000000", borderRadius: "6px", fontSize: "16px",
               fontWeight: 955, fontFamily: "var(--font-mono)", cursor: scanning ? "not-allowed" : "pointer",
               boxShadow: scanning ? "none" : "2px 2px 0px #000000", color: "#000000",
               transition: "all 0.1s ease"
@@ -303,18 +289,19 @@ export default function CompliancePage() {
           minHeight: "180px", maxHeight: "240px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px"
         }}>
           {scanLogs.length === 0 ? (
-            <div style={{ color: "#4b5563", fontSize: "13px", fontFamily: "var(--font-mono)", fontWeight: 800, fontStyle: "italic", textAlign: "center", marginTop: "50px" }}>
+            <div style={{ color: "#4b5563", fontSize: "16px", fontFamily: "var(--font-mono)", fontWeight: 800, fontStyle: "italic", textAlign: "center", marginTop: "50px" }}>
               Click "RUN SECURITY SCAN" to verify the live memory network status
             </div>
           ) : (
             scanLogs.map((log, index) => {
-              const isSuccess = log.startsWith("[SUCCESS]");
-              const isError = log.startsWith("[ERROR]");
-              const isVerify = log.startsWith("[VERIFY]");
+              const text = typeof log === "string" ? log : String(log ?? "");
+              const isSuccess = text.startsWith("[SUCCESS]");
+              const isError = text.startsWith("[ERROR]");
+              const isVerify = text.startsWith("[VERIFY]");
               const color = isSuccess ? "#10b981" : isError ? "#ef4444" : isVerify ? "#38bdf8" : "#9ca3af";
               return (
-                <div key={index} style={{ color, fontSize: "12px", fontFamily: "var(--font-mono)", fontWeight: 900, lineHeight: 1.4 }}>
-                  {log}
+                <div key={index} style={{ color, fontSize: "16px", fontFamily: "var(--font-mono)", fontWeight: 900, lineHeight: 1.4 }}>
+                  {text}
                 </div>
               );
             })
@@ -327,10 +314,10 @@ export default function CompliancePage() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "3px solid #000000", paddingBottom: "14px", marginBottom: "14px" }}>
           <div>
             <div style={{ fontSize: "18px", fontWeight: 955, fontFamily: "var(--font-sans)", letterSpacing: "1px" }}>Ledger Audit Trail</div>
-            <div style={{ fontSize: "12px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>Append-only · SHA-256 chained · No UPDATE/DELETE allowed</div>
+            <div style={{ fontSize: "16px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>Append-only · SHA-256 chained · No UPDATE/DELETE allowed</div>
           </div>
           <span style={{
-            fontSize: "13px", fontWeight: 900, background: "#fef3c7", color: "#000000",
+            fontSize: "16px", fontWeight: 900, background: "#fef3c7", color: "#000000",
             padding: "6px 18px", borderRadius: "6px", border: "2px solid #000000",
             boxShadow: "2px 2px 0px #000000", fontFamily: "var(--font-mono)"
           }}>
@@ -351,20 +338,20 @@ export default function CompliancePage() {
               onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; }}
             >
               <span style={{
-                fontSize: "11px", fontWeight: 900, fontFamily: "var(--font-mono)",
+                fontSize: "16px", fontWeight: 900, fontFamily: "var(--font-mono)",
                 padding: "4px 12px", borderRadius: "4px", textAlign: "center",
                 background: `${actionColor[e.action] || "#374151"}12`,
                 color: actionColor[e.action] || "#374151",
                 border: `2px solid ${actionColor[e.action] || "#374151"}`
               }}>{actionLabel[e.action] || e.action}</span>
-              <span style={{ fontSize: "13px", fontWeight: 900, color: C.ink, fontFamily: "var(--font-mono)" }}>{e.agentId}</span>
-              <span style={{ fontSize: "13px", color: C.mute, fontFamily: "var(--font-mono)", fontWeight: 800 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}</span>
-              <span style={{ fontSize: "13px", color: "#000000", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 800 }} title={JSON.stringify(e.details)}>
+              <span style={{ fontSize: "16px", fontWeight: 900, color: C.ink, fontFamily: "var(--font-mono)" }}>{e.agentId}</span>
+              <span style={{ fontSize: "16px", color: C.mute, fontFamily: "var(--font-mono)", fontWeight: 800 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}</span>
+              <span style={{ fontSize: "16px", color: "#000000", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 800 }} title={JSON.stringify(e.details)}>
                 {JSON.stringify(e.details)}
               </span>
             </div>
           )) : (
-            <div style={{ padding: "48px", textAlign: "center", color: C.mute, fontWeight: 900, fontFamily: "var(--font-mono)", fontSize: "14px" }}>No audit records — store memories to generate events</div>
+            <div style={{ padding: "48px", textAlign: "center", color: C.mute, fontWeight: 900, fontFamily: "var(--font-mono)", fontSize: "16px" }}>No audit records — store memories to generate events</div>
           )}
         </div>
       </div>
@@ -373,7 +360,7 @@ export default function CompliancePage() {
       <div className="bento-panel" style={{ background: "#ffffff", padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
         <div style={{ borderBottom: "3px solid #000000", paddingBottom: "14px" }}>
           <div style={{ fontSize: "18px", fontWeight: 955, fontFamily: "var(--font-sans)", color: C.ink, letterSpacing: "1px" }}>🔎 How to Verify This Is Real</div>
-          <div style={{ fontSize: "13px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>Copy these queries into the CockroachDB SQL console to confirm every claim.</div>
+          <div style={{ fontSize: "16px", color: C.mute, marginTop: "4px", fontWeight: 800 }}>Copy these queries into the CockroachDB SQL console to confirm every claim.</div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
           {[
@@ -394,12 +381,12 @@ export default function CompliancePage() {
             }}>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-sans)" }}>{item.title}</span>
+                  <span style={{ fontSize: "16px", fontWeight: 955, color: C.ink, fontFamily: "var(--font-sans)" }}>{item.title}</span>
                   <button
                     onClick={() => copyQuery(item.q, i)}
                     style={{
                       padding: "5px 12px", background: copiedIndex === i ? "#d1fae5" : "#ffffff",
-                      border: "2px solid #000000", borderRadius: "4px", fontSize: "11px",
+                      border: "2px solid #000000", borderRadius: "4px", fontSize: "16px",
                       fontWeight: 955, fontFamily: "var(--font-mono)", cursor: "pointer",
                       boxShadow: "1.5px 1.5px 0px #000000", color: copiedIndex === i ? C.green : C.ink,
                       transition: "all 0.1s ease"
@@ -411,12 +398,12 @@ export default function CompliancePage() {
                   </button>
                 </div>
                 <div style={{ background: "#ffffff", borderRadius: "6px", padding: "14px 16px", border: "2px solid #000000", marginBottom: "12px" }}>
-                  <pre style={{ fontSize: "13px", fontFamily: "'JetBrains Mono', monospace", color: C.ink, margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6, fontWeight: 800 }}>{item.q}</pre>
+                  <pre style={{ fontSize: "16px", fontFamily: "'JetBrains Mono', monospace", color: C.ink, margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6, fontWeight: 800 }}>{item.q}</pre>
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "12px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginBottom: "4px" }}>📍 {item.ref}</div>
-                <div style={{ fontSize: "13px", color: "#000000", lineHeight: 1.4, fontWeight: 800 }}>{item.why}</div>
+                <div style={{ fontSize: "16px", color: C.green, fontWeight: 900, fontFamily: "var(--font-mono)", marginBottom: "4px" }}>📍 {item.ref}</div>
+                <div style={{ fontSize: "16px", color: "#000000", lineHeight: 1.4, fontWeight: 800 }}>{item.why}</div>
               </div>
             </div>
           ))}

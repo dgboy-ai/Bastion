@@ -79,10 +79,22 @@ def _ensure_dim(emb: list[float]) -> list[float]:
 
 
 def _hash_fallback_embed(text: str) -> list[float]:
-    digest = hashlib.sha256(text.encode()).digest()
-    raw: list[float] = []
-    for _ in range(32):
-        for byte in digest:
-            raw.append(float(byte) / 127.5 - 1.0)
+    """Character n-gram feature-hashing embedding (1024-dim).
+
+    Unlike a whole-text digest (which gives zero similarity signal), this
+    hashes character n-grams into a fixed-dimension bag-of-ngrams vector, so
+    semantically overlapping texts still produce cosine-similar vectors. This
+    keeps the C-SPANN semantic-search demo meaningful in no-network sandboxes
+    where the HuggingFace / sentence-transformers backends are unavailable.
+    """
+    raw = [0.0] * TARGET_DIM
+    norm_utf8 = text.lower().strip().encode("utf-8")
+    for n in (2, 3, 4):
+        for i in range(len(norm_utf8) - n + 1):
+            gram = norm_utf8[i : i + n]
+            digest = hashlib.sha256(gram).digest()
+            idx = int.from_bytes(digest[:4], "big") % TARGET_DIM
+            sign = 1.0 if digest[4] & 0x80 else -1.0
+            raw[idx] += sign
     norm = math.sqrt(sum(v * v for v in raw)) or 1.0
     return [v / norm for v in raw]

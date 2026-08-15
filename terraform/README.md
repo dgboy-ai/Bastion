@@ -24,10 +24,9 @@ terraform output -raw cockroach_connection_string
 | Resource | Description |
 |----------|-------------|
 | CockroachDB Cloud | Serverless cluster in your region |
-| Lambda (CDC) | Hash chain verification + self-healing |
-| Lambda (MCP) | Agent tool interface server |
-| S3 Bucket | Memory archives with Glacier lifecycle |
-| VPC | Private networking for Lambda |
+| Bastion Servers | MCP + A2A servers (EC2) |
+| S3 Bucket | CDC changefeed tailer (`cdc-live/`) + memory archives with Glacier lifecycle |
+| KMS Key | Encryption for memory archives at rest |
 | CloudWatch | Error monitoring + alerts |
 
 ## Required Variables
@@ -50,8 +49,8 @@ terraform output -raw cockroach_connection_string
    {
      "mcpServers": {
        "bastion": {
-         "command": "aws",
-         "args": ["lambda", "invoke", "--function-name", "bastion-mcp-server", "--payload", "..."]
+         "command": "python",
+         "args": ["-m", "bastion.mcp_server"]
        }
      }
    }

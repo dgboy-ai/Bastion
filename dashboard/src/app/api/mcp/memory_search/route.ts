@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { query, agentId = "agent-demo", k = 5 } = body;
+    const { query, agentId = "mcp-agent", k = 5 } = body;
 
     if (!query) return apiError("query is required", 400);
 

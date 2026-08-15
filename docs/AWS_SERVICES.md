@@ -2,7 +2,7 @@
 
 > **Required for hackathon submission:** *"Identify which AWS Services tools you used and how."*
 
-Bastion's AWS footprint is **KMS** (hash-chain signing + envelope encryption), **S3** (memory archives), and **Bedrock** (embedding fallback). Self-healing runs in-process via `memory_heal` (hash-chain verification + reseal), not via serverless functions.
+Bastion's AWS footprint is **KMS** (hash-chain signing + envelope encryption) and **S3** (memory archives + CDC export). Self-healing runs in-process via `memory_heal` (hash-chain verification + reseal), not via serverless functions.
 
 ---
 

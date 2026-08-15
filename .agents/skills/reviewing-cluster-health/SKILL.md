@@ -131,7 +131,7 @@ cockroach node status --decommission --certs-dir=<certs-dir> --host=<any-live-no
 then aggregate the columns of interest in your shell. The cluster's logical version comes from SQL:
 
 ```sql
-SELECT value AS cluster_version FROM [SHOW CLUSTER SETTING version];
+SELECT current_value AS cluster_version FROM [SHOW CLUSTER SETTING version];
 ```
 
 **If reason = Pre-maintenance**, also check for running jobs:

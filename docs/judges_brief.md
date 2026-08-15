@@ -12,7 +12,7 @@ Bastion is a **dual-protocol middleware bridge** connecting traditional agent fr
 graph TD
     Client[Cursor / Claude Code / Agent Client]
     subgraph Bastion Middleware (AWS / Local)
-        MCP[MCP Server: port 8005]
+        MCP[MCP Server: port 9997]
         Bridge[A2A Bridge Tool]
         A2A[A2A Server: port 9998]
         Guard[OWASP ASI06 Guard]
@@ -68,7 +68,7 @@ We satisfy the requirement by using **all four** CockroachDB integrations:
 1.  **"They built a cleaner UI"**:
     *   Our dashboard uses dynamic Canvas trust rings, bento grids, layout wrappers, and a **fully simulated interactive attack workspace** in the `Playground` section. It is designed to impress strict design judges.
 2.  **"Their AWS stack is fully hosted"**:
-    *   We use **Amazon Bedrock** for high-fidelity embedding generation, **AWS KMS** for tamper-evident hash-chain signing, and **psycopg3 connection pools** on CockroachDB Cloud.
+    *   We use **HuggingFace BGE** for high-fidelity embedding generation, **AWS KMS** for tamper-evident hash-chain signing, and **psycopg3 connection pools** on CockroachDB Cloud.
 3.  **"They have a more complex agent loop"**:
     *   Most teams will build multi-agent chat loops. We built a **database-backed protocol bridge**. A2A communication is signed using base64-encoded `Ed25519` key pairs, creating a secure agent card exchange standard.
 

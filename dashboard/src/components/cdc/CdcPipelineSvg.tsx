@@ -9,7 +9,7 @@ interface PipelineParticle {
 const STAGES = [
   { label: "Agent Write", color: "var(--accent-sunset)" },
   { label: "CDC Changefeed", color: "var(--accent-dusk)" },
-  { label: "Lambda Process", color: "var(--accent-breeze)" },
+  { label: "S3 CDC Tailer", color: "var(--accent-breeze)" },
   { label: "Memory Store", color: "var(--accent-emerald)" },
 ];
 

@@ -1,0 +1,3 @@
+## 1.4 Methodology Overview
+
+The project follows the **Agile (Iterative Incremental)** Software Development Life Cycle (SDLC) model, organized into 4 sprints aligned with university milestones. Each sprint includes planning, development, review, and retrospective. The frontend is developed using Next.js 14+, the backend is built with Python FastAPI, and agent memory data is securely stored in CockroachDB. AWS KMS is used for cryptographic signing, and a 42-pattern detection engine scans for poisoning attacks in real-time. Constraint Pinning is implemented to prevent safety rules from being silently erased during context compaction, and EU AI Act compliance reports are generated automatically through an intuitive web dashboard.

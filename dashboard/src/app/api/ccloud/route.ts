@@ -12,14 +12,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'command is required' }, { status: 400 });
     }
 
-    // Security: only allow safe read-only commands
+    // Security: only allow safe read-only commands (ccloud 0.6.x valid subcommands)
     const allowedCommands = [
       'cluster list',
-      'cluster get',
-      'cluster sql',
-      'audit list',
-      'auth login',
-      'auth status',
+      'cluster info',
+      'cluster regions',
+      'cluster nodes',
+      'auth whoami',
+      'version',
     ];
 
     const isAllowed = allowedCommands.some((cmd) => command === cmd || command.startsWith(cmd + " "));
@@ -79,10 +79,11 @@ export async function GET() {
     path: CCLOUD_PATH,
     allowedCommands: [
       'cluster list — List all clusters',
-      'cluster get — Get cluster details',
-      'cluster sql — Get connection string',
-      'audit list — List audit log entries',
-      'auth status — Check authentication status',
+      'cluster info — Get cluster details',
+      'cluster regions — List available regions',
+      'cluster nodes — List nodes',
+      'auth whoami — Check authentication status',
+      'version — Print version',
     ],
     note: 'ccloud CLI must be authenticated via `ccloud auth login` on the server',
   });

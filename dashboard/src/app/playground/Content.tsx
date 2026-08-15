@@ -862,13 +862,13 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                                 style={{
                                   padding: "18px 12px",
                                   borderRadius: DS.rLg,
-                                  background: `linear-gradient(135deg, ${node.bg} 0%, rgba(10, 6, 14, 0.9) 100%)`,
-                                  border: DS.border2,
-                                  borderLeft: `3px solid ${node.color}60`,
+                                  background: `linear-gradient(145deg, ${DS.card} 0%, ${node.bg} 100%)`,
+                                  border: `1px solid ${node.color}25`,
+                                  borderLeft: `4px solid ${node.color}`,
                                   textAlign: "center",
                                   transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
                                   cursor: "pointer",
-                                  boxShadow: `0 8px 24px -10px ${DS.ink}35`
+                                  boxShadow: `0 6px 16px -6px ${node.color}25, 0 2px 4px rgba(0,0,0,0.02)`
                                 }}
                                 onMouseEnter={e => {
                                   e.currentTarget.style.transform = "translateY(-4px)";
@@ -943,9 +943,9 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             style={{
                               padding: "20px",
                               borderRadius: DS.rLg,
-                              background: "linear-gradient(135deg, rgba(239,68,68,0.03) 0%, rgba(10, 6, 14, 0.7) 100%)",
-                              border: "1px solid rgba(239,68,68,0.15)",
-                              boxShadow: `inset 0 1px 1px ${DS.ink}05`,
+                              background: `linear-gradient(145deg, ${DS.card} 0%, rgba(239,68,68,0.04) 100%)`,
+                              border: "1px solid rgba(239,68,68,0.2)",
+                              boxShadow: `0 8px 24px -8px rgba(239,68,68,0.12), inset 0 1px 0 rgba(255,255,255,0.6)`,
                               transition: "all 0.3s ease"
                             }}
                             onMouseEnter={e => {
@@ -974,9 +974,9 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                             style={{
                               padding: "20px",
                               borderRadius: DS.rLg,
-                              background: "linear-gradient(135deg, rgba(34,197,94,0.03) 0%, rgba(10, 6, 14, 0.7) 100%)",
-                              border: "1px solid rgba(34,197,94,0.15)",
-                              boxShadow: `inset 0 1px 1px ${DS.ink}05`,
+                              background: `linear-gradient(145deg, ${DS.card} 0%, rgba(34,197,94,0.04) 100%)`,
+                              border: "1px solid rgba(34,197,94,0.2)",
+                              boxShadow: `0 8px 24px -8px rgba(34,197,94,0.12), inset 0 1px 0 rgba(255,255,255,0.6)`,
                               transition: "all 0.3s ease"
                             }}
                             onMouseEnter={e => {
@@ -1026,9 +1026,10 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                                 style={{
                                   padding: "16px",
                                   borderRadius: DS.rMd,
-                                  background: "rgba(10, 6, 14, 0.7)",
-                                  border: DS.border2,
-                                  borderTop: `2px solid ${tier.color}40`,
+                                  background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
+                                  border: `1px solid rgba(0,0,0,0.06)`,
+                                  borderTop: `3px solid ${tier.color}90`,
+                                  boxShadow: `0 4px 12px rgba(0,0,0,0.03)`,
                                   transition: "all 0.3s ease"
                                 }}
                                 onMouseEnter={e => {
@@ -1231,7 +1232,8 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                           gridTemplateColumns: "repeat(4, 1fr)",
                           gap: "14px",
                           marginBottom: "24px",
-                          background: "linear-gradient(135deg, rgba(20, 10, 25, 0.4) 0%, rgba(10, 5, 15, 0.6) 100%)",
+                          background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.02))`,
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                           padding: "16px",
                           borderRadius: DS.rLg,
                           border: DS.border2
@@ -1263,20 +1265,21 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                               style={{
                                 padding: "18px",
                                 borderRadius: DS.rLg,
-                                background: "rgba(15, 11, 22, 0.85)",
+                                background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                 border: DS.border2,
                                 minHeight: "135px",
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
                               }}
                               onMouseEnter={e => {
                                 e.currentTarget.style.transform = "translateY(-4px)";
                                 e.currentTarget.style.borderColor = "rgba(255, 94, 0, 0.25)";
-                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}30, 0 0 20px ${DS.sunset}06`;
+                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.sunset}10`;
                               }}
                               onMouseLeave={e => {
                                 e.currentTarget.style.transform = "none";
                                 e.currentTarget.style.borderColor = "var(--glass-border)";
-                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                               }}
                             >
                               <div style={{ fontSize: "11px", color: DS.mute, fontWeight: 800, letterSpacing: "1px", marginBottom: "8px", fontFamily: "'Space Grotesk', sans-serif" }}>ATTACK PROFILE</div>
@@ -1332,19 +1335,20 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                               style={{
                                 padding: "18px",
                                 borderRadius: DS.rLg,
-                                background: "rgba(15, 11, 22, 0.85)",
+                                background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                 border: DS.border2,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
                               }}
                               onMouseEnter={e => {
                                 e.currentTarget.style.transform = "translateY(-4px)";
-                                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.15)";
-                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}40, 0 0 20px ${DS.ink}05`;
+                                e.currentTarget.style.borderColor = "rgba(0, 0, 0, 0.1)";
+                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.ink}05`;
                               }}
                               onMouseLeave={e => {
                                 e.currentTarget.style.transform = "none";
                                 e.currentTarget.style.borderColor = "var(--glass-border)";
-                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                               }}
                             >
                               <div style={{ fontSize: "11px", color: DS.mute, fontWeight: 800, letterSpacing: "1px", marginBottom: "10px", fontFamily: "'Space Grotesk', sans-serif" }}>DETECTION SUMMARY</div>
@@ -1363,19 +1367,20 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                               style={{
                                 padding: "18px",
                                 borderRadius: DS.rLg,
-                                background: "rgba(15, 11, 22, 0.85)",
+                                background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                 border: DS.border2,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
                               }}
                               onMouseEnter={e => {
                                 e.currentTarget.style.transform = "translateY(-4px)";
-                                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.15)";
-                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}40, 0 0 20px ${DS.ink}05`;
+                                e.currentTarget.style.borderColor = "rgba(0, 0, 0, 0.1)";
+                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.ink}05`;
                               }}
                               onMouseLeave={e => {
                                 e.currentTarget.style.transform = "none";
                                 e.currentTarget.style.borderColor = "var(--glass-border)";
-                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                               }}
                             >
                               <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "14px" }}>
@@ -1413,19 +1418,20 @@ export default function PlaygroundContent({ initialStats }: { initialStats?: { m
                                 style={{
                                   padding: "18px",
                                   borderRadius: DS.rLg,
-                                  background: "rgba(15, 11, 22, 0.85)",
+                                  background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                   border: DS.border2,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                   transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
                                 }}
                                 onMouseEnter={e => {
                                   e.currentTarget.style.transform = "translateY(-4px)";
-                                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.15)";
-                                  e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}40, 0 0 20px ${DS.ink}05`;
+                                  e.currentTarget.style.borderColor = "rgba(0, 0, 0, 0.1)";
+                                  e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.ink}05`;
                                 }}
                                 onMouseLeave={e => {
                                   e.currentTarget.style.transform = "none";
                                   e.currentTarget.style.borderColor = "var(--glass-border)";
-                                  e.currentTarget.style.boxShadow = "none";
+                                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                                 }}
                               >
                                 <div style={{ fontSize: "10.5px", color: DS.mute, fontWeight: 800, letterSpacing: "1.5px", marginBottom: "6px", fontFamily: "'Space Grotesk', sans-serif" }}>AGENT LTM CONTEXT</div>
@@ -1708,7 +1714,8 @@ border: DS.border2,
                             gridTemplateColumns: "repeat(3, 1fr)",
                             gap: "14px",
                             marginBottom: "24px",
-                            background: "linear-gradient(135deg, rgba(10, 20, 15, 0.4) 0%, rgba(5, 10, 8, 0.6) 100%)",
+                            background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.02))`,
+                            boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
                             padding: "16px",
                             borderRadius: DS.rLg,
                             border: DS.border2
@@ -1739,8 +1746,9 @@ border: DS.border2,
                               style={{
                                 padding: "18px",
                                 borderRadius: DS.rLg,
-                                background: "rgba(15, 11, 22, 0.85)",
+                                background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                 border: DS.border2,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
                                 display: "flex",
                                 flexDirection: "column",
@@ -1750,12 +1758,12 @@ border: DS.border2,
                               onMouseEnter={e => {
                                 e.currentTarget.style.transform = "translateY(-4px)";
                                 e.currentTarget.style.borderColor = "rgba(0, 229, 255, 0.25)";
-                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}30, 0 0 20px ${DS.breeze}06`;
+                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.breeze}10`;
                               }}
                               onMouseLeave={e => {
                                 e.currentTarget.style.transform = "none";
                                 e.currentTarget.style.borderColor = "var(--glass-border)";
-                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                               }}
                             >
                               {/* Proof Metadata */}
@@ -1814,19 +1822,20 @@ border: DS.border2,
                               style={{
                                 padding: "18px",
                                 borderRadius: DS.rLg,
-                                background: "rgba(15, 11, 22, 0.85)",
+                                background: `linear-gradient(145deg, ${DS.card}, rgba(0,0,0,0.01))`,
                                 border: DS.border2,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
                               }}
                               onMouseEnter={e => {
                                 e.currentTarget.style.transform = "translateY(-4px)";
-                                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.15)";
-                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}40, 0 0 20px ${DS.ink}05`;
+                                e.currentTarget.style.borderColor = "rgba(0, 0, 0, 0.1)";
+                                e.currentTarget.style.boxShadow = `0 12px 30px ${DS.ink}15, 0 0 20px ${DS.ink}05`;
                               }}
                               onMouseLeave={e => {
                                 e.currentTarget.style.transform = "none";
                                 e.currentTarget.style.borderColor = "var(--glass-border)";
-                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
                               }}
                             >
                               <div style={{ fontSize: "11px", color: DS.mute, fontWeight: 800, letterSpacing: "1px", marginBottom: "12px", fontFamily: "'Space Grotesk', sans-serif" }}>LEDGER ANOMALY MITIGATION</div>
@@ -2784,7 +2793,7 @@ function NavButtons({ back, next, nextLabel, action, actionLabel }: { back: () =
 
 const MCP_TOOLS = [
   { name: "memory_search", desc: "C-SPANN vector similarity search with cognitive decay weighting", category: "core", read: true },
-  { name: "memory_store", desc: "Store memory with SHA-256 hash chain + Bedrock Titan V2 embedding", category: "core", read: false },
+  { name: "memory_store", desc: "Store memory with SHA-256 hash chain + 1024-dim vector embedding", category: "core", read: false },
   { name: "memory_timetravel", desc: "AS OF SYSTEM TIME recovery — query any past state", category: "core", read: true },
   { name: "memory_heal", desc: "Restore poisoned memory from hash chain verified backup", category: "core", read: false },
   { name: "memory_audit", desc: "Append-only hash-chained audit log retrieval", category: "core", read: true },

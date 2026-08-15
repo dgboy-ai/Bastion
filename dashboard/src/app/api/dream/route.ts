@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       body = {};
     }
 
-    const agentId = String(body.agentId || "agent-demo").slice(0, 128);
+    const agentId = String(body.agentId || "mcp-agent").slice(0, 128);
     const lookbackHours = Math.min(Number(body.lookbackHours) || 24, 168);
     const startTime = Date.now();
 

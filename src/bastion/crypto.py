@@ -112,6 +112,15 @@ def _get_hmac_secret() -> bytes:
         env_secret = os.environ.get("BASTION_HMAC_SECRET", "")
         if env_secret:
             decoded = env_secret.encode("utf-8")
+            # If the env value is a 64-char hex string, it's the hex form of a
+            # 32-byte secret (same as ~/.bastion/hmac.key). Decode it so every
+            # process derives the identical canonical key regardless of whether
+            # the secret came from the env var or the key file.
+            if len(decoded) == 64:
+                try:
+                    decoded = bytes.fromhex(env_secret)
+                except ValueError:
+                    pass
             if len(decoded) < 16:
                 raise ValueError(f"BASTION_HMAC_SECRET too short ({len(decoded)} bytes), minimum 16")
             _hmac_secret = decoded

@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { agentId = "agent-demo", interval = "-5s" } = body;
+    const { agentId = "mcp-agent", interval = "-5s" } = body;
 
     const startTime = Date.now();
 

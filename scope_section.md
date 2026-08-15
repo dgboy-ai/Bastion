@@ -1,0 +1,3 @@
+## 1.5 Scope of the Project
+
+The scope of this project is limited to the development of a web-based memory defense platform for AI agents with constraint pinning, tamper detection, and compliance reporting. The system covers rule pinning, SHA-256 hash chain integrity, KMS digital signatures, poisoning detection with 42 patterns, audit trail logging, time-travel queries, and EU AI Act Article 12 compliance reports. It does not directly modify the AI model or its training, but operates as a middleware layer that protects memory integrity during context compaction. The platform can be extended to support multi-agent orchestration and additional compliance frameworks in the future.

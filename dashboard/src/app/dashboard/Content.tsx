@@ -655,7 +655,9 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
         .catch(() => setLoading(false));
     });
 
-    return () => { active = false; };
+    const iv = setInterval(loadCdc, 12000);
+
+    return () => { active = false; clearInterval(iv); };
   }, []);
 
   if (loading && events.length === 0) {
@@ -2429,9 +2431,8 @@ export default function DashboardPage() {
               <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(stats?.agents?.length || 1, 3)}, 1fr)`, gap: "14px", marginBottom: "20px" }}>
                 {(stats?.agents || []).map((a, i) => {
                   const agentMeta: Record<string, { type: string; desc: string; icon: string; color: string }> = {
-                    "mcp-agent": { type: "MCP Server", desc: "35 tools · Claude/Cursor/VS Code", icon: "🔧", color: "#047857" },
+                    "mcp-agent": { type: "MCP Server", desc: "35 tools · Groq LLM · CockroachDB", icon: "🔧", color: "#047857" },
                     "bastion-agent": { type: "Core Agent", desc: "Forensic memory · Hash chains", icon: "🛡️", color: "#b45309" },
-                    "groq-db-agent": { type: "DB Agent", desc: "CockroachDB operations · ccloud CLI", icon: "🗄️", color: "#7c3aed" },
                   };
                   const meta = agentMeta[a.agent_id] || { type: "Agent", desc: "", icon: "🤖", color: "#374151" };
                   return (

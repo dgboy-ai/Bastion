@@ -165,8 +165,14 @@ class MemoryRouter:
     def _get_query_embedding(self, query: str) -> list[float] | None:
         """Get embedding for query text. Returns None if unavailable."""
         try:
-            from bastion.embeddings import embed_text
-            return embed_text(query)
+            from bastion.embeddings import _embed_hf, _embed_local, _hash_fallback_embed
+            result = _embed_hf(query)
+            if result is not None:
+                return result
+            result = _embed_local(query)
+            if result is not None:
+                return result
+            return _hash_fallback_embed(query)
         except Exception:
             return None
 

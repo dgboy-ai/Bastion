@@ -1962,7 +1962,7 @@ class BastionMemory:
                 cur.execute(
                     "SELECT memory_id, content, metadata, previous_hash, cryptographic_hash "
                     "FROM agent_memory WHERE agent_id = %s "
-                    "ORDER BY created_at ASC",
+                    "ORDER BY created_at ASC, memory_id ASC",
                     (agent_id,),
                 )
                 rows = cur.fetchall()

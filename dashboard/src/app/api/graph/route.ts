@@ -209,8 +209,7 @@ export async function POST(request: Request) {
         { name: "GitHub Actions", type: "tool", attrs: { description: "Staging deployment pipeline" } },
         { name: "OAuth 2.1 + PKCE", type: "security", attrs: { description: "MCP server authentication" } },
         { name: "JWT Tokens", type: "security", attrs: { description: "Short-lived, 15 minute expiry" } },
-        { name: "mcp-agent", type: "agent", attrs: { memories: 468, role: "Primary memory agent" } },
-        { name: "groq-db-agent", type: "agent", attrs: { memories: 257, role: "Database operations agent" } },
+        { name: "mcp-agent", type: "agent", attrs: { memories: 468, role: "Primary memory + DB operations agent" } },
         { name: "Bastion", type: "system", attrs: { description: "Forensic memory system with hash chain integrity" } },
       ];
 
@@ -246,9 +245,7 @@ export async function POST(request: Request) {
         { from: "Time-Travel Audit", to: "AS OF SYSTEM TIME", type: "powered_by", conf: 1.0 },
         { from: "Dream Consolidation", to: "SERIALIZABLE Isolation", type: "uses", conf: 0.9 },
         { from: "mcp-agent", to: "Bastion", type: "instance_of", conf: 1.0 },
-        { from: "groq-db-agent", to: "Bastion", type: "instance_of", conf: 1.0 },
         { from: "mcp-agent", to: "CockroachDB", type: "writes_to", conf: 1.0 },
-        { from: "groq-db-agent", to: "CockroachDB", type: "writes_to", conf: 1.0 },
         { from: "Bastion", to: "OpenTelemetry", type: "instrumented_by", conf: 1.0 },
         { from: "Bastion", to: "Grafana", type: "monitored_by", conf: 1.0 },
         { from: "Bastion", to: "GitHub Actions", type: "deployed_via", conf: 1.0 },

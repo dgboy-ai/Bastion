@@ -51,7 +51,15 @@ export async function GET(request: Request) {
           if (!after || typeof after !== "object") continue;
 
           let action = String(after.action ?? "memory_changed");
-          if (table === "agent_memory") action = "memory_changed";
+          if (table === "agent_memory") {
+            // agent_memory has no action column — derive from memory_type so the
+            // dashboard can render poison_attempt/healed rows as BLOCKED/HEALED.
+            const memoryType = String(after.memory_type ?? "memory_changed");
+            if (memoryType === "poison_attempt") action = "poison_attempt_blocked";
+            else if (memoryType === "healed") action = "healed";
+            else if (memoryType === "security_incident") action = "security_incident";
+            else action = "memory_changed";
+          }
 
           const id = String(after.audit_id ?? after.memory_id ?? "");
           if (seen.has(id)) continue;

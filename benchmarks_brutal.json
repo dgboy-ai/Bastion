@@ -1,7 +1,7 @@
 {
   "timestamp": "2026-08-03T16:47:07.899172+00:00",
   "environment": {
-    "connection": "postgresql://among:6On_Qq7qckig-53Dy3E93g@bastion-memory-299",
+    "connection": "postgresql://among:CRDB_PASSWORD_REMOVED@bastion-memory-299",
     "mock": false,
     "embeddings": "real MiniLM (no BASTION_EMBED_FALLBACK)",
     "timestamp": "2026-08-03T16:47:07.899205+00:00"

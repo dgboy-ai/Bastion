@@ -161,9 +161,27 @@ export async function POST(
       const newContent = content || body.newContent || query;
       if (!targetId || !newContent) return apiError("memoryId and content/newContent are required", 400);
 
+      // Recompute the hash over the NEW content (metadata preserved from the
+      // stored row so the chain remains verifiable).
+      const existingRow = await safeQuery(
+        "SELECT previous_hash, metadata::text AS meta, cryptographic_hash FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
+        [targetId, agentId]
+      );
+      if (existingRow.rows.length === 0) {
+        return apiError(`Memory ${targetId} not found`, 404);
+      }
+      const prevHash = existingRow.rows[0].previous_hash as string | null;
+      let metaJson: Record<string, unknown> | null = null;
+      try {
+        metaJson = JSON.parse((existingRow.rows[0].meta as string) || "null");
+      } catch {
+        metaJson = null;
+      }
+      const newHash = computeHmacHash(newContent, metaJson, prevHash);
+
       const updateRes = await safeQuery(
-        "UPDATE agent_memory SET content = $1, overwrite_count = overwrite_count + 1 WHERE memory_id = $2 AND agent_id = $3",
-        [newContent, targetId, agentId]
+        "UPDATE agent_memory SET content = $1, cryptographic_hash = $2, overwrite_count = overwrite_count + 1 WHERE memory_id = $3 AND agent_id = $4",
+        [newContent, newHash, targetId, agentId]
       );
 
       if (updateRes.rowCount === 0) {
@@ -174,9 +192,11 @@ export async function POST(
         tool: "memory_correct",
         memoryId: targetId,
         newContent,
+        previousHash: (prevHash || "").slice(0, 20) + "...",
+        cryptographicHash: newHash.slice(0, 20) + "...",
         rowsAffected: updateRes.rowCount,
         latency: (Date.now() - startTime) + "ms",
-        sql: `UPDATE agent_memory SET content = $1, overwrite_count = overwrite_count + 1 WHERE memory_id = $2 AND agent_id = $3`,
+        sql: `UPDATE agent_memory SET content = $1, cryptographic_hash = $2, overwrite_count = overwrite_count + 1 WHERE memory_id = $3 AND agent_id = $4`,
       }, "dynamic");
     }
 

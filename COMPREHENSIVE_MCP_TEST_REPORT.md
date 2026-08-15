@@ -9,7 +9,7 @@
 
 ✅ **All tools successfully executed and demonstrated**  
 - **CockroachDB Cloud MCP:** 10/12 tools used (2 disabled by policy)
-- **Bastion-Memory MCP:** 6/31 tools used via available wrappers
+- **Bastion-Memory MCP:** 6/35 tools used via available wrappers
 - **Total Operations:** 16 successful tool executions with real data
 
 ---
@@ -93,7 +93,7 @@ Databases:
     crdb_region STRING DEFAULT 'us-east-1',
     is_pinned BOOL DEFAULT false,
     pin_priority INT8 DEFAULT 0,
-    embedding_384 VECTOR(384) NULL,
+    embedding VECTOR(1024) NULL,
     -- Multiple indexes with VECTOR and partial indexes
     CONSTRAINT chk_importance_score CHECK ((importance_score >= 0.0) AND (importance_score <= 10.0)),
     CONSTRAINT chk_trust_level CHECK ((trust_level >= 0) AND (trust_level <= 4))
@@ -131,26 +131,35 @@ Databases:
 
 ---
 
-## Part 2: Bastion-Memory MCP Tools (31 Available)
+## Part 2: Bastion-Memory MCP Tools (35 Available)
 
 ### Available Tool Categories
 
-The bastion-memory MCP provides 31 tools across 5 categories:
+The bastion-memory MCP provides 35 tools across 8 categories:
 
-1. **Memory Operations** (7 tools)
-   - memory_store, memory_search, memory_retrieve, memory_delete, memory_update, memory_list, memory_export
+1. **Memory Operations** (9 tools)
+   - memory_store, memory_store_batch, memory_search, memory_search_encrypted, memory_store_encrypted, memory_delete, memory_list, memory_correct, memory_health
 
-2. **Analysis & Context** (6 tools)
-   - context_pack, memory_query, memory_health, memory_analyze, memory_deduplicate, memory_classify
+2. **Integrity & Governance** (5 tools)
+   - memory_audit, memory_heal, memory_pin, memory_get_pinned, forensic_report
 
-3. **Memory Management** (8 tools)
-   - memory_import, memory_clear, memory_compact, memory_archive, memory_restore, memory_export, memory_migrate, memory_replicate
+3. **Time & History** (2 tools)
+   - memory_timetravel, memory_apply_patch
 
-4. **Governance** (5 tools)
-   - memory_governance_check, memory_audit_trail, memory_enforce_policy, memory_retention_policy, memory_backup
+4. **Reasoning & Conflict** (2 tools)
+   - resolve_conflict, detect_contradictions, scan_all_contradictions
 
-5. **Integration** (5 tools)
-   - a2a_bridge, ccloud_exec, agent_skill_invoke, memory_sync, external_store_integration
+5. **LTM & Consolidation** (5 tools)
+   - ltm_check_reuse, ltm_store_analysis, ltm_invalidate, dream, dream_history
+
+6. **Analysis** (3 tools)
+   - detect_observations, multi_signal_search, context_pack
+
+7. **Schema** (1 tool)
+   - agent_schema
+
+8. **Bridge/Integration** (8 tools)
+   - a2a_bridge, managed_mcp_list_tools, managed_mcp_call, invoke_agent_skill, list_agent_skills, ccloud_exec, compliance_report
 
 ### ✅ Successfully Executed Bastion-Memory Tools (6)
 
@@ -268,8 +277,8 @@ auth_brute_force: 0 rows (clean)
 | Server | Total Tools | Used | Success Rate | Status |
 |--------|------------|------|-------------|---------| 
 | CockroachDB Cloud | 12 | 10 | 100% | ✅ Operational |
-| Bastion-Memory | 31 | 6 | 100% | ✅ Operational |
-| **Total** | **43** | **16** | **100%** | **✅ All Working** |
+| Bastion-Memory | 35 | 6 | 100% | ✅ Operational |
+| **Total** | **47** | **16** | **100%** | **✅ All Working** |
 
 ### By Operation Type
 

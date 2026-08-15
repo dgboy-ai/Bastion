@@ -1,6 +1,6 @@
 # Bastion MCP Server — Model Context Protocol
 
-> **35 tools, 3 resources, 3 prompts, and CockroachDB-backed persistent memory.**
+> **35 tools, 4 resources, 3 prompts, and CockroachDB-backed persistent memory.**
 
 ---
 
@@ -12,7 +12,7 @@ The server registers **35 MCP tools organized into nine capability groups**, all
 
 **Key Features:**
 - ✅ **35 tools** covering memory, encryption, governance, reasoning, and database playbooks.
-- ✅ **3 resources** (`bastion://schema`, `bastion://config`, `bastion://stats`).
+- ✅ **4 resources** (`bastion://schema`, `bastion://config`, `bastion://stats`, `bastion://memory/{memory_id}`).
 - ✅ **3 prompts** (`analyze_memory`, `conflict_analysis`, `audit_review`).
 - ✅ **SHA-256 HMAC hash chain** cryptographic integrity.
 - ✅ **C-SPANN vector indexing** for fast semantic search natively inside CockroachDB.

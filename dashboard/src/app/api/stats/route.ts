@@ -19,6 +19,13 @@ export async function GET(request: Request) {
     const relationCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_relations");
     const auditCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_audit");
     const conflictCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_coordination");
+    const chainAnchorRes = await safeQuery(`
+      SELECT left(cryptographic_hash::text, 16) as anchor
+      FROM agent_memory
+      WHERE cryptographic_hash IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
     const avgImportanceRes = await safeQuery("SELECT AVG(importance_score) as avg FROM agent_memory");
 
     // Fetch dynamic averages grouped by 6-hour historical time intervals
@@ -125,6 +132,8 @@ export async function GET(request: Request) {
       alerts.push({ type: "size_spike", severity: "info", count: totalMem });
     }
 
+    const chainAnchor = String(chainAnchorRes.rows[0]?.anchor || "")
+
     // Memory type breakdown
     const typeBreakdownRes = await safeQuery(`
       SELECT memory_type, COUNT(*) as cnt
@@ -145,6 +154,7 @@ export async function GET(request: Request) {
       relations: parseInt(String(relationCountRes.rows[0]?.count || "0"), 10),
       auditLogs: parseInt(String(auditCountRes.rows[0]?.count || "0"), 10),
       conflicts: parseInt(String(conflictCountRes.rows[0]?.count || "0"), 10),
+      chainAnchor,
       avgImportance: valNow.toFixed(2),
       decayCurve: [
         { label: "24h ago", value: val24 },
