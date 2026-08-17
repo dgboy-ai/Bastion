@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-08-17T16:15:45.208083+00:00",
+  "isolation_level": "serializable",
+  "available_levels": {
+    "sql.txn.read_committed_isolation.enabled": true,
+    "sql.txn.repeatable_read_isolation.enabled": false
+  },
+  "serializable_conflict_demo": {
+    "conflicts": 1,
+    "successes": 1,
+    "error_code": "40001",
+    "errors": []
+  },
+  "concurrent_stores": {
+    "total_records": 40,
+    "total_errors": 0,
+    "errors": [],
+    "chains_valid": 8,
+    "chains_broken": 0,
+    "elapsed_sec": 28.24,
+    "qps": 1.42
+  },
+  "mechanism": {
+    "sql": "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+    "code_path_retry_engine": "src/bastion/retry.py:80",
+    "code_path_store": "src/bastion/memory.py:346,647,1344",
+    "code_path_40001_detection": "src/bastion/retry.py:129-144",
+    "backoff": "exponential: 10ms * 2^attempt, jitter, cap 2s, max 5 retries"
+  }
+}

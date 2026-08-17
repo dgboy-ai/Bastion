@@ -397,6 +397,22 @@ def create_server(
             except Exception as exc:
                 logger.warning("CDC tailer startup failed (continuing without it): %s", exc)
 
+        # Behavioral drift watcher: scores memory access/semantic patterns
+        # against a baseline and alerts when drift crosses the threshold.
+        _drift_interval = int(os.environ.get("BASTION_DRIFT_INTERVAL_SECONDS", "60"))
+        try:
+            from bastion.drift import BehavioralDriftDetector
+
+            _drift_detector = BehavioralDriftDetector(_shared)
+            _drift_detector.watch(_shared.agent_id, interval_seconds=_drift_interval)
+            logger.info(
+                "Behavioral drift watcher started for agent %s (interval=%ds)",
+                _shared.agent_id,
+                _drift_interval,
+            )
+        except Exception as exc:
+            logger.warning("Drift watcher startup failed (continuing without it): %s", exc)
+
     # Store shared memory globally for health check routes (thread-safe)
     global _SHARED_MEMORY, _SHARED_POOL
     with _INIT_LOCK:

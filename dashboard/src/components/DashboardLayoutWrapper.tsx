@@ -331,7 +331,13 @@ const handleNextTourStep = () => {
 
             <div className="header-actions">
               <button 
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => {
+                  if (process.env.NODE_ENV === "development") {
+                    alert("Custom cluster connection is disabled in local development (npm run dev). Use Vercel to test this feature.");
+                    return;
+                  }
+                  setIsModalOpen(true);
+                }}
                 style={{ 
                   display: "flex", 
                   alignItems: "center", 
@@ -554,6 +560,7 @@ const handleNextTourStep = () => {
                     fontSize: "12.5px"
                   }}>
                     Authentication required to connect. Enter your dashboard passphrase.
+                    <br/><span style={{fontSize: "11px", fontWeight: "normal"}}>Demo access: enter <strong>bastion</strong></span>
                   </div>
                   <input
                     type="password"

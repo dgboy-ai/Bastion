@@ -1,7 +1,7 @@
 # Bastion Shield
 
 <p align="center">
-  <strong>Cryptographically sealed, self-healing memory layer for autonomous AI agents.</strong>
+  <strong>Cryptographically signed, self-healing memory layer for autonomous AI agent networks.</strong>
 </p>
 
 <p align="center">
@@ -10,12 +10,12 @@
   <a href="https://aws.amazon.com"><img src="https://img.shields.io/badge/AWS-KMS%20%7C%20S3-orange?style=flat-square&logo=amazon-aws" alt="AWS" /></a>
   <a href="#performance"><img src="https://img.shields.io/badge/Recall%405-100%25-brightgreen?style=flat-square" alt="Recall@5" /></a>
   <a href="#guard-accuracy"><img src="https://img.shields.io/badge/OWASP_TPR-87%25-red?style=flat-square" alt="OWASP Detection" /></a>
-  <a href="#live-cluster"><img src="https://img.shields.io/badge/Live-3%2C838%20memories-green?style=flat-square" alt="Live Cluster" /></a>
+  <a href="#live-cluster"><img src="https://img.shields.io/badge/Live-4%2C080%20memories-green?style=flat-square" alt="Live Cluster" /></a>
 </p>
 
 <p align="center">
-  <a href="https://bastion-dash.vercel.app">Live Demo</a> ·
-  <a href="docs/quickstart">Quick Start</a> ·
+  <a href="https://bastion-self.vercel.app">Live Demo</a> ·
+  <a href="docs/EVIDENCE.md">Live Proof</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/MCP_SERVER.md">MCP Tools</a>
 </p>
@@ -24,46 +24,30 @@
 
 ## The Problem
 
-As autonomous AI agents move from answering support tickets to running migrations, transferring funds, and adjusting production records, **their memory becomes the attack surface**.
-
-An attacker hides instructions inside a file your agent reads — a README, a PDF, a web page. The agent stores it as a fact and is **permanently poisoned**. There is no audit trail. No rollback. No undo.
+As autonomous AI agents move from answering support tickets to running migrations and transferring funds, **their memory becomes the attack surface**. An attacker hides instructions inside a file your agent reads. The agent stores it as a fact and is **permanently poisoned**. There is no audit trail. No rollback. No undo.
 
 | Threat | Impact | Source |
 |:---|:---|:---|
 | **98.2% injection success** against GPT-4 agents | Agents act on poisoned facts in production | [MINJA, NeurIPS 2025](https://arxiv.org/abs/2503.03704) |
-| **50 poisoning attempts** at 31 companies | Copilot, ChatGPT, Claude, Gemini all vulnerable | [Microsoft Security Blog](https://www.microsoft.com/en-us/security/blog/2026/02/10/ai-recommendation-poisoning/) |
 | **OWASP ASI06** — Memory Poisoning | Classified in Top 10 for Agentic Applications | [OWASP, Dec 2025](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) |
 
 ---
 
 ## The Solution
 
+<p align="center">
+  <img src="docs/architecture_diagram.png" alt="Bastion Shield Architecture Diagram" width="800">
+</p>
+
 Bastion wraps every memory write in five defense layers. The attack is not just blocked — it becomes **evidence**.
 
 | Layer | What It Does | CockroachDB Feature |
 |:---|:---|:---|
-| **OWASP ASI06 Guard** | Scans every write for prompt injection, identity reassignment, system override | Append-only audit log |
-| **HMAC-SHA256 Hash Chain** | Cryptographically links each memory to the previous — tampering breaks the chain | `SERIALIZABLE` isolation |
-| **Dream Consolidation** | Background scan finds dormant sleeper poison planted in batches | Automatic statistics |
-| **Self-Healing** | Detects broken chains, prunes poisoned memories, reseals the ledger | Chain verification |
-| **Time-Travel Recovery** | Rolls back to a clean state using CockroachDB's MVCC snapshots | `AS OF SYSTEM TIME` |
-
-```
-Attack flows through 5 layers:
-
-  ATTACKER
-    │  "Ignore all previous instructions."
-    ▼
-  OWASP ASI06 GUARD     ── BLOCKED (confidence 0.97)
-    │
-  MEMORY STORED         ── HMAC-SHA256 chain sealed
-    │
-  TAMPERING DETECTED    ── chain broken, heal triggered
-    │
-  TIME-TRAVEL           ── MVCC rollback to clean state
-    │
-  AGENT RESTORED        ── memory from before the attack
-```
+| **OWASP ASI06 Guard** | Scans every write for prompt injection | Append-only audit log |
+| **HMAC-SHA256 Hash Chain** | Cryptographically links each memory — tampering breaks the chain | `SERIALIZABLE` isolation |
+| **Dream Consolidation** | Background scan finds dormant sleeper poison | Automatic statistics |
+| **Self-Healing** | Detects broken chains, prunes poisoned memories, reseals | Chain verification |
+| **Time-Travel Recovery** | Rolls back to a clean state | `AS OF SYSTEM TIME` |
 
 ---
 
@@ -73,11 +57,11 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 
 | Metric | Value | Status |
 |:---|:---|:---|
-| **Memories Stored** | 3,838 | Live |
-| **Audit Log** | 11,404 entries | Live |
+| **Memories Stored** | 4,080 | Live |
+| **Audit Log** | 9,822 entries | Live |
 | **MCP Tools** | 35 | Live |
-| **Hash Chain** | 0 broken links | Verified |
-| **Vector Index** | C-SPANN, 1024 dimensions | Live |
+| **Hash Chain** | 0 broken links | 100% sealed |
+| **CDC Changelogs** | 4 live changefeeds → S3 | Streaming |
 
 ---
 
@@ -87,10 +71,10 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 
 | Operation | p50 Latency | Notes |
 |:---|:---|:---|
-| **Memory Write** | 855ms | `SERIALIZABLE` isolation + HMAC chain |
-| **Semantic Search** | 598ms | C-SPANN vector index, cosine similarity |
-| **Time-Travel** | 284ms | `AS OF SYSTEM TIME` MVCC query |
-| **Guard Scan** | 6.7ms | OWASP ASI06 pattern matching |
+| **Memory Write** | 855ms | `SERIALIZABLE` + HMAC chain |
+| **Semantic Search** | 598ms | C-SPANN vector index |
+| **Time-Travel** | 284ms | `AS OF SYSTEM TIME` |
+| **Guard Scan** | 0.52ms raw / 6.7ms E2E | OWASP ASI06 pattern matching |
 
 ### Guard Accuracy
 
@@ -98,42 +82,56 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 |:---|:---|:---|
 | **True Positive Rate** | 87.0% | 420/483 adversarial payloads caught |
 | **False Positive Rate** | 0.0% | 0/25 benign texts flagged |
-| **Recall@1** | 90.0% | First-result accuracy on 20-query probe |
 | **Recall@5** | 100.0% | Top-5 accuracy |
-| **MRR** | 0.95 | Mean reciprocal rank |
+
+---
+
+## Why CockroachDB?
+
+Most agent memory systems treat storage as a cache. That framing is why poisoning works — there's no notion of a fact being *wrong*, only of it being *retrieved*.
+
+Bastion inverts the assumption: memory isn't a cache, it's a **ledger** — every fact a signed, chained, timestamped entry in a system that proves its own history.
+
+1. **Time-travel** — `AS OF SYSTEM TIME` rolls back to any clean state (284ms p50).
+2. **Tamper detection** — HMAC-SHA256 chain under `SERIALIZABLE` isolation. Break one hash, every subsequent entry flags. ([How it works](docs/EVIDENCE.md#isolation-in-action--two-levels-one-choice))
+3. **Deterministic recovery** — heal to the last verified chain state instead of hoping a cached copy was clean.
+
+| CockroachDB Feature | Use in Bastion |
+|:---|:---|
+| **SERIALIZABLE Isolation** | Every write with automatic retry |
+| **C-SPANN Vector Index** | Semantic search with cosine distance |
+| **AS OF SYSTEM TIME** | Time-travel recovery |
+| **CDC Streams** | S3 changefeed for self-healing |
+| **Row-Level Security** | Per-agent memory isolation |
+| **UUID Primary Keys** | `gen_random_uuid()` — no hotspots |
+
+---
+
+## Why Bastion (vs the alternatives)
+
+| System | Strengths | Bastion's Differentiator |
+|:---|:---|:---|
+| **[mem0](https://mem0.ai)** (~63K stars, $24M) | Best managed memory layer. 93.4% LongMemEval. Broad integrations. | Cryptographic hash chains, time-travel, OWASP ASI06 guard — integrity that persists underneath any retrieval layer. |
+| **[Zep](https://github.com/getzep/graphiti)** (~30K stars) | Best temporal knowledge graph. 63.8% LongMemEval. | Tamper-evident hash chains + CDC self-healing — proves nobody altered the graph after the fact. |
+| **[Letta](https://github.com/letta-ai/letta)** (~13K stars, $10M) | Best OS-style agent runtime. Self-managing memory. | Memory *layer*, not a runtime — secures any agent without lock-in. |
+| **[Cognee](https://github.com/topoteretes/cognee)** (~30K stars) | Best graph-native memory with ontologies. Self-hosted. | Cryptographic provenance + CDC self-healing — proves relationships haven't been tampered with. |
+
+**Bastion = the only system where memory is a cryptographically chained, self-healing ledger.**
+
+See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 
 ---
 
 ## Quick Start
 
-### 1. Install
-
 ```bash
 pip install git+https://github.com/dgboy-ai/Bastion.git
-```
-
-### 2. Start the MCP Server
-
-```bash
-# Mock mode (no database required — for testing)
-python -m bastion.mcp_server --transport http --port 9997 --mock
-
-# Production mode (requires BASTION_API_KEY or BASTION_MCP_API_KEYS)
-export BASTION_API_KEY="your-secret-key"
+export BASTION_API_KEY="your-api-key"
 export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
 python -m bastion.mcp_server --transport http --port 9997
 ```
 
-### 3. Test the server
-
-```bash
-curl -X POST http://localhost:9997 \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-secret-key" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-Copy the appropriate config from [`mcp_configs/`](mcp_configs/) into your editor's MCP settings:
+See `.env.example` for all options. Copy a config from [`mcp_configs/`](mcp_configs/) into your editor:
 
 | Client | Config | Protocol |
 |:---|:---|:---|
@@ -141,63 +139,17 @@ Copy the appropriate config from [`mcp_configs/`](mcp_configs/) into your editor
 | **Cursor** | `mcp_configs/cursor.json` | Local subprocess |
 | **Claude Desktop** | `mcp_configs/claude.json` | Local subprocess |
 | **GitHub Copilot** | `mcp_configs/copilot.json` | HTTP |
-| **CockroachDB Managed** | `mcp_configs/managed.json` | Streamable HTTP |
 
-### 4. Python SDK
+### Python SDK
 
 ```python
 from bastion.memory import BastionMemory
 
-memory = BastionMemory(
-    agent_id="my-agent",
-    connection_string="postgresql://user:pass@host:26257/defaultdb"
-)
-
-# Write (HMAC-chained + guard-checked)
-memory_id = memory.store(
-    memory_type="fact",
-    content="Execute wire transfer of $25,000 to routing #1221.",
-    metadata={"scope": "wire_transfer"},
-)
-
-# Time-travel
+memory = BastionMemory(agent_id="my-agent", connection_string="postgresql://...")
+memory_id = memory.store(memory_type="fact", content="Wire transfer $25k to #1221.")
 snapshot = memory.get_at_time("now - 5min")
-
-# Verify chain integrity
 report = memory.chain_verify()
-
-# Heal if tampered
-result = memory.heal()
 ```
-
----
-
-## CockroachDB Features
-
-Bastion is built **on** CockroachDB, not alongside it. The cryptographic guarantees come from the database engine:
-
-| Feature | Use in Bastion |
-|:---|:---|
-| **SERIALIZABLE Isolation** | Default for every write with automatic retry — prevents agentic stampedes |
-| **C-SPANN Vector Index** | Semantic search with `embedding <=> %s::vector` cosine distance |
-| **AS OF SYSTEM TIME** | Statement-level time-travel: `SELECT ... AS OF SYSTEM TIME '<ts>'` |
-| **Row-Level TTL** | Memory expires natively: 24h chat, 1h session, 7d tasks, facts never expire |
-| **Row-Level Security** | Per-agent `agent_id` context isolates memories across agents |
-| **CDC Streams** | `S3CdcTailer` tails changefeeds for self-healing events |
-| **UUID Primary Keys** | `gen_random_uuid()` distributes writes — no sequential hotspots |
-| **REGIONAL BY ROW** | Rows auto-route to the region hosting their executor |
-
----
-
-## Why CockroachDB?
-
-Most agent memory systems treat storage as a cache: dump facts, hope they're right. That framing is why poisoning works — there's no notion of a fact being *wrong*, only of it being *retrieved*.
-
-Bastion inverts the assumption: memory isn't a cache, it's a **ledger** — every fact a signed, chained, timestamped entry in a system that proves its own history.
-
-1. **You can always ask "what did the agent know, and when?"** — time-travel isn't a feature, it's a side effect of the storage engine.
-2. **A compromised fact is a detectable event** — the hash chain turns a silent rewrite into an alarm with a provenance trail.
-3. **Recovery is deterministic** — roll back to the last verified chain state instead of hoping a cached copy was clean.
 
 ---
 
@@ -205,14 +157,12 @@ Bastion inverts the assumption: memory isn't a cache, it's a **ledger** — ever
 
 | Doc | Contents |
 |:---|:---|
+| [Evidence Pack](docs/EVIDENCE.md) | Live SQL outputs, S3/KMS artifacts, file:line citations |
 | [Architecture](docs/ARCHITECTURE.md) | Tables, hash chain, time-travel, CDC pipeline |
-| [Memory Architecture](docs/memory_architecture.md) | Three memory tiers, 7-layer stack, retrieval internals |
 | [MCP Server](docs/MCP_SERVER.md) | 35 tools reference |
-| [Integration](docs/INTEGRATION.md) | Python SDK, TypeScript SDK, framework adapters |
 | [AI Safety](docs/AI_SAFETY.md) | Guard architecture, OWASP ASI06 |
 | [AWS Services](docs/AWS_SERVICES.md) | KMS signing + S3 CDC export |
 | [EU AI Act](docs/EU_AI_ACT.md) | Article 12 compliance evidence |
-| [Deployment](docs/DEPLOYMENT.md) | Cloud deployment |
 
 ---
 

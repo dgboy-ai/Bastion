@@ -1,0 +1,11 @@
+{
+  "workers": 8,
+  "per_worker": 5,
+  "total_ops": 40,
+  "errors": 0,
+  "success_rate": 1.0,
+  "total_sec": 86.67,
+  "qps": 0.46,
+  "p50_ms": 10262.2,
+  "p95_ms": 45294.5
+}

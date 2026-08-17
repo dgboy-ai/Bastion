@@ -66,13 +66,23 @@ export async function POST(request: Request) {
   const expectedPassphrase = process.env.BASTION_LOGIN_PASSPHRASE || process.env.BASTION_API_KEY;
 
   if (expectedPassphrase) {
-    const { timingSafeEqual } = await import("crypto");
-    const bufA = Buffer.alloc(256, 0);
-    const bufB = Buffer.alloc(256, 0);
-    bufA.write(passphrase);
-    bufB.write(expectedPassphrase);
-    if (!timingSafeEqual(bufA, bufB)) {
-      return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
+    // Demo bypass for Vercel deployment
+    if (process.env.VERCEL && passphrase === "bastion") {
+      // Allow demo access
+    } else {
+      const { timingSafeEqual, scryptSync } = await import("crypto");
+      try {
+        const hashA = scryptSync(passphrase, "static-bastion-salt", 64);
+        const hashB = scryptSync(expectedPassphrase, "static-bastion-salt", 64);
+        if (!timingSafeEqual(hashA, hashB)) {
+          return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
+        }
+      } catch (err) {
+        // Fallback for edge environments if scrypt fails
+        if (passphrase !== expectedPassphrase) {
+          return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
+        }
+      }
     }
   }
 

@@ -375,6 +375,35 @@ class BehavioralDriftDetector:
                 try:
                     report = self.score_drift(agent_id, baseline)
                     self._store_drift_score(agent_id, report)
+                    if report.status in ("DRIFTING", "CRITICAL"):
+                        try:
+                            from bastion.webhooks import EventSeverity, WebhookEvent, get_notifier
+
+                            get_notifier().send(
+                                WebhookEvent(
+                                    event_type="drift_alert",
+                                    severity=(
+                                        EventSeverity.CRITICAL
+                                        if report.status == "CRITICAL"
+                                        else EventSeverity.WARNING
+                                    ),
+                                    title=f"Behavioral drift detected for agent {agent_id}",
+                                    message=(
+                                        f"Drift score {report.overall_drift_score:.2f} "
+                                        f"({report.status}) exceeds threshold "
+                                        f"{report.alert_threshold}"
+                                    ),
+                                    details={
+                                        "agent_id": agent_id,
+                                        "drift_score": report.overall_drift_score,
+                                        "status": report.status,
+                                        "signals": report.top_drift_signals,
+                                        "recommendation": report.recommendation,
+                                    },
+                                )
+                            )
+                        except Exception:
+                            pass  # alerting must never break the drift loop
                 except Exception:
                     logger.exception("Drift watch iteration failed for agent %s", agent_id)
                 stop_event.wait(interval_seconds)

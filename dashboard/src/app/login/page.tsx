@@ -133,6 +133,9 @@ function LoginForm() {
                 e.target.style.background = "#f9fafb";
               }}
             />
+            <div style={{ marginTop: 8, fontSize: 11, color: "#6b7280", fontWeight: 600, textAlign: "right" }}>
+              Demo access: enter <strong>bastion</strong>
+            </div>
           </div>
 
           {error && (

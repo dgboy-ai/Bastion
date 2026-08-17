@@ -29,14 +29,37 @@ export async function GET(request: Request) {
   const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
 
   try {
-    // 1. List the newest CDC NDJSON files (skip .RESOLVED markers)
-    const list = await s3Client.send(
-      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: PREFIX })
-    );
+    // 1. Walk the newest day-prefixes first (cdc-live/YYYY-MM-DD/) so we read
+    //    fresh changefeed flushes instead of the oldest lexically-first keys.
+    //    Stops as soon as we have enough small candidate files.
+    const dayMs = 86_400_000;
+    const candidateFiles: { Key: string; LastModified?: Date; Size?: number }[] = [];
 
-    const dataFiles = (list.Contents ?? [])
-      .filter((o) => o.Key?.endsWith(".ndjson"))
-      .sort((a, b) => String(b.LastModified).localeCompare(String(a.LastModified)));
+    for (let offset = 0; offset < 7 && candidateFiles.length < 5; offset++) {
+      const day = new Date(Date.now() - offset * dayMs);
+      const dayPrefix = `${PREFIX}${day.toISOString().slice(0, 10)}/`;
+      let token: string | undefined;
+      for (let page = 0; page < 3; page++) {
+        const list = await s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: BUCKET,
+            Prefix: dayPrefix,
+            ContinuationToken: token,
+          })
+        );
+        const files = (list.Contents ?? [])
+          .filter((o) => o.Key?.endsWith(".ndjson") && (o.Size ?? 0) <= 500_000)
+          .map((o) => ({ Key: o.Key as string, LastModified: o.LastModified, Size: o.Size }));
+        candidateFiles.push(...files);
+        if (!list.IsTruncated) break;
+        token = list.NextContinuationToken;
+      }
+    }
+
+    candidateFiles.sort((a, b) =>
+      String(b.LastModified).localeCompare(String(a.LastModified))
+    );
+    const dataFiles = candidateFiles.slice(0, 5);
 
     const events: unknown[] = [];
     const seen = new Set<string>();
@@ -99,7 +122,7 @@ export async function GET(request: Request) {
       }
     };
 
-    const candidates = dataFiles.filter((o) => (o.Size ?? 0) <= 500_000).slice(0, 5);
+    const candidates = dataFiles.slice(0, 5);
     await Promise.all(candidates.map((o) => fetchFile(o.Key as string, o.Size ?? 0)));
 
     // If only oversized bulk files exist, read the single newest one anyway.

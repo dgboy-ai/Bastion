@@ -426,6 +426,159 @@ function GuardCheck({ stages }: { stages: GuardStage[] }) {
   );
 }
 
+/* ── Live CDC Feed (changefeed → S3) ──────────────────────── */
+function CdcLiveFeed() {
+  const [events, setEvents] = useState<{ type: string; msg: string; time: string; color: string; agent: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/cdc-feed?limit=15", { cache: "no-store" });
+        const d = await res.json();
+        const rows = d?.data?.events || [];
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        if (!active) return;
+        const mapped = rows.slice(0, 15).map((r: any) => {
+          const action = String(r.action || "memory_changed").replace(/_/g, " ");
+          const isPoison = action.includes("poison") || action.includes("block") || action.includes("guard");
+          const isHeal = action.includes("heal") || action.includes("prune") || action.includes("repair");
+          const isScan = action.includes("scan") || action.includes("verify") || action.includes("detect");
+          const type = isPoison ? "BLOCKED" : isHeal ? "HEALED" : isScan ? "SCANNED" : "CDC EVENT";
+          const color = isPoison ? "#b91c1c" : isHeal ? "#047857" : isScan ? "#0369a1" : "#7c3aed";
+          return {
+            type,
+            msg: action,
+            time: r.recordedAt ? new Date(r.recordedAt).toLocaleTimeString() : "just now",
+            color,
+            agent: String(r.agentId || "unknown"),
+          };
+        });
+        setEvents(mapped);
+        setLastUpdate(new Date().toLocaleTimeString());
+      } catch {
+        // keep last events on failure
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    const iv = setInterval(load, 5000);
+    return () => { active = false; clearInterval(iv); };
+  }, []);
+
+  return (
+    <div className="brutal-hover" style={{
+      background: C.card,
+      border: C.border,
+      borderRadius: "4px",
+      boxShadow: C.shadowSm,
+      padding: "10px 12px",
+      marginBottom: "12px",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: "6px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{
+            width: "8px",
+            height: "8px",
+            borderRadius: "50%",
+            background: C.purple,
+            animation: "chainDotPulse 1.6s ease-in-out infinite",
+          }} />
+          <span style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "15px",
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            color: C.ink,
+          }}>
+            CDC Live Feed
+          </span>
+        </div>
+        {lastUpdate && (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: C.mute, fontWeight: 700 }}>
+            ↻ {lastUpdate}
+          </span>
+        )}
+      </div>
+      <div style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "15px",
+        fontWeight: 700,
+        background: "#f5f3ff",
+        border: `2px solid ${C.purple}`,
+        borderRadius: "4px",
+        padding: "4px 8px",
+        marginBottom: "8px",
+        color: "#5b21b6",
+        letterSpacing: "0.5px",
+      }}>
+        CockroachDB CDC → AWS S3 → this panel
+      </div>
+
+      {loading && events.length === 0 ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "15px", color: C.mute }}>
+          Tailing cdc-live/ …
+        </div>
+      ) : events.length === 0 ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "15px", color: C.mute }}>
+          No CDC events yet — writes will appear here in real time.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "220px", overflowY: "auto" }}>
+          {events.map((e, i) => (
+            <div key={i} style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "5px 8px",
+              background: i === 0 ? `${e.color}0d` : "transparent",
+              border: `1px solid ${i === 0 ? e.color + "40" : C.ink}`,
+              borderRadius: "3px",
+            }}>
+              <span style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "10px",
+                fontWeight: 900,
+                color: "#fff",
+                background: e.color,
+                padding: "1px 5px",
+                borderRadius: "2px",
+                flexShrink: 0,
+              }}>
+                {e.type}
+              </span>
+              <span style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "13px",
+                color: C.ink,
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontWeight: 600,
+              }}>
+                {e.msg}
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: C.mute, flexShrink: 0 }}>
+                {e.time}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HashChainVisual({ hashes }: { hashes: string[] }) {
   if (hashes.length === 0) return null;
   return (
@@ -790,6 +943,8 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   const [activeModel, setActiveModel] = useState<string>("");
   const [mcpStatus, setMcpStatus] = useState<"checking" | "connected" | "offline">("checking");
   const [mcpDetail, setMcpDetail] = useState("");
+  const [isoData, setIsoData] = useState<{ isolation_level: string; read_committed_enabled: boolean } | null>(null);
+  const [isoOpen, setIsoOpen] = useState(false);
   const [slashTools, setSlashTools] = useState<{ name: string; description: string }[]>([]);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -848,6 +1003,23 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   useEffect(() => {
     checkMcp();
   }, [checkMcp]);
+
+  useEffect(() => {
+    fetch("/api/isolation", { cache: "no-store" })
+      .then(r => r.json())
+      .then(d => { if (d.data) setIsoData(d.data); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isoOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-iso-panel]")) setIsoOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isoOpen]);
 
   useEffect(() => {
     if (mcpStatus === "connected") {
@@ -1427,19 +1599,70 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           }}>
             {mcpStatus === "connected" ? "● MCP CONNECTED" : mcpStatus === "checking" ? "⟳ MCP…" : "⚡ MCP OFFLINE"}
           </span>
-          <span style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "15px",
-            fontWeight: 700,
-            background: C.green,
-            color: "#fff",
-            border: `2px solid ${C.ink}`,
-            borderRadius: "4px",
-            padding: "2px 8px",
-            boxShadow: C.shadowSm,
-          }}>
-            SERIALIZABLE
-          </span>
+          <div data-iso-panel style={{ position: "relative" }}>
+            <span
+              onClick={() => isoData && setIsoOpen(!isoOpen)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "15px",
+                fontWeight: 700,
+                background: isoData?.isolation_level === "serializable" ? C.green : isoData ? "#f59e0b" : "#9ca3af",
+                color: "#fff",
+                border: `2px solid ${C.ink}`,
+                borderRadius: "4px",
+                padding: "2px 8px",
+                boxShadow: C.shadowSm,
+                cursor: isoData ? "pointer" : "default",
+                transition: "all 0.15s ease",
+                textDecoration: isoData ? "underline" : "none",
+                textUnderlineOffset: "3px",
+              }}
+              onMouseEnter={(e) => { if (isoData) e.currentTarget.style.transform = "scale(1.05)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+            >
+              {isoData?.isolation_level === "serializable" ? "SERIALIZABLE" : isoData ? isoData.isolation_level?.toUpperCase() : "ISO…"}
+            </span>
+            {isoOpen && isoData && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                marginTop: "6px",
+                background: C.card,
+                border: `2px solid ${C.ink}`,
+                borderRadius: "6px",
+                boxShadow: C.shadow,
+                padding: "12px 16px",
+                minWidth: "320px",
+                zIndex: 100,
+                fontFamily: "var(--font-mono)",
+                fontSize: "13px",
+              }}>
+                <div style={{ fontWeight: 900, marginBottom: "8px", fontSize: "14px" }}>Isolation Proof</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                  <span style={{ color: C.mute }}>Level</span>
+                  <span style={{ fontWeight: 700, color: C.green }}>{isoData.isolation_level}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                  <span style={{ color: C.mute }}>READ COMMITTED</span>
+                  <span style={{ fontWeight: 700, color: isoData.read_committed_enabled ? "#f59e0b" : C.mute }}>
+                    {isoData.read_committed_enabled ? "enabled (not used)" : "disabled"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ color: C.mute }}>Enforcement</span>
+                  <span style={{ fontWeight: 700 }}>application-layer</span>
+                </div>
+                <div style={{ borderTop: C.border, paddingTop: "8px", color: C.mute, lineHeight: 1.5 }}>
+                  Every write runs <code style={{ background: "#e5e7eb", padding: "1px 4px", borderRadius: "2px" }}>SET TRANSACTION ISOLATION LEVEL SERIALIZABLE</code> via <code style={{ background: "#e5e7eb", padding: "1px 4px", borderRadius: "2px" }}>retry.py:80</code>. Concurrent writers abort with 40001, retry with exponential backoff.
+                </div>
+                <div
+                  onClick={() => setIsoOpen(false)}
+                  style={{ position: "absolute", top: "6px", right: "8px", cursor: "pointer", color: C.mute, fontWeight: 700 }}
+                >✕</div>
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <span style={{
@@ -1957,6 +2180,9 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           {/* Hash Chain */}
           <HashChainVisual hashes={chainHashes} />
 
+          {/* Live CDC Feed */}
+          <CdcLiveFeed />
+
           {/* Quick Stats */}
           <div className="brutal-hover" style={{
             background: C.card,
@@ -1982,7 +2208,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
                 { label: "Cluster", value: "bastion-memory-29951" },
                 { label: "Region", value: "aws-ap-south-1" },
                 { label: "Vector Index", value: "C-SPANN" },
-                { label: "Isolation", value: "SERIALIZABLE" },
+                { label: "Isolation", value: isoData?.isolation_level === "serializable" ? "SERIALIZABLE" : isoData?.isolation_level?.toUpperCase() || "…" },
                 { label: "TTL", value: "Row-level active" },
                 { label: "CDC", value: "Streaming to S3" },
               ].map((item, i) => (

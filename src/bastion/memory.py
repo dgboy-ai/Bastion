@@ -406,6 +406,25 @@ class BastionMemory:
             report = self._guard.check(content)
             if not report.is_safe:
                 details = "; ".join(f"{f.detector}: {f.detail}" for f in report.findings)
+                try:
+                    from bastion.webhooks import get_notifier, WebhookEvent
+                    from bastion.webhooks import EventSeverity
+
+                    get_notifier().send(
+                        WebhookEvent(
+                            event_type="poison_blocked",
+                            severity=EventSeverity.CRITICAL,
+                            title=f"Memory poisoning blocked for agent {self.agent_id}",
+                            message=f"Content rejected by MemoryGuard [{report.poisoning_risk}]: {details}",
+                            details={
+                                "agent_id": self.agent_id,
+                                "poisoning_risk": report.poisoning_risk,
+                                "threat_types": [f.threat_type for f in report.findings],
+                            },
+                        )
+                    )
+                except Exception:
+                    pass  # alerting must never break the store path
                 raise SecurityBlockError(
                     f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}",
                     report=report,
@@ -959,6 +978,27 @@ class BastionMemory:
                             }),
                         ),
                     )
+                    try:
+                        from bastion.webhooks import EventSeverity, WebhookEvent, get_notifier
+
+                        get_notifier().send(
+                            WebhookEvent(
+                                event_type="chain_violation",
+                                severity=EventSeverity.ERROR,
+                                title=f"Hash chain violation for agent {self.agent_id}",
+                                message=(
+                                    f"{len(mismatches)}/{len(rows)} memories failed hash-chain "
+                                    "verification — possible out-of-band tampering"
+                                ),
+                                details={
+                                    "agent_id": self.agent_id,
+                                    "mismatch_count": len(mismatches),
+                                    "mismatch_ids": mismatches[:20],
+                                },
+                            )
+                        )
+                    except Exception:
+                        pass  # alerting must never break the verify path
 
                 return {
                     "verified": verified,
@@ -1212,12 +1252,6 @@ class BastionMemory:
         else:
             embedding = self._embed(content)
 
-        # Use provided connection for atomic multi-operation transactions
-        if conn is None:
-            conn = pool.acquire(timeout=30.0)
-            should_release = True
-        else:
-            should_release = False
         embedding_str = json.dumps(embedding)
         now = datetime.now(UTC)
         expires_dt = (now + timedelta(seconds=expires_in_seconds)) if expires_in_seconds is not None else None
@@ -1289,15 +1323,23 @@ class BastionMemory:
             )
             return (row, prev_hash, crypto_hash)
 
+        # The hash chain is a single hot row per agent: serialize same-agent
+        # writers in-process so N-way contention on one row becomes a single
+        # writer. Cross-process writers still rely on the DB retry engine.
+        # Acquire the chain lock BEFORE the pool connection so concurrent
+        # writers never hold idle pooled connections while blocked on the
+        # lock (previously caused pool exhaustion + spurious failures under
+        # concurrent load).
+        chain_lock = _chain_lock_for(self.agent_id)
+        should_release = False
         try:
-            if should_release:
-                self._set_rls_context(conn)
-            # Use retry engine with SERIALIZABLE isolation for hash chain integrity.
-            # The hash chain is a single hot row per agent: serialize same-agent
-            # writers in-process so N-way contention on one row becomes a single
-            # writer. Cross-process writers still rely on the DB retry engine.
-            chain_lock = _chain_lock_for(self.agent_id)
             with chain_lock:
+                if conn is None:
+                    conn = pool.acquire(timeout=30.0)
+                    should_release = True
+                # Use retry engine with SERIALIZABLE isolation for hash chain integrity.
+                if should_release:
+                    self._set_rls_context(conn)
                 row, prev_hash, crypto_hash = self._retry_engine.execute(
                     conn, _insert_operation, isolation="serializable"
                 )

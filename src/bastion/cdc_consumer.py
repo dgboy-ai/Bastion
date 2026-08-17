@@ -232,6 +232,27 @@ def build_cdc_handlers(bus: CdcEventBus, memory: Any) -> list[Any]:
                 "recorded_at": event.get("created_at") or event.get("updated"),
             }
         )
+        # Fire a webhook so operators see CDC flow in real time (no-op if
+        # BASTION_WEBHOOK_URLS is unset).
+        try:
+            from bastion.webhooks import EventSeverity, WebhookEvent, get_notifier
+
+            get_notifier().send(
+                WebhookEvent(
+                    event_type="cdc_event",
+                    severity=EventSeverity.INFO,
+                    title="Memory changed via CDC",
+                    message=f"CDC changefeed detected memory change for agent {agent_id}",
+                    details={
+                        "agent_id": agent_id,
+                        "memory_id": event.get("memory_id", ""),
+                        "memory_type": event.get("memory_type", ""),
+                        "table": table,
+                    },
+                )
+            )
+        except Exception:
+            pass  # alerting must never break the CDC handler
         # Async hash-chain verification: pick up any memories already flagged
         # with needs_verification=true (set at insert time) and verify them.
         # Do NOT re-flag ALL memories — that causes an infinite loop where
