@@ -36,7 +36,7 @@ As autonomous AI agents move from answering support tickets to running migration
 ## The Solution
 
 <p align="center">
-  <img src="docs/architecture_diagram.png" alt="Bastion Shield Architecture Diagram" width="800">
+  <img src="docs/architecture.jpeg" alt="Bastion Shield Architecture Diagram" width="800">
 </p>
 
 Bastion wraps every memory write in five defense layers. The attack is not just blocked — it becomes **evidence**.
@@ -57,8 +57,8 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 
 | Metric | Value | Status |
 |:---|:---|:---|
-| **Memories Stored** | 4,080 | Live |
-| **Audit Log** | 9,822 entries | Live |
+| **Memories Stored** | 4,000+ | Live |
+| **Audit Log** | 9,800+ entries | Live |
 | **MCP Tools** | 35 | Live |
 | **Hash Chain** | 0 broken links | 100% sealed |
 | **CDC Changelogs** | 4 live changefeeds → S3 | Streaming |

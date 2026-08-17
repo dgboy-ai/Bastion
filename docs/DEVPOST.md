@@ -26,7 +26,7 @@ I realized that if an enterprise deploys an agent to manage infrastructure or ex
 
 ## 🛠️ What it does
 
-![Bastion Shield Architecture Diagram](./architecture_diagram.png)
+![Bastion Shield Architecture Diagram](./architecture.jpeg)
 
 Bastion is a cryptographically signed, self-healing memory layer for autonomous AI agent networks. It operates as a secure cryptographic boundary between the AI agent and the database, bridging the gap between raw database storage and AI safety via a **7-layer memory stack**.
 
@@ -133,7 +133,7 @@ To prove why CockroachDB's transactional primitives are strictly required for ag
 * **Zero-Trust Memory**: Achieving a genuinely tamper-proof hash chain using native transactional guarantees — not a custom lock, not a mutex, but CockroachDB's `SERIALIZABLE` isolation doing the heavy lifting at the storage layer.
 * **High-Fidelity Security**: Hitting an **87.0% True Positive Rate (TPR)** on detecting OWASP ASI06 attacks, with raw guard scan latency at **0.52ms** per check — fast enough to sit inline on every memory write.
 * **Future-Proof Dual-Protocol Architecture**: We didn't just build for today's single agents using MCP. We engineered a fully parallel **A2A (Agent-to-Agent v1.0) Server** with Ed25519 cryptographic identity. While A2A is still an emerging standard, Bastion is already fully compliant and ready to secure multi-agent delegation.
-* **Production Infrastructure, Not a Demo**: 4,080 memories stored on a live CockroachDB Cloud cluster, 100% with HMAC-SHA256 hashes, 9,822 audit rows, 4 running CDC changefeeds streaming to S3 since August 7th. This is real infrastructure running, not a localhost mock.
+* **Production Infrastructure, Not a Demo**: 4,000+ memories stored on a live CockroachDB Cloud cluster, 100% with HMAC-SHA256 hashes, 9,800+ audit rows, 4 running CDC changefeeds streaming to S3. This is real infrastructure running, not a localhost mock.
 * **Concurrency That Actually Works**: 50-agent concurrent store test — 100% success rate, zero hash chain corruption. The chain stays linear under load because the database enforces it, not application-level locks.
 * **Deterministic Time-Travel**: 284ms p50 rollback to any clean state via `AS OF SYSTEM TIME`. Not a backup restore, not a snapshot copy — a native MVCC query that reverts the entire agent context to a mathematically proven clean point.
 * **AWS KMS Envelope Encryption**: Real envelope encryption with a real KMS key (`cd7692b4-b38e-47ee-abae-eed566c0b6d3`), AES-256-GCM, per-tenant DEK wrapping. Every memory encrypted at rest, not just at transit.
