@@ -1,5 +1,5 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import { safeQuery, isMockMode } from "@/lib/db";
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import LogsContent from "./Content";
 
 export const dynamic = "force-dynamic";

@@ -59,7 +59,7 @@ export async function fetchWithTimeout(
     if (method === "GET" && res.ok && typeof window !== "undefined") {
       const cloned = res.clone();
       cloned.json().then(data => {
-        globalCache.set(urlStr, { data, expiry: Date.now() + 15000 }); // Cache for 15s
+        globalCache.set(urlStr, { data, expiry: Date.now() + 30000 }); // Cache for 30s
       }).catch(() => {});
     }
 

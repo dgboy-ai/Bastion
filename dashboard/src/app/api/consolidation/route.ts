@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       dedup: { duplicates: 12, similarityPairs: [{ a: "User prefers Python", b: "User likes Python", score: 0.92 }, { a: "CockroachDB uses Raft", b: "CRDB uses Raft consensus", score: 0.87 }] },
       conflicts: { detected: 3, resolved: 3 },
       seal: { latestBlock: "#965", chainIntact: true, totalAudits: 1247 },
-    });
+    }, "short");
     }
   }
 
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
         chainValid: parseInt(String(hashCheckRes.rows[0]?.valid || "0"), 10),
         chainTotal: parseInt(String(hashCheckRes.rows[0]?.total || "0"), 10),
       },
-    });
+    }, "short");
   } catch (error) {
     console.error("[api/consolidation] Query failed:", error instanceof Error ? error.message : 'Unknown error');
     if (process.env.BASTION_MOCK === "true" || process.env.BASTION_MOCK === "1") {

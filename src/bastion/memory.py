@@ -563,6 +563,8 @@ class BastionMemory:
 
                     meta = dict(metadata) if metadata else {}
                     precomputed = meta.pop("_precomputed_embedding", None)
+                    meta.pop("_trust_level", None)
+                    meta.pop("_source_provenance", None)
                     embedding = precomputed if precomputed is not None else self._embed(content)
 
                     embedding_str = json.dumps(embedding)
@@ -586,8 +588,8 @@ class BastionMemory:
                     cur.execute(
                         "INSERT INTO agent_memory (agent_id, memory_type, content, embedding, metadata, "
                         "previous_hash, cryptographic_hash, expires_at, importance_score, trust_level, "
-                        "source_provenance) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, 2, 'agent_direct') "
+                        "source_provenance, needs_verification) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 5.0, 2, 'agent_direct', true) "
                         "RETURNING memory_id, created_at",
                         (
                             self.agent_id,
@@ -919,16 +921,12 @@ class BastionMemory:
                 mismatches = []
                 for mid, content, metadata, stored_prev, stored_hash in rows:
                     meta_dict = dict(metadata) if metadata else {}
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
                     recomputed = compute_hash(content or "", meta_dict, stored_prev)
                     if recomputed != stored_hash:
                         mismatches.append(str(mid))
-                        logger.warning(
-                            "Chain verification: mismatch at memory_id=%s "
-                            "(stored=%s, recomputed=%s)",
-                            str(mid)[:12],
-                            str(stored_hash)[:16] if stored_hash else "None",
-                            str(recomputed)[:16],
-                        )
                     verified += 1
 
                 # Clear verification flags for all processed rows
@@ -940,8 +938,14 @@ class BastionMemory:
                     (self.agent_id, *[str(r[0]) for r in rows]),
                 )
 
-                # Log mismatches in audit trail
+                # Log mismatches — single summary warning, not per-row
                 if mismatches:
+                    logger.warning(
+                        "Chain verification: %d/%d mismatches for agent %s "
+                        "(first: %s)",
+                        len(mismatches), len(rows), self.agent_id,
+                        mismatches[0][:12] if mismatches else "",
+                    )
                     import uuid as _uuid
                     cur.execute(
                         "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
@@ -1239,9 +1243,9 @@ class BastionMemory:
             cols = (
                 "agent_id, memory_type, content, embedding, metadata, "
                 "previous_hash, cryptographic_hash, expires_at, importance_score, "
-                "trust_level, source_provenance"
+                "trust_level, source_provenance, needs_verification"
             )
-            placeholders = "%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s"
+            placeholders = "%s, %s, %s, %s, %s, %s, %s, %s, 5.0, %s, %s, true"
             params = [
                 self.agent_id,
                 memory_type,
@@ -1970,6 +1974,9 @@ class BastionMemory:
                 tampered_records = []
                 for mid, content, metadata, stored_prev, stored_hash in rows:
                     meta_dict = dict(metadata) if metadata else {}
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
                     # 1) Content-integrity check: does the stored hash match the
                     #    row's own content + stored previous link? If not, the row
                     #    itself was tampered — prune it (never bless tampered data).

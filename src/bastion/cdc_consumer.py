@@ -232,8 +232,10 @@ def build_cdc_handlers(bus: CdcEventBus, memory: Any) -> list[Any]:
                 "recorded_at": event.get("created_at") or event.get("updated"),
             }
         )
-        # Async hash-chain verification: flag the agent; chain_verify picks
-        # up flagged rows in batches. Best-effort; never blocks the loop.
+        # Async hash-chain verification: pick up any memories already flagged
+        # with needs_verification=true (set at insert time) and verify them.
+        # Do NOT re-flag ALL memories — that causes an infinite loop where
+        # chain_verify keeps finding the same mismatches.
         if isinstance(memory, BastionMemory):
             try:
                 now = time.time()
@@ -243,7 +245,6 @@ def build_cdc_handlers(bus: CdcEventBus, memory: Any) -> list[Any]:
                         return
                     _last_verify[agent_id] = now
                 mem = memory
-                mem._flag_needs_verification(agent_id)
                 mem.chain_verify()
             except Exception as exc:
                 logger.warning("CDC async verification for %s failed: %s", agent_id, exc)

@@ -1467,11 +1467,18 @@ def create_server(
     )
     async def memory_timetravel(
         ctx: Context,
-        timestamp: str,
+        timestamp: str | None = None,
+        minutes_ago: int | None = None,
         agent_id: str | None = None,
     ) -> str:
-        if not timestamp or not timestamp.strip():
-            return json.dumps({"error": "timestamp is required"})
+        # Support both timestamp and minutes_ago parameter
+        if minutes_ago is not None:
+            from datetime import timedelta
+            now = datetime.now(UTC)
+            dt = now - timedelta(minutes=minutes_ago)
+            timestamp = dt.isoformat()
+        elif not timestamp or not timestamp.strip():
+            return json.dumps({"error": "timestamp or minutes_ago is required"})
         # In multi-tenant mode, force agent_id to caller's identity
         if multi_tenant:
             agent_id = _safe_client_id(ctx)
@@ -1490,6 +1497,22 @@ def create_server(
                     "or relative (5 minutes ago, now)",
                 }
             )
+        
+        # Auto-correct wrong years (LLMs often use wrong year)
+        if valid_iso:
+            from datetime import datetime as dt_cls, timezone
+            now = dt_cls.now(timezone.utc)
+            try:
+                parsed = dt_cls.fromisoformat(ts.replace("Z", "+00:00"))
+                year_diff = abs(parsed.year - now.year)
+                if year_diff > 1:
+                    # Year is wrong - correct it to current year
+                    corrected = ts.replace(f"-{parsed.year}-", f"-{now.year}-")
+                    ts = corrected
+                    timestamp = corrected
+            except Exception:
+                pass
+
         mem = _resolve_memory(ctx)
         try:
             results = await anyio.to_thread.run_sync(

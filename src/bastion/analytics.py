@@ -411,7 +411,11 @@ class MemoryAnalytics:
         sorted_memories = sorted(memories, key=lambda m: (m.created_at or datetime.min.replace(tzinfo=UTC), m.memory_id))
         prev_hash = None
         for mem in sorted_memories:
-            if not verify_hash(mem.content, mem.metadata, mem.previous_hash, mem.cryptographic_hash):
+            meta = dict(mem.metadata) if mem.metadata else {}
+            meta.pop("_precomputed_embedding", None)
+            meta.pop("_trust_level", None)
+            meta.pop("_source_provenance", None)
+            if not verify_hash(mem.content, meta, mem.previous_hash, mem.cryptographic_hash):
                 return False
             if mem.previous_hash != prev_hash:
                 return False

@@ -1,5 +1,5 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import { safeQuery, isMockMode } from "@/lib/db";
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import FlightRecorderContent from "./Content";
 
 export const dynamic = "force-dynamic";
@@ -103,16 +103,20 @@ async function getAuditEvents() {
       
       const trustScore = trustLevel / 4.0;
 
+      const action = String(row.action || "audit_check");
+      const isFailure = action.includes("failed") || action.includes("error") || action.includes("blocked") || action.includes("tampered");
+      const status = isFailure ? "blocked" : "success";
+
       return {
         id: String(row.audit_id),
         timestamp: row.recorded_at instanceof Date ? row.recorded_at.toISOString() : String(row.recorded_at || new Date().toISOString()),
-        type: String(row.action || "audit_check"),
+        type: action,
         agent_id: String(row.agent_id || "unknown"),
         content_preview: contentPreview,
         hash: hash || String(row.audit_id || "").slice(0, 16),
         previous_hash: prevHash || undefined,
         trust_score: trustScore,
-        status: "success",
+        status,
         details: detailsStr,
       };
     });

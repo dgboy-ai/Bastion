@@ -103,7 +103,10 @@ class MemoryArchiver:
         prev_hash = None
         for mem in memories:
             content = mem.get("content", "")
-            meta = mem.get("metadata", {})
+            meta = dict(mem.get("metadata", {})) if mem.get("metadata") else {}
+            meta.pop("_precomputed_embedding", None)
+            meta.pop("_trust_level", None)
+            meta.pop("_source_provenance", None)
             actual = mem.get("cryptographic_hash", "")
             if actual and not verify_hash(content, meta, prev_hash, actual):
                 return False

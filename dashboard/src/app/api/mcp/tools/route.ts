@@ -42,7 +42,17 @@ export async function GET() {
     );
 
     const tools = toolsData?.result?.tools || [];
-    return NextResponse.json({ tools });
+
+    // Dedupe by name — the MCP server already includes ccloud_exec,
+    // managed_mcp_call, invoke_agent_skill, list_agent_skills, etc.
+    const seen = new Set<string>();
+    const unique = tools.filter((t: any) => {
+      if (!t?.name || seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
+    });
+
+    return NextResponse.json({ tools: unique });
   } catch (err) {
     return NextResponse.json({
       tools: [],

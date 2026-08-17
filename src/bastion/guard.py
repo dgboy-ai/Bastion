@@ -997,7 +997,11 @@ class MemoryGuard:
     ) -> tuple[bool, Finding | None]:
         from bastion.crypto import verify_hash
 
-        if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
+        clean_meta = dict(metadata) if metadata else {}
+        clean_meta.pop("_precomputed_embedding", None)
+        clean_meta.pop("_trust_level", None)
+        clean_meta.pop("_source_provenance", None)
+        if not verify_hash(content, clean_meta, previous_hash, cryptographic_hash):
             return False, Finding(
                 detector="hash_chain",
                 threat_type="ASI06: Tampered Memory",
@@ -1030,7 +1034,11 @@ class MemoryGuard:
         if cryptographic_hash is not None:
             from bastion.crypto import verify_hash
 
-            if not verify_hash(content, metadata, previous_hash, cryptographic_hash):
+            clean_meta = dict(metadata) if metadata else {}
+            clean_meta.pop("_precomputed_embedding", None)
+            clean_meta.pop("_trust_level", None)
+            clean_meta.pop("_source_provenance", None)
+            if not verify_hash(content, clean_meta, previous_hash, cryptographic_hash):
                 score *= HASH_CHAIN_PENALTY
 
         # Age penalty (matching trust.py thresholds)

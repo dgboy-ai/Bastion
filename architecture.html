@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bastion: How the Agent, CockroachDB and External Services Fit Together</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #fafbfc;
+    color: #1a1a2e;
+    padding: 32px 40px;
+    line-height: 1.5;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #0d1117;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #656d76;
+    margin-bottom: 28px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 260px 1fr 280px;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  .col-header {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #656d76;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #d0d7de;
+  }
+  .box {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: #fff;
+    position: relative;
+  }
+  .box-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0d1117;
+    margin-bottom: 6px;
+  }
+  .box-title .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+  .badge-green { background: #d1fae5; color: #065f46; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .box p, .box li {
+    font-size: 11.5px;
+    color: #3d4654;
+    line-height: 1.55;
+  }
+  .box ul {
+    padding-left: 16px;
+    margin-top: 4px;
+  }
+  .box code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 10.5px;
+    background: #f0f3f6;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #0550ae;
+  }
+  .sql-block {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    background: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: #24292f;
+  }
+  .sql-keyword { color: #cf222e; font-weight: 600; }
+  .sql-type { color: #0550ae; }
+  .sql-comment { color: #6e7781; font-style: italic; }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #656d76;
+    margin: 20px 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d0d7de;
+  }
+
+  /* Pipeline section */
+  .pipeline {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    background: #fff;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+  }
+  .pipeline-header {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0d1117;
+    margin-bottom: 14px;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+  }
+  .step {
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #fafbfc;
+    position: relative;
+  }
+  .step-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: #0550ae;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 6px;
+  }
+  .step-num.green { background: #1a7f37; }
+  .step-num.amber { background: #9a6700; }
+  .step-num.red { background: #cf222e; }
+  .step-num.purple { background: #8250df; }
+  .step-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0d1117;
+    margin-bottom: 4px;
+  }
+  .step p {
+    font-size: 10.5px;
+    color: #3d4654;
+    line-height: 1.5;
+  }
+  .step code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 9.5px;
+    background: #f0f3f6;
+    padding: 1px 3px;
+    border-radius: 3px;
+    color: #0550ae;
+  }
+
+  /* Arrows between steps */
+  .step-arrow {
+    display: none; /* arrows via grid gap visual */
+  }
+
+  /* Footer */
+  .footer {
+    font-size: 11px;
+    color: #656d76;
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #d0d7de;
+  }
+
+  /* Connection line indicator */
+  .conn-label {
+    font-size: 9px;
+    color: #656d76;
+    text-align: center;
+    margin: 4px 0;
+    font-style: italic;
+  }
+
+  /* Responsive */
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<h1>Bastion: how the Agent, CockroachDB and External Services fit together</h1>
+<p class="subtitle">Every arrow is a real call path. The dashed loop is the part no vector store can run.</p>
+
+<div class="grid">
+
+  <!-- LEFT COLUMN: External Services -->
+  <div>
+    <div class="col-header">External Services</div>
+
+    <div class="box">
+      <div class="box-title">HuggingFace Inference API <span class="badge badge-blue">Tier 1</span></div>
+      <p><code>BAAI/bge-large-en-v1.5</code> — 1024-dim embeddings via HTTP API. Falls back to local MiniLM on 503 or missing <code>HF_TOKEN</code>.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Local SentenceTransformer <span class="badge badge-green">Tier 2</span></div>
+      <p><code>all-MiniLM-L6-v2</code> — 384-dim (padded to 1024). Pre-warmed in background thread to eliminate 28s cold start. Zero network cost.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Hash Fallback <span class="badge badge-amber">Tier 3</span></div>
+      <p>Character n-gram (2/3/4-gram) feature hashing into 1024-dim vector. Deterministic, no model required. Air-gapped environments.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Groq API <span class="badge badge-purple">Optional</span></div>
+      <p>LLM semantic classification for the OWASP ASI06 guard. Model: <code>openai/gpt-oss-120b</code>. Detects nuanced prompt injection when <code>BASTION_LLM_GUARD=true</code>.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">AWS KMS <span class="badge badge-red">Production</span></div>
+      <p>ECDSA-P256 asymmetric signing — private key never leaves KMS. Also provides envelope encryption for <code>memory_store_encrypted</code>. Dev mode uses local HMAC-SHA256.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">AWS S3 <span class="badge badge-blue">CDC Archive</span></div>
+      <p>CockroachDB CDC changefeed output lands in <code>cdc-live/</code> prefix. <code>S3CdcTailer</code> polls for event-driven hash-chain verification.</p>
+    </div>
+  </div>
+
+  <!-- CENTER COLUMN: CockroachDB -->
+  <div>
+    <div class="col-header">CockroachDB — The Memory</div>
+
+    <div class="box" style="border-color: #0550ae; border-width: 2px;">
+      <div class="box-title">agent_memory <span class="badge badge-blue">Core Table</span></div>
+      <div class="sql-block"><span class="sql-keyword">CREATE TABLE</span> agent_memory (
+  memory_id          <span class="sql-type">UUID</span> <span class="sql-keyword">PRIMARY KEY DEFAULT</span> gen_random_uuid(),
+  agent_id           <span class="sql-type">STRING NOT NULL</span>,
+  memory_type        <span class="sql-type">STRING NOT NULL</span>,    <span class="sql-comment">-- fact, episodic, semantic, task, session...</span>
+  content            <span class="sql-type">TEXT NOT NULL</span>,
+  embedding          <span class="sql-type">VECTOR(1024) NOT NULL</span>,
+  metadata           <span class="sql-type">JSONB</span>,
+  previous_hash      <span class="sql-type">STRING</span>,             <span class="sql-comment">-- chain link to prior memory</span>
+  cryptographic_hash <span class="sql-type">STRING NOT NULL</span>,    <span class="sql-comment">-- HMAC-SHA256(content, meta, prev)</span>
+  created_at         <span class="sql-type">TIMESTAMPTZ DEFAULT</span> now(),
+  expires_at         <span class="sql-type">TIMESTAMPTZ</span>,        <span class="sql-comment">-- native TTL auto-expiry</span>
+  importance_score   <span class="sql-type">FLOAT DEFAULT</span> 5.0,
+  trust_level        <span class="sql-type">FLOAT DEFAULT</span> 2.0,
+  is_pinned          <span class="sql-type">BOOL DEFAULT FALSE</span>, <span class="sql-comment">-- survives context compaction</span>
+  pin_priority       <span class="sql-type">INT DEFAULT</span> 0
+);
+<span class="sql-keyword">CREATE VECTOR INDEX</span> idx_memory_embedding
+    <span class="sql-keyword">ON</span> agent_memory (agent_id, embedding); <span class="sql-comment">-- C-SPANN distributed index</span></div>
+    </div>
+
+    <div class="box">
+      <div class="box-title">agent_audit <span class="badge badge-green">Append-Only Ledger</span></div>
+      <div class="sql-block"><span class="sql-keyword">CREATE TABLE</span> agent_audit (
+  audit_id     <span class="sql-type">UUID PRIMARY KEY</span>,
+  agent_id     <span class="sql-type">STRING NOT NULL</span>,
+  workflow_id  <span class="sql-type">UUID NOT NULL</span>,
+  action       <span class="sql-type">STRING NOT NULL</span>,    <span class="sql-comment">-- memory_store, memory_delete, heal...</span>
+  details      <span class="sql-type">JSONB</span>,
+  recorded_at  <span class="sql-type">TIMESTAMPTZ DEFAULT</span> now()
+);</div>
+    </div>
+
+    <div class="box">
+      <div class="box-title">agent_entities / agent_relations <span class="badge badge-purple">Knowledge Graph</span></div>
+      <p>NLP-extracted entities and relations. BFS graph traversal via <code>graph_query()</code>. Temporal validity (<code>valid_from</code>/<code>valid_until</code>). Relations reference source memory for provenance.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">agent_coordination <span class="badge badge-amber">Distributed Locks</span></div>
+      <p>Shared/exclusive lock types for <code>resolve_conflict()</code>. SERIALIZABLE isolation guarantees no split-brain. Expiry-based auto-release prevents deadlocks.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">a2a_tasks / tool_usage_log <span class="badge badge-blue">Operational</span></div>
+      <p>A2A task state machine (SUBMITTED→WORKING→COMPLETED). Tool call logging with 30-day TTL. Budget tracking per agent.</p>
+    </div>
+
+    <div class="box" style="background: #f0f7ff; border-color: #0550ae;">
+      <div class="box-title">CockroachDB Features Used</div>
+      <ul>
+        <li><strong>C-SPANN Vector Index</strong> — distributed semantic search</li>
+        <li><strong>MVCC</strong> — <code>AS OF SYSTEM TIME</code> time-travel queries</li>
+        <li><strong>SERIALIZABLE Isolation</strong> — hash chain integrity under concurrency</li>
+        <li><strong>Row-Level Security</strong> — per-agent data isolation</li>
+        <li><strong>Native TTL</strong> — auto-expiry for episodic/session memories</li>
+        <li><strong>CDC Changefeeds</strong> — event-driven self-healing pipeline</li>
+        <li><strong>REGIONAL BY ROW</strong> — geo-partitioned multi-region</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: Control Plane -->
+  <div>
+    <div class="col-header">Control Plane & Tooling</div>
+
+    <div class="box" style="border-color: #8250df; border-width: 2px;">
+      <div class="box-title">MCP Server <span class="badge badge-purple">FastMCP</span></div>
+      <p><code>python -m bastion.mcp_server --transport http --port 9997</code></p>
+      <p style="margin-top: 6px;">35 tools: <code>memory_store</code>, <code>memory_search</code>, <code>memory_heal</code>, <code>memory_timetravel</code>, <code>forensic_report</code>, <code>dream</code>, <code>a2a_bridge</code>...</p>
+      <ul>
+        <li><strong>Auth:</strong> API key (bcrypt) or OAuth 2.1 PKCE</li>
+        <li><strong>Rate limit:</strong> 20 concurrent, 200 queue, 60s timeout</li>
+        <li><strong>CORS:</strong> configurable origin allowlist</li>
+        <li><strong>Metrics:</strong> Prometheus-format request counts/durations</li>
+        <li><strong>Auto-capture:</strong> every tool call → hash-chained memory</li>
+      </ul>
+    </div>
+
+    <div class="box">
+      <div class="box-title">OWASP ASI06 Guard <span class="badge badge-red">7 Stages</span></div>
+      <p>Runs on every <code>memory_store()</code>:</p>
+      <ul>
+        <li>Unicode normalization (NFKC, Cyrillic homoglyphs)</li>
+        <li>40+ prompt injection patterns</li>
+        <li>Leetspeak / spacing / reversal obfuscation decode</li>
+        <li>Base64 / URL / hex / HTML encoded payload scan</li>
+        <li>Multi-language injection (CN, AR, JP, RU, KR)</li>
+        <li>Secret / PII detection and redaction</li>
+        <li>Optional LLM semantic classification (Groq)</li>
+      </ul>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Memory Engine <span class="badge badge-green">BastionMemory</span></div>
+      <p>Core class in <code>memory.py</code>. Per-agent chain locks serialize concurrent writes. SERIALIZABLE retry engine with exponential backoff. Connection pool: psycopg (sync) + asyncpg (async).</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Dreaming / Consolidation <span class="badge badge-amber">Background</span></div>
+      <p>10-step cognitive cycle (every 60 min): reinforce → decay → merge duplicates → extract patterns → synthesize insights → promote episodic→semantic → prune → detect sleeper poison.</p>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Dashboard <span class="badge badge-blue">Vercel</span></div>
+      <p><code>dashboard/</code> — Next.js 16 + React 19 + Tailwind CSS 4. Connects to CockroachDB via <code>pg</code> Pool. Auto-runs schema migrations on first connect.</p>
+      <ul>
+        <li><code>/dashboard</code> — Memory telemetry</li>
+        <li><code>/flight-recorder</code> — Event history</li>
+        <li><code>/graph</code> — Knowledge graph (D3.js)</li>
+        <li><code>/compliance</code> — EU AI Act reporting</li>
+        <li><code>/soc</code> — Security operations center</li>
+        <li><code>/playground</code> — Interactive search/store</li>
+      </ul>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Agent Skills <span class="badge badge-green">34 Playbooks</span></div>
+      <p>CockroachDB-specific operational skills invoked via <code>invoke_agent_skill</code>. Health checks, performance triage, schema analysis, security audits, capacity planning.</p>
+    </div>
+  </div>
+</div>
+
+<!-- THE WRITE PIPELINE -->
+<div class="section-title">The Write Pipeline — memory_store()</div>
+<div class="pipeline">
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-title">Guard Check</div>
+      <p>OWASP ASI06 scan: Unicode normalize → injection patterns → obfuscation decode → encoded payload scan → PII detect → optional LLM classify. <strong>Block before write.</strong></p>
+    </div>
+    <div class="step">
+      <div class="step-num green">2</div>
+      <div class="step-title">Embed</div>
+      <p>Content → 1024-dim vector. 3-tier fallback: HuggingFace API → local MiniLM → hash feature hashing. L2-normalized.</p>
+    </div>
+    <div class="step">
+      <div class="step-num amber">3</div>
+      <div class="step-title">Chain Lock</div>
+      <p>Acquire per-agent <code>threading.Lock</code>. Serializes same-agent concurrent writers in-process. Cross-agent safety via DB.</p>
+    </div>
+    <div class="step">
+      <div class="step-num red">4</div>
+      <div class="step-title">Hash Chain</div>
+      <p><code>HMAC-SHA256(content, metadata, prev_hash)</code> with length-prefix encoding. KMS ECDSA-P256 in production.</p>
+    </div>
+    <div class="step">
+      <div class="step-num purple">5</div>
+      <div class="step-title">SERIALIZABLE Insert</div>
+      <p><code>INSERT INTO agent_memory</code> + <code>INSERT INTO agent_audit</code> in single transaction. Auto-retry on serialization failure (code 40001).</p>
+    </div>
+    <div class="step">
+      <div class="step-num green">6</div>
+      <div class="step-title">Return & Notify</div>
+      <p>Return <code>MemoryRecord</code> JSON. Notify MCP resources (<code>bastion://stats</code>). Auto-capture hooks persist tool call as memory.</p>
+    </div>
+  </div>
+</div>
+
+<!-- THE SEARCH PIPELINE -->
+<div class="section-title">The Search Pipeline — memory_search()</div>
+<div class="pipeline">
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-title">Embed Query</div>
+      <p>Query text → 1024-dim vector via same 3-tier embedding pipeline. Stopwords removed for keyword extraction.</p>
+    </div>
+    <div class="step">
+      <div class="step-num green">2</div>
+      <div class="step-title">C-SPANN ANN</div>
+      <p><code>ORDER BY embedding &lt;-&gt; query::vector LIMIT k</code>. Distributed approximate nearest-neighbor via CockroachDB vector index.</p>
+    </div>
+    <div class="step">
+      <div class="step-num amber">3</div>
+      <div class="step-title">Keyword Boost</div>
+      <p>BM25-like signal: count query keywords present in content. Weight: 2.0 × (hits / total terms). Fills gaps vector search misses.</p>
+    </div>
+    <div class="step">
+      <div class="step-num red">4</div>
+      <div class="step-title">Cognitive Decay</div>
+      <p><code>score = cos_sim × importance / (1 + 0.01 × age_hours)</code>. Fresher, more-accessed memories rank higher. Pinned memories survive.</p>
+    </div>
+    <div class="step">
+      <div class="step-num purple">5</div>
+      <div class="step-title">Re-rank & Filter</div>
+      <p>Python-side hybrid re-ranking: 40% vector + 30% keyword + 15% entity + 15% temporal. Threshold filter (default 0.8).</p>
+    </div>
+    <div class="step">
+      <div class="step-num green">6</div>
+      <div class="step-title">Return Results</div>
+      <p>Ranked <code>MemoryRecord</code> list with individual signal scores. Cursor-based pagination for large sets.</p>
+    </div>
+  </div>
+</div>
+
+<!-- THE SELF-HEALING LOOP -->
+<div class="section-title">The Self-Healing Loop — memory_heal()</div>
+<div class="pipeline">
+  <div class="steps" style="grid-template-columns: repeat(5, 1fr);">
+    <div class="step">
+      <div class="step-num red">1</div>
+      <div class="step-title">Prune Expired</div>
+      <p>Delete memories where <code>expires_at &lt; now()</code>. Native TTL handles most; this catches stragglers.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-title">Walk Hash Chain</div>
+      <p>Iterate all memories for agent ordered by <code>created_at</code>. Recompute <code>HMAC(content, meta, prev_hash)</code> at each link.</p>
+    </div>
+    <div class="step">
+      <div class="step-num red">3</div>
+      <div class="step-title">Detect Tampering</div>
+      <p>If recomputed hash ≠ stored hash: <strong>prune the row</strong>. Never bless tampered data. Original hash preserved in audit trail.</p>
+    </div>
+    <div class="step">
+      <div class="step-num amber">4</div>
+      <div class="step-title">Reseal Links</div>
+      <p>After pruned rows, recompute <code>previous_hash</code> for remaining valid memories. Chain integrity restored.</p>
+    </div>
+    <div class="step">
+      <div class="step-num green">5</div>
+      <div class="step-title">Audit & Report</div>
+      <p>Log all actions to <code>agent_audit</code>. Return healed state with tampered count, pruned count, and forensic details.</p>
+    </div>
+  </div>
+</div>
+
+<!-- THE TIME TRAVEL -->
+<div class="section-title">Time-Travel Query — memory_timetravel()</div>
+<div class="pipeline">
+  <div class="pipeline" style="border: none; padding: 0;">
+    <div class="sql-block" style="font-size: 11px; line-height: 1.8;"><span class="sql-comment">-- Point-in-time snapshot via CockroachDB MVCC</span>
+<span class="sql-keyword">SELECT</span> * <span class="sql-keyword">FROM</span> agent_memory
+<span class="sql-keyword">WHERE</span> agent_id = <span class="sql-type">'my-agent'</span>
+<span class="sql-keyword">AS OF SYSTEM TIME</span> <span class="sql-type">'2026-08-15 10:30:00+00'</span>;
+
+<span class="sql-comment">-- What the agent believed 45 days ago, before a poison memory was injected</span>
+<span class="sql-keyword">SELECT</span> content, cryptographic_hash <span class="sql-keyword">FROM</span> agent_memory
+<span class="sql-keyword">WHERE</span> agent_id = <span class="sql-type">'my-agent'</span> <span class="sql-keyword">AND</span> memory_type = <span class="sql-type">'fact'</span>
+<span class="sql-keyword">AS OF SYSTEM TIME</span> <span class="sql-type">'2026-07-01 00:00:00+00'</span>;</div>
+  </div>
+</div>
+
+<div class="footer">
+  <strong>Bastion v0.10.0</strong> — 6 layers of defense: Guard → Hash Chain → MVCC Time-Travel → RLS Isolation → CDC Monitoring → Forensic Audit Trail.<br>
+  Deployed on Vercel (dashboard) + Render/Fly.io/Docker (MCP server) + CockroachDB Cloud (memory). MIT License.
+</div>
+
+</body>
+</html>

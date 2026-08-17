@@ -276,6 +276,10 @@ def forensic_report_real(mem: BastionMemory) -> dict[str, Any]:
                     meta_dict = json.loads(metadata) if metadata and isinstance(metadata, str) else metadata
                 except (json.JSONDecodeError, TypeError):
                     meta_dict = metadata
+                if meta_dict and isinstance(meta_dict, dict):
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
                 recomputed = compute_hash(content or "", meta_dict, prev_hash)
                 if recomputed != stored_hash:
                     hash_mismatches.append(mid)

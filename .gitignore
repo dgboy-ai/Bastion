@@ -69,6 +69,8 @@ test_full_e2e.ts
 test_remaining.ts
 .claude/
 .vscode/
+.cline/
+.cursor/
 # Dev/test scripts — not needed for production deployment
 # scripts/
 examples/

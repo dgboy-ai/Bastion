@@ -127,28 +127,30 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
           {isWrite ? (
             <span style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "15px",
-              fontWeight: 700,
+              fontSize: "16px",
+              fontWeight: 900,
               background: C.red,
               color: "#fff",
-              border: `2px solid ${C.ink}`,
-              borderRadius: "4px",
-              padding: "2px 8px",
-              boxShadow: C.shadowSm,
+              border: `3px solid ${C.ink}`,
+              borderRadius: "6px",
+              padding: "6px 14px",
+              boxShadow: `2px 2px 0px ${C.ink}`,
+              letterSpacing: "0.5px",
             }}>
               ✋ HITL · APPROVAL
             </span>
           ) : (
             <span style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "15px",
-              fontWeight: 700,
+              fontSize: "16px",
+              fontWeight: 900,
               background: "#d1fae5",
               color: "#065f46",
-              border: `2px solid ${C.green}`,
-              borderRadius: "4px",
-              padding: "2px 8px",
-              boxShadow: C.shadowSm,
+              border: `3px solid ${C.green}`,
+              borderRadius: "6px",
+              padding: "6px 14px",
+              boxShadow: `2px 2px 0px ${C.ink}`,
+              letterSpacing: "0.5px",
             }}>
               ↻ AUTONOMOUS READ
             </span>
@@ -164,14 +166,14 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
           {tool.result?.source === "SQL" && (
             <span style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "15px",
-              fontWeight: 700,
+              fontSize: "16px",
+              fontWeight: 900,
               background: "#fef3c7",
               color: "#92400e",
-              border: `2px solid #d97706`,
-              borderRadius: "4px",
-              padding: "2px 8px",
-              boxShadow: C.shadowSm,
+              border: `3px solid #d97706`,
+              borderRadius: "6px",
+              padding: "6px 14px",
+              boxShadow: `2px 2px 0px ${C.ink}`,
             }}>
               ⚡ SQL FALLBACK
             </span>
@@ -179,31 +181,31 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
           {tool.result?.source === "MCP" && (
             <span style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "15px",
-              fontWeight: 700,
+              fontSize: "16px",
+              fontWeight: 900,
               background: C.green,
               color: "#fff",
-              border: `2px solid ${C.ink}`,
-              borderRadius: "4px",
-              padding: "2px 8px",
-              boxShadow: C.shadowSm,
+              border: `3px solid ${C.ink}`,
+              borderRadius: "6px",
+              padding: "6px 14px",
+              boxShadow: `2px 2px 0px ${C.ink}`,
             }}>
               ✓ MCP SERVER
             </span>
           )}
-          {tool.result?.source === "HITL" && (
+          {tool.result?.source === "HITL" && !isWrite && (
             <span style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "15px",
-              fontWeight: 700,
+              fontSize: "16px",
+              fontWeight: 900,
               background: C.purple,
               color: "#fff",
-              border: `2px solid ${C.ink}`,
-              borderRadius: "4px",
-              padding: "2px 8px",
-              boxShadow: C.shadowSm,
+              border: `3px solid ${C.ink}`,
+              borderRadius: "6px",
+              padding: "6px 14px",
+              boxShadow: `2px 2px 0px ${C.ink}`,
             }}>
-              ✍ DIRECT SQL
+              ✋ HITL APPROVAL
             </span>
           )}
         </div>
@@ -399,8 +401,8 @@ function GuardCheck({ stages }: { stages: GuardStage[] }) {
               fontFamily: "var(--font-mono)",
               background: s.status === "pass" ? C.green
                 : s.status === "fail" ? C.red
-                : s.status === "running" ? C.yellow
-                : "#e5e7eb",
+                  : s.status === "running" ? C.yellow
+                    : "#e5e7eb",
               color: s.status === "pass" || s.status === "fail" ? "#fff" : C.ink,
               flexShrink: 0,
             }}>
@@ -412,8 +414,8 @@ function GuardCheck({ stages }: { stages: GuardStage[] }) {
               fontWeight: 700,
               color: s.status === "pass" ? C.green
                 : s.status === "fail" ? C.red
-                : s.status === "running" ? C.ink
-                : C.mute,
+                  : s.status === "running" ? C.ink
+                    : C.mute,
             }}>
               {s.name}
             </span>
@@ -703,37 +705,37 @@ const CHAT_STORAGE_KEY = "bastion-agent-chat-v1";
 
 function parseThinkBlocks(text: string) {
   if (!text || !text.includes("<think>")) return text;
-  
+
   const parts = text.split(/(<think>[\s\S]*?(?:<\/think>|$))/gi);
-  
+
   return parts.map((part, i) => {
     if (part.toLowerCase().startsWith("<think>")) {
       const thinkContent = part.replace(/^<think>/i, "").replace(/<\/think>$/i, "").trim();
       if (!thinkContent) return null;
       return (
-        <details key={i} style={{ 
-          marginBottom: "12px", 
-          background: "#f8fafc", 
-          padding: "12px", 
-          borderRadius: "4px", 
+        <details key={i} style={{
+          marginBottom: "12px",
+          background: "#f8fafc",
+          padding: "12px",
+          borderRadius: "4px",
           border: `2px solid ${C.ink}`,
           boxShadow: C.shadowSm
         }}>
-          <summary style={{ 
-            cursor: "pointer", 
-            fontWeight: 800, 
-            fontSize: "14px", 
-            color: C.ink, 
+          <summary style={{
+            cursor: "pointer",
+            fontWeight: 800,
+            fontSize: "14px",
+            color: C.ink,
             fontFamily: "var(--font-mono)",
             userSelect: "none"
           }}>
             💭 Internal Model Reasoning
           </summary>
-          <div style={{ 
-            marginTop: "12px", 
-            fontSize: "15px", 
+          <div style={{
+            marginTop: "12px",
+            fontSize: "15px",
             fontWeight: 600,
-            color: C.body, 
+            color: C.body,
             whiteSpace: "pre-wrap",
             borderTop: `2px dashed ${C.ink}`,
             paddingTop: "12px"
@@ -773,7 +775,7 @@ function loadChainHashes(): string[] {
     if (!raw) return ["a1b2c3d4"];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-  } catch {}
+  } catch { }
   return ["a1b2c3d4"];
 }
 
@@ -782,6 +784,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
+  const pendingResumeRef = useRef<{ message: string; history: Array<{ role: string; content: string }>; assistantContent?: string } | null>(null);
   const [chainHashes, setChainHashes] = useState<string[]>(["a1b2c3d4"]);
   const [activeProvider, setActiveProvider] = useState<string>("");
   const [activeModel, setActiveModel] = useState<string>("");
@@ -791,7 +794,23 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   const [slashFilter, setSlashFilter] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const prevMemoriesRef = useRef(initialStats.memories);
+  const [memoriesAnim, setMemoriesAnim] = useState<{ old: number; new: number; show: boolean }>({ old: initialStats.memories, new: initialStats.memories, show: false });
+  const [stats, setStats] = useState(initialStats);
+
+  // Refresh stats from database
+  const refreshStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agent/stats");
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Load persisted chat after mount (client-only) to avoid SSR hydration mismatch
   useEffect(() => {
@@ -806,7 +825,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
   useEffect(() => {
     try {
       window.sessionStorage.setItem(CHAIN_STORAGE_KEY, JSON.stringify(chainHashes));
-    } catch {}
+    } catch { }
   }, [chainHashes]);
 
   const checkMcp = useCallback(async () => {
@@ -834,8 +853,17 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     if (mcpStatus === "connected") {
       fetch("/api/mcp/tools")
         .then(r => r.json())
-        .then(d => { if (d.tools?.length) setSlashTools(d.tools); })
-        .catch(() => {});
+        .then(d => {
+          if (!d.tools?.length) return;
+          const seen = new Set<string>();
+          const unique = d.tools.filter((t: any) => {
+            if (!t?.name || seen.has(t.name)) return false;
+            seen.add(t.name);
+            return true;
+          });
+          setSlashTools(unique);
+        })
+        .catch(() => { });
     }
   }, [mcpStatus]);
 
@@ -854,6 +882,26 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
       // Storage full/unavailable — persist is best-effort
     }
   }, [messages]);
+
+  // Auto-resize textarea when input value changes (e.g. paste)
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (ta) {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+    }
+  }, [input]);
+
+  // Animate memory count when it changes
+  useEffect(() => {
+    if (stats.memories !== prevMemoriesRef.current) {
+      const oldVal = prevMemoriesRef.current;
+      prevMemoriesRef.current = stats.memories;
+      setMemoriesAnim({ old: oldVal, new: stats.memories, show: true });
+      const t = setTimeout(() => setMemoriesAnim(prev => ({ ...prev, show: false })), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [stats.memories]);
 
   const addOps = useCallback((msgId: string, ops: Operation[]) => {
     setMessages(prev => prev.map(m =>
@@ -988,6 +1036,11 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
 
       // Handle pending approval (HITL)
       if (data.pendingApproval) {
+        pendingResumeRef.current = {
+          message: userInput,
+          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          assistantContent: steps.filter((s: { type: string }) => s.type === "thought").map((s: { content: string }) => s.content).join("\n"),
+        };
         const guard = data.pendingApproval.guard;
         const approval: ApprovalRequest = {
           id: genId(),
@@ -1022,9 +1075,144 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
         m.id === assistantMsgId ? { ...m, content: "An error occurred. Please try again." } : m
       ));
     } finally {
+      refreshStats();
       setIsProcessing(false);
     }
-  }, [addOps, messages, checkMcp]);
+  }, [addOps, messages, checkMcp, refreshStats]);
+
+  const resumeAgentLoop = useCallback(async (approved: boolean, result?: Record<string, unknown>) => {
+    const resume = pendingResumeRef.current;
+    if (!resume) return;
+    const assistantMsgId = [...messages].reverse().find(m => m.role === "assistant" && m.operations?.some(o => o.type === "tool_call"))?.id;
+    const targetId = assistantMsgId || genId();
+
+    try {
+      setIsProcessing(true);
+      // Build history that includes the assistant's previous plan so the LLM knows the remaining steps
+      const resumeHistory = [
+        ...resume.history,
+        ...(resume.assistantContent ? [{ role: "assistant" as const, content: resume.assistantContent }] : []),
+      ];
+      const res = await fetch("/api/agent/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: resume.message,
+          history: resumeHistory,
+          resumeApproval: {
+            approved,
+            toolName: pendingApproval?.toolName || "memory_store",
+            result: result || {},
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.provider) setActiveProvider(data.provider);
+      if (data.model) setActiveModel(data.model);
+
+      if (data.error) {
+        addOps(targetId, [{
+          id: genId(),
+          type: "error",
+          content: data.error,
+          timestamp: now(),
+        }]);
+        return;
+      }
+
+      const steps = data.steps || [];
+      for (const step of steps) {
+        if (step.type === "thought") {
+          addOps(targetId, [{
+            id: genId(),
+            type: "thought",
+            content: step.content,
+            timestamp: now(),
+          }]);
+        } else if (step.type === "tool_call") {
+          addOps(targetId, [{
+            id: genId(),
+            type: "tool_call",
+            content: "",
+            timestamp: now(),
+            toolCall: {
+              id: genId(),
+              name: step.toolName || "unknown",
+              args: step.toolArgs || {},
+              status: "running",
+            },
+          }]);
+        } else if (step.type === "tool_result") {
+          setMessages(prev => prev.map(m => {
+            if (m.id !== targetId) return m;
+            const ops = m.operations || [];
+            for (let i = ops.length - 1; i >= 0; i--) {
+              if (ops[i].type === "tool_call" && ops[i].toolCall && !ops[i].toolCall?.result) {
+                ops[i].toolCall = {
+                  ...ops[i].toolCall!,
+                  name: step.toolName || ops[i].toolCall!.name,
+                  status: "done",
+                  result: step.toolResult,
+                  sql: step.sql,
+                  latency: step.latency,
+                };
+                break;
+              }
+            }
+            return { ...m, operations: [...ops] };
+          }));
+          addOps(targetId, [{
+            id: genId(),
+            type: "audit",
+            content: `${step.toolName} executed — SERIALIZABLE isolation`,
+            timestamp: now(),
+          }]);
+        } else if (step.type === "response") {
+          setMessages(prev => prev.map(m =>
+            m.id === targetId ? { ...m, content: step.content } : m
+          ));
+        } else if (step.type === "error") {
+          addOps(targetId, [{
+            id: genId(),
+            type: "error",
+            content: step.content,
+            timestamp: now(),
+          }]);
+        }
+      }
+
+      // If the resumed loop itself triggers another HITL approval, store it for the next round
+      if (data.pendingApproval) {
+        pendingResumeRef.current = {
+          message: resume.message,
+          history: resume.history,
+          assistantContent: steps.filter((s: { type: string }) => s.type === "thought").map((s: { content: string }) => s.content).join("\n"),
+        };
+        const guard = data.pendingApproval.guard;
+        const approval: ApprovalRequest = {
+          id: genId(),
+          toolName: data.pendingApproval.toolName,
+          args: data.pendingApproval.args,
+          content: data.pendingApproval.content,
+          guardPassed: guard ? guard.isSafe : true,
+          confidence: guard ? Math.round(guard.trustScore * 100) : 94,
+          risk: guard ? (guard.poisoningRisk === "NONE" ? "LOW" : guard.poisoningRisk === "MEDIUM" ? "MEDIUM" : "HIGH") : "LOW",
+          guard: guard || undefined,
+        };
+        setPendingApproval(approval);
+      }
+    } catch (error) {
+      addOps(targetId, [{
+        id: genId(),
+        type: "error",
+        content: `Continuation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        timestamp: now(),
+      }]);
+    } finally {
+      refreshStats();
+      setIsProcessing(false);
+    }
+  }, [addOps, messages, checkMcp, refreshStats]);
 
   const handleApprove = useCallback(async () => {
     if (!pendingApproval) return;
@@ -1060,6 +1248,24 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
 
       const hash = data.data?.cryptographicHash || data.cryptographicHash || genId();
       const newHash = hash.slice(0, 8);
+      const source = data.data?.source || data.source || "SQL";
+
+      // Update the existing pending tool_call card in place instead of adding a duplicate
+      setMessages(prev => prev.map(m => {
+        if (m.id !== assistantMsgId) return m;
+        const ops = m.operations || [];
+        for (let i = ops.length - 1; i >= 0; i--) {
+          if (ops[i].type === "tool_call" && ops[i].toolCall && !ops[i].toolCall?.result) {
+            ops[i].toolCall = {
+              ...ops[i].toolCall!,
+              status: "done",
+              result: { tool: "memory_store", ...data.data, source },
+            };
+            break;
+          }
+        }
+        return { ...m, operations: [...ops] };
+      }));
 
       addOps(assistantMsgId, [
         {
@@ -1073,7 +1279,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
         {
           id: genId(),
           type: "audit",
-          content: `Stored. SERIALIZABLE isolation. Audit log updated at ${now()}`,
+          content: `Stored via ${source}. SERIALIZABLE isolation. Audit log updated at ${now()}`,
           timestamp: now(),
         },
       ]);
@@ -1086,6 +1292,10 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           content: `Memory stored successfully. Hash chain extended. Audit trail updated.`,
         } : m
       ));
+
+      // Resume the agent loop so the LLM continues with remaining steps (ccloud, skills, search, etc.)
+      const result = { ...data.data, source };
+      resumeAgentLoop(true, result);
     } catch (error) {
       addOps(assistantMsgId, [{
         id: genId(),
@@ -1093,8 +1303,9 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
         content: `Store failed: ${error instanceof Error ? error.message : "Unknown error"}`,
         timestamp: now(),
       }]);
+      resumeAgentLoop(false);
     }
-  }, [pendingApproval, messages, chainHashes, addOps]);
+  }, [pendingApproval, messages, chainHashes, addOps, resumeAgentLoop]);
 
   const handleReject = useCallback(() => {
     if (!pendingApproval) return;
@@ -1121,7 +1332,10 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     ));
 
     setPendingApproval(null);
-  }, [pendingApproval, messages, addOps]);
+
+    // Resume the agent loop so the LLM can continue with remaining steps
+    resumeAgentLoop(false);
+  }, [pendingApproval, messages, addOps, resumeAgentLoop]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1231,10 +1445,26 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           <span style={{
             fontFamily: "var(--font-mono)",
             fontSize: "15px",
-            color: C.mute,
-            fontWeight: 800,
+            fontWeight: 900,
+            color: memoriesAnim.show ? C.green : C.mute,
+            background: memoriesAnim.show ? "#d1fae5" : "transparent",
+            padding: memoriesAnim.show ? "2px 8px" : "0",
+            borderRadius: "4px",
+            transition: "all 0.3s ease",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
           }}>
-            {initialStats.memories} memories
+            {memoriesAnim.show ? (
+              <>
+                <span style={{ textDecoration: "line-through", opacity: 0.5, fontSize: "13px" }}>{memoriesAnim.old}</span>
+                <span style={{ color: C.green, fontWeight: 900 }}>→</span>
+                <span style={{ color: C.green, fontWeight: 900 }}>{memoriesAnim.new}</span>
+                <span>memories</span>
+              </>
+            ) : (
+              <>{stats.memories} memories</>
+            )}
           </span>
           <span style={{
             fontFamily: "var(--font-mono)",
@@ -1242,7 +1472,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
             color: C.mute,
             fontWeight: 800,
           }}>
-            {initialStats.auditLogs} audit
+            {stats.auditLogs} audit
           </span>
           <span style={{
             fontFamily: "var(--font-mono)",
@@ -1349,7 +1579,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
                           lineHeight: "1.5",
                         }}>
                           Start it with: <span style={{ background: "#fff", border: "1px solid #d97706", padding: "0 4px", borderRadius: "3px" }}>
-                          python -m bastion.mcp_server --transport http
+                            python -m bastion.mcp_server --transport http
                           </span>{" "}then hit retry.
                         </div>
                       </>
@@ -1569,18 +1799,28 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
                     {isProcessing && !msg.content && (!msg.operations || msg.operations.length === 0) && (
                       <div style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: "15px",
-                        fontWeight: 700,
-                        color: C.ink,
-                        padding: "6px 12px",
-                        background: "#e5e7eb",
-                        border: `2px dashed ${C.ink}`,
-                        borderRadius: "4px",
-                        display: "inline-block",
-                        boxShadow: C.shadowSm,
-                        animation: "pulseOpacity 1.5s infinite ease-in-out",
+                        fontSize: "16px",
+                        fontWeight: 800,
+                        color: "#1e1e1e",
+                        padding: "14px 20px",
+                        background: "#f0f0f0",
+                        border: `3px solid ${C.ink}`,
+                        borderRadius: "8px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        boxShadow: `3px 3px 0px ${C.ink}`,
                       }}>
-                        ⟳ Analyzing request...
+                        <span style={{
+                          display: "inline-flex",
+                          gap: "4px",
+                          alignItems: "center",
+                        }}>
+                          <span style={{ animation: "pulseOpacity 1.2s infinite 0s" }}>●</span>
+                          <span style={{ animation: "pulseOpacity 1.2s infinite 0.3s" }}>●</span>
+                          <span style={{ animation: "pulseOpacity 1.2s infinite 0.6s" }}>●</span>
+                        </span>
+                        <span>Thinking...</span>
                       </div>
                     )}
                   </div>
@@ -1593,73 +1833,116 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           {/* Input */}
           <div style={{ position: "relative" }}>
             {input.startsWith("/") && slashTools.length > 0 && (
-              <div style={{ position: "absolute", bottom: "100%", left: "16px", right: "16px", maxHeight: "240px", overflowY: "auto", background: "#fff", border: C.border, borderRadius: "4px", boxShadow: C.shadow, zIndex: 100, marginBottom: "4px" }}>
-                {slashTools.filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase())).slice(0, 8).map((tool, i) => (
-                  <div key={tool.name} onClick={() => { setInput(`/${tool.name} `); setSlashFilter(""); inputRef.current?.focus(); }}
-                    style={{ padding: "8px 12px", cursor: "pointer", background: i === slashIndex ? "#fef3c7" : "transparent", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 800, color: C.purple, minWidth: "180px" }}>/{tool.name}</span>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: C.mute, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool.description}</span>
-                  </div>
-                ))}
+              <div style={{
+                position: "absolute",
+                bottom: "100%",
+                left: "12px",
+                right: "12px",
+                maxHeight: "340px",
+                overflowY: "auto",
+                background: "#fafafa",
+                border: `3px solid ${C.ink}`,
+                borderRadius: "8px",
+                boxShadow: `4px 4px 0px ${C.ink}`,
+                zIndex: 100,
+                marginBottom: "8px",
+                padding: "6px",
+              }}>
+                {slashTools.filter((t, idx, arr) => arr.findIndex(x => x.name === t.name) === idx)
+                  .filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase())).map((tool, i) => (
+                    <div key={tool.name} onClick={() => { setInput(`/${tool.name} `); setSlashFilter(""); inputRef.current?.focus(); }}
+                      style={{
+                        padding: "12px 16px",
+                        cursor: "pointer",
+                        background: i === slashIndex ? "#fde68a" : "transparent",
+                        borderRadius: "6px",
+                        border: `1px solid ${i === slashIndex ? C.ink : "transparent"}`,
+                        marginBottom: "3px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "14px",
+                        transition: "all 0.12s ease",
+                      }}>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "16px",
+                        fontWeight: 900,
+                        color: "#1e1e1e",
+                        minWidth: "220px",
+                        letterSpacing: "-0.3px",
+                      }}>/{tool.name}</span>
+                      <span style={{
+                        fontFamily: "var(--font-sg)",
+                        fontSize: "14px",
+                        color: "#4a4a4a",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        lineHeight: 1.4,
+                      }}>{tool.description}</span>
+                    </div>
+                  ))}
               </div>
             )}
-            <form onSubmit={handleSubmit} style={{ padding: "12px 16px", borderTop: C.border, background: C.card, display: "flex", gap: "8px" }}>
-              <input ref={inputRef} type="text" value={input}
+            <form onSubmit={handleSubmit} style={{ padding: "14px 18px", borderTop: `3px solid ${C.ink}`, background: C.card, display: "flex", gap: "10px", alignItems: "flex-end" }}>
+              <textarea ref={inputRef} value={input}
                 onChange={e => { const val = e.target.value; setInput(val); if (val.startsWith("/")) { setSlashFilter(val.slice(1)); setSlashIndex(0); } else { setSlashFilter(""); } }}
                 onKeyDown={e => {
                   const filtered = slashTools.filter(t => t.name.toLowerCase().includes(slashFilter.toLowerCase()));
                   if (input.startsWith("/") && filtered.length > 0) {
                     if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, filtered.length - 1)); return; }
                     if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }
-                    if (e.key === "Tab" || (e.key === "Enter" && filtered[slashIndex])) { e.preventDefault(); const s = filtered[slashIndex] || filtered[0]; setInput(`/${s.name} `); setSlashFilter(""); return; }
+                    if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && filtered[slashIndex])) { e.preventDefault(); const s = filtered[slashIndex] || filtered[0]; setInput(`/${s.name} `); setSlashFilter(""); return; }
                   }
-                  if (e.key === "Enter") { e.preventDefault(); handleSubmit(e as any); }
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e as any); }
                 }}
                 placeholder={slashTools.length > 0 ? "Type / for MCP tools..." : "Type a message... (search, store, time-travel, audit, health)"}
                 disabled={isProcessing}
-                style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: "15px", fontWeight: 700, color: C.body, background: input.startsWith("/") ? "#f5f3ff" : "#f9f9f7", border: input.startsWith("/") ? `2px solid ${C.purple}` : C.border, borderRadius: "4px", padding: "10px 14px", outline: "none", boxShadow: C.shadowSm }}
+                rows={1}
+                style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: "16px", fontWeight: 700, color: C.body, background: input.startsWith("/") ? "#f5f3ff" : "#f9f9f7", border: `3px solid ${input.startsWith("/") ? C.purple : C.ink}`, borderRadius: "6px", padding: "12px 16px", outline: "none", boxShadow: `2px 2px 0px ${C.ink}`, resize: "none", overflowY: "auto", minHeight: "48px", maxHeight: "200px", lineHeight: "1.5" }}
               />
-            <button
-              type="button"
-              onClick={handleClearChat}
-              disabled={isProcessing || messages.length === 0}
-              style={{
-                fontFamily: "var(--font-sg)",
-                fontSize: "14px",
-                fontWeight: 800,
-                background: isProcessing || messages.length === 0 ? "#e5e7eb" : "#ffffff",
-                color: C.ink,
-                border: C.border,
-                borderRadius: "4px",
-                boxShadow: C.shadowSm,
-                padding: "10px 14px",
-                cursor: isProcessing || messages.length === 0 ? "not-allowed" : "pointer",
-                transition: "all 0.15s ease",
-              }}
-              title="Clear chat (local only — memories stay in CockroachDB)"
-            >
-              Clear
-            </button>
-            <button
-              type="submit"
-              disabled={isProcessing || !input.trim()}
-              style={{
-                fontFamily: "var(--font-sg)",
-                fontSize: "14px",
-                fontWeight: 800,
-                background: isProcessing ? "#e5e7eb" : C.yellow,
-                color: C.ink,
-                border: C.border,
-                borderRadius: "4px",
-                boxShadow: C.shadowSm,
-                padding: "10px 20px",
-                cursor: isProcessing ? "not-allowed" : "pointer",
-                transition: "all 0.15s ease",
-              }}
-            >
-              {isProcessing ? "⟳" : "→"}
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={handleClearChat}
+                disabled={isProcessing || messages.length === 0}
+                style={{
+                  fontFamily: "var(--font-sg)",
+                  fontSize: "15px",
+                  fontWeight: 800,
+                  background: isProcessing || messages.length === 0 ? "#e5e7eb" : "#ffffff",
+                  color: C.ink,
+                  border: `3px solid ${C.ink}`,
+                  borderRadius: "6px",
+                  boxShadow: `2px 2px 0px ${C.ink}`,
+                  padding: "10px 18px",
+                  cursor: isProcessing || messages.length === 0 ? "not-allowed" : "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                title="Clear chat (local only — memories stay in CockroachDB)"
+              >
+                Clear
+              </button>
+              <button
+                type="submit"
+                disabled={isProcessing || !input.trim()}
+                style={{
+                  fontFamily: "var(--font-sg)",
+                  fontSize: "18px",
+                  fontWeight: 900,
+                  background: isProcessing ? "#e5e7eb" : C.yellow,
+                  color: C.ink,
+                  border: `3px solid ${C.ink}`,
+                  borderRadius: "6px",
+                  boxShadow: `2px 2px 0px ${C.ink}`,
+                  padding: "10px 24px",
+                  cursor: isProcessing ? "not-allowed" : "pointer",
+                  transition: "all 0.15s ease",
+                  minWidth: "52px",
+                }}
+              >
+                {isProcessing ? "⟳" : "→"}
+              </button>
+            </form>
           </div>
         </div>
 
@@ -1747,10 +2030,61 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
               {[
-                { name: "MCP", desc: mcpStatus === "connected" ? "Bastion server on :9997" : mcpStatus === "checking" ? "Probing…" : "Offline — SQL fallback active", status: mcpStatus === "connected" ? "active" : mcpStatus === "checking" ? "degraded" : "degraded" },
                 { name: "KMS", desc: "Envelope encryption + signing", status: "active" },
                 { name: "S3", desc: "Cold archives + CDC export", status: "active" },
-                { name: "Groq", desc: activeProvider === "Groq" || activeProvider === "" ? `${activeModel || "qwen/qwen3.6-27b"} LLM` : `${activeProvider} active`, status: "active" },
+              ].map((svc, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: svc.status === "active" ? C.green : "#f59e0b",
+                    flexShrink: 0,
+                  }} />
+                  <span style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: C.ink,
+                  }}>
+                    {svc.name}
+                  </span>
+                  <span style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "15px",
+                    color: C.mute,
+                  }}>
+                    {svc.desc}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* MCP & LLM */}
+          <div className="brutal-hover" style={{
+            background: C.card,
+            border: C.border,
+            borderRadius: "4px",
+            boxShadow: C.shadowSm,
+            padding: "10px 12px",
+            marginBottom: "12px",
+          }}>
+            <div style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "15px",
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+              marginBottom: "6px",
+              color: C.ink,
+            }}>
+              MCP & LLM
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              {[
+                { name: "MCP", desc: mcpStatus === "connected" ? "Bastion server on :9997" : mcpStatus === "checking" ? "Probing…" : "Offline — SQL fallback active", status: mcpStatus === "connected" ? "active" : "degraded" },
+                { name: "LLM", desc: activeProvider === "Groq" || activeProvider === "" ? `${activeModel || "qwen/qwen3.6-27b"}` : `${activeProvider} / ${activeModel || "unknown"}`, status: "active" },
               ].map((svc, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <span style={{
@@ -1808,7 +2142,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
                   const firstOp = msg.operations[0];
                   previewText = `[${firstOp.type.toUpperCase()}] ${firstOp.content || ""}`;
                 }
-                
+
                 return (
                   <div key={i} style={{
                     display: "flex",
@@ -1880,6 +2214,10 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
         @keyframes chainDotPulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.5; transform: scale(1.3); }
+        }
+        @keyframes pulseOpacity {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.2; }
         }
       `}</style>
     </div>

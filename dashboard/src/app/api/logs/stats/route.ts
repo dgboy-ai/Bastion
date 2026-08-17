@@ -11,7 +11,7 @@ export async function GET() {
       totalCount: (row.total as number) ?? 0,
       poisonedCount: (row.poisoned as number) ?? 0,
       healedCount: (row.healed as number) ?? 0,
-    });
+    }, "short");
   } catch (err) {
     return apiError(err instanceof Error ? err.message : "Failed to fetch stats", 500);
   }

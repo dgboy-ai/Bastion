@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import { safeQuery, isMockMode } from "@/lib/db";
+import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import AgentContent from "./Content";
 
 export const dynamic = "force-dynamic";

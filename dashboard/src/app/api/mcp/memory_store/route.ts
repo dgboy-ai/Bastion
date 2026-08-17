@@ -1,6 +1,7 @@
 import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
+import { callLocalMcpTool } from "@/lib/local-mcp";
 import { randomUUID } from "crypto";
 import { computeHmacHash } from "@/lib/hash-chain";
 import { embedToVectorString } from "@/lib/embeddings";
@@ -55,6 +56,22 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { content, agentId = "mcp-agent", memoryType = "fact" } = body;
+
+    // Try the MCP server first — it has the real hash chain, guards, and budget
+    const mcp = await callLocalMcpTool("memory_store", {
+      content,
+      agent_id: agentId,
+      memory_type: memoryType,
+    });
+    if (mcp.ok && mcp.text) {
+      try {
+        const parsed = JSON.parse(mcp.text);
+        return apiSuccess({ ...parsed, source: "MCP" }, "dynamic");
+      } catch {
+        return apiSuccess({ tool: "memory_store", raw: mcp.text, source: "MCP" }, "dynamic");
+      }
+    }
+    // MCP unavailable — fall through to direct SQL
 
     if (!content) return apiError("content is required", 400);
 

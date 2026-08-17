@@ -10,4 +10,3 @@ export default function CompliancePage() {
     </DashboardLayoutWrapper>
   );
 }
-// Force TS recheck

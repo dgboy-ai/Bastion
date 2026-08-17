@@ -69,7 +69,11 @@ def compute_trust_score(
     from bastion.crypto import verify_hash
 
     if cryptographic_hash is not None:
-        hash_ok = verify_hash(content, metadata, previous_hash, cryptographic_hash)
+        clean_meta = dict(metadata) if metadata else {}
+        clean_meta.pop("_precomputed_embedding", None)
+        clean_meta.pop("_trust_level", None)
+        clean_meta.pop("_source_provenance", None)
+        hash_ok = verify_hash(content, clean_meta, previous_hash, cryptographic_hash)
         if not hash_ok:
             flags.append("HASH_CHAIN_BREAK")
             return TrustReport(
