@@ -14,6 +14,22 @@
 
 ---
 
+## 🏗️ System Architecture
+
+![Bastion System Architecture](docs/images/bastion-architecture.png)
+
+Bastion places a cryptographic security boundary between autonomous AI agents and persistent memory. Agent requests enter through MCP or A2A, pass through MemoryGuard and the core memory engine, and are stored in CockroachDB with cryptographic integrity, vector search, MVCC time-travel, RLS and CDC-based observability.
+
+AI Agents
+→ MCP / A2A
+→ Security Gateway
+→ Core Memory Engine
+→ CockroachDB
+→ CDC / S3
+→ Dashboard
+
+---
+
 ## 📂 Project Documentation
 
 | Doc | Contents |
