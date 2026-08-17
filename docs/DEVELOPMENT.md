@@ -35,11 +35,11 @@ To configure Bastion against a running CockroachDB instance:
 2.  **Execute database migrations:**
     Run the migrations runner to verify and populate all tables, vector indices, and concurrency lock slots:
     ```bash
-    python run_migrations.py
+    python scripts/run_remaining_migrations.py
     ```
 3.  **Run tests to verify:**
     ```bash
-    python -m pytest tests/test_memory.py
+    python -m pytest tests/test_crdb_integration.py
     ```
 
 ---

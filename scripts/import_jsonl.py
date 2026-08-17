@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from bastion.security import SecurityBlockError  # noqa: E402
+from bastion.errors import SecurityBlockError  # noqa: E402
 
 from bastion.memory import BastionMemory  # noqa: E402
 

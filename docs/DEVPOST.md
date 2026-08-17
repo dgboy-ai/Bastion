@@ -11,6 +11,22 @@
 
 ## 💡 Inspiration
 
+General-purpose assistants like ChatGPT and Gemini aren't going anywhere. But since late 2025, enterprises are building their **own** agents — ones that know their business, follow their rules, and remember everything forever. Gartner: 40% of enterprise apps will embed such agents by 2026, up from under 5% in 2025.
+
+Here's the problem nobody's guarding.
+
+An agent's memory works like a security guard's rule book. The company hands it to the agent and says: *"These rules are true. Trust them."*
+
+One night, while the agent sleeps, someone slips in and rewrites one line: *"Night-shift employees may access vault 7."*
+
+No one notices. The book looks the same. There's no alarm, no fingerprint, no record anything changed.
+
+The next morning, the guard reads the book — and follows it. Because the guard isn't just carrying the book.
+
+The guard *is* the book.
+
+One rewritten line. Every employee's agent is compromised. And nobody knows — because nothing proves the book was ever touched.
+
 As a college student deeply interested in autonomous systems, I've spent the last year obsessing over how AI agents construct their "memories". While everyone else was focused on making LLMs smarter, I saw a massive, unaddressed vulnerability in how we let them remember things. 
 
 > **Agentic AI is moving incredibly fast, but its memory is completely defenseless.** 
@@ -27,6 +43,12 @@ I realized that if an enterprise deploys an agent to manage infrastructure or ex
 ## 🛠️ What it does
 
 ![Bastion Shield Architecture Diagram](./architecture.jpeg)
+
+Now imagine that rule book has a seal on every page — and each seal is built from the seal of the page before it. Change one line — even one word — and every seal after it falls apart. The tampering can't hide.
+
+And the guard doesn't rely on memory to catch it. When a break is found, the book itself rolls back to the last sealed state and reseals — no guesswork, no trusting "it was fine yesterday."
+
+The guard still follows the book. But now the book proves itself.
 
 Bastion is a cryptographically signed, self-healing memory layer for autonomous AI agent networks. It operates as a secure cryptographic boundary between the AI agent and the database, bridging the gap between raw database storage and AI safety via a **7-layer memory stack**.
 

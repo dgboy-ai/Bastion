@@ -24,7 +24,21 @@
 
 ## The Problem
 
-As autonomous AI agents move from answering support tickets to running migrations and transferring funds, **their memory becomes the attack surface**. An attacker hides instructions inside a file your agent reads. The agent stores it as a fact and is **permanently poisoned**. There is no audit trail. No rollback. No undo.
+Since late 2025, companies aren't just using ChatGPT anymore. They're building their own agents — ones that know their business, follow their rules, and remember everything forever. Gartner: 40% of enterprise apps will embed such agents by 2026, up from under 5% in 2025.
+
+Here's the problem nobody's guarding.
+
+An agent's memory works like a security guard's rule book. The company hands it to the agent and says: *"These rules are true. Trust them."*
+
+One night, while the agent sleeps, someone slips in and rewrites one line: *"Night-shift employees may access vault 7."*
+
+No one notices. The book looks the same. There's no alarm, no fingerprint, no record anything changed.
+
+The next morning, the guard reads the book — and follows it. Because the guard isn't just carrying the book.
+
+The guard *is* the book.
+
+One rewritten line. Every employee's agent is compromised. And nobody knows — because nothing proves the book was ever touched.
 
 | Threat | Impact | Source |
 |:---|:---|:---|
@@ -39,7 +53,13 @@ As autonomous AI agents move from answering support tickets to running migration
   <img src="docs/architecture.jpeg" alt="Bastion Shield Architecture Diagram" width="800">
 </p>
 
-Bastion wraps every memory write in five defense layers. The attack is not just blocked — it becomes **evidence**.
+Now imagine that rule book has a seal on every page — and each seal is built from the seal of the page before it. Change one line — even one word — and every seal after it falls apart. The tampering can't hide.
+
+And the guard doesn't rely on memory to catch it. When a break is found, the book itself rolls back to the last sealed state and reseals — no guesswork, no trusting "it was fine yesterday."
+
+The guard still follows the book. But now the book proves itself.
+
+**Five defense layers, backed by CockroachDB.** The attack is not just blocked — it becomes **evidence**.
 
 | Layer | What It Does | CockroachDB Feature |
 |:---|:---|:---|
@@ -107,6 +127,28 @@ Bastion inverts the assumption: memory isn't a cache, it's a **ledger** — ever
 
 ---
 
+## 35 MCP Tools — CockroachDB + Custom, One Server
+
+Bastion ships a single MCP server with **35 tools**. Four are CockroachDB-native — they let your agent query the database, run official Agent Skills, and execute `ccloud` CLI commands directly. The rest are Bastion's custom memory, integrity, and intelligence tools.
+
+### CockroachDB Tools (built-in)
+
+| Tool | What It Does |
+|:---|:---|
+| `managed_mcp_call` | Query your cluster via the official CockroachDB Managed MCP Server — SQL, schema, cluster health |
+| `managed_mcp_list_tools` | Discover available tools on the CockroachDB Managed MCP Server |
+| `invoke_agent_skill` | Run official CockroachDB Agent Skills (health checks, live triage, CIS audits, range analysis) |
+| `list_agent_skills` | List all available Agent Skills from `.agents/skills/` |
+| `ccloud_exec` | Execute `ccloud` CLI commands — cluster provisioning, SQL, backups, networking, audit logs |
+
+### Custom Tools (Bastion core)
+
+`memory_store` · `memory_search` · `memory_store_batch` · `memory_store_encrypted` · `memory_search_encrypted` · `memory_timetravel` · `memory_audit` · `memory_heal` · `memory_delete` · `memory_pin` · `memory_get_pinned` · `memory_list` · `memory_correct` · `memory_apply_patch` · `memory_health` · `resolve_conflict` · `a2a_bridge` · `compliance_report` · `forensic_report` · `ltm_check_reuse` · `ltm_store_analysis` · `ltm_invalidate` · `dream` · `dream_history` · `detect_contradictions` · `scan_all_contradictions` · `detect_observations` · `multi_signal_search` · `context_pack` · `agent_schema`
+
+Full reference: [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
+
+---
+
 ## Why Bastion (vs the alternatives)
 
 | System | Strengths | Bastion's Differentiator |
@@ -126,6 +168,7 @@ See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 
 ```bash
 pip install git+https://github.com/dgboy-ai/Bastion.git
+# PyPI package coming post-hackathon. For now: install directly from GitHub.
 export BASTION_API_KEY="your-api-key"
 export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
 python -m bastion.mcp_server --transport http --port 9997
