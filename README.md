@@ -115,11 +115,23 @@ pip install git+https://github.com/dgboy-ai/Bastion.git
 ### 2. Start the MCP Server
 
 ```bash
+# Mock mode (no database required — for testing)
+python -m bastion.mcp_server --transport http --port 9997 --mock
+
+# Production mode (requires BASTION_API_KEY or BASTION_MCP_API_KEYS)
+export BASTION_API_KEY="your-secret-key"
+export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
 python -m bastion.mcp_server --transport http --port 9997
-# 35 tools available at http://localhost:9997
 ```
 
-### 3. Add to Your IDE
+### 3. Test the server
+
+```bash
+curl -X POST http://localhost:9997 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-secret-key" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
 
 Copy the appropriate config from [`mcp_configs/`](mcp_configs/) into your editor's MCP settings:
 
