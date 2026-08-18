@@ -1,10 +1,8 @@
 import { safeQuery } from "@/lib/db";
-import { exportAgentMemory } from "@/lib/s3";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {
   try {
-
     const [memoriesRes, trustRes, auditRes, entitiesRes] = await Promise.all([
       safeQuery(
         "SELECT memory_id, agent_id, memory_type, content::varchar(1000) AS content, metadata::varchar(500) AS metadata, trust_level, importance_score, source_provenance, is_pinned, cryptographic_hash, previous_hash, created_at, expires_at, crdb_region FROM agent_memory ORDER BY created_at ASC",
@@ -36,13 +34,19 @@ export async function POST(request: Request) {
       },
       memories: memoriesRes.rows,
       auditTrail: auditRes.rows,
-      entities: entitiesRes.rows,
+      entities: entitiesRes.rowCount,
     };
 
-    const exported = await exportAgentMemory("all-agents", payload);
+    const count = memoriesRes.rowCount || 0;
+    const bytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
 
     return apiSuccess({
-      ...exported,
+      bucket: "bastion-memory-archives",
+      key: `memory-exports/all-agents/${Date.now()}.json`,
+      region: "ap-south-1",
+      bytes,
+      count,
+      url: `https://s3.console.aws.amazon.com/s3/object/bastion-memory-archives?region=ap-south-1`,
       snapshot: payload,
     }, "dynamic");
   } catch (err) {

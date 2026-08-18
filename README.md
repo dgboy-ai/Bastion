@@ -25,13 +25,7 @@
 
 ## Why This Exists
 
-AI agents are no longer stateless chatbots. They accumulate memory across sessions: user preferences, business rules, learned procedures. By 2026, Gartner estimates 40% of enterprise applications will embed autonomous agents with persistent memory.
-
-**The attack surface this creates has no existing defense.**
-
-Memory poisoning is not prompt injection. Prompt injection is session-scoped: the damage ends when the conversation closes. Memory poisoning is **persistent**: a malicious record written today corrupts every future interaction, and the agent has no way to know it was ever compromised.
-
-### The Threat Is Real and Measured
+AI agents accumulate persistent memory. Memory poisoning is permanent: a single malicious record corrupts every future interaction, and the agent has no way to know it was compromised.
 
 | Attack | Success Rate | Year | Source |
 |:---|:---|:---|:---|
@@ -41,19 +35,13 @@ Memory poisoning is not prompt injection. Prompt injection is session-scoped: th
 | **AI Recommendation Poisoning**: hidden instructions in "Summarize" buttons | 50 attack variants across 31 companies | 2026 | [Microsoft Security Blog](https://www.microsoft.com/en-us/security/blog/2026/02/10/ai-recommendation-poisoning/) |
 | **OWASP ASI06**: Memory & Context Poisoning | Classified in Top 10 for Agentic Applications | 2026 | [OWASP Top 10](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) |
 
-A single poisoned agent can become a propagation node, sharing corrupted behavioral rules with other agents in the same network. The attacker doesn't need to breach every agent. They need to breach one.
-
 ---
 
 ## The Solution
 
-Now imagine that rule book has a seal on every page, and each seal is built from the seal of the page before it. Change one line, even one word, and every seal after it falls apart. The tampering can't hide.
+Memory isn't a cache. It's a ledger. Every fact is a signed, chained, timestamped entry that proves its own history. The attack becomes evidence.
 
-And the guard doesn't rely on memory to catch it. When a break is found, the book itself rolls back to the last sealed state and reseals, no guesswork, no trusting "it was fine yesterday."
-
-The guard still follows the book. But now the book proves itself.
-
-**Seven defense layers, backed by CockroachDB.** The attack is not just blocked, it becomes **evidence**.
+**Seven defense layers, backed by CockroachDB.**
 
 | Layer | What It Does | CockroachDB Feature |
 |:---|:---|:---|
@@ -107,30 +95,9 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 
 ---
 
-## Why CockroachDB?
-
-Most agent memory systems treat storage as a cache. That framing is why poisoning works. There's no notion of a fact being *wrong*, only of it being *retrieved*.
-
-Bastion inverts the assumption: memory isn't a cache, it's a **ledger**. Every fact is a signed, chained, timestamped entry in a system that proves its own history.
-
-1. **Time-travel.** `AS OF SYSTEM TIME` rolls back to any clean state (284ms p50).
-2. **Tamper detection.** HMAC-SHA256 chain under `SERIALIZABLE` isolation. Break one hash, every subsequent entry flags. ([How it works](docs/EVIDENCE.md#isolation-in-action--two-levels-one-choice))
-3. **Deterministic recovery.** Heal to the last verified chain state instead of hoping a cached copy was clean.
-
-| CockroachDB Feature | Use in Bastion |
-|:---|:---|
-| **SERIALIZABLE Isolation** | Every write with automatic retry |
-| **C-SPANN Vector Index** | Semantic search with cosine distance |
-| **AS OF SYSTEM TIME** | Time-travel recovery |
-| **CDC Streams** | S3 changefeed for self-healing |
-| **Row-Level Security** | Per-agent memory isolation |
-| **UUID Primary Keys** | `gen_random_uuid()`, no hotspots |
-
----
-
 ## 35 MCP Tools: CockroachDB + Custom, One Server
 
-Bastion ships a single MCP server with **35 tools**. Four are CockroachDB-native. They let your agent query the database, run official Agent Skills, and execute `ccloud` CLI commands directly. The rest are Bastion's custom memory, integrity, and intelligence tools.
+Bastion ships a single MCP server with **35 tools**. Four are CockroachDB-native. The rest are custom memory, integrity, and intelligence tools (full list in [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)).
 
 ### CockroachDB Tools (built-in)
 
@@ -141,12 +108,6 @@ Bastion ships a single MCP server with **35 tools**. Four are CockroachDB-native
 | `invoke_agent_skill` | Run official CockroachDB Agent Skills (health checks, live triage, CIS audits, range analysis) |
 | `list_agent_skills` | List all available Agent Skills from `.agents/skills/` |
 | `ccloud_exec` | Execute `ccloud` CLI commands (cluster provisioning, SQL, backups, networking, audit logs) |
-
-### Custom Tools (Bastion core)
-
-`memory_store` · `memory_search` · `memory_store_batch` · `memory_store_encrypted` · `memory_search_encrypted` · `memory_timetravel` · `memory_audit` · `memory_heal` · `memory_delete` · `memory_pin` · `memory_get_pinned` · `memory_list` · `memory_correct` · `memory_apply_patch` · `memory_health` · `resolve_conflict` · `a2a_bridge` · `compliance_report` · `forensic_report` · `ltm_check_reuse` · `ltm_store_analysis` · `ltm_invalidate` · `dream` · `dream_history` · `detect_contradictions` · `scan_all_contradictions` · `detect_observations` · `multi_signal_search` · `context_pack` · `agent_schema`
-
-Full reference: [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 
 ---
 
@@ -167,12 +128,12 @@ See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 
 ## Quick Start
 
-> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster.
+> **Note to judges:** The demo was recorded on a live CockroachDB Serverless cluster. All features work with your own cluster via `BASTION_CONN` or the dashboard login.
 
 **Option 1: Live Hosted Dashboard (Recommended for Judges)**
 1. Go to **[bastion-self.vercel.app](https://bastion-self.vercel.app)**
 2. Enter the passphrase: `bastion` to access the live forensic dashboard.
-3. To test with your own cluster, click **Connect Cluster** in the navbar and enter your `postgresql://` URI. Credentials are saved locally in your browser and never transit outside your session.
+3. To test with your own cluster, click **Connect Cluster** in the navbar and enter your `postgresql://` URI.
 
 **Option 2: Docker (Local Full Stack)**
 
@@ -182,37 +143,7 @@ cd Bastion
 docker compose -f docker-compose.demo.yml up
 ```
 
-Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`. Seeded with demo memories automatically.
-
-**Option 3: Python (for development):**
-
-```bash
-pip install git+https://github.com/dgboy-ai/Bastion.git
-# PyPI package coming post-hackathon. For now: install directly from GitHub.
-export BASTION_API_KEY="your-api-key"
-export BASTION_CONN="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
-python -m bastion.mcp_server --transport http --port 9997
-```
-
-See `.env.example` for all options. Copy a config from [`mcp_configs/`](mcp_configs/) into your editor:
-
-| Client | Config | Protocol |
-|:---|:---|:---|
-| **VS Code / Cline** | `mcp_configs/cline.json` | HTTP SSE |
-| **Cursor** | `mcp_configs/cursor.json` | Local subprocess |
-| **Claude Desktop** | `mcp_configs/claude.json` | Local subprocess |
-| **GitHub Copilot** | `mcp_configs/copilot.json` | HTTP |
-
-### Python SDK
-
-```python
-from bastion.memory import BastionMemory
-
-memory = BastionMemory(agent_id="my-agent", connection_string="postgresql://...")
-memory_id = memory.store(memory_type="fact", content="Wire transfer $25k to #1221.")
-snapshot = memory.get_at_time("now - 5min")
-report = memory.chain_verify()
-```
+Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`.
 
 ---
 
