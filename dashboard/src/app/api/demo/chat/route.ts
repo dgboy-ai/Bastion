@@ -2,6 +2,8 @@ import { safeQuery } from "@/lib/db";
 import { fetchWithTimeout } from "@/lib/fetch";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
+export const maxDuration = 60;
+
 interface MCPMemoryResult {
   memoryId: string;
   agentId: string;

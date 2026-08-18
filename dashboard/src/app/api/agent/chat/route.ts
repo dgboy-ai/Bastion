@@ -11,6 +11,8 @@ import { randomUUID } from "crypto";
 import { callGroq as groqCall } from "@/lib/groq";
 import { callOpenRouter } from "@/lib/openrouter";
 
+export const maxDuration = 60;
+
 const REGION = process.env.AWS_REGION || "ap-south-1";
 const GEO_PREFIX = REGION.startsWith("ap-") ? "apac" : REGION.startsWith("eu-") ? "eu" : REGION.startsWith("us-") ? "us" : "apac";
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || `${GEO_PREFIX}.anthropic.claude-3-5-sonnet-20241022-v2:0`;

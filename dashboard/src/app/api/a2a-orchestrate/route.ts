@@ -1,6 +1,8 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
+export const maxDuration = 60;
+
 const A2A_URL = process.env.A2A_SERVER_URL || "http://127.0.0.1:9998";
 const A2A_TIMEOUT = 15000;
 
