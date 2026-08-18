@@ -170,11 +170,20 @@ To prove why CockroachDB's transactional primitives are strictly required for ag
 
 ## Alignment with Judging Criteria
 
-* **1. Agentic Memory Design**: Bastion relies on CockroachDB as its core cryptographic ledger. It utilizes `SERIALIZABLE` isolation to guarantee the integrity of HMAC-SHA256 hash chains under high concurrency, employs C-SPANN for native semantic retrieval, and leverages MVCC `AS OF SYSTEM TIME` to execute sub-350ms time-travel recoveries for compromised agents.
-* **2. Technical Implementation**: The architecture is built around a custom 35-tool MCP Security Gateway. This strict API boundary safely orchestrates all four required CockroachDB tools (Managed MCP, C-SPANN, ccloud CLI, Agent Skills), granting agents full operational context while physically preventing unauthorized raw SQL execution.
-* **3. Real-World Impact**: As agents move from answering questions to executing real workflows (financial transactions, infrastructure management), protecting their memory from permanent poisoning (OWASP ASI06) is the single biggest barrier to enterprise adoption. Bastion solves this while providing out-of-the-box EU AI Act Article 12 compliance.
-* **4. Production Readiness**: Bastion is built for production scale. It features AWS KMS envelope encryption, real-time S3 CDC tailing for background threat scanning, Ed25519 cryptographic identity for Agent-to-Agent (A2A) swarms, and a complete Next.js SSE telemetry dashboard for enterprise-grade observability.
-* **5. Creativity & Originality**: While most of the industry is focused on making LLMs smarter, we focused on making their memory defensible. We realized that **database primitives are AI safety primitives**. Treating agent memory as a cryptographic ledger rather than a passive cache is a fundamentally novel approach to agentic architecture.
+* **1. Agentic Memory Design (Does CockroachDB play a meaningful role at scale?)**: 
+  **Absolutely.** CockroachDB isn't a passive cache; it is the core cryptographic ledger. We use its C-SPANN vector index for semantic recall, `SERIALIZABLE` isolation to guarantee hash-chain integrity under 50+ concurrent agents, `AS OF SYSTEM TIME` for sub-350ms time-travel recovery, and CDC for asynchronous S3 threat scanning. It handles state, embeddings, and transactional integrity at production scale.
+
+* **2. Technical Implementation (Is the integration quality? Are tools used safely?)**: 
+  **Yes.** Giving agents raw SQL access is dangerous. We built a custom 35-tool MCP Security Gateway that physically prevents unauthorized execution. It orchestrates all four CockroachDB required tools (Managed MCP, C-SPANN, ccloud CLI, Agent Skills) through a strict cryptographic boundary. The code is highly modular, extensively typed, and built for edge deployment.
+
+* **3. Real-World Impact (How big of an impact on real workflows?)**: 
+  As agents move from chatbots to executing real workflows (financial transactions, infrastructure management), protecting their memory from permanent poisoning (OWASP ASI06) is the single biggest barrier to enterprise adoption. Bastion solves this critical vulnerability while providing out-of-the-box EU AI Act Article 12 compliance, unlocking autonomous agents for regulated industries.
+
+* **4. Production Readiness (Is it secure, observable, scalable, resilient?)**: 
+  **Yes.** Bastion features AWS KMS envelope encryption (secure), a Next.js SSE telemetry dashboard (observable), and S3 CDC tailing (scalable). We explicitly architected for failure: if the CDC tailer crashes, it resumes from the last `.RESOLVED` marker. If an attack slips through, `AS OF SYSTEM TIME` rolls the database back. Row-level security (RLS) ensures agents cannot cross-contaminate memory.
+
+* **5. Creativity & Originality (Genuinely new idea or novel application?)**: 
+  While most of the industry is focused on making LLMs smarter, we focused on making their memory defensible. We realized that **database primitives are AI safety primitives**. Treating agent memory as a cryptographically sealed, self-healing ledger rather than a passive cache is a fundamentally novel approach to agentic architecture.
 
 ---
 
@@ -248,9 +257,14 @@ Full evidence with outputs: [`docs/EVIDENCE.md`](../docs/EVIDENCE.md)
 
 ## How to Run It
 
-> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster. Just set `BASTION_CONN` in `.env.local` or enter it in the dashboard login screen.
+> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster.
 
-**Docker (1 command):**
+**Option 1: Live Hosted Dashboard (Recommended for Judges)**
+1. Go to **[bastion-self.vercel.app](https://bastion-self.vercel.app)**
+2. Enter the passphrase: `bastion` to access the live forensic dashboard.
+3. To test with your own cluster, click **Connect Cluster** in the navbar and enter your `postgresql://` URI. Credentials are saved locally in your browser and never transit outside your session.
+
+**Option 2: Docker (Local Full Stack)**
 ```bash
 git clone https://github.com/dgboy-ai/Bastion.git
 cd Bastion
@@ -258,7 +272,7 @@ docker compose -f docker-compose.demo.yml up
 ```
 Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`. Seeded with demo memories automatically.
 
-**Python (for development):**
+**Option 3: Python (for development):**
 1. **Set up Environment**: Ensure you have CockroachDB running (locally or via `ccloud`) and configure your `.env` variables (AWS KMS, CRDB URL).
 2. **Start the Forensic Dashboard**:
    ```bash

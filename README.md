@@ -167,9 +167,14 @@ See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 
 ## Quick Start
 
-> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster. Just set `BASTION_CONN` in `.env.local` or enter it in the dashboard login screen.
+> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster.
 
-**Option 1: Docker (recommended for judges):**
+**Option 1: Live Hosted Dashboard (Recommended for Judges)**
+1. Go to **[bastion-self.vercel.app](https://bastion-self.vercel.app)**
+2. Enter the passphrase: `bastion` to access the live forensic dashboard.
+3. To test with your own cluster, click **Connect Cluster** in the navbar and enter your `postgresql://` URI. Credentials are saved locally in your browser and never transit outside your session.
+
+**Option 2: Docker (Local Full Stack)**
 
 ```bash
 git clone https://github.com/dgboy-ai/Bastion.git
@@ -179,7 +184,7 @@ docker compose -f docker-compose.demo.yml up
 
 Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`. Seeded with demo memories automatically.
 
-**Option 2: Python (for development):**
+**Option 3: Python (for development):**
 
 ```bash
 pip install git+https://github.com/dgboy-ai/Bastion.git
