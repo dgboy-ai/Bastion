@@ -5,7 +5,7 @@
 * **Sub-Millisecond Threat Detection**: Evaluates inputs against OWASP ASI06 (Prompt Injection) at **0.52ms** (raw scan) / **6.7ms** (full write path) with an **87.0% True Positive Rate** before any database write occurs.
 * **Instant Time-Travel Recovery**: Reverts poisoned agents to a clean state in under 350ms utilizing CockroachDB's `AS OF SYSTEM TIME` queries.
 * **Unified API Gateway**: Orchestrates 35 custom agent tools and 4 official CockroachDB capabilities through a single secure boundary.
-* **Real-Time Forensic Dashboard**: A standalone Next.js control plane featuring live SSE event streams, cryptographic hash chain visualizers, and automated EU AI Act compliance reporting.
+* **Forensic Control Plane**: A standalone Next.js dashboard — connect your own CockroachDB cluster with session auth and watch hash chain verification, CDC threat streams, time-travel, and EU AI Act compliance live. Every stat is click-to-verify SQL.
 
 ---
 
@@ -59,10 +59,12 @@ Instead of letting an agent write raw data to a database, Bastion intercepts mem
 
 **🧠 Tier 2: Long-Term Distributed Ledger (CockroachDB)**
 * **C-SPANN Vector Indexing**: Provides lightning-fast semantic recall of agent context.
+* **Row-Level TTL**: Short-term memories auto-expire (1h for conversations, 7d for tasks); forensic records (`agent_audit`, hash chains) never expire — `ttl_expire_after` + `expires_at` enforce lifecycle at the database level.
 * **Time-Travel Recovery**: If a poison attack succeeds in breaking the hash chain, Bastion uses CockroachDB's native **MVCC Time-Travel** to roll back the agent's context to a clean, pre-attack state.
 
 **📡 Tier 3: Forensic Memory & Dream Consolidation (AWS)**
-* **Sleeper Poison Detection**: Uses **AWS S3** to tail CockroachDB CDC changefeeds, allowing background agents to asynchronously scan for dormant threats without impacting real-time agent performance.
+* **CDC → S3 Export**: Every write streams to S3 as NDJSON via CockroachDB changefeeds (`s3://bastion-memory-archives/cdc-live/`). No polling, no cron — the database pushes changes.
+* **Sleeper Poison Detection**: Background agents tail the S3 CDC stream to asynchronously scan for dormant threats without impacting real-time agent performance.
 * **CRDT Resolution**: Handles conflict-free resolution for offline or partitioned agent swarms syncing back to the primary forensic ledger.
 
 ---
@@ -88,8 +90,8 @@ To prove production scale, we routed all four required CockroachDB tools exclusi
 * **AWS KMS (Key Management Service):** Secures the signing keys and performs envelope encryption for the cryptographic seals.
 * **Amazon S3:** Acts as the cold-storage forensic archive, streaming CockroachDB CDC (Change Data Capture) logs for asynchronous "sleeper" threat scanning.
 
-**The Forensic Dashboard — Real-Time Control Plane** 
-We didn't just build a backend script; we built a complete, standalone Next.js observability dashboard to monitor the swarm in real-time.
+**The Forensic Control Plane — Connect Your Own Cluster** 
+We didn't just build a backend script; we built a standalone Next.js control plane where you connect your own CockroachDB cluster via session auth and inspect agent memory forensically.
 * **Live SSE Streaming**: Reads CDC changefeeds from S3 and streams them to the browser via Server-Sent Events, visualizing memory ingestion and active threats.
 * **Cryptographic Inspector**: A dedicated view that renders the SHA-256 hash chains visually, instantly highlighting broken links if a tamper attempt occurs.
 * **Compliance Ready**: Automatically generates an EU AI Act Article 12 compliance report, proving tamper-evident logging, human oversight, and traceability.
@@ -131,8 +133,8 @@ To prove why CockroachDB's transactional primitives are strictly required for ag
 
 **The Results (Verified on Live Cluster):**
 * **87.0% (420/483)** of attacks were instantly blocked at the gateway (0.52ms scan latency) before any database write occurred.
-* **100%** of the remaining payloads that bypassed the initial guard triggered a hash-chain verification failure during the S3 CDC background tailing.
-* **Time-Travel Recovery:** For the poisoned memories, the Bastion healing daemon executed `SET TRANSACTION AS OF SYSTEM TIME` to prune the malicious rows, restoring the agent's context to a mathematically proven clean state with a **284ms p50 rollback latency**.
+* **Hash-chain verification** runs on every memory via the S3 CDC background tailing — any tampering breaks the chain and triggers an alert.
+* **Time-Travel Recovery:** For poisoned memories, the Bastion healing daemon executes `SET TRANSACTION AS OF SYSTEM TIME` to prune malicious rows, restoring the agent's context to a mathematically proven clean state with a **284ms p50 rollback latency**.
 
 > **The Takeaway:** Correct application logic in the agent is not enough if the persistence layer permits an invalid, poisoned state to become reality. By treating memory as a cryptographic ledger, Bastion guarantees recovery.
 
@@ -244,9 +246,15 @@ Full evidence with outputs: [`docs/EVIDENCE.md`](../docs/EVIDENCE.md)
 
 ## 💻 How to Run It
 
-For full deployment instructions, please see the [README.md](./README.md) at the root of the repository.
+**Docker (1 command):**
+```bash
+git clone https://github.com/dgboy-ai/Bastion.git
+cd Bastion
+docker compose -f docker-compose.demo.yml up
+```
+Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`. Seeded with demo memories automatically.
 
-**Quick Start (Local Dev):**
+**Python (for development):**
 1. **Set up Environment**: Ensure you have CockroachDB running (locally or via `ccloud`) and configure your `.env` variables (AWS KMS, CRDB URL).
 2. **Start the Forensic Dashboard**:
    ```bash

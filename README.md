@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://bastion-self.vercel.app">Live Demo</a> ·
+  <a href="https://bastion-self.vercel.app">Forensic Control Plane</a> ·
   <a href="docs/EVIDENCE.md">Live Proof</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/MCP_SERVER.md">MCP Tools</a>
@@ -59,15 +59,17 @@ And the guard doesn't rely on memory to catch it. When a break is found, the boo
 
 The guard still follows the book. But now the book proves itself.
 
-**Five defense layers, backed by CockroachDB.** The attack is not just blocked — it becomes **evidence**.
+**Seven defense layers, backed by CockroachDB.** The attack is not just blocked — it becomes **evidence**.
 
 | Layer | What It Does | CockroachDB Feature |
 |:---|:---|:---|
 | **OWASP ASI06 Guard** | Scans every write for prompt injection | Append-only audit log |
 | **HMAC-SHA256 Hash Chain** | Cryptographically links each memory — tampering breaks the chain | `SERIALIZABLE` isolation |
+| **Row-Level TTL** | Short-term memories auto-expire (1h–7d); forensic records never expire | `ttl_expire_after` + `expires_at` |
 | **Dream Consolidation** | Background scan finds dormant sleeper poison | Automatic statistics |
 | **Self-Healing** | Detects broken chains, prunes poisoned memories, reseals | Chain verification |
 | **Time-Travel Recovery** | Rolls back to a clean state | `AS OF SYSTEM TIME` |
+| **CDC → S3 Export** | Every write streams to S3 as NDJSON — background threat scanning, no polling | `SHOW CHANGEFEED JOBS` |
 
 ---
 
@@ -81,6 +83,7 @@ Measured against a production CockroachDB Cloud Serverless cluster in AWS `ap-so
 | **Audit Log** | 9,800+ entries | Live |
 | **MCP Tools** | 35 | Live |
 | **Hash Chain** | 0 broken links | 100% sealed |
+| **Row-Level TTL** | 1h (messages) – never (forensic) | Native CRDB + `expires_at` |
 | **CDC Changelogs** | 4 live changefeeds → S3 | Streaming |
 
 ---
@@ -165,6 +168,18 @@ See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 ---
 
 ## Quick Start
+
+**Option 1 — Docker (recommended for judges):**
+
+```bash
+git clone https://github.com/dgboy-ai/Bastion.git
+cd Bastion
+docker compose -f docker-compose.demo.yml up
+```
+
+Dashboard at `http://localhost:3000`. MCP server at `http://localhost:9997`. Seeded with demo memories automatically.
+
+**Option 2 — Python (for development):**
 
 ```bash
 pip install git+https://github.com/dgboy-ai/Bastion.git

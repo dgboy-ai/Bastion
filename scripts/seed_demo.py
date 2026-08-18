@@ -155,6 +155,18 @@ memories_1 = [
     ("learned", "Customer #1042's happiest metric: 99.97% uptime. Their pain point: connection pool management."),
 ]
 
+# Short-term memories (TTL-active: session=1h, conversation=24h, episodic=24h, task=7d)
+short_term_memories = [
+    ("session", "Working on Customer #1042's connection pool issue — currently testing max_connections=100"),
+    ("conversation", "User asked about CockroachDB geo-partitioning. Recommended leaseholder preferences for low-latency reads."),
+    ("episodic", "Debugged 504 errors on /api/dashboard — traced to connection pool exhaustion under 2.5M daily txns"),
+    ("task", "Investigate write latency regression after adding ap-southeast-1 region (+15ms p99)"),
+    ("session", "Reviewing PR #4530 — sleep-time dreaming consolidation for idle memory optimization"),
+    ("conversation", "Customer #1042 confirmed: increasing sql.defaults.statement_timeout resolved most 504s"),
+    ("episodic", "Deployed CDC changefeed to s3://bastion-memory-archives/cdc-live/ — 4 feeds running since Aug 7"),
+    ("task", "Run OWASP ASI06 benchmark against all 9 obfuscation families — target 87%+ TPR"),
+]
+
 prev_hash = None
 for mtype, content in memories_1:
     mid = str(uuid.uuid4())
@@ -165,6 +177,23 @@ for mtype, content in memories_1:
            cryptographic_hash, previous_hash, importance_score)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (mid, agent1, mtype, content, json.dumps(emb), ch, prev_hash, 8.0),
+    )
+    prev_hash = ch
+
+# Insert short-term memories with expires_at set (demonstrates row-level TTL)
+from datetime import datetime, timedelta, timezone
+now = datetime.now(timezone.utc)
+ttl_map = {"session": 3600, "conversation": 86400, "episodic": 86400, "task": 604800}
+for mtype, content in short_term_memories:
+    mid = str(uuid.uuid4())
+    emb = mock_embedding(content)
+    ch = hash_chain(content, prev_hash)
+    expires_dt = now + timedelta(seconds=ttl_map[mtype])
+    cur.execute(
+        """INSERT INTO agent_memory (memory_id, agent_id, memory_type, content, embedding,
+           cryptographic_hash, previous_hash, importance_score, expires_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (mid, agent1, mtype, content, json.dumps(emb), ch, prev_hash, 6.0, expires_dt),
     )
     prev_hash = ch
 

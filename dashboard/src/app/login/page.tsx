@@ -42,7 +42,7 @@ function LoginForm() {
         return;
       }
 
-      router.push(data.redirect || redirect);
+      window.location.href = data.redirect || redirect;
     } catch {
       setError("Connection failed. Try again.");
       setLoading(false);

@@ -199,7 +199,7 @@ async function executeToolInline(name: string, args: Record<string, unknown>): P
       // DON'T execute yet — return pending approval for HITL
       const content = (args.content as string) || "";
       const agentId = (args.agentId as string) || "mcp-agent";
-      const memoryType = (args.memoryType as string) || "fact";
+      const memoryType = (args.memoryType as string) || "conversation";
 
       // Run the OWASP ASI06 guard so the approval modal shows real findings.
       const guard = runGuardCheck(content);
