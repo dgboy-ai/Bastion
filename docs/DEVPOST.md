@@ -246,6 +246,8 @@ Full evidence with outputs: [`docs/EVIDENCE.md`](../docs/EVIDENCE.md)
 
 ## 💻 How to Run It
 
+> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster — just set `BASTION_CONN` in `.env.local` or enter it in the dashboard login screen.
+
 **Docker (1 command):**
 ```bash
 git clone https://github.com/dgboy-ai/Bastion.git

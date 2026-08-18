@@ -556,6 +556,26 @@ class TenantKMS:
 
         return dek_bytes
 
+    def _get_previous_dek(self, agent_id: str) -> bytes | None:
+        """Retrieve the previous DEK for backward compatibility after rotation."""
+        pool = self._get_pool()
+        conn = pool.acquire(timeout=10.0)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT previous_encrypted_dek FROM agent_keys WHERE agent_id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    prev_dek = self._master.decrypt(bytes(row[0]).hex(), {"agent_id": agent_id})
+                    return bytes.fromhex(prev_dek)
+        except Exception as e:
+            logger.debug("Could not retrieve previous DEK for %s: %s", agent_id, e)
+        finally:
+            pool.release(conn)
+        return None
+
     def encrypt(self, plaintext: str, agent_id: str) -> str:
         """Encrypt *plaintext* with *agent_id*'s DEK."""
         dek = self._get_dek(agent_id)
@@ -567,7 +587,10 @@ class TenantKMS:
         return base64.b64encode(payload).decode("ascii")
 
     def decrypt(self, ciphertext_b64: str, agent_id: str) -> str:
-        """Decrypt *ciphertext_b64* with *agent_id*'s DEK."""
+        """Decrypt *ciphertext_b64* with *agent_id*'s DEK.
+
+        Falls back to the previous DEK if the current one fails (post-rotation).
+        """
         payload = base64.b64decode(ciphertext_b64)
         version = payload[0]
         if version == 2:
@@ -575,10 +598,19 @@ class TenantKMS:
             ct = payload[13:]
         else:
             raise ValueError(f"Unsupported tenant ciphertext version: {version}")
-        dek = self._get_dek(agent_id)
-        aesgcm = AESGCM(dek)
         aad = agent_id.encode("utf-8")
-        return aesgcm.decrypt(nonce, ct, aad).decode("utf-8")
+        # Try current DEK first
+        try:
+            dek = self._get_dek(agent_id)
+            aesgcm = AESGCM(dek)
+            return aesgcm.decrypt(nonce, ct, aad).decode("utf-8")
+        except Exception:
+            # Fall back to previous DEK (post-rotation backward compatibility)
+            prev_dek = self._get_previous_dek(agent_id)
+            if prev_dek is not None:
+                aesgcm = AESGCM(prev_dek)
+                return aesgcm.decrypt(nonce, ct, aad).decode("utf-8")
+            raise
 
     def rotate_key(self, agent_id: str) -> bool:
         """Rotate the DEK for *agent_id*.

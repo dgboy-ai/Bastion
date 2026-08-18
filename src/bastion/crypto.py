@@ -259,7 +259,10 @@ def verify_hash(content: str, metadata: dict | None, previous_hash: str | None, 
     global _hmac_secrets
     # Ensure secrets are loaded
     _get_hmac_secret()
-    for version, secret in _hmac_secrets.items():
+    # Snapshot the secrets dict under the lock to prevent RuntimeError during rotation
+    with _hmac_lock:
+        secrets_snapshot = dict(_hmac_secrets)
+    for version, secret in secrets_snapshot.items():
         meta_str = (
             ""
             if metadata is None

@@ -12,20 +12,47 @@ export const metadata: Metadata = {
 
 async function getStats() {
   if (isMockMode()) {
-    return { memories: 0, auditLogs: 0, chainIntact: true };
+    return { memories: 0, auditLogs: 0, chainIntact: true, initialHashes: [] as { hash: string; prevHash: string; content: string; createdAt: string }[] };
   }
   try {
-    const [memRes, auditRes] = await Promise.all([
+    const [memRes, auditRes, chainRes] = await Promise.all([
       safeQuery("SELECT COUNT(*) as cnt FROM agent_memory"),
       safeQuery("SELECT COUNT(*) as cnt FROM agent_audit"),
+      safeQuery(
+        `SELECT cryptographic_hash, previous_hash, content, created_at
+         FROM agent_memory
+         ORDER BY created_at DESC
+         LIMIT 20`
+      ),
     ]);
+
+    let chainIntact = true;
+    const rows = chainRes.rows;
+    // Array is [newest, ..., oldest] from ORDER BY created_at DESC
+    // Each entry's previous_hash should match the cryptographic_hash of the next-older entry
+    for (let i = 0; i < rows.length - 1; i++) {
+      if (rows[i]?.previous_hash && rows[i + 1]?.cryptographic_hash &&
+          rows[i].previous_hash !== rows[i + 1].cryptographic_hash) {
+        chainIntact = false;
+        break;
+      }
+    }
+
+    const initialHashes = rows.reverse().map((row) => ({
+      hash: row.cryptographic_hash as string,
+      prevHash: row.previous_hash as string,
+      content: (row.content as string) || "",
+      createdAt: row.created_at as string,
+    }));
+
     return {
       memories: parseInt(String(memRes.rows[0]?.cnt ?? "0"), 10),
       auditLogs: parseInt(String(auditRes.rows[0]?.cnt ?? "0"), 10),
-      chainIntact: true,
+      chainIntact,
+      initialHashes,
     };
   } catch {
-    return { memories: 0, auditLogs: 0, chainIntact: true };
+    return { memories: 0, auditLogs: 0, chainIntact: true, initialHashes: [] };
   }
 }
 

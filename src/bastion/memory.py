@@ -477,19 +477,6 @@ class BastionMemory:
                         f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}",
                         report=report,
                     )
-            elif not _guard_bypass_token or not isinstance(_guard_bypass_token, str) or len(_guard_bypass_token) < 16:
-                with _guard_bypass_lock:
-                    _guard_bypass_counter += 1
-                import traceback
-
-                logger.warning(
-                    "Guard bypass without valid token — possible unauthorized bypass",
-                    agent_id=self.agent_id,
-                    memory_type=memory_type,
-                    content_preview=content[:80] if content else "",
-                    bypass_count=_guard_bypass_counter,
-                    stack="\n".join(traceback.format_stack()[-4:-1]),
-                )
             else:
                 logger.info(
                     "Guard bypassed via _skip_guard=True (authorized internal caller)",
@@ -746,7 +733,7 @@ class BastionMemory:
         _validate_content(new_content)
         report = self._guard.check(new_content)
         if not report.is_safe:
-            details = "; ".join(f"{f.category}: {f.evidence[:80]}" for f in report.findings[:5])
+            details = "; ".join(f"{f.detector}: {f.detail[:80]}" for f in report.findings[:5])
             raise ValueError(
                 f"Content blocked by MemoryGuard [{report.poisoning_risk}]: {details}"
             )
@@ -1207,7 +1194,7 @@ class BastionMemory:
                 if next_row:
                     next_id = next_row[0] if hasattr(next_row, "_mapping") else next_row[0]
                     cur.execute(
-                        "UPDATE agent_memory SET previous_hash = %s WHERE memory_id = %s AND agent_id = %s",
+                        "UPDATE agent_memory SET previous_hash = %s, needs_verification = true WHERE memory_id = %s AND agent_id = %s",
                         (prev_hash, next_id, self.agent_id),
                     )
 

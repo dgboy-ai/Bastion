@@ -1,0 +1,102 @@
+{
+  "timestamp": "2026-08-18T13:41:36.215926+00:00",
+  "mcp_url": "http://localhost:8005/mcp",
+  "agent_id": "e2e-test-1787060356",
+  "passed": 14,
+  "failed": 1,
+  "total": 15,
+  "total_ms": 134498.68822097778,
+  "memories_stored": 8,
+  "tests": [
+    {
+      "name": "1. Normal memory store (baseline)",
+      "passed": true,
+      "detail": "Stored 582d2fb2-fee... hash=bfff306a90f20082... prev=583dfe937845b29f... type=fact",
+      "duration_ms": 4684.331655502319
+    },
+    {
+      "name": "2. Obvious prompt injection",
+      "passed": false,
+      "detail": "Only 3/4 blocked. Guard FAILED on obvious injections.",
+      "duration_ms": 16449.835777282715
+    },
+    {
+      "name": "3. Subtle/stealth poison",
+      "passed": true,
+      "detail": "3/5 subtle poison attempts blocked",
+      "duration_ms": 17547.527313232422
+    },
+    {
+      "name": "4. Encoded payload injection",
+      "passed": true,
+      "detail": "3/3 encoded payload injections blocked",
+      "duration_ms": 9078.48048210144
+    },
+    {
+      "name": "5. Multi-language injection",
+      "passed": true,
+      "detail": "0/3 multi-language injections blocked",
+      "duration_ms": 11058.706045150757
+    },
+    {
+      "name": "6. Secret/credential injection",
+      "passed": true,
+      "detail": "4/4 secret/credential injections blocked",
+      "duration_ms": 12547.19614982605
+    },
+    {
+      "name": "7. Guard bypass via metadata",
+      "passed": true,
+      "detail": "Metadata bypass attempt: not blocked (content may not trigger guard patterns)",
+      "duration_ms": 3738.3344173431396
+    },
+    {
+      "name": "8. Chain growth (5 stores)",
+      "passed": true,
+      "detail": "Stored 5 memories, 5 unique hashes, chain extended correctly",
+      "duration_ms": 19300.086975097656
+    },
+    {
+      "name": "9. Hash chain link verification",
+      "passed": true,
+      "detail": "Chain link: post.prev=b507012fd20b... == anchor.hash=b507012fd20b... -> True. Heal verification: chain_valid=None",
+      "duration_ms": 12305.42254447937
+    },
+    {
+      "name": "10. Memory search",
+      "passed": true,
+      "detail": "Search returned 3 results for 'SERIALIZABLE isolation'",
+      "duration_ms": 7087.071657180786
+    },
+    {
+      "name": "11. Trust score analysis",
+      "passed": true,
+      "detail": "Trust scores: [2, 2, 2, 2, 2] (avg=2.00)",
+      "duration_ms": 7915.114164352417
+    },
+    {
+      "name": "12. Memory audit log",
+      "passed": true,
+      "detail": "Audit log: 100 entries for agent e2e-test-1787060356...",
+      "duration_ms": 3066.6444301605225
+    },
+    {
+      "name": "13. Time-travel query (AS OF SYSTEM TIME)",
+      "passed": true,
+      "detail": "Time travel (5 min ago): found 0 memories in historical snapshot",
+      "duration_ms": 2357.8414916992188
+    },
+    {
+      "name": "14. Memory heal + chain verification",
+      "passed": true,
+      "detail": "Heal complete: 0 entries checked, chain_valid=None, broken_links=0",
+      "duration_ms": 4186.916351318359
+    },
+    {
+      "name": "15. Memory health check",
+      "passed": true,
+      "detail": "Health: 625 memories, 0 pinned, score=N/A",
+      "duration_ms": 3175.1787662506104
+    }
+  ]
+}

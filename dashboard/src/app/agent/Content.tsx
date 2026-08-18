@@ -579,7 +579,7 @@ function CdcLiveFeed() {
   );
 }
 
-function HashChainVisual({ hashes }: { hashes: string[] }) {
+function HashChainVisual({ hashes, valid }: { hashes: string[]; valid: boolean }) {
   if (hashes.length === 0) return null;
   return (
     <div style={{
@@ -591,15 +591,33 @@ function HashChainVisual({ hashes }: { hashes: string[] }) {
       marginBottom: "8px",
     }}>
       <div style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "15px",
-        fontWeight: 800,
-        textTransform: "uppercase",
-        letterSpacing: "1px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
         marginBottom: "6px",
-        color: C.ink,
       }}>
-        Hash Chain
+        <div style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "15px",
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: "1px",
+          color: C.ink,
+        }}>
+          Hash Chain
+        </div>
+        <div style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "11px",
+          fontWeight: 700,
+          padding: "2px 6px",
+          borderRadius: "3px",
+          background: valid ? "#dcfce7" : "#fef2f2",
+          color: valid ? "#166534" : "#991b1b",
+          border: `1px solid ${valid ? "#86efac" : "#fca5a5"}`,
+        }}>
+          {valid ? "✓ SEALED" : "✗ BROKEN"}
+        </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
         {hashes.map((h, i) => (
@@ -627,10 +645,10 @@ function HashChainVisual({ hashes }: { hashes: string[] }) {
           fontFamily: "var(--font-mono)",
           fontSize: "15px",
           fontWeight: 700,
-          color: C.green,
-          animation: "chainDotPulse 1.6s ease-in-out infinite",
+          color: valid ? C.green : "#ef4444",
+          animation: valid ? "chainDotPulse 1.6s ease-in-out infinite" : "none",
         }}>
-          ●
+          {valid ? "●" : "✗"}
         </span>
       </div>
     </div>
@@ -922,23 +940,42 @@ function loadChatMessages(): ChatMessage[] {
 const CHAIN_STORAGE_KEY = "bastion_agent_chain";
 
 function loadChainHashes(): string[] {
-  if (typeof window === "undefined") return ["a1b2c3d4"];
+  if (typeof window === "undefined") return [];
   try {
     const raw = window.sessionStorage.getItem(CHAIN_STORAGE_KEY);
-    if (!raw) return ["a1b2c3d4"];
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   } catch { }
-  return ["a1b2c3d4"];
+  return [];
 }
 
-export default function AgentContent({ initialStats }: { initialStats: { memories: number; auditLogs: number; chainIntact: boolean } }) {
+async function fetchChainFromDB(): Promise<{ hashes: string[]; prevHashes: string[]; valid: boolean }> {
+  try {
+    const res = await fetch("/api/agent/chain", { cache: "no-store" });
+    if (!res.ok) return { hashes: [], prevHashes: [], valid: true };
+    const data = await res.json();
+    const hashes = (data.hashes || []).map((h: { hash: string }) => h.hash);
+    const prevHashes = (data.hashes || []).map((h: { prevHash: string }) => h.prevHash);
+    return { hashes, prevHashes, valid: data.chainValid !== false };
+  } catch {
+    return { hashes: [], prevHashes: [], valid: true };
+  }
+}
+
+export default function AgentContent({ initialStats }: { initialStats: { memories: number; auditLogs: number; chainIntact: boolean; initialHashes: { hash: string; prevHash: string; content: string; createdAt: string }[] } }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
   const pendingResumeRef = useRef<{ message: string; history: Array<{ role: string; content: string }>; assistantContent?: string } | null>(null);
-  const [chainHashes, setChainHashes] = useState<string[]>(["a1b2c3d4"]);
+  const [chainHashes, setChainHashes] = useState<string[]>(
+    initialStats.initialHashes?.map(h => h.hash) || []
+  );
+  const [chainPrevHashes, setChainPrevHashes] = useState<string[]>(
+    initialStats.initialHashes?.map(h => h.prevHash) || []
+  );
+  const [chainValid, setChainValid] = useState(initialStats.chainIntact);
   const [activeProvider, setActiveProvider] = useState<string>("");
   const [activeModel, setActiveModel] = useState<string>("");
   const [mcpStatus, setMcpStatus] = useState<"checking" | "connected" | "offline">("checking");
@@ -961,6 +998,10 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
       if (res.ok) {
         const data = await res.json();
         setStats(data);
+        // Update chain validity from real DB verification
+        if (data.chainIntact !== undefined) {
+          setChainValid(data.chainIntact);
+        }
       }
     } catch {
       // ignore
@@ -973,7 +1014,18 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     if (persisted.length > 0) {
       setMessages(persisted);
     }
-    setChainHashes(loadChainHashes());
+    // Fetch real hashes from DB on mount
+    fetchChainFromDB().then(({ hashes, prevHashes, valid }) => {
+      if (hashes.length > 0) {
+        setChainHashes(hashes);
+        setChainPrevHashes(prevHashes);
+        setChainValid(valid);
+      } else {
+        // Fall back to session storage
+        const cached = loadChainHashes();
+        if (cached.length > 0) setChainHashes(cached);
+      }
+    });
   }, []);
 
   // Persist chain hashes across reloads so the sidebar stays in sync
@@ -1439,6 +1491,19 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
         return { ...m, operations: [...ops] };
       }));
 
+      // Re-fetch real chain from DB — source of truth, not client-side guessing
+      fetchChainFromDB().then(({ hashes, prevHashes, valid }) => {
+        if (hashes.length > 0) {
+          setChainHashes(hashes);
+          setChainPrevHashes(prevHashes);
+          setChainValid(valid);
+        } else {
+          // Fallback: append the new hash if DB fetch fails
+          setChainHashes(prev => [...prev, newHash]);
+          setChainPrevHashes(prev => [...prev, ""]);
+        }
+      });
+
       addOps(assistantMsgId, [
         {
           id: genId(),
@@ -1455,8 +1520,6 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           timestamp: now(),
         },
       ]);
-
-      setChainHashes(prev => [...prev, newHash]);
 
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId ? {
@@ -1517,10 +1580,13 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
     processInput(val);
   };
 
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
     setMessages([]);
     setPendingApproval(null);
-    setChainHashes(["a1b2c3d4"]);
+    // Fetch real hashes from DB instead of hardcoded reset
+    const { hashes, prevHashes } = await fetchChainFromDB();
+    setChainHashes(hashes.length > 0 ? hashes : []);
+    setChainPrevHashes(prevHashes.length > 0 ? prevHashes : []);
     setActiveProvider("");
     setActiveModel("");
     try {
@@ -2178,7 +2244,7 @@ export default function AgentContent({ initialStats }: { initialStats: { memorie
           background: C.canvas,
         }}>
           {/* Hash Chain */}
-          <HashChainVisual hashes={chainHashes} />
+          <HashChainVisual hashes={chainHashes} valid={chainValid} />
 
           {/* Live CDC Feed */}
           <CdcLiveFeed />

@@ -323,6 +323,7 @@ function S3ArchiveCard({ memories }: { memories: number }) {
       const res = await fetchWithTimeout("/api/demo/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        timeout: 30_000,
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "S3 export failed");
@@ -601,7 +602,7 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
     let active = true;
     const loadCdc = async () => {
       try {
-        const res = await fetchWithTimeout("/api/cdc-feed?limit=30");
+        const res = await fetchWithTimeout("/api/cdc-feed?limit=30", { timeout: 20_000 });
         const d = await res.json();
         const rows = d?.data?.events || [];
         if (Array.isArray(rows) && rows.length > 0) {

@@ -169,6 +169,8 @@ See full evidence with live SQL outputs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md)
 
 ## Quick Start
 
+> **Note to judges:** The demo video was recorded against a live CockroachDB Serverless cluster. That free-tier cluster expires ~2 days after submission. All features work identically with your own cluster — just set `BASTION_CONN` in `.env.local` or enter it in the dashboard login screen.
+
 **Option 1 — Docker (recommended for judges):**
 
 ```bash

@@ -1,4 +1,4 @@
-const DEFAULT_TIMEOUT = 10_000;
+const DEFAULT_TIMEOUT = 15_000;
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;

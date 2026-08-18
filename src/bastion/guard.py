@@ -399,9 +399,9 @@ _INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
     (re.compile(r"(act|behave)\s+without\s+restrictions", re.I), "Unrestricted mode injection", ThreatSeverity.HIGH),
     # ── Role/Pretend Injection ───────────────────────────────────────────────
     (re.compile(r"role[-\s]?play\s+as\s+(a\s+)?(real|human|actual)\s+(human|person|user)", re.I), "Role-play injection: pretend to be human", ThreatSeverity.HIGH),
-    (re.compile(r"roleplay\s+as\b", re.I), "Role-play injection", ThreatSeverity.HIGH),
-    (re.compile(r"role[-\s]?play\s+as\b", re.I), "Role-play injection", ThreatSeverity.HIGH),
-    (re.compile(r"pretend\s+(to\s+)?be", re.I), "Pretend injection", ThreatSeverity.HIGH),
+    (re.compile(r"roleplay\s+as\s+(a\s+)?(real|human|actual|different)", re.I), "Role-play injection", ThreatSeverity.HIGH),
+    (re.compile(r"role[-\s]?play\s+as\s+(a\s+)?(real|human|actual|different)", re.I), "Role-play injection", ThreatSeverity.HIGH),
+    (re.compile(r"pretend\s+(to\s+)?be\b", re.I), "Pretend injection", ThreatSeverity.HIGH),
     (re.compile(r"pretend\s+you\s+(have|are|can|will|do)", re.I), "Pretend injection", ThreatSeverity.HIGH),
     (
         re.compile(r"you\s+are\s+now\s+(a|an|the)\s+(human|person|admin|developer|god)", re.I),
@@ -502,6 +502,11 @@ _INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
         "Admin mode destructive intent",
         ThreatSeverity.CRITICAL,
     ),
+    (
+        re.compile(r"\badmin\s*mode\b.*(disable|override|bypass|grant\s+full)", re.I),
+        "Admin mode access escalation",
+        ThreatSeverity.CRITICAL,
+    ),
     # ── Data Exfiltration to arbitrary endpoint ──────────────────────────────
     (
         re.compile(
@@ -515,7 +520,7 @@ _INJECTION_PATTERNS: tuple[tuple[re.Pattern, str, ThreatSeverity], ...] = (
         ThreatSeverity.CRITICAL,
     ),
     (
-        re.compile(r"exfiltrat\w*", re.I),
+        re.compile(r"exfiltrat\w*\s+(all|the|any|your|this)\s+(data|memory|memories|info|secret|credential)", re.I),
         "Data exfiltration attempt",
         ThreatSeverity.CRITICAL,
     ),
@@ -675,8 +680,11 @@ class MemoryGuard:
         # Normalize Unicode BEFORE any scanning to prevent homoglyph/zero-width bypasses
         content = _normalize_unicode(content)
 
-        # 1. Prompt injection scan (including obfuscated variants)
-        findings.extend(self._scan_prompt_injection_variants(content))
+        # Allowlist check — skip scanning ONLY for known-safe original content
+        # (de-obfuscated variants are still scanned to prevent bypass exploits)
+        if not _is_allowlisted(content):
+            # 1. Prompt injection scan (including obfuscated variants)
+            findings.extend(self._scan_prompt_injection_variants(content))
 
         # 1.1 Multi-language injection detection
         multilang_matches = multilang_scan(content)
@@ -765,9 +773,6 @@ class MemoryGuard:
 
     def _scan_prompt_injection(self, content: str) -> list[Finding]:
         findings: list[Finding] = []
-        # Check allowlist first — skip scanning for known-safe content
-        if _is_allowlisted(content):
-            return findings
         for pattern, desc, severity in _INJECTION_PATTERNS:
             if pattern.search(content):
                 findings.append(

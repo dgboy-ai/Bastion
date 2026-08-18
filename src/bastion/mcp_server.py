@@ -99,7 +99,7 @@ _INIT_LOCK = threading.Lock()
 # -- Metrics state (Prometheus format) --
 _metrics_lock = threading.Lock()
 _metrics_requests_total: dict[tuple[str, str, int], int] = {}
-_metrics_durations: dict[tuple[str, str], list[float]] = {}
+_metrics_durations: dict[tuple[str, str], list[tuple[float, float]]] = {}
 _metrics_rate_limit_hits: int = 0
 _metrics_start_time: float = time.monotonic()
 
@@ -226,7 +226,13 @@ def _check_auth(headers: dict[str, str]) -> bool:
         _bcrypt = None
 
     for k in keys:
-        if k.startswith("$2") and _bcrypt is not None:
+        if k.startswith("$2"):
+            if _bcrypt is None:
+                logger.warning(
+                    "API key starts with $2 (bcrypt hash) but bcrypt is not installed — "
+                    "DB-backed agent_auth keys will not authenticate. Install bcrypt: pip install bcrypt"
+                )
+                continue
             try:
                 if _bcrypt.checkpw(provided.encode("utf-8"), k.encode("utf-8")):
                     return True
@@ -1239,6 +1245,19 @@ def create_server(
             return json.dumps({"error": "content must be a non-empty string"})
         if len(content.encode("utf-8")) > MAX_STORE_BYTES:
             return json.dumps({"error": f"content exceeds maximum size of {MAX_STORE_BYTES} bytes"})
+
+        agent_id = _safe_client_id(ctx)
+        spend = _get_spend_manager()
+        check = spend.check_and_increment(agent_id, "store", 1)
+        if not check["allowed"]:
+            return json.dumps(
+                {
+                    "error": f"Store budget exhausted: {check['reason']}",
+                    "remaining": check["remaining"],
+                    "suspended": check["suspended"],
+                }
+            )
+
         mem = _resolve_memory(ctx)
         from bastion.kms import EncryptedMemoryWrapper
         wrapper = EncryptedMemoryWrapper(mem)
@@ -1304,6 +1323,17 @@ def create_server(
             return json.dumps({"error": "threshold must be between 0.0 and 1.0"})
         if not query or not query.strip():
             return json.dumps({"error": "query must be a non-empty string"})
+        agent_id = _safe_client_id(ctx)
+        spend = _get_spend_manager()
+        check = spend.check_and_increment(agent_id, "search", 1)
+        if not check["allowed"]:
+            return json.dumps(
+                {
+                    "error": f"Search budget exhausted: {check['reason']}",
+                    "remaining": check["remaining"],
+                    "suspended": check["suspended"],
+                }
+            )
         mem = _resolve_memory(ctx)
         from bastion.kms import EncryptedMemoryWrapper
 
@@ -1489,8 +1519,8 @@ def create_server(
     ) -> str:
         # Support both timestamp and minutes_ago parameter
         if minutes_ago is not None:
-            from datetime import timedelta
-            now = datetime.now(UTC)
+            from datetime import datetime as _dt, timedelta, timezone
+            now = _dt.now(timezone.utc)
             dt = now - timedelta(minutes=minutes_ago)
             timestamp = dt.isoformat()
         elif not timestamp or not timestamp.strip():
@@ -2745,7 +2775,7 @@ def create_server(
         annotations=ToolAnnotations(
             title="Call Official CockroachDB Cloud MCP Tool",
             readOnlyHint=False,
-            destructiveHint=False,
+            destructiveHint=True,
             idempotentHint=False,
             openWorldHint=True,
         ),
@@ -3108,7 +3138,7 @@ def create_server(
         ),
         annotations=ToolAnnotations(
             title="Execute ccloud CLI Command",
-            readOnlyHint=True,
+            readOnlyHint=False,
             destructiveHint=False,
             idempotentHint=False,
             openWorldHint=True,
@@ -3142,8 +3172,8 @@ def create_server(
         # Allowed ccloud commands (safety allowlist — no `sql` or `node` to prevent arbitrary execution)
         allowed_commands = {
             "cluster", "backup", "restore", "network",
-            "audit-log", "user", "service-account", "organization",
-            "version", "completion", "auth",
+            "audit-log", "user", "organization",
+            "version", "completion",
         }
 
         cmd_parts = command.split()
@@ -3395,13 +3425,17 @@ def create_server(
             start_date: Optional ISO 8601 start date (e.g., '2026-07-01T00:00:00Z')
             end_date: Optional ISO 8601 end date (e.g., '2026-07-29T00:00:00Z')
         """
-        mem = _resolve_memory(ctx)
-        from bastion.compliance import ComplianceReporter
+        try:
+            mem = _resolve_memory(ctx)
+            from bastion.compliance import ComplianceReporter
 
-        reporter = ComplianceReporter(mem)
-        mem_agent = mem.agent_id
-        report = reporter.generate_report(mem_agent, start_date=start_date, end_date=end_date)
-        return json.dumps(report, indent=2, default=str)
+            reporter = ComplianceReporter(mem)
+            mem_agent = mem.agent_id
+            report = reporter.generate_report(mem_agent, start_date=start_date, end_date=end_date)
+            return json.dumps(report, indent=2, default=str)
+        except Exception as e:
+            logger.exception("compliance_report failed")
+            return json.dumps({"error": f"Compliance report failed: {e}"})
 
     # ── Well-Known Endpoints (MCP Registry + A2A) ─────────────────────────
 
@@ -4163,7 +4197,7 @@ def _make_http_app(mcp: FastMCP) -> Any:
                     if dur_key not in _metrics_durations:
                         _metrics_durations[dur_key] = []
                     dur_list = _metrics_durations[dur_key]
-                    dur_list.append(_elapsed)
+                    dur_list.append((_elapsed, time.monotonic()))
                     if len(dur_list) > 500:
                         dur_list.pop(0)
                 return response
@@ -4242,7 +4276,7 @@ def main() -> None:
             with _metrics_lock:
                 for key in list(_metrics_durations.keys()):
                     durations = _metrics_durations[key]
-                    _metrics_durations[key] = [d for d in durations if d > cutoff]
+                    _metrics_durations[key] = [(d, t) for d, t in durations if t > cutoff]
                     if not _metrics_durations[key]:
                         del _metrics_durations[key]
 
