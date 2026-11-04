@@ -17,15 +17,12 @@ const defaultHealth = {
 };
 
 export async function GET(request: Request) {
-  // Skip auth when user provides their own connection string via the playground dialog
   const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
-    if (isMockMode()) {
-      return apiSuccess(defaultHealth, "short", { mock: true });
-    }
+  if (isMockMode()) {
+    return apiSuccess(defaultHealth, "short", { mock: true });
   }
 
   try {
@@ -74,7 +71,7 @@ export async function GET(request: Request) {
     // Connect Cluster modal, not silently succeed with zeros.
     if (hasUserConn) {
       return apiError(
-        error instanceof Error ? `Connection rejected: ${error.message}` : "Connection rejected — check credentials",
+        "Connection rejected - check credentials",
         400,
         "CONNECTION_FAILED",
       );

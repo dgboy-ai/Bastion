@@ -35,11 +35,8 @@ function scanContent(content: string) {
 }
 
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   try {
     const totalChecksRes = await safeQuery(
@@ -105,11 +102,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     const contentLength = request.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > 100_000) {

@@ -5,11 +5,8 @@ import { requireAuth } from "@/lib/api-auth";
 const MCP_URL = process.env.MCP_SERVER_URL || "http://127.0.0.1:9997";
 
 export async function POST(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   try {
     let body;

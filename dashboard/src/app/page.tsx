@@ -24,19 +24,43 @@ const P = {
 
 /* ─── Scroll Tracker ─────────────────────────────────────── */
 function useScroll() {
-  const [y, setY] = useState(0);
-  const [pct, setPct] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
+    let raf = 0;
     const fn = () => {
-      const sy = window.scrollY;
-      setY(sy);
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      setPct(max > 0 ? sy / max : 0);
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setScrolled(window.scrollY > 55);
+      });
     };
     window.addEventListener("scroll", fn, { passive: true });
-    return () => window.removeEventListener("scroll", fn);
+    fn();
+    return () => { window.removeEventListener("scroll", fn); if (raf) cancelAnimationFrame(raf); };
   }, []);
-  return { y, pct };
+  return { scrolled };
+}
+
+function ScrollProgress() {
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const pct = max > 0 ? window.scrollY / max : 0;
+      if (barRef.current) barRef.current.style.width = `${pct * 100}%`;
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,height:"3px",zIndex:1100,background:"rgba(255,40,0,.04)"}}>
+      <div ref={barRef} style={{height:"100%",width:"0%",background:`linear-gradient(90deg,#ffea00,${P.cyan},#00ff66)`,boxShadow:`0 0 14px #ffea00`,transition:"width .08s linear"}}/>
+    </div>
+  );
 }
 
 /* ─── InView Observer ────────────────────────────────────── */
@@ -1517,7 +1541,7 @@ function ProofStats() {
   const [stats, setStats] = useState<{memories:number;audits:number;entities:number}|null>(null);
   const [status, setStatus] = useState<"checking"|"online"|"offline">("checking");
   useEffect(()=>{
-    fetch("/api/stats").then(r=>r.json()).then(d=>{
+    fetch("/api/public-stats").then(r=>r.json()).then(d=>{
       if (d?.success && d?.data) {
         const s = d.data;
         setStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0 });
@@ -1904,7 +1928,7 @@ function Benchmarks() {
 
   useEffect(() => {
     setLiveDate("2026-08-03");
-    fetch("/api/stats").then(r => r.json()).then(d => {
+    fetch("/api/public-stats").then(r => r.json()).then(d => {
       if (d?.success && d?.data) {
         const s = d.data;
         setLiveLedger((s.memories ?? 0) + (s.auditLogs ?? 0));
@@ -2242,7 +2266,7 @@ function Benchmarks() {
 
 /* ─── MAIN PAGE ──────────────────────────────────────────── */
 export default function Page() {
-  const {y:sy, pct} = useScroll();
+  const {scrolled} = useScroll();
   const [clusterStatus, setClusterStatus] = useState<"online"|"offline"|"checking">("checking");
   const [liveStats, setLiveStats] = useState<{memories:number;audits:number;entities:number;mcpTools:number;resources:number}|null>(null);
   const [statsOk, setStatsOk] = useState<boolean|null>(null);
@@ -2250,7 +2274,7 @@ export default function Page() {
     fetch("/api/health").then(r=>r.json()).then(d=>{
       setClusterStatus(d.success && !d.meta?.db_error ? "online" : "offline");
     }).catch(()=>setClusterStatus("offline"));
-    fetch("/api/stats").then(r=>r.json()).then(d=>{
+    fetch("/api/public-stats").then(r=>r.json()).then(d=>{
       if (d?.success && d?.data) {
         const s = d.data;
         setLiveStats({ memories: s.memories ?? 0, audits: s.auditLogs ?? 0, entities: s.entities ?? 0, mcpTools: s.mcpTools ?? 35, resources: s.resources ?? 3 });
@@ -2273,10 +2297,7 @@ export default function Page() {
         background:"#0d0308",
       }}/>
 
-      {/* Scroll rail */}
-      <div style={{position:"fixed",top:0,left:0,right:0,height:"3px",zIndex:1100,background:"rgba(255,40,0,.04)"}}>
-        <div style={{height:"100%",width:`${pct*100}%`,background:`linear-gradient(90deg,#ffea00,${P.cyan},#00ff66)`,boxShadow:`0 0 14px #ffea00`,transition:"width .08s linear"}}/>
-      </div>
+      <ScrollProgress />
 
       {/* Atmospheric vignette BEHIND canvas */}
       <div style={{
@@ -2295,11 +2316,11 @@ export default function Page() {
       {/* ── NAV ── */}
       <nav style={{
         position:"fixed",top:0,left:0,right:0,zIndex:1000,
-        padding:sy>55?"10px 48px":"18px 48px",
+        padding:scrolled?"10px 48px":"18px 48px",
         display:"flex",justifyContent:"space-between",alignItems:"center",
-        background:sy>55?"rgba(10,2,8,0.75)":"transparent",
-        backdropFilter:sy>55?"blur(20px)":"none",
-        borderBottom:sy>55?`1px solid rgba(255,170,0,0.3)`:"none",
+        background:scrolled?"rgba(10,2,8,0.75)":"transparent",
+        backdropFilter:scrolled?"blur(20px)":"none",
+        borderBottom:scrolled?`1px solid rgba(255,170,0,0.3)`:"none",
         transition:"all .35s cubic-bezier(.16,1,.3,1)",
       }}>
         <Link href="/" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:"11px"}}>

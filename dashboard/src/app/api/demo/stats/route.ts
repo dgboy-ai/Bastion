@@ -1,7 +1,10 @@
 import { safeQuery, isMockMode } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (isMockMode()) {
     return apiSuccess({ memories: 0, entities: 0, relations: 0, auditLogs: 0, regions: 1, mock: true }, "dynamic");
   }

@@ -35,9 +35,14 @@ from typing import Any
 import anyio
 import anyio.to_thread
 import httpx
-import psycopg2
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
+
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env.local", override=True)
+# Never let a stale local dotenv file override real environment variables.
+load_dotenv(dotenv_path=".env.local", override=False)
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
@@ -56,7 +61,7 @@ from bastion.pool import ConnectionPool
 from bastion.provenance import compute_provenance
 from bastion.spend_manager import SpendManager
 
-load_dotenv(dotenv_path=".env.local", override=True)  # .env.local wins over stale OS env vars
+load_dotenv(dotenv_path=".env.local", override=False)  # real env vars win over .env.local
 
 # Hard caps for production safety
 MAX_K = 100
@@ -190,6 +195,17 @@ def _load_api_keys() -> set[str]:
                         logger.debug("DB key lookup failed (non-fatal): %s", exc)
 
                 _API_KEYS = keys
+                
+                # Gap 4: Enforce bcrypt if hashed keys are present
+                if any(k.startswith("$2") for k in _API_KEYS):
+                    try:
+                        import bcrypt
+                    except ImportError:
+                        raise RuntimeError(
+                            "CRITICAL: bcrypt is required because DB-backed hashed API keys are present. "
+                            "Please install bcrypt (e.g. pip install bcrypt)."
+                        )
+
                 if not _API_KEYS:
                     logger.warning(
                         "No API keys configured — MCP server is running without authentication. "
@@ -228,11 +244,10 @@ def _check_auth(headers: dict[str, str]) -> bool:
     for k in keys:
         if k.startswith("$2"):
             if _bcrypt is None:
-                logger.warning(
-                    "API key starts with $2 (bcrypt hash) but bcrypt is not installed — "
-                    "DB-backed agent_auth keys will not authenticate. Install bcrypt: pip install bcrypt"
+                raise RuntimeError(
+                    "CRITICAL: bcrypt is required because DB-backed hashed API keys are present. "
+                    "Please install bcrypt (e.g. pip install bcrypt)."
                 )
-                continue
             try:
                 if _bcrypt.checkpw(provided.encode("utf-8"), k.encode("utf-8")):
                     return True
@@ -312,6 +327,23 @@ def create_server(
     settings = get_settings()
     conn = connection_string or settings.connection_string
     is_mock = mock if mock is not None else (not conn)
+
+    if not is_mock and conn:
+        try:
+            import psycopg
+            with psycopg.connect(conn, connect_timeout=5) as chk_conn:
+                with chk_conn.cursor() as chk_cur:
+                    chk_cur.execute(
+                        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_schema_migrations'"
+                    )
+                    if chk_cur.fetchone() is None:
+                        raise RuntimeError(
+                            "CRITICAL: The '_schema_migrations' table is missing. "
+                            "You must run 'python -m bastion.migrate' before starting the Bastion server."
+                        )
+        except psycopg.Error as e:
+            logger.error("Failed to connect to database for migration check: %s", e)
+
     _shared = BastionMemory("mcp-agent", connection_string=conn, mock=is_mock)
 
     # L1/L2 Cache Router — wraps the memory engine for two-tier retrieval
@@ -545,13 +577,14 @@ def create_server(
     def _get_log_conn():
         nonlocal _log_conn
         if _log_conn is None or _log_conn.closed:
-            try:
-                _log_conn = psycopg2.connect(
-                    os.environ.get("BASTION_CONN", ""),
-                    connect_timeout=5,
-                )
-            except Exception:
-                pass
+            if psycopg is not None:
+                try:
+                    _log_conn = psycopg.connect(
+                        os.environ.get("BASTION_CONN", ""),
+                        connect_timeout=5,
+                    )
+                except Exception:
+                    pass
         return _log_conn
 
     _SENSITIVE_ARG_KEYS = {"content", "prompt", "context", "result", "new_content", "reasoning"}
@@ -3994,26 +4027,10 @@ def _make_http_app(mcp: FastMCP) -> Any:
 
     inner = mcp.streamable_http_app()
 
-    # CORS — allow browser-based MCP clients
+    # CORS — allow browser-based MCP clients. Wrapped around the auth stack
+    # below so unauthenticated OPTIONS preflight requests are answered first.
     allowed_origins = os.environ.get("CORS_ALLOW_ORIGINS", "").split(",")
     allowed_origins = [o.strip() for o in allowed_origins if o.strip()]
-    if allowed_origins:
-        inner = CORSMiddleware(
-            inner,
-            allow_origins=allowed_origins,
-            allow_credentials=True,
-            allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        )
-    else:
-        # No origins configured — block all cross-origin requests (secure default)
-        inner = CORSMiddleware(
-            inner,
-            allow_origins=[],
-            allow_credentials=False,
-            allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        )
 
     oauth_active = mcp.settings.auth is not None
     skip_paths = frozenset(
@@ -4206,7 +4223,13 @@ def _make_http_app(mcp: FastMCP) -> Any:
             finally:
                 limiter.release()
 
-    return RateLimitMiddleware(inner)
+    return CORSMiddleware(
+        RateLimitMiddleware(inner),
+        allow_origins=allowed_origins,
+        allow_credentials=bool(allowed_origins),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    )
 
 
 def main() -> None:
@@ -4222,8 +4245,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--host",
-        default="0.0.0.0",
-        help="HTTP host (default: 0.0.0.0)",
+        default=os.environ.get("BASTION_MCP_HOST", "127.0.0.1"),
+        help="HTTP host (default: 127.0.0.1; set BASTION_MCP_HOST=0.0.0.0 in containers)",
     )
     parser.add_argument(
         "--port",

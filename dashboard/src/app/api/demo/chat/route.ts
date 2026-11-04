@@ -1,6 +1,7 @@
 import { safeQuery } from "@/lib/db";
 import { fetchWithTimeout } from "@/lib/fetch";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
 export const maxDuration = 60;
 
@@ -160,6 +161,8 @@ async function recentMemoriesFallback(agentId: string, k: number): Promise<{ res
 }
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     let body;
     try {
@@ -317,6 +320,6 @@ export async function POST(request: Request) {
     }, "dynamic");
   } catch (err) {
     console.error("[api/demo/chat] failed:", err instanceof Error ? err.message : "Unknown error");
-    return apiError("Chat demo failed — " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("Chat demo failed - try again later", 500);
   }
 }

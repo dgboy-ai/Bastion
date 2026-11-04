@@ -1,9 +1,12 @@
 import { safeQuery, isMockMode } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   if (isMockMode()) {
     return NextResponse.json({ hashes: [], chainValid: true });
   }

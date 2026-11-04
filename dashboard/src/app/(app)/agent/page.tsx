@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { safeQuery, isMockMode } from "@/lib/db";
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import AgentContent from "./Content";
 
 export const dynamic = "force-dynamic";
@@ -60,8 +59,8 @@ export default async function AgentPage() {
   const stats = await getStats();
 
   return (
-    <DashboardLayoutWrapper>
+    
       <AgentContent initialStats={stats} />
-    </DashboardLayoutWrapper>
+    
   );
 }

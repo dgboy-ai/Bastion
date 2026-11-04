@@ -1,0 +1,91 @@
+Bastion — Frontend & API Gap Audit
+Repo: Next.js dashboard (dashboard/) + Python MCP/A2A services (src/bastion/). Read-only review; nothing changed.
+P0 — Critical security (API)
+1. Auth bypass via client-controlled x-bastion-conn header
+- ~25 routes skip requireAuth() entirely if that header is present: dashboard/src/app/api/stats/route.ts:7, memories/route.ts, audit, graph, mcp/memory_store, mcp/[tool]/route.ts, agent/*, dream, compliance, isolation, etc.
+- dashboard/src/lib/db.ts:220 reads the header and opens a pool to any host. Consequences:
+- Anyone can call write/destructive endpoints (memory_store, memory_pin, memory_delete, memory_correct) unauthenticated by simply sending the header.
+- SSRF-ish: server opens outbound TCP/TLS to arbitrary internal hosts.
+- TLS verification is disabled for these connections (db.ts:251 ssl: { rejectUnauthorized: false }).
+- Fix: never let a request header bypass auth. Require a valid session/API key first, then allow the connection override only for an allowlisted host, with rejectUnauthorized: true.
+2. Unauthenticated destructive / costly routes
+demo/poison, demo/heal, demo/heal-all, demo/heal-stream, demo/export (full memory + audit + entity dump), agent/chat (LLM + tool execution), ccloud, official-mcp, compliance/scan, logs/stats, skills, docs-mcp, mcp/tools, agent/stats, agent/chain. All have NO-AUTH per the route scan (e.g. dashboard/src/app/api/demo/export/route.ts, agent/chat/route.ts).
+- agent/chat can call ccloud_exec, managed_mcp_call, invoke_agent_skill (which executes SQL) and burns Bedrock/Groq tokens for 60s per request.
+3. Hardcoded demo login in production
+dashboard/src/app/login/api/route.ts:70 — if VERCEL is set, passphrase "bastion" always authenticates and the login page advertises it. This makes the whole dashboard publicly accessible in the deployed app.
+4. "Public GET" list leaks sensitive data
+dashboard/src/lib/api-auth.ts:239 marks /api/memories, /api/audit, /api/graph, /api/entity-memories, /api/cdc-feed, /api/trust, /api/stats as public. /api/memories returns full memory content, metadata and hash chain; /api/audit returns audit details. The comment says "aggregate counts (no sensitive data)" — that is false.
+5. Public cache headers on authenticated APIs (CDN data leak)
+dashboard/src/lib/api-response.ts:44 emits public, max-age=..., s-maxage=... for "short"/"static". Routes like /api/health, /api/stats, /api/memories use it. Responses vary by cookie and x-bastion-conn, but no Vary is set → a shared/CDN cache can serve one user's DB data to another. Use private/no-store for authed responses and add Vary: Cookie, x-bastion-conn.
+6. official-mcp is an unauthenticated server-key proxy with writes enabled
+dashboard/src/app/api/official-mcp/route.ts:5,25,36 — no auth, hardcoded cluster ID, forwards the caller's Authorization or the server's COCKROACHDB_MCP_API_KEY, and sets crdb-mcp-enable-write-queries: true. Arbitrary MCP tools (insert/create) are callable by anyone.
+7. ccloud shell execution
+dashboard/src/app/api/ccloud/route.ts:25,42 — unauthenticated and execSync with a prefix allowlist. "cluster list && <cmd>" or "cluster list ; <cmd>" passes startsWith(cmd + " ") and reaches the shell. Use execFile with an argv array and no shell.
+8. Frontend secrets & CSRF
+- Full DB connection string (with password) is stored in sessionStorage and sent on every request (dashboard/src/lib/fetch.ts:37). Any XSS exfiltrates it.
+- CSRF token is derived as HMAC(secret+":csrf", payload) and also written to a JS-readable cookie (login/api/route.ts), so XSS can read it; CSRF does not protect against XSS and is skipped on the x-bastion-conn path.
+- Session token is 24h, HMAC, no server-side revocation/logout endpoint, no rotation. api-auth.ts accepts two signature variants.
+- BASTION_DISABLE_AUTH / BASTION_DEV_MODE bypasses exist; one is production-guarded, verify none leak into the deployed env.
+9. Header/CORS issues
+- dashboard/next.config.ts:23: operator-precedence bug — A || B ? x : y evaluates as (A || B) ? ..., so BASTION_CORS_ORIGIN is ignored when VERCEL_URL is set and becomes https://undefined when only the former is set.
+- Access-Control-Allow-Credentials: true combined with that dynamic origin is fragile.
+- CSP allows script-src 'unsafe-eval' 'unsafe-inline' and connect-src ws: wss: (any WS host). Missing object-src 'none', base-uri 'none', COOP/CORP.
+- CSP blocks the Google Fonts import while the app imports it (see latency below).
+10. Proxy route coverage
+dashboard/src/proxy.ts:22 protects only /dashboard, /graph, /logs, /health, /compliance, /flight-recorder. /agent, /playground, /skills, /soc are reachable anonymously; /agent/page.tsx does a server-side DB read at render, so it leaks live stats without auth.
+11. Python MCP server
+- Default bind 0.0.0.0:9997 with plain HTTP (mcp_server.py:~4290), API key sent in clear if not behind TLS.
+- load_dotenv(".env.local", override=True) at import time — a stale .env.local in a container silently overrides real production env.
+- Auth middleware runs outside CORS middleware (_make_http_app), so unauthenticated OPTIONS preflight is rejected (non-OAuth mode) before CORS can respond.
+- _check_auth denies when no keys configured in non-mock mode (good), but the warning-only path is easy to miss.
+P1 — API correctness & performance
+1. /api/stats is a heavy sequential query loop
+15 sequential await safeQuery(...) calls (stats/route.ts), including multiple full-table COUNT(*), GROUP BY content duplicate scan, and aggregates. The dashboard calls it every 12s per open tab (dashboard/Content.tsx:1926). Parallelize with Promise.all, combine counts into one aggregate, and cache longer.
+2. safeQuery in-memory cache is cross-tenant
+db.ts:347 keys only on SQL + params; it ignores the active pool/x-bastion-conn and the agent/session. A cached read from one DB can be served for another within 5s. It is also not invalidated on writes (read-after-write inconsistency).
+3. Missing indexes for hot queries
+schema/002_agent_memory.sql has INDEX (agent_id) and the vector index only. Most routes do WHERE agent_id = ... ORDER BY created_at DESC and content ILIKE ...; add (agent_id, created_at DESC) and an inverted/trigram index for search. Audit has good indexes (017), memory does not.
+4. Pool/timeout sizing
+Static pool max: 5, dynamic max: 3, connectionTimeoutMillis: 60000, no statement_timeout (db.ts:195-255). Polling dashboards + cold serverless starts will queue and stall; add query timeouts and bounded pools.
+5. Schema bootstrap on the request path
+ensureSchema() executes migrations from ../schema during the first query (db.ts:104+). In standalone/serverless the path may not exist, and concurrent instances race. Move to a deploy-time migration.
+6. graph AS OF SYSTEM TIME uses a placeholder
+dashboard/src/app/api/graph/route.ts injects AS OF SYSTEM TIME $1. CockroachDB requires a constant/interval there; this likely errors or falls back. Validate and inline the already-regex-validated value.
+7. Inconsistent API contracts & error leakage
+- Mixed envelopes: apiSuccess vs raw NextResponse.json (agent/chat, agent/stats, mcp/tools, official-mcp, auth/session).
+- Several routes return raw err.message to clients (logs/stats, demo/chat, isolation connection errors). This leaks DSN/host details.
+- No schema validation (no Zod) and ad-hoc parsing; agent/chat has no body-size limit.
+8. Rate limiting gaps
+Only enforced when NODE_ENV === "production" (api-auth.ts:138); in-memory map + signed cookie, spoofable x-forwarded-for when BASTION_TRUST_PROXY is on. Login limiter same. Distributed limiting exists only in Python.
+P1 — Frontend latency (page changes)
+1. Layout is remounted on every navigation
+Only /dashboard has layout.tsx. /health, /compliance, /graph, /logs, /flight-recorder each wrap DashboardLayoutWrapper inside their page (app/health/page.tsx, etc.). Navigating between them tears down/rebuilds the sidebar, BackgroundParticles canvas/rAF and re-runs checkConnectionStatus() (DashboardLayoutWrapper.tsx:60). Move the shell into a route-group app/(app)/layout.tsx so it persists.
+2. Client-only data loading waterfall
+dashboard/page.tsx is force-dynamic and renders a client Content with no initial data; after hydration it fires 5 parallel requests (Content.tsx:1860-1864) plus 12s polling. agent/page.tsx already demonstrates the better pattern (server fetch + initialStats). Apply it to dashboard/health/graph/logs.
+3. Google Fonts @import is render-blocking and CSP-blocked
+app/globals.css:6 @import url('https://fonts.googleapis.com/...'). CSP style-src 'self' 'unsafe-inline' and font-src 'self' data: block it in production; it also adds a render-blocking request in dev. The homepage already uses next/font/google (app/page.tsx:6), so fonts are loaded twice. Remove the @import and use next/font globally.
+4. vercel.json disables caching for everything
+dashboard/vercel.json sets Cache-Control: no-cache, no-store, must-revalidate on /(.*), which also matches /_next/static/* (normally immutable). Every page change re-downloads JS/CSS. Scope this to HTML/API only.
+5. Re-render storms
+- dashboard/Content.tsx:1932: setInterval(..., 1000) updates tick every second, re-rendering a 3,046-line component.
+- app/page.tsx:26-39: useScroll calls setY/setPct on every scroll event with no rAF/throttle, re-rendering the 2,622-line marketing page.
+- BackgroundParticles runs a full canvas rAF loop on every dashboard page and is remounted per navigation.
+6. Client fetch cache is wrong and uncoordinated
+lib/fetch.ts:9-21,62: 30s cache keyed only by URL, ignores x-bastion-conn, session, and query auth; no in-flight dedupe; no invalidation after mutations. This can show stale or other-DB data and hides freshness bugs.
+7. Heavy bundles, no code splitting
+No next/dynamic usage anywhere. @xenova/transformers, d3 and large visualization components are pulled into page graphs. Lazy-load graph/visualizers/chat behind dynamic().
+8. Missing loading/error boundaries
+No loading.tsx for skills, soc, (marketing)/contact; no error.tsx for several routes. Users see blank/frozen UI on failures. Docs pages are fine (static).
+P2 — Frontend UX / consistency
+- Duplicate GlobalErrorHandler rendered in root and dashboard wrapper.
+- No shared API client/types; each Content.tsx hand-rolls fetch/parse/error handling.
+- Mock fallbacks can silently display fabricated data in non-production; make the "mock" badge explicit everywhere.
+- next.config.ts doesn't set poweredByHeader: false and has no images/package-import optimization.
+- Inline styles everywhere (dashboard/Content.tsx, DashboardLayoutWrapper.tsx) inflate HTML/RSC payloads and prevent Tailwind/CSS optimization.
+Suggested remediation order
+1. P0 security: remove x-bastion-conn auth bypass; gate all write/demo/ccloud/official-mcp/agent-chat routes with requireAuth; remove the "bastion" Vercel bypass; restrict public GET list; switch authed responses to private/no-store + Vary; fix ccloud to execFile; fix CORS precedence; add the missing proxy-protected prefixes.
+2. Connection handling: allowlist dynamic DB hosts, require TLS verify, add connect/statement timeouts, make ensureSchema deploy-time.
+3. API perf: parallelize /api/stats, fix safeQuery cache key/invalidation, add (agent_id, created_at DESC) + search indexes.
+4. Frontend latency: shared route-group layout, server-prefetch initial data, remove Google Fonts @import, scope vercel.json no-cache, kill 1s tick/scroll rerenders, cache-key fix.
+5. Contracts/hygiene: unify response envelopes, add Zod validation, central API client, loading/error states, code-split heavy panels.
+Want me to turn P0 into concrete edits? I’ll wait for your go-ahead before touching anything.

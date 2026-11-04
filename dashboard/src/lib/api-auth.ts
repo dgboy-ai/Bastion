@@ -234,10 +234,11 @@ export function requireAuth(request: Request): NextResponse | null {
   const rateLimit = checkRateLimit(request);
   if (rateLimit) return rateLimit;
 
-  // Public read-only endpoints — GET only, returns aggregate counts (no sensitive data)
+  // Only the liveness/health endpoint is public (the landing page probes it).
+  // Every other GET requires a session or API key.
   const url = new URL(request.url);
-  const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/stats", "/api/tool-usage", "/api/memories", "/api/asi06", "/api/drift", "/api/audit", "/api/graph", "/api/observations", "/api/region-stats", "/api/trust", "/api/entity-memories", "/api/cdc-feed"];
-  if (request.method === "GET" && PUBLIC_GET_ENDPOINTS.some(ep => url.pathname.startsWith(ep))) {
+  const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/auth/session"];
+  if (request.method === "GET" && PUBLIC_GET_ENDPOINTS.some(ep => url.pathname === ep)) {
     return null;
   }
 

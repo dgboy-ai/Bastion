@@ -37,13 +37,14 @@ export interface ApiErrorResponse {
 function buildHeaders(cacheType: CacheType, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    Vary: "Cookie, x-bastion-conn",
     ...extra,
   };
   const maxAge = CACHE_DURATIONS[cacheType];
   if (maxAge > 0) {
-    headers["Cache-Control"] = `public, max-age=${maxAge}, s-maxage=${maxAge * 2}`;
+    headers["Cache-Control"] = `private, max-age=${maxAge}`;
   } else {
-    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    headers["Cache-Control"] = "no-store";
   }
   return headers;
 }

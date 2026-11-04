@@ -226,7 +226,7 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    const { default: FlightRecorderContent } = await import("@/app/(app)/flight-recorder/Content");
     render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     expect(screen.getByText("Audit Trail")).toBeDefined();
@@ -238,7 +238,7 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    const { default: FlightRecorderContent } = await import("@/app/(app)/flight-recorder/Content");
     render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     await waitFor(() => {
@@ -263,7 +263,7 @@ describe("FlightRecorderPage", () => {
       },
     ];
 
-    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    const { default: FlightRecorderContent } = await import("@/app/(app)/flight-recorder/Content");
     render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={1} />);
 
     await waitFor(() => {
@@ -278,7 +278,7 @@ describe("FlightRecorderPage", () => {
       json: () => Promise.resolve({ success: true, data: { events: [] } }),
     });
 
-    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    const { default: FlightRecorderContent } = await import("@/app/(app)/flight-recorder/Content");
     render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     await waitFor(() => {
@@ -292,7 +292,7 @@ describe("FlightRecorderPage", () => {
       { id: "2", timestamp: new Date().toISOString(), type: "guard_block", agent_id: "a", content_preview: "Block event", status: "blocked" },
     ];
 
-    const { default: FlightRecorderContent } = await import("@/app/flight-recorder/Content");
+    const { default: FlightRecorderContent } = await import("@/app/(app)/flight-recorder/Content");
     render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={2} />);
 
     await waitFor(() => {

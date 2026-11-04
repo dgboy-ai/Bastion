@@ -1,8 +1,7 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 
 export default function LogsLoading() {
   return (
-    <DashboardLayoutWrapper>
+    <>
       <div style={{ padding: "20px" }}>
         <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
           <div style={{ height: "40px", width: "200px", background: "#e5e7eb", borderRadius: "8px", animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }} />
@@ -16,6 +15,6 @@ export default function LogsLoading() {
         </div>
       </div>
       <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }`}</style>
-    </DashboardLayoutWrapper>
+    </>
   );
 }

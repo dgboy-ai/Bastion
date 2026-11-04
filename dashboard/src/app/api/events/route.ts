@@ -63,11 +63,8 @@ export const dynamic = "force-dynamic";
  * (no param)      → Long-lived SSE stream for EventSource (dashboard UI).
  */
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode");

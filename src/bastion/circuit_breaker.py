@@ -106,8 +106,10 @@ class CircuitBreaker:
 
     async def async_call(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """Execute async function through circuit breaker."""
-        # Create lock lazily in the current event loop to avoid loop-binding issues
-        if self._async_lock is None:
+        # In multi-threaded ASGI environments, each thread has its own event loop.
+        # Ensure the lock belongs to the currently running event loop.
+        loop = asyncio.get_running_loop()
+        if self._async_lock is None or getattr(self._async_lock, "_loop", None) not in (None, loop):
             self._async_lock = asyncio.Lock()
         async with self._async_lock:
             self._total_calls += 1

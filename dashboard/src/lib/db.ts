@@ -1,7 +1,9 @@
 import { type QueryResult, Pool } from "pg";
 import { headers } from "next/headers";
 import fs from "fs";
+import net from "net";
 import path from "path";
+import { lookup } from "dns/promises";
 
 type QueryResultRow = Record<string, unknown>;
 
@@ -21,6 +23,11 @@ const mockResult = (): SafeQueryResult => ({
 
 const connectionString = process.env.BASTION_CONN || process.env.BASTION_DB_URL;
 const isMockForced = process.env.BASTION_MOCK?.toLowerCase() === "true";
+
+// Identifies which pool a cached read belongs to, so a cached result can never
+// leak across tenants / dynamic connections.
+const poolCacheKeys = new WeakMap<Pool, string>();
+let dynamicPoolSeq = 0;
 
 /**
  * Split SQL into individual statements, handling:
@@ -98,6 +105,9 @@ function splitSqlStatements(sql: string): string[] {
 }
 
 async function ensureSchema(pool: SchemaPool) {
+  // In production, prefer running migrations at deploy time and disabling the
+  // request-path bootstrap (set BASTION_SCHEMA_BOOTSTRAP=false).
+  if (process.env.BASTION_SCHEMA_BOOTSTRAP === "false") return;
   // Cache the bootstrap promise so concurrent callers await the SAME run
   // instead of racing migrations with their first query.
   if (pool._schemaPromise) return pool._schemaPromise;
@@ -195,13 +205,16 @@ const staticPool = connectionString && !isMockForced
       ssl: process.env.NODE_ENV === "production"
         ? { rejectUnauthorized: true }
         : { rejectUnauthorized: false },
-      connectionTimeoutMillis: 60000,
+      connectionTimeoutMillis: 15000,
       idleTimeoutMillis: 60000,
+      statement_timeout: 15000,
+      query_timeout: 20000,
       max: 5,
     })
   : null;
 
 if (staticPool) {
+  poolCacheKeys.set(staticPool, "static");
   staticPool.query("SELECT 1 as ping")
     .then(() => {
       console.log("[Bastion] Static CockroachDB connection OK");
@@ -214,16 +227,105 @@ if (staticPool) {
 const poolCache = new Map<string, Pool>();
 const POOL_CACHE_MAX = 10;
 
+// Optional comma-separated host allowlist for user-supplied connections.
+// Supports exact hosts and "*.example.com" wildcards.
+const dynamicHostAllowlist = (process.env.BASTION_ALLOWED_DB_HOSTS || "")
+  .split(",")
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
+
+const hostResolutionCache = new Map<string, { allowed: boolean; expires: number }>();
+
+function hostMatchesAllowlist(host: string): boolean {
+  return dynamicHostAllowlist.some((entry) =>
+    entry.startsWith("*.")
+      ? host.endsWith(entry.slice(1)) && host.length > entry.length - 1
+      : host === entry
+  );
+}
+
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split(".").map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  if (net.isIPv6(ip)) {
+    const lower = ip.toLowerCase();
+    return (
+      lower === "::" ||
+      lower === "::1" ||
+      lower.startsWith("fc") ||
+      lower.startsWith("fd") ||
+      lower.startsWith("fe80")
+    );
+  }
+  return false;
+}
+
+async function isAllowedDynamicHost(host: string): Promise<boolean> {
+  const normalized = host.toLowerCase().replace(/^\[|\]$/g, "");
+
+  if (hostMatchesAllowlist(normalized)) return true;
+  if (dynamicHostAllowlist.length > 0) return false;
+
+  // No allowlist configured: block obvious internal names and private address
+  // space to prevent SSRF, but allow any public CockroachDB host.
+  if (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized.endsWith(".local") ||
+    normalized.endsWith(".internal")
+  ) {
+    return false;
+  }
+  if (net.isIP(normalized)) return !isPrivateIp(normalized);
+
+  const cached = hostResolutionCache.get(normalized);
+  if (cached && cached.expires > Date.now()) return cached.allowed;
+
+  try {
+    const addresses = await lookup(normalized, { all: true });
+    const allowed = addresses.length > 0 && addresses.every((entry) => !isPrivateIp(entry.address));
+    hostResolutionCache.set(normalized, { allowed, expires: Date.now() + 60_000 });
+    return allowed;
+  } catch {
+    return false;
+  }
+}
+
 async function getDynamicConnectionString(): Promise<string | null> {
   try {
     const h = await headers();
     const conn = h.get("x-bastion-conn");
     if (!conn) return null;
-    // Validate connection string format (accept postgresql://, postgres://, cockroachdb://)
-    if (!conn.startsWith("postgresql://") && !conn.startsWith("postgres://") && !conn.startsWith("cockroachdb://")) {
+
+    let parsed: URL;
+    try {
+      parsed = new URL(conn);
+    } catch {
+      console.warn("[DB] Dynamic connection rejected: malformed URI");
+      return null;
+    }
+
+    // Accept postgresql://, postgres://, cockroachdb://
+    if (!["postgresql:", "postgres:", "cockroachdb:"].includes(parsed.protocol)) {
       console.warn("[DB] Dynamic connection rejected: invalid protocol");
       return null;
     }
+
+    if (!(await isAllowedDynamicHost(parsed.hostname))) {
+      console.warn("[DB] Dynamic connection rejected: host not allowed");
+      return null;
+    }
+
     return conn;
   } catch {
     return null;
@@ -233,7 +335,8 @@ async function getDynamicConnectionString(): Promise<string | null> {
 async function getActivePool(): Promise<Pool | null> {
   const dynamicConn = await getDynamicConnectionString();
 
-  // Dynamic connection (from Connect DB modal) always honored — bypasses mock mode
+  // Dynamic connection (from Connect DB modal) validated against the host
+  // allowlist / SSRF guard before use.
   if (dynamicConn) {
     let pool = poolCache.get(dynamicConn);
     if (!pool) {
@@ -248,11 +351,17 @@ async function getActivePool(): Promise<Pool | null> {
       console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
       pool = new Pool({
         connectionString: dynamicConn,
-        ssl: { rejectUnauthorized: false },
-        connectionTimeoutMillis: 60000,
+        ssl:
+          process.env.BASTION_DB_TLS_INSECURE === "true" && process.env.NODE_ENV !== "production"
+            ? { rejectUnauthorized: false }
+            : { rejectUnauthorized: true },
+        connectionTimeoutMillis: 15000,
         idleTimeoutMillis: 60000,
+        statement_timeout: 15000,
+        query_timeout: 20000,
         max: 3,
       });
+      poolCacheKeys.set(pool, `dynamic:${++dynamicPoolSeq}`);
       poolCache.set(dynamicConn, pool);
     }
     await ensureSchema(pool);
@@ -295,6 +404,9 @@ export async function query(text: string, params?: unknown[]) {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
+    if (!text.trim().toUpperCase().startsWith("SELECT")) {
+      selectCache.clear();
+    }
     return res;
   } catch (err) {
     console.error("[DB Query] error:", err instanceof Error ? err.message : "Unknown error");
@@ -344,7 +456,8 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
   }
   
   const isSelect = text.trim().toUpperCase().startsWith("SELECT");
-  const cacheKey = isSelect ? `${text}::${JSON.stringify(params || [])}` : null;
+  const poolKey = poolCacheKeys.get(pool) || "static";
+  const cacheKey = isSelect ? `${poolKey}::${text}::${JSON.stringify(params || [])}` : null;
   if (cacheKey) {
     const cached = selectCache.get(cacheKey);
     if (cached && Date.now() < cached.expiry) {
@@ -359,6 +472,9 @@ export async function safeQuery(text: string, params?: unknown[]): Promise<SafeQ
     console.log(`[DB Query] duration: ${duration}ms, rows: ${res.rowCount}`);
     if (cacheKey && res) {
       selectCache.set(cacheKey, { result: res, expiry: Date.now() + 5000 }); // 5s cache
+    } else {
+      // Writes invalidate cached reads so the dashboard sees fresh data.
+      selectCache.clear();
     }
     return res;
   } catch (err) {

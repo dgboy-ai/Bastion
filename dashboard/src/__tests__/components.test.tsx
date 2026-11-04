@@ -1,9 +1,9 @@
 import { expect, test, describe, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import OverviewPage from '@/app/page'
-import LogsPage from '@/app/logs/page'
-import GraphPage from '@/app/graph/page'
-import CompliancePage from '@/app/compliance/page'
+import LogsPage from '@/app/(app)/logs/page'
+import GraphPage from '@/app/(app)/graph/page'
+import CompliancePage from '@/app/(app)/compliance/page'
 
 // Mock CSS imports - return proxy object
 vi.mock('*.css', () => new Proxy({}, { get: () => '' }))

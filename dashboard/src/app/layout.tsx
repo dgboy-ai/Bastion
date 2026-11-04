@@ -1,6 +1,26 @@
 import type { Metadata } from "next";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-inter",
+  display: "swap",
+});
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Bastion — The System of Record for Autonomous AI",
@@ -40,7 +60,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body style={{
+      <body className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`} style={{
         color: "var(--body)",
         fontFamily: "var(--font-sans)",
         margin: 0, minHeight: "100vh", overflowY: "auto",

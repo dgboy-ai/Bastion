@@ -5,11 +5,8 @@ import { requireAuth } from "@/lib/api-auth";
 const CAPTURE_TYPES = ["tool_execution", "error_log", "conversation", "episodic", "session_lifecycle"];
 
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   const { searchParams } = new URL(request.url);
   const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));

@@ -1,10 +1,13 @@
 import { safeQuery } from "@/lib/db";
 import { createHash, randomUUID } from "crypto";
 import { embed, vecToString } from "@/lib/embeddings";
+import { requireAuth } from "@/lib/api-auth";
 
 const BASTION_REGION = process.env.BASTION_CRDB_REGION || "aws-ap-south-1";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {

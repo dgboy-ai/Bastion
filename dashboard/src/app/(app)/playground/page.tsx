@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import { safeQuery, isMockMode } from "@/lib/db";
 import PlaygroundContent from "./Content";
 
@@ -37,8 +36,8 @@ export default async function PlaygroundPage() {
   const stats = await getStats();
 
   return (
-    <DashboardLayoutWrapper>
+    
       <PlaygroundContent initialStats={stats} />
-    </DashboardLayoutWrapper>
+    
   );
 }

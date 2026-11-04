@@ -2,6 +2,7 @@ import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, cosineSimilarity } from "@/lib/embeddings";
 import { callGroq } from "@/lib/groq";
+import { requireAuth } from "@/lib/api-auth";
 
 interface MemoryRow {
   memory_id: string;
@@ -21,6 +22,8 @@ interface ThoughtStep {
 }
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     let body;
     try {
@@ -340,6 +343,6 @@ export async function POST(request: Request) {
     }, "dynamic");
   } catch (err) {
     console.error("[api/demo/reason] failed:", err instanceof Error ? err.message : "Unknown error");
-    return apiError("Reasoning demo failed — " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("Reasoning demo failed - try again later", 500);
   }
 }

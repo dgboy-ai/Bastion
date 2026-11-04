@@ -1,9 +1,8 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import NeoSkeleton from "@/components/NeoSkeleton";
 
 export default function HealthLoading() {
   return (
-    <DashboardLayoutWrapper>
+    
       <div style={{ padding: "20px" }}>
         {/* Header Area */}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}>
@@ -28,6 +27,6 @@ export default function HealthLoading() {
           ))}
         </div>
       </div>
-    </DashboardLayoutWrapper>
+    
   );
 }

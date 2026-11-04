@@ -3,6 +3,7 @@ import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
 import { guardCheck } from "@/lib/guard";
 import { createHash, randomUUID } from "crypto";
+import { requireAuth } from "@/lib/api-auth";
 
 const BASTION_REGION = process.env.BASTION_CRDB_REGION || "aws-ap-south-1";
 
@@ -64,6 +65,8 @@ const ATTACK_SCENARIOS = [
 ];
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     let body;
     try {
@@ -265,6 +268,6 @@ export async function POST(request: Request) {
     }, "dynamic");
   } catch (err) {
     console.error("[api/demo/poison] failed:", err instanceof Error ? err.message : "Unknown error");
-    return apiError("Poison demo failed — " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("Poison demo failed - try again later", 500);
   }
 }

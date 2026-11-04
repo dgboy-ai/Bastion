@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch";
 import { useConnection } from "@/components/DashboardLayoutWrapper";
-import LogsPage from "@/app/logs/Content";
+import LogsPage from "@/app/(app)/logs/Content";
 
 interface Health {
   total_memories: number;

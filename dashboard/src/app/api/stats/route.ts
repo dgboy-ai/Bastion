@@ -4,84 +4,101 @@ import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
 
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-    if (isMockMode()) {
-      return apiSuccess(getMockStats(), "short", { mock: true });
-    }
+  const authError = requireAuth(request);
+  if (authError) return authError;
+  if (isMockMode()) {
+    return apiSuccess(getMockStats(), "short", { mock: true });
   }
 
   try {
-    const memoryCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_memory");
-    const entityCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_entities");
-    const relationCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_relations");
-    const auditCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_audit");
-    const conflictCountRes = await safeQuery("SELECT COUNT(*) as count FROM agent_coordination");
-    const chainAnchorRes = await safeQuery(`
-      SELECT left(cryptographic_hash::text, 16) as anchor
-      FROM agent_memory
-      WHERE cryptographic_hash IS NOT NULL
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
-    const avgImportanceRes = await safeQuery("SELECT AVG(importance_score) as avg FROM agent_memory");
-
-    // Fetch dynamic averages grouped by 6-hour historical time intervals
-    const curveRes = await safeQuery(`
-      SELECT 
-        AVG(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' AND created_at < NOW() - INTERVAL '18 hours' THEN importance_score END) as val_24,
-        AVG(CASE WHEN created_at >= NOW() - INTERVAL '18 hours' AND created_at < NOW() - INTERVAL '12 hours' THEN importance_score END) as val_18,
-        AVG(CASE WHEN created_at >= NOW() - INTERVAL '12 hours' AND created_at < NOW() - INTERVAL '6 hours' THEN importance_score END) as val_12,
-        AVG(CASE WHEN created_at >= NOW() - INTERVAL '6 hours' THEN importance_score END) as val_6
-      FROM agent_memory
-    `);
-
-    // Fetch actual hourly writes for the last 24 hours
-    const hourlyGrowthRes = await safeQuery(`
-      SELECT 
-        EXTRACT(HOUR FROM created_at) as hr_val,
-        COUNT(*) as count
-      FROM agent_memory
-      WHERE created_at >= NOW() - INTERVAL '24 hours'
-      GROUP BY hr_val
-      ORDER BY hr_val ASC
-    `);
-
-    // Fetch most recalled memories based on highest importance score
-    const topRecallsRes = await safeQuery(`
-      SELECT content, importance_score
-      FROM agent_memory
-      ORDER BY importance_score DESC, created_at DESC
-      LIMIT 3
-    `);
-
-    // Calculate semantic cache hit ratio
-    const cacheRes = await safeQuery(`
-      SELECT 
-        COUNT(CASE WHEN memory_type = 'semantic_cache' THEN 1 END) as cache_hits,
-        COUNT(*) as total
-      FROM agent_memory
-    `);
-
-    const recentAuditRes = await safeQuery(
-      "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
-    );
-    const anomalyCountRes = await safeQuery(`
-      SELECT COUNT(*) as count FROM (
-        SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
-      ) dupes
-    `);
-
-    // Fetch only the production agents (exclude test/benchmark/dev agents)
-    const agentsRes = await safeQuery(`
-      SELECT agent_id, COUNT(*) as memory_count 
-      FROM agent_memory 
-      WHERE agent_id IN ('mcp-agent', 'bastion-agent', 'groq-db-agent')
-      GROUP BY agent_id 
-      ORDER BY memory_count DESC
-    `);
+    const [
+      memoryCountRes,
+      entityCountRes,
+      relationCountRes,
+      auditCountRes,
+      conflictCountRes,
+      chainAnchorRes,
+      avgImportanceRes,
+      curveRes,
+      hourlyGrowthRes,
+      topRecallsRes,
+      cacheRes,
+      recentAuditRes,
+      anomalyCountRes,
+      agentsRes,
+      typeBreakdownRes,
+    ] = await Promise.all([
+      safeQuery("SELECT COUNT(*) as count FROM agent_memory"),
+      safeQuery("SELECT COUNT(*) as count FROM agent_entities"),
+      safeQuery("SELECT COUNT(*) as count FROM agent_relations"),
+      safeQuery("SELECT COUNT(*) as count FROM agent_audit"),
+      safeQuery("SELECT COUNT(*) as count FROM agent_coordination"),
+      safeQuery(`
+        SELECT left(cryptographic_hash::text, 16) as anchor
+        FROM agent_memory
+        WHERE cryptographic_hash IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `),
+      safeQuery("SELECT AVG(importance_score) as avg FROM agent_memory"),
+      // Dynamic averages grouped by 6-hour historical time intervals
+      safeQuery(`
+        SELECT 
+          AVG(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' AND created_at < NOW() - INTERVAL '18 hours' THEN importance_score END) as val_24,
+          AVG(CASE WHEN created_at >= NOW() - INTERVAL '18 hours' AND created_at < NOW() - INTERVAL '12 hours' THEN importance_score END) as val_18,
+          AVG(CASE WHEN created_at >= NOW() - INTERVAL '12 hours' AND created_at < NOW() - INTERVAL '6 hours' THEN importance_score END) as val_12,
+          AVG(CASE WHEN created_at >= NOW() - INTERVAL '6 hours' THEN importance_score END) as val_6
+        FROM agent_memory
+      `),
+      // Actual hourly writes for the last 24 hours
+      safeQuery(`
+        SELECT 
+          EXTRACT(HOUR FROM created_at) as hr_val,
+          COUNT(*) as count
+        FROM agent_memory
+        WHERE created_at >= NOW() - INTERVAL '24 hours'
+        GROUP BY hr_val
+        ORDER BY hr_val ASC
+      `),
+      // Most recalled memories by importance score
+      safeQuery(`
+        SELECT content, importance_score
+        FROM agent_memory
+        ORDER BY importance_score DESC, created_at DESC
+        LIMIT 3
+      `),
+      // Semantic cache hit ratio
+      safeQuery(`
+        SELECT 
+          COUNT(CASE WHEN memory_type = 'semantic_cache' THEN 1 END) as cache_hits,
+          COUNT(*) as total
+        FROM agent_memory
+      `),
+      safeQuery(
+        "SELECT audit_id, agent_id, action, details, recorded_at FROM agent_audit ORDER BY recorded_at DESC LIMIT 10"
+      ),
+      safeQuery(`
+        SELECT COUNT(*) as count FROM (
+          SELECT content, COUNT(*) as cnt FROM agent_memory GROUP BY content HAVING COUNT(*) > 1
+        ) dupes
+      `),
+      // Production agents only (exclude test/benchmark/dev agents)
+      safeQuery(`
+        SELECT agent_id, COUNT(*) as memory_count 
+        FROM agent_memory 
+        WHERE agent_id IN ('mcp-agent', 'bastion-agent', 'groq-db-agent')
+        GROUP BY agent_id 
+        ORDER BY memory_count DESC
+      `),
+      // Memory type breakdown
+      safeQuery(`
+        SELECT memory_type, COUNT(*) as cnt
+        FROM agent_memory
+        GROUP BY memory_type
+        ORDER BY cnt DESC
+        LIMIT 8
+      `),
+    ]);
     // Mask exact duplicate count to avoid revealing data quality patterns
     const rawDuplicates = parseInt(String(anomalyCountRes.rows[0]?.count || "0"), 10);
     const duplicateCount = rawDuplicates === 0 ? 0 : rawDuplicates <= 5 ? "few" : rawDuplicates <= 20 ? "some" : "many";
@@ -135,13 +152,6 @@ export async function GET(request: Request) {
     const chainAnchor = String(chainAnchorRes.rows[0]?.anchor || "")
 
     // Memory type breakdown
-    const typeBreakdownRes = await safeQuery(`
-      SELECT memory_type, COUNT(*) as cnt
-      FROM agent_memory
-      GROUP BY memory_type
-      ORDER BY cnt DESC
-      LIMIT 8
-    `);
     const memoryTypes = typeBreakdownRes.rows.map((row) => ({
       type: String(row.memory_type),
       count: parseInt(String(row.cnt), 10),

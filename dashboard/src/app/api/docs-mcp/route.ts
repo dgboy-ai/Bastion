@@ -1,9 +1,12 @@
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { requireAuth } from "@/lib/api-auth";
 
 const DOCS_MCP_URL = "https://cockroachdb.mcp.kapa.ai";
 const TIMEOUT = 15000;
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     let body;
     try {

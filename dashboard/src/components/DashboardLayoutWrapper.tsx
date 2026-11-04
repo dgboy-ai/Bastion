@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import BackgroundParticles from "@/components/BackgroundParticles";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import GlobalErrorHandler from "@/components/GlobalErrorHandler";
 import { fetchWithTimeout } from "@/lib/fetch";
 import Link from "next/link";
 import Image from "next/image";
@@ -217,7 +216,6 @@ const handleNextTourStep = () => {
 
   return (
     <>
-      <GlobalErrorHandler />
       <BackgroundParticles />
       
       {/* Main dashboard layout */}

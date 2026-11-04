@@ -10,6 +10,7 @@ import { callLocalMcpTool } from "@/lib/local-mcp";
 import { randomUUID } from "crypto";
 import { callGroq as groqCall } from "@/lib/groq";
 import { callOpenRouter } from "@/lib/openrouter";
+import { requireAuth } from "@/lib/api-auth";
 
 export const maxDuration = 60;
 
@@ -910,9 +911,28 @@ async function callLLMWithRetry(system: string, messages: Array<{ role: string; 
   throw new Error("LLM failed after all retries");
 }
 
+const MAX_CHAT_BODY_BYTES = 1_048_576;
+
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
-    const body = await request.json();
+    const declaredLength = Number(request.headers.get("content-length") || "");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_CHAT_BODY_BYTES) {
+      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+    }
+
+    const rawBody = await request.text();
+    if (rawBody.length > MAX_CHAT_BODY_BYTES) {
+      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+    }
+
+    let body: { message?: string; history?: { role: string; content: string }[]; resumeApproval?: { approved: boolean; toolName: string; result: unknown } };
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     const { message, history = [], resumeApproval } = body;
 
     if (!message) {
@@ -1103,7 +1123,7 @@ Step 1 (memory_store) is DONE. You MUST now execute Step 2. Respond with EXACTLY
   } catch (error) {
     console.error("[Agent Chat] Error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Agent chat failed" },
+      { error: "Agent chat failed - try again later" },
       { status: 500 }
     );
   }

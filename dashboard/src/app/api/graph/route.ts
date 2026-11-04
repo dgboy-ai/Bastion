@@ -3,11 +3,8 @@ import { safeQuery } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -26,13 +23,15 @@ export async function GET(request: Request) {
       if (!validTimestamp && !validInterval) {
         return apiError("Invalid 'as_of' format — use ISO timestamp or relative interval (e.g., -5s, -1h)", 400, "INVALID_AS_OF");
       }
-      entitiesSql = entitiesSql.replace("WHERE valid_until IS NULL", "AS OF SYSTEM TIME $1 WHERE valid_until IS NULL");
-      relationsSql = relationsSql.replace("WHERE valid_until IS NULL", "AS OF SYSTEM TIME $1 WHERE valid_until IS NULL");
-      params.push(asOf);
+      // `as_of` is strictly validated above, so inline it as a quoted literal —
+      // CockroachDB requires a constant here and does not accept a bind parameter.
+      const asOfLiteral = `'${asOf}'`;
+      entitiesSql = entitiesSql.replace("WHERE valid_until IS NULL", `AS OF SYSTEM TIME ${asOfLiteral} WHERE valid_until IS NULL`);
+      relationsSql = relationsSql.replace("WHERE valid_until IS NULL", `AS OF SYSTEM TIME ${asOfLiteral} WHERE valid_until IS NULL`);
     }
 
-    const entitiesRes = await safeQuery(entitiesSql, params);
-    const relationsRes = await safeQuery(relationsSql, params);
+    const entitiesRes = await safeQuery(entitiesSql, params.length ? params : undefined);
+    const relationsRes = await safeQuery(relationsSql, params.length ? params : undefined);
 
     type EntityRow = Record<string, unknown>;
     type RelationRow = Record<string, unknown>;
@@ -61,11 +60,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   try {
     const body = await request.json();

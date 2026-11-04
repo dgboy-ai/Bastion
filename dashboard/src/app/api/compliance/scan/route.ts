@@ -1,8 +1,11 @@
 import { safeQuery } from "@/lib/db";
+import { requireAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

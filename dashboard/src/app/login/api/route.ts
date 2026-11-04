@@ -62,26 +62,24 @@ export async function POST(request: Request) {
   }
 
   // Validate passphrase against BASTION_LOGIN_PASSPHRASE or BASTION_API_KEY.
-  // In mock mode (no CRDB conn, no expected key), allow any passphrase for local dev.
+  // Fail closed in production: never allow login without a configured passphrase.
   const expectedPassphrase = process.env.BASTION_LOGIN_PASSPHRASE || process.env.BASTION_API_KEY;
 
-  if (expectedPassphrase) {
-    // Demo bypass for Vercel deployment
-    if (process.env.VERCEL && passphrase === "bastion") {
-      // Allow demo access
-    } else {
-      const { timingSafeEqual, scryptSync } = await import("crypto");
-      try {
-        const hashA = scryptSync(passphrase, "static-bastion-salt", 64);
-        const hashB = scryptSync(expectedPassphrase, "static-bastion-salt", 64);
-        if (!timingSafeEqual(hashA, hashB)) {
-          return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
-        }
-      } catch (err) {
-        // Fallback for edge environments if scrypt fails
-        if (passphrase !== expectedPassphrase) {
-          return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
-        }
+  if (!expectedPassphrase) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+  } else {
+    const { timingSafeEqual, scryptSync } = await import("crypto");
+    try {
+      const hashA = scryptSync(passphrase, "static-bastion-salt", 64);
+      const hashB = scryptSync(expectedPassphrase, "static-bastion-salt", 64);
+      if (!timingSafeEqual(hashA, hashB)) {
+        return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
+      }
+    } catch {
+      if (passphrase !== expectedPassphrase) {
+        return NextResponse.json({ error: "Invalid passphrase" }, { status: 401 });
       }
     }
   }

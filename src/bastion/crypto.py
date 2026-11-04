@@ -171,7 +171,16 @@ def _get_hmac_secret() -> bytes:
             except Exception as exc:
                 logger.warning("Failed to load HMAC secret from disk: %s", exc)
 
-            # Generate new secret and persist to disk
+            # Gap 5: Fail hard in production if no HMAC secret is provided or found
+            is_mock = os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
+            if not is_mock:
+                raise RuntimeError(
+                    "CRITICAL: BASTION_HMAC_SECRET must be set in the environment for production deployments. "
+                    "Auto-generating an ephemeral secret is unsafe because it will be lost on container/server restart, "
+                    "breaking the hash chain integrity."
+                )
+
+            # Generate new secret and persist to disk (for mock/dev mode)
             _hmac_secret = secrets.token_bytes(32)
             _hmac_secrets[1] = _hmac_secret
             _hmac_current_version = 1

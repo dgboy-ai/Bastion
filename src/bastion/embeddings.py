@@ -69,13 +69,11 @@ def _ensure_dim(emb: list[float]) -> list[float]:
         return emb
     if len(emb) > TARGET_DIM:
         return emb[:TARGET_DIM]
+    # Deterministic zero-padding preserving the native vector's relative geometry and inner products
     raw = list(emb)
-    digest = hashlib.sha256(str(emb).encode()).digest()
-    while len(raw) < TARGET_DIM:
-        for byte in digest:
-            raw.append(float(byte) / 127.5 - 1.0)
+    raw.extend([0.0] * (TARGET_DIM - len(raw)))
     norm = math.sqrt(sum(v * v for v in raw)) or 1.0
-    return [v / norm for v in raw[:TARGET_DIM]]
+    return [v / norm for v in raw]
 
 
 def _hash_fallback_embed(text: str) -> list[float]:

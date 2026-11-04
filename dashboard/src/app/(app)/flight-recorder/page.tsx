@@ -1,5 +1,4 @@
 import { safeQuery, isMockMode } from "@/lib/db";
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import FlightRecorderContent from "./Content";
 
 export const dynamic = "force-dynamic";
@@ -132,13 +131,13 @@ export default async function FlightRecorderPage() {
   const { captures, total: capturesTotal } = await getCapturedMemories();
 
   return (
-    <DashboardLayoutWrapper>
+    
       <FlightRecorderContent
         initialEvents={events}
         initialTotal={total}
         initialCaptures={captures}
         initialCapturesTotal={capturesTotal}
       />
-    </DashboardLayoutWrapper>
+    
   );
 }

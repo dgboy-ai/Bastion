@@ -1,9 +1,8 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import NeoSkeleton from "@/components/NeoSkeleton";
 
 export default function AgentLoading() {
   return (
-    <DashboardLayoutWrapper>
+    
       <div style={{ padding: "20px", display: "flex", gap: "24px", height: "calc(100vh - 80px)" }}>
         
         {/* Main Chat Area */}
@@ -50,6 +49,6 @@ export default function AgentLoading() {
         </div>
 
       </div>
-    </DashboardLayoutWrapper>
+    
   );
 }

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import KnowledgeGraph from "@/components/KnowledgeGraph";
+import dynamic from "next/dynamic";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { fetchWithTimeout } from "@/lib/fetch";
-import TrustRing from "@/components/TrustRing";
 import PoisoningAlerts from "@/components/PoisoningAlerts";
-import DriftChart from "@/components/DriftChart";
+
+const KnowledgeGraph = dynamic(() => import("@/components/KnowledgeGraph"), { ssr: false });
+const TrustRing = dynamic(() => import("@/components/TrustRing"), { ssr: false });
+const DriftChart = dynamic(() => import("@/components/DriftChart"), { ssr: false });
 
 interface Node {
   id: string;

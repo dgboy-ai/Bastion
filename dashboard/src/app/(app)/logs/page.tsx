@@ -1,5 +1,4 @@
 import { safeQuery, isMockMode } from "@/lib/db";
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import LogsContent from "./Content";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +48,8 @@ export default async function LogsPage() {
   const { memories, total, totalCount, poisonedCount, healedCount } = await getMemories();
 
   return (
-    <DashboardLayoutWrapper>
+    
       <LogsContent initialMemories={memories} initialTotal={total} totalCount={totalCount} poisonedCount={poisonedCount} healedCount={healedCount} />
-    </DashboardLayoutWrapper>
+    
   );
 }

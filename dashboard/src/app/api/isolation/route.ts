@@ -10,13 +10,11 @@ const defaultData = {
 
 export async function GET(request: Request) {
   const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
-    if (isMockMode()) {
-      return apiSuccess(defaultData, "short", { mock: true });
-    }
+  if (isMockMode()) {
+    return apiSuccess(defaultData, "short", { mock: true });
   }
 
   try {
@@ -44,7 +42,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (hasUserConn) {
       return apiError(
-        error instanceof Error ? `Connection rejected: ${error.message}` : "Connection rejected — check credentials",
+        "Connection rejected - check credentials",
         400,
         "CONNECTION_FAILED",
       );

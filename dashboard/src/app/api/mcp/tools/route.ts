@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { mcpPost, MCP_URL } from "@/lib/local-mcp";
+import { requireAuth } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     const { data: initData, sessionId } = await mcpPost(
       MCP_URL,

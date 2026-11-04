@@ -2,10 +2,13 @@ import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
 import { createHash, randomUUID } from "crypto";
+import { requireAuth } from "@/lib/api-auth";
 
 const BASTION_REGION = process.env.BASTION_CRDB_REGION || "aws-ap-south-1";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   const startTime = Date.now();
 
   try {
@@ -98,6 +101,6 @@ export async function POST() {
     });
   } catch (err) {
     console.error("[HealAll] Error:", err);
-    return apiError(err instanceof Error ? err.message : "Heal all failed", 500);
+    return apiError("Heal all failed - try again later", 500);
   }
 }

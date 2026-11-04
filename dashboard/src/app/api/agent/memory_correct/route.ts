@@ -4,11 +4,8 @@ import { requireAuth } from "@/lib/api-auth";
 import { computeHmacHash } from "@/lib/hash-chain";
 
 export async function POST(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
 
   try {
     const body = await request.json();
@@ -65,6 +62,6 @@ export async function POST(request: Request) {
       latency: latency + "ms",
     }, "dynamic");
   } catch (err) {
-    return apiError("memory_correct failed: " + (err instanceof Error ? err.message : String(err)), 500);
+    return apiError("memory_correct failed - try again later", 500);
   }
 }

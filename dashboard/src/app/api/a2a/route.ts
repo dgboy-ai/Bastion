@@ -2,11 +2,8 @@ import { apiSuccess } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
-  const hasUserConn = !!request.headers.get("x-bastion-conn");
-  if (!hasUserConn) {
-    const authError = requireAuth(request);
-    if (authError) return authError;
-  }
+  const authError = requireAuth(request);
+  if (authError) return authError;
   const agentCard = {
     name: "Bastion Memory Agent",
     description:

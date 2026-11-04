@@ -445,26 +445,16 @@ class BastionMemory:
                 content = redacted_content
         else:
             global _guard_bypass_counter
-            # Allowlist check: only authorized internal modules can bypass guard
-            import inspect as _inspect
-
-            _caller_module = None
-            try:
-                _frame = _inspect.currentframe()
-                if _frame and _frame.f_back and _frame.f_back.f_globals:
-                    _caller_module = _frame.f_back.f_globals.get("__name__", "")
-            except Exception:
-                pass
-            if _caller_module not in _GUARD_BYPASS_ALLOWLIST:
+            # Strong token check: only authorized internal callers with the token can bypass
+            if _guard_bypass_token is not True:
                 with _guard_bypass_lock:
                     _guard_bypass_counter += 1
                 import traceback
 
                 logger.warning(
-                    "Guard bypass from unauthorized module — BLOCKING",
+                    "Guard bypass attempted without valid token — BLOCKING",
                     agent_id=self.agent_id,
                     memory_type=memory_type,
-                    caller_module=_caller_module,
                     content_preview=content[:80] if content else "",
                     bypass_count=_guard_bypass_counter,
                     stack="\n".join(traceback.format_stack()[-4:-1]),
@@ -479,10 +469,9 @@ class BastionMemory:
                     )
             else:
                 logger.info(
-                    "Guard bypassed via _skip_guard=True (authorized internal caller)",
+                    "Guard bypassed via _skip_guard=True and valid token",
                     agent_id=self.agent_id,
                     memory_type=memory_type,
-                    caller_module=_caller_module,
                 )
 
         if self._mock:

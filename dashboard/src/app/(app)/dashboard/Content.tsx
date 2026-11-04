@@ -1814,6 +1814,14 @@ function ToolActivityAllModal({ usage, onClose }: { usage: any[]; onClose: () =>
 }
 
 /* ── Main Export ───────────────────────────────────────────── */
+function LiveClock() {
+  const [time, setTime] = useState(() => new Date().toLocaleTimeString());
+  useEffect(() => {
+    const iv = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  return <>{time}</>;
+}
 export default function DashboardPage() {
   const { isMock, dbName } = useConnection();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -1829,7 +1837,6 @@ export default function DashboardPage() {
   const [displayedMem, setDisplayedMem] = useState(0);
   const [displayedEnt, setDisplayedEnt] = useState(0);
   const [displayedRel, setDisplayedRel] = useState(0);
-  const [tick, setTick] = useState(0); // forces re-renders for live clock
   const [toolUsage, setToolUsage] = useState<any>(null);
   const [selectedTool, setSelectedTool] = useState<any>(null);
   const [selectedCrdbCategory, setSelectedCrdbCategory] = useState<{ label: string; color: string; icon: string; tools: { tool: string; calls: number }[] } | null>(null);
@@ -1927,12 +1934,6 @@ export default function DashboardPage() {
     return () => { clearInterval(iv); cancelAnimationFrame(countupRaf.current); };
   }, [fetchData]);
 
-  // Live clock tick
-  useEffect(() => {
-    const iv = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(iv);
-  }, []);
-
   // Real audit events are fetched via /api/audit in SecurityFeed component
   // System events are now real query results, not synthetic
 
@@ -1966,8 +1967,6 @@ export default function DashboardPage() {
       { score: base, timestamp: now.toISOString(), status: base > 0.3 ? "DRIFTING" : "HEALTHY" },
     ];
   }, [driftScore, driftPoints]);
-
-  const now = new Date();
   const activeBlockedCount = blockedCount;
 
   if (loading) {
@@ -2186,7 +2185,7 @@ export default function DashboardPage() {
           {/* right: actions */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: C.mute }}>
-              {now.toLocaleTimeString()}
+              <LiveClock />
             </div>
             <button onClick={fetchData} className="cmd-bar-btn primary">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

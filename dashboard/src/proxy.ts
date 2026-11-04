@@ -13,7 +13,18 @@ import type { NextRequest } from "next/server";
 // can explore the dashboard without logging in. In production these flags are
 // ignored and session auth is always enforced.
 
-const PROTECTED_PREFIXES = ["/dashboard", "/graph", "/logs", "/health", "/compliance", "/flight-recorder"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/graph",
+  "/logs",
+  "/health",
+  "/compliance",
+  "/flight-recorder",
+  "/agent",
+  "/playground",
+  "/skills",
+  "/soc",
+];
 
 function devAuthBypass(): boolean {
   if (process.env.NODE_ENV === "production") return false;
@@ -75,5 +86,16 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/graph/:path*", "/logs/:path*", "/health/:path*", "/compliance/:path*", "/flight-recorder/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/graph/:path*",
+    "/logs/:path*",
+    "/health/:path*",
+    "/compliance/:path*",
+    "/flight-recorder/:path*",
+    "/agent/:path*",
+    "/playground/:path*",
+    "/skills/:path*",
+    "/soc/:path*",
+  ],
 };

@@ -2,10 +2,13 @@ import { safeQuery } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api-response";
 import { embed, vecToString } from "@/lib/embeddings";
 import { createHash, randomUUID } from "crypto";
+import { requireAuth } from "@/lib/api-auth";
 
 const BASTION_REGION = process.env.BASTION_CRDB_REGION || "aws-ap-south-1";
 
 export async function POST(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   try {
     let body;
     try {
@@ -188,6 +191,6 @@ export async function POST(request: Request) {
     }, "dynamic");
   } catch (err) {
     console.error("[api/demo/heal] failed:", err instanceof Error ? err.message : "Unknown error");
-    return apiError("Heal demo failed — " + (err instanceof Error ? err.message : "Unknown"), 500);
+    return apiError("Heal demo failed - try again later", 500);
   }
 }

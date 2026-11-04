@@ -1,9 +1,8 @@
-import DashboardLayoutWrapper from "@/components/DashboardLayoutWrapper";
 import NeoSkeleton from "@/components/NeoSkeleton";
 
 export default function FlightRecorderLoading() {
   return (
-    <DashboardLayoutWrapper>
+    
       <div style={{ padding: "20px" }}>
         {/* Header Skeleton */}
         <div style={{ display: "flex", gap: "10px", marginBottom: "20px", alignItems: "center" }}>
@@ -21,6 +20,6 @@ export default function FlightRecorderLoading() {
         {/* Feed Skeleton */}
         <NeoSkeleton style={{ height: "400px" }} />
       </div>
-    </DashboardLayoutWrapper>
+    
   );
 }

@@ -15,15 +15,31 @@ export async function fetchWithTimeout(
   const method = (init?.method || "GET").toUpperCase();
   const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
+  let savedConn = "";
+  if (typeof window !== "undefined") {
+    try {
+      savedConn = sessionStorage.getItem("bastion_db_conn") || "";
+    } catch {}
+  }
+
+  // Cache is scoped to the selected database so results can never cross
+  // connections/tenants.
+  const cacheKey = `${urlStr}::${savedConn}`;
+
   // Client-side cache for GET requests to speed up page transitions
   if (method === "GET" && typeof window !== "undefined") {
-    const cached = globalCache.get(urlStr);
+    const cached = globalCache.get(cacheKey);
     if (cached && Date.now() < cached.expiry) {
       return new Response(JSON.stringify(cached.data), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
     }
+  }
+
+  // Any write invalidates cached reads.
+  if (method !== "GET") {
+    globalCache.clear();
   }
 
   const timeout = init?.timeout ?? DEFAULT_TIMEOUT;
@@ -33,12 +49,9 @@ export async function fetchWithTimeout(
   const headers = new Headers(init?.headers);
 
   if (typeof window !== "undefined") {
-    try {
-      const savedConn = sessionStorage.getItem("bastion_db_conn");
-      if (savedConn && !headers.has("x-bastion-conn")) {
-        headers.set("x-bastion-conn", savedConn);
-      }
-    } catch {}
+    if (savedConn && !headers.has("x-bastion-conn")) {
+      headers.set("x-bastion-conn", savedConn);
+    }
 
     if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
       const csrfToken = getCsrfToken();
@@ -59,7 +72,7 @@ export async function fetchWithTimeout(
     if (method === "GET" && res.ok && typeof window !== "undefined") {
       const cloned = res.clone();
       cloned.json().then(data => {
-        globalCache.set(urlStr, { data, expiry: Date.now() + 30000 }); // Cache for 30s
+        globalCache.set(cacheKey, { data, expiry: Date.now() + 5000 }); // 5s cache
       }).catch(() => {});
     }
 

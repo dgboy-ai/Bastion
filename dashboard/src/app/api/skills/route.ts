@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
+import { requireAuth } from "@/lib/api-auth";
 
 const SKILLS_DIR = join(process.cwd(), '..', '.agents', 'skills');
 
@@ -85,6 +86,8 @@ function getSkills(): Skill[] {
 }
 
 export async function GET(request: NextRequest) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   const url = new URL(request.url);
   const name = url.searchParams.get('name');
 
