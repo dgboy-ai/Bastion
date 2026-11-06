@@ -68,12 +68,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireAuth(request);
+  if (authError) return authError;
   return apiSuccess({
     endpoint: DOCS_MCP_URL,
     tools: ["search_docs", "get_started", "find_tutorial"],
-    description: "Public CockroachDB documentation MCP — no auth required",
-    clusterId: "9a423301-d502-42f4-a5e5-1e7664e4e025",
-    auth: "none (public)",
+    description: "Public CockroachDB documentation MCP",
+    auth: "none (upstream public)",
   }, "static");
 }

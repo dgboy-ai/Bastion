@@ -99,9 +99,7 @@ export async function GET(request: Request) {
         LIMIT 8
       `),
     ]);
-    // Mask exact duplicate count to avoid revealing data quality patterns
     const rawDuplicates = parseInt(String(anomalyCountRes.rows[0]?.count || "0"), 10);
-    const duplicateCount = rawDuplicates === 0 ? 0 : rawDuplicates <= 5 ? "few" : rawDuplicates <= 20 ? "some" : "many";
 
     const val24 = parseFloat(String(curveRes.rows[0]?.val_24 || "8.5"));
     const val18 = parseFloat(String(curveRes.rows[0]?.val_18 || "6.2"));

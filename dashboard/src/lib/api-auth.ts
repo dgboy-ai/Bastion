@@ -235,11 +235,18 @@ export function requireAuth(request: Request): NextResponse | null {
   if (rateLimit) return rateLimit;
 
   // Only the liveness/health endpoint is public (the landing page probes it).
-  // Every other GET requires a session or API key.
+  // Every other GET requires a session or API key. A health probe that carries
+  // a caller-supplied database connection is NOT public: it can trigger pool
+  // creation and schema migrations against an arbitrary host.
   const url = new URL(request.url);
   const PUBLIC_GET_ENDPOINTS = ["/api/health", "/api/auth/session"];
   if (request.method === "GET" && PUBLIC_GET_ENDPOINTS.some(ep => url.pathname === ep)) {
-    return null;
+    const hasDynamicConnection =
+      Boolean(request.headers.get("x-bastion-conn")) ||
+      /(?:^|;\s*)bastion_db_conn=/.test(request.headers.get("cookie") || "");
+    if (url.pathname !== "/api/health" || !hasDynamicConnection) {
+      return null;
+    }
   }
 
   // Check session cookie first (set by /login page)

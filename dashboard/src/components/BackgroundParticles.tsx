@@ -43,8 +43,12 @@ export default function BackgroundParticles() {
     if (!ctx) return;
 
     let visible = true;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     function onVisibility() {
       visible = !document.hidden;
+      if (visible && !reduceMotion && !rafRef.current) {
+        rafRef.current = requestAnimationFrame(draw);
+      }
     }
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -101,7 +105,7 @@ export default function BackgroundParticles() {
     function draw() {
       if (!ctx || !canvas) return;
       if (!visible) {
-        rafRef.current = requestAnimationFrame(draw);
+        rafRef.current = 0;
         return;
       }
       ctx.clearRect(0, 0, w, h);
@@ -162,12 +166,13 @@ export default function BackgroundParticles() {
         }
       }
 
-      rafRef.current = requestAnimationFrame(draw);
+      rafRef.current = reduceMotion ? 0 : requestAnimationFrame(draw);
     }
 
     rafRef.current = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibility);
     };

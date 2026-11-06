@@ -1,8 +1,23 @@
 import { safeQuery, isMockMode } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
+import { computeHmacHash } from "@/lib/hash-chain";
 
 export const dynamic = "force-dynamic";
+
+function parseMetadata(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 export async function GET(request: Request) {
   const authError = requireAuth(request);
@@ -12,7 +27,7 @@ export async function GET(request: Request) {
   }
   try {
     const result = await safeQuery(
-      `SELECT memory_id, cryptographic_hash, previous_hash, content, created_at, importance_score
+      `SELECT memory_id, cryptographic_hash, previous_hash, content, metadata, created_at, importance_score
        FROM agent_memory
        ORDER BY created_at DESC
        LIMIT 20`
@@ -38,12 +53,29 @@ export async function GET(request: Request) {
     }
 
     // Return hashes oldest → newest (reversed from DB order)
-    const hashes = rows.reverse().map((row) => ({
-      hash: row.cryptographic_hash as string,
-      prevHash: row.previous_hash as string,
-      content: (row.content as string) || "",
-      createdAt: row.created_at as string,
-    }));
+    // Recompute each HMAC (not just the prev-hash links) so a forged row with
+    // a self-consistent link cannot appear valid.
+    const hashesNewestFirst = rows.map((row) => {
+      const content = String(row.content ?? "");
+      const previousHash = row.previous_hash ? String(row.previous_hash) : null;
+      const expected = computeHmacHash(content, parseMetadata(row.metadata), previousHash);
+      const verified = expected === String(row.cryptographic_hash ?? "");
+      if (!verified) {
+        chainValid = false;
+        if (brokenIndex === -1) brokenIndex = rows.indexOf(row);
+      }
+      return {
+        memoryId: row.memory_id as string,
+        hash: row.cryptographic_hash as string,
+        prevHash: row.previous_hash as string,
+        content,
+        createdAt: row.created_at as string,
+        importanceScore: row.importance_score,
+        verified,
+      };
+    });
+
+    const hashes = hashesNewestFirst.reverse();
 
     return NextResponse.json({
       hashes,

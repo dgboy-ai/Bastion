@@ -4,6 +4,7 @@ import fs from "fs";
 import net from "net";
 import path from "path";
 import { lookup } from "dns/promises";
+import { readConnectionCookie } from "@/lib/connection-cookie";
 
 type QueryResultRow = Record<string, unknown>;
 
@@ -301,10 +302,18 @@ async function isAllowedDynamicHost(host: string): Promise<boolean> {
   }
 }
 
-async function getDynamicConnectionString(): Promise<string | null> {
+type DynamicTarget = {
+  cacheKey: string;
+  connectionString: string;
+  servername?: string;
+};
+
+async function getDynamicTarget(): Promise<DynamicTarget | null> {
   try {
     const h = await headers();
-    const conn = h.get("x-bastion-conn");
+    // Header form is kept for programmatic/API-key clients. Browser sessions
+    // use the encrypted, HttpOnly connection cookie instead.
+    const conn = h.get("x-bastion-conn") || (await readConnectionCookie());
     if (!conn) return null;
 
     let parsed: URL;
@@ -326,19 +335,43 @@ async function getDynamicConnectionString(): Promise<string | null> {
       return null;
     }
 
-    return conn;
+    // DNS pinning: validate the resolved addresses and connect to the exact IP
+    // that was checked, while keeping the original hostname for TLS SNI. This
+    // closes the lookup-then-connect DNS rebinding window.
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    let connectHost = hostname;
+    let servername: string | undefined;
+
+    if (!net.isIP(hostname)) {
+      const addresses = await lookup(hostname, { all: true });
+      if (addresses.length === 0 || addresses.some((entry) => isPrivateIp(entry.address))) {
+        console.warn("[DB] Dynamic connection rejected: unsafe resolved address");
+        return null;
+      }
+      connectHost = addresses[0].address;
+      servername = hostname;
+    }
+
+    const pinned = new URL(conn);
+    pinned.hostname = connectHost;
+
+    return {
+      cacheKey: conn,
+      connectionString: pinned.toString(),
+      servername,
+    };
   } catch {
     return null;
   }
 }
 
 async function getActivePool(): Promise<Pool | null> {
-  const dynamicConn = await getDynamicConnectionString();
+  const dynamic = await getDynamicTarget();
 
   // Dynamic connection (from Connect DB modal) validated against the host
   // allowlist / SSRF guard before use.
-  if (dynamicConn) {
-    let pool = poolCache.get(dynamicConn);
+  if (dynamic) {
+    let pool = poolCache.get(dynamic.cacheKey);
     if (!pool) {
       if (poolCache.size >= POOL_CACHE_MAX) {
         const oldest = poolCache.keys().next().value;
@@ -349,12 +382,15 @@ async function getActivePool(): Promise<Pool | null> {
         }
       }
       console.log("[Dynamic Pool] Initializing new CockroachDB connection pool...");
+      const rejectUnauthorized = !(
+        process.env.BASTION_DB_TLS_INSECURE === "true" &&
+        process.env.NODE_ENV !== "production"
+      );
       pool = new Pool({
-        connectionString: dynamicConn,
-        ssl:
-          process.env.BASTION_DB_TLS_INSECURE === "true" && process.env.NODE_ENV !== "production"
-            ? { rejectUnauthorized: false }
-            : { rejectUnauthorized: true },
+        connectionString: dynamic.connectionString,
+        ssl: dynamic.servername
+          ? { rejectUnauthorized, servername: dynamic.servername }
+          : { rejectUnauthorized },
         connectionTimeoutMillis: 15000,
         idleTimeoutMillis: 60000,
         statement_timeout: 15000,
@@ -362,7 +398,7 @@ async function getActivePool(): Promise<Pool | null> {
         max: 3,
       });
       poolCacheKeys.set(pool, `dynamic:${++dynamicPoolSeq}`);
-      poolCache.set(dynamicConn, pool);
+      poolCache.set(dynamic.cacheKey, pool);
     }
     await ensureSchema(pool);
     return pool;
@@ -385,7 +421,9 @@ export function isMockMode(): boolean {
 
 /** Check if mock is only the default (nothing configured by user), not explicit BASTION_MOCK=true. */
 export function isMockDefault(): boolean {
-  return isMockForced && !(process.env.BASTION_MOCK?.toLowerCase() === "true");
+  // True only when no database is configured and mock mode was not explicitly
+  // requested. (The previous expression could never be true.)
+  return !isMockForced && !connectionString;
 }
 
 /** Whether a real database pool is available. */

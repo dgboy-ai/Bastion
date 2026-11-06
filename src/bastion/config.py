@@ -8,7 +8,8 @@ from typing import ClassVar
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(".env.local", override=True)
+    # Real environment variables always win; .env files only fill gaps.
+    load_dotenv(".env.local", override=False)
     load_dotenv(".env", override=False)
     # Warn if .env.local contains real credentials (security check)
     import logging

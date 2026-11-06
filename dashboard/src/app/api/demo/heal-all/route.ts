@@ -85,7 +85,8 @@ export async function POST(request: Request) {
 
           totalHealed++;
         } catch (err) {
-          errors.push(`Failed to heal ${poisonId}: ${err instanceof Error ? err.message : "unknown"}`);
+          console.error(`[api/demo/heal-all] failed to heal ${poisonId}:`, err instanceof Error ? err.message : "unknown");
+          errors.push(`Failed to heal ${poisonId}`);
         }
       }
 

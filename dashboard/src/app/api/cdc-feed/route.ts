@@ -9,6 +9,9 @@ export const dynamic = "force-dynamic";
 
 const BUCKET = process.env.BASTION_S3_BUCKET || "bastion-memory-archives";
 const PREFIX = "cdc-live/";
+const RESPONSE_CACHE_MS = 4_000;
+
+let responseCache: { expires: number; payload: unknown } | null = null;
 
 /**
  * GET /api/cdc-feed?limit=30&after=<seq>
@@ -28,6 +31,12 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
 
+  if (responseCache && Date.now() < responseCache.expires) {
+    return NextResponse.json(responseCache.payload, {
+      headers: { "Cache-Control": "private, max-age=4" },
+    });
+  }
+
   try {
     // 1. Walk the newest day-prefixes first (cdc-live/YYYY-MM-DD/) so we read
     //    fresh changefeed flushes instead of the oldest lexically-first keys.
@@ -35,7 +44,7 @@ export async function GET(request: Request) {
     const dayMs = 86_400_000;
     const candidateFiles: { Key: string; LastModified?: Date; Size?: number }[] = [];
 
-    for (let offset = 0; offset < 7 && candidateFiles.length < 5; offset++) {
+    for (let offset = 0; offset < 7 && candidateFiles.length < 3; offset++) {
       const day = new Date(Date.now() - offset * dayMs);
       const dayPrefix = `${PREFIX}${day.toISOString().slice(0, 10)}/`;
       let token: string | undefined;
@@ -59,7 +68,7 @@ export async function GET(request: Request) {
     candidateFiles.sort((a, b) =>
       String(b.LastModified).localeCompare(String(a.LastModified))
     );
-    const dataFiles = candidateFiles.slice(0, 5);
+    const dataFiles = candidateFiles.slice(0, 3);
 
     const events: unknown[] = [];
     const seen = new Set<string>();
@@ -122,7 +131,7 @@ export async function GET(request: Request) {
       }
     };
 
-    const candidates = dataFiles.slice(0, 5);
+    const candidates = dataFiles.slice(0, 3);
     await Promise.all(candidates.map((o) => fetchFile(o.Key as string, o.Size ?? 0)));
 
     // If only oversized bulk files exist, read the single newest one anyway.
@@ -137,7 +146,7 @@ export async function GET(request: Request) {
     events.reverse();
     if (events.length > limit) events.length = limit;
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       data: {
         source: "cdc",
@@ -146,6 +155,10 @@ export async function GET(request: Request) {
         events,
         total: events.length,
       },
+    };
+    responseCache = { expires: Date.now() + RESPONSE_CACHE_MS, payload };
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "private, max-age=4" },
     });
   } catch (err) {
     console.error("[api/cdc-feed] failed:", err instanceof Error ? err.message : "Unknown error");

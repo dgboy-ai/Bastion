@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import { safeQuery } from "@/lib/db";
 import { computeHmacHash } from "@/lib/hash-chain";
 import { embedToVectorString } from "@/lib/embeddings";
 import { callLocalMcpTool } from "@/lib/local-mcp";
-import { randomUUID } from "crypto";
 import { callGroq as groqCall } from "@/lib/groq";
 import { callOpenRouter } from "@/lib/openrouter";
 import { requireAuth } from "@/lib/api-auth";
@@ -328,13 +327,14 @@ async function executeToolInline(name: string, args: Record<string, unknown>): P
       const agentId = (args.agentId as string) || "mcp-agent";
 
       const existing = await safeQuery(
-        "SELECT memory_id, content, previous_hash, metadata::text AS meta, cryptographic_hash FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
+        "SELECT memory_id, content, previous_hash, metadata::text AS meta, created_at FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
         [memoryId, agentId]
       );
       if (existing.rows.length === 0) {
         return { result: { error: "Memory not found" }, sql: "SELECT ... (not found)" };
       }
       const prevHash = existing.rows[0].previous_hash as string | null;
+      const createdAt = existing.rows[0].created_at;
       let metaJson: Record<string, unknown> | null = null;
       try {
         metaJson = JSON.parse((existing.rows[0].meta as string) || "null");
@@ -345,9 +345,35 @@ async function executeToolInline(name: string, args: Record<string, unknown>): P
       // Python forensic recomputation over the same row.
       const newHash = computeHmacHash(newContent, metaJson, prevHash);
       await safeQuery(
-        "UPDATE agent_memory SET content = $1, cryptographic_hash = $2 WHERE memory_id = $3 AND agent_id = $4",
+        "UPDATE agent_memory SET content = $1, cryptographic_hash = $2, needs_verification = FALSE WHERE memory_id = $3 AND agent_id = $4",
         [newContent, newHash, memoryId, agentId]
       );
+
+      const successors = await safeQuery(
+        "SELECT memory_id, content, metadata::text AS meta FROM agent_memory " +
+        "WHERE agent_id = $1 AND (created_at > $2 OR (created_at = $2 AND memory_id > $3)) " +
+        "ORDER BY created_at ASC, memory_id ASC",
+        [agentId, createdAt, memoryId]
+      );
+      let nextPrev = newHash;
+      for (const successor of successors.rows) {
+        let successorMeta: Record<string, unknown> | null = null;
+        try {
+          successorMeta = JSON.parse((successor.meta as string) || "null");
+        } catch {
+          successorMeta = null;
+        }
+        const successorHash = computeHmacHash(
+          String(successor.content || ""),
+          successorMeta,
+          nextPrev,
+        );
+        await safeQuery(
+          "UPDATE agent_memory SET previous_hash = $1, cryptographic_hash = $2, needs_verification = FALSE WHERE memory_id = $3 AND agent_id = $4",
+          [nextPrev, successorHash, successor.memory_id, agentId]
+        );
+        nextPrev = successorHash;
+      }
       return {
         result: {
           tool: "memory_correct",
@@ -606,17 +632,52 @@ async function managedMcpCallInline(tool: string, params: Record<string, unknown
   }
 }
 
-/** Inline fallback for ccloud_exec — runs the real ccloud binary with an allowlist. */
-const CCLOUD_ALLOWED = ["cluster list", "cluster info", "cluster regions", "auth whoami"];
+/** Inline fallback for ccloud_exec — runs the real ccloud binary without a shell. */
+const CCLOUD_ALLOWED = [
+  "cluster list",
+  "cluster info",
+  "cluster regions",
+  "cluster nodes",
+  "auth whoami",
+  "version",
+];
+// Only inert tokens: no whitespace, quotes, shell metacharacters, or redirections.
+const CCLOUD_SAFE_ARG = /^[a-zA-Z0-9_./:=@-]+$/;
+
+function buildCcloudArgs(command: string, extraArgs: string[]): string[] | null {
+  const commandParts = command.trim().split(/\s+/).filter(Boolean);
+  if (commandParts.length === 0) return null;
+  const args = [...commandParts, ...extraArgs.map((a) => String(a))];
+  if (args.some((arg) => !CCLOUD_SAFE_ARG.test(arg))) return null;
+
+  const normalized = commandParts.join(" ");
+  if (!CCLOUD_ALLOWED.some((allowed) => normalized === allowed || normalized.startsWith(allowed + " "))) {
+    return null;
+  }
+  if (!args.includes("--output") && !args.includes("-o")) {
+    args.push("--output", "json");
+  }
+  return args;
+}
+
 async function ccloudExecInline(command: string, args: string[] = []): Promise<Record<string, unknown>> {
-  if (!command || !CCLOUD_ALLOWED.some((a) => command.startsWith(a))) {
+  const safeArgs = buildCcloudArgs(command, args);
+  if (!safeArgs) {
     return { error: `Command not allowed: ${command}`, allowed: CCLOUD_ALLOWED };
   }
   try {
-    const full = `${command} ${args.join(" ")} -o json`.trim();
-    const out = execSync(full, { encoding: "utf-8", timeout: 30000 });
-    try { return { command: full, result: JSON.parse(out) }; }
-    catch { return { command: full, result: out }; }
+    const out = execFileSync(process.env.CCLOUD_PATH || "ccloud", safeArgs, {
+      encoding: "utf-8",
+      timeout: 30000,
+      env: {
+        ...process.env,
+        PATH: process.env.APPDATA
+          ? `${process.env.APPDATA}\\ccloud;${process.env.PATH || ""}`
+          : process.env.PATH || "",
+      },
+    });
+    try { return { command: safeArgs.join(" "), result: JSON.parse(out) }; }
+    catch { return { command: safeArgs.join(" "), result: out }; }
   } catch (err: any) {
     const stderr = err?.stderr?.toString?.() || "";
     return { error: stderr || (err instanceof Error ? err.message : String(err)) };
@@ -640,7 +701,6 @@ async function listAgentSkillsInline(): Promise<Record<string, unknown>> {
       skills.push({
         name: nameMatch?.[1]?.trim() || dir,
         description: descMatch?.[1]?.trim() || "",
-        path: skillDir,
       });
     }
   } catch (err) {
@@ -650,7 +710,15 @@ async function listAgentSkillsInline(): Promise<Record<string, unknown>> {
 }
 
 async function invokeAgentSkillInline(skillName: string, execute: boolean, params?: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const skillDir = path.join(SKILLS_DIR, skillName);
+  // Skill names are directory names only. Reject traversal and separators
+  // before resolving, then enforce containment after resolution.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(skillName) || skillName.includes("..")) {
+    return { error: `Invalid skill name: ${skillName}` };
+  }
+  const skillDir = path.resolve(SKILLS_DIR, skillName);
+  if (skillDir !== SKILLS_DIR && !skillDir.startsWith(SKILLS_DIR + path.sep)) {
+    return { error: `Invalid skill name: ${skillName}` };
+  }
   const skillFile = path.join(skillDir, "SKILL.md");
   if (!fs.existsSync(skillFile)) {
     return { error: `Skill not found: ${skillName}`, list: await listAgentSkillsInline() };

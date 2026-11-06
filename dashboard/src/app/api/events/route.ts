@@ -1,5 +1,5 @@
 import { getMockMemories } from "@/lib/mock-data";
-import { safeQuery, isMockMode, hasDbPool } from "@/lib/db";
+import { safeQuery, isMockMode } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 import { apiSuccess, apiError } from "@/lib/api-response";
 

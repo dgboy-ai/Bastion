@@ -1,4 +1,7 @@
 import { createHmac } from "crypto";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 // Match Python's json.dumps default ensure_ascii=True: every code unit > 0x7F
 // becomes a \uXXXX escape. JSON.stringify alone keeps non-ASCII literal, which
@@ -61,10 +64,7 @@ function resolveHmacSecret(): Buffer {
   }
   // Fallback: read ~/.bastion/hmac.key (raw secret bytes)
   try {
-    const fs = require("fs") as typeof import("fs");
-    const os = require("os") as typeof import("os");
-    const p = require("path") as typeof import("path");
-    const file = fs.readFileSync(p.join(os.homedir(), ".bastion", "hmac.key"));
+    const file = fs.readFileSync(path.join(os.homedir(), ".bastion", "hmac.key"));
     return Buffer.from(file);
   } catch {
     return Buffer.from("");

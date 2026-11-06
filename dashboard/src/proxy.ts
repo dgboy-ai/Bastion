@@ -26,6 +26,75 @@ const PROTECTED_PREFIXES = [
   "/soc",
 ];
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 120;
+const RATE_LIMIT_COOKIE = "bastion_rl";
+
+function readRateLimitCookie(request: NextRequest): { count: number; windowStart: number } | null {
+  const secret = process.env.BASTION_SESSION_SECRET;
+  const value = request.cookies.get(RATE_LIMIT_COOKIE)?.value;
+  if (!secret || !value) return null;
+
+  const parts = value.split(".");
+  if (parts.length !== 2) return null;
+  try {
+    const payloadBytes = Buffer.from(parts[0], "base64url");
+    const sig = Buffer.from(parts[1], "base64url");
+    if (sig.length !== 32) return null;
+    const expected = createHmac("sha256", secret).update(payloadBytes).digest();
+    if (!timingSafeEqual(sig, expected)) return null;
+
+    const payload = JSON.parse(payloadBytes.toString("utf8"));
+    if (typeof payload.count !== "number" || typeof payload.windowStart !== "number") return null;
+    if (Date.now() - payload.windowStart > RATE_LIMIT_WINDOW_MS * 2) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function writeRateLimitCookie(count: number, windowStart: number): string | null {
+  const secret = process.env.BASTION_SESSION_SECRET;
+  if (!secret) return null;
+  const payload = JSON.stringify({ count, windowStart });
+  const payloadB64 = Buffer.from(payload).toString("base64url");
+  const sig = createHmac("sha256", secret).update(Buffer.from(payload)).digest().toString("base64url");
+  return `${payloadB64}.${sig}`;
+}
+
+function applyApiRateLimit(request: NextRequest): NextResponse | null {
+  if (process.env.NODE_ENV !== "production") return null;
+
+  const now = Date.now();
+  const existing = readRateLimitCookie(request);
+  let count = 1;
+  let windowStart = now;
+  if (existing && now - existing.windowStart < RATE_LIMIT_WINDOW_MS) {
+    count = existing.count + 1;
+    windowStart = existing.windowStart;
+  }
+
+  if (count > RATE_LIMIT_MAX) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again later.", code: "RATE_LIMITED" },
+      { status: 429, headers: { "Retry-After": "60" } },
+    );
+  }
+
+  const value = writeRateLimitCookie(count, windowStart);
+  const response = NextResponse.next();
+  if (value) {
+    response.cookies.set(RATE_LIMIT_COOKIE, value, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+      path: "/",
+      maxAge: 120,
+    });
+  }
+  return response;
+}
+
 function devAuthBypass(): boolean {
   if (process.env.NODE_ENV === "production") return false;
   if (process.env.BASTION_DEV_MODE === "true") return true;
@@ -70,7 +139,14 @@ function isValidSession(request: NextRequest): boolean {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only guard page routes; leave API routes, login, static assets alone.
+  // API routes enforce auth themselves, but the signed-cookie rate-limit
+  // counter must be incremented here because route handlers cannot easily
+  // set a cookie on an otherwise-successful response.
+  if (pathname.startsWith("/api/")) {
+    return applyApiRateLimit(request) ?? NextResponse.next();
+  }
+
+  // Only guard page routes; leave login and static assets alone.
   const isProtected = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
@@ -87,6 +163,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/api/:path*",
     "/dashboard/:path*",
     "/graph/:path*",
     "/logs/:path*",

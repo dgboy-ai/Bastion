@@ -1037,9 +1037,20 @@ def create_a2a_server(
     _mcp_keys_raw = os.environ.get("BASTION_MCP_API_KEYS", "")
     if _mcp_keys_raw and not _api_key:
         _api_key = _mcp_keys_raw.split(",")[0].strip()
+    # Fail closed by default. Anonymous access must be explicitly opted into
+    # (intended for isolated local development only).
+    _allow_anonymous = os.environ.get("BASTION_A2A_ALLOW_ANONYMOUS", "").lower() in ("true", "1", "yes")
     if not _api_key:
-        # Allow mock mode to start without API key (auth enforced on requests via _verify_api_key)
-        logger.warning("No API key configured — auth will be enforced on requests")
+        if _allow_anonymous:
+            logger.warning(
+                "No API key configured and BASTION_A2A_ALLOW_ANONYMOUS is enabled — "
+                "all callers will be treated as reader role"
+            )
+        else:
+            logger.error(
+                "No API key configured — all non-health A2A requests will be rejected "
+                "with 503 until BASTION_API_KEY or BASTION_MCP_API_KEYS is set"
+            )
 
     # Brute-force protection: DB-backed with in-memory LRU cache for hot path.
     # Survives server restarts and works across multiple instances.
@@ -1266,6 +1277,11 @@ def create_a2a_server(
                     return JSONResponse({"error": "Too many failed attempts, temporarily locked out"}, status_code=429)
                 auth = request.headers.get("Authorization", "")
                 token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+                if not _api_key and not _allow_anonymous:
+                    return JSONResponse(
+                        {"error": "A2A authentication is not configured"},
+                        status_code=503,
+                    )
                 if _api_key and (not token or not _verify_api_key(token)):
                     _record_auth_failure(client_ip)
                     return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -2461,7 +2477,14 @@ def main():
 
     mock = "--mock" in sys.argv or os.environ.get("BASTION_MOCK", "").lower() in ("true", "1", "yes")
     port = int(os.environ.get("A2A_PORT", os.environ.get("PORT", "9998")))
-    host = os.environ.get("A2A_HOST", "0.0.0.0")
+    # Bind to loopback by default. Containers/Render must opt in explicitly via
+    # BASTION_A2A_HOST=0.0.0.0 (RENDER is detected as a convenience).
+    default_host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
+    host = (
+        os.environ.get("BASTION_A2A_HOST")
+        or os.environ.get("A2A_HOST")
+        or default_host
+    )
 
     app, memory = create_a2a_server(mock=mock, host=host, port=port)
 

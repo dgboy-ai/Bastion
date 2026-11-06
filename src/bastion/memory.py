@@ -1161,42 +1161,66 @@ class BastionMemory:
         conn = pool.acquire(timeout=30.0)
         try:
             self._set_rls_context(conn)
+            from bastion.crypto import compute_hash
+
             def _op(cur):
-                # First, get the previous_hash of the row to be deleted
                 cur.execute(
-                    "SELECT previous_hash FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    "SELECT previous_hash, created_at FROM agent_memory "
+                    "WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
                 row = cur.fetchone()
                 if not row:
                     return False
-                prev_hash = row[0] if hasattr(row, "_mapping") else row[0]
+                prev_hash = row[0]
+                target_created_at = row[1]
 
-                # Find the next row in the chain and update its previous_hash to skip the deleted row
-                cur.execute(
-                    "SELECT memory_id FROM agent_memory "
-                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory WHERE memory_id = %s) "
-                    "ORDER BY created_at ASC LIMIT 1",
-                    (self.agent_id, memory_id),
-                )
-                next_row = cur.fetchone()
-                if next_row:
-                    next_id = next_row[0] if hasattr(next_row, "_mapping") else next_row[0]
-                    cur.execute(
-                        "UPDATE agent_memory SET previous_hash = %s, needs_verification = true WHERE memory_id = %s AND agent_id = %s",
-                        (prev_hash, next_id, self.agent_id),
-                    )
-
-                # Now delete the row
                 cur.execute(
                     "DELETE FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
                 if cur.rowcount == 0:
                     return False
+
+                # Re-seal every downstream row. Only updating the immediate
+                # successor's previous_hash would leave its own hash and all
+                # later hashes invalid.
                 cur.execute(
-                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) VALUES (%s, %s, %s, %s)",
-                    (self.agent_id, str(uuid.uuid4()), "memory_delete", json.dumps({"memory_id": memory_id, "prev_hash": prev_hash})),
+                    "SELECT memory_id, content, metadata FROM agent_memory "
+                    "WHERE agent_id = %s AND (created_at > %s "
+                    "OR (created_at = %s AND memory_id > %s)) "
+                    "ORDER BY created_at ASC, memory_id ASC",
+                    (self.agent_id, target_created_at, target_created_at, memory_id),
+                )
+                resealed = 0
+                next_prev = prev_hash or ""
+                for mid, content, metadata in cur.fetchall():
+                    meta_dict = dict(metadata) if metadata else {}
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
+                    new_hash = compute_hash(content or "", meta_dict, next_prev)
+                    cur.execute(
+                        "UPDATE agent_memory SET previous_hash = %s, cryptographic_hash = %s, "
+                        "needs_verification = FALSE WHERE memory_id = %s AND agent_id = %s",
+                        (next_prev, new_hash, mid, self.agent_id),
+                    )
+                    next_prev = new_hash
+                    resealed += 1
+
+                cur.execute(
+                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (
+                        self.agent_id,
+                        str(uuid.uuid4()),
+                        "memory_delete",
+                        json.dumps({
+                            "memory_id": memory_id,
+                            "prev_hash": prev_hash,
+                            "resealed_successors": resealed,
+                        }),
+                    ),
                 )
                 return True
             return self._retry_write(conn, _op)
@@ -2349,12 +2373,23 @@ class BastionMemory:
 
             def _op(cur):
                 cur.execute(
-                    "SELECT previous_hash FROM agent_memory WHERE memory_id = %s AND agent_id = %s",
+                    "SELECT previous_hash, metadata, created_at FROM agent_memory "
+                    "WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
                 prev_row = cur.fetchone()
-                prev_hash = prev_row[0] if prev_row else None
-                new_hash = compute_hash(new_content, metadata, prev_hash)
+                if not prev_row:
+                    return None
+                prev_hash, existing_metadata, target_created_at = prev_row
+
+                # If the caller did not supply metadata, the UPDATE keeps the
+                # stored metadata. The hash must therefore be computed over the
+                # metadata that will actually be stored, not over None.
+                effective_metadata = metadata if metadata is not None else dict(existing_metadata or {})
+                effective_metadata.pop("_precomputed_embedding", None)
+                effective_metadata.pop("_trust_level", None)
+                effective_metadata.pop("_source_provenance", None)
+                new_hash = compute_hash(new_content, effective_metadata, prev_hash)
                 cur.execute(
                     "UPDATE agent_memory SET content = %s, metadata = COALESCE(%s, metadata), "
                     "cryptographic_hash = %s "
@@ -2364,18 +2399,47 @@ class BastionMemory:
                 row = cur.fetchone()
                 if not row:
                     return None
+
+                # A changed hash invalidates every later link. Re-seal the
+                # suffix immediately so the chain is verifiable without a
+                # separate heal pass.
                 cur.execute(
-                    "UPDATE agent_memory SET needs_verification = TRUE "
-                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
-                    "WHERE memory_id = %s)",
-                    (self.agent_id, memory_id),
+                    "SELECT memory_id, content, metadata FROM agent_memory "
+                    "WHERE agent_id = %s AND (created_at > %s "
+                    "OR (created_at = %s AND memory_id > %s)) "
+                    "ORDER BY created_at ASC, memory_id ASC",
+                    (self.agent_id, target_created_at, target_created_at, memory_id),
                 )
-                downstream_count = cur.rowcount
-                logger.warning(
-                    "Memory corrected — %d downstream records flagged for hash re-verification at memory_id=%s. "
-                    "Run 'memory_heal' to reseal.",
-                    downstream_count,
-                    memory_id,
+                resealed = 0
+                next_prev = new_hash
+                for mid, content, meta in cur.fetchall():
+                    meta_dict = dict(meta) if meta else {}
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
+                    next_hash = compute_hash(content or "", meta_dict, next_prev)
+                    cur.execute(
+                        "UPDATE agent_memory SET previous_hash = %s, cryptographic_hash = %s, "
+                        "needs_verification = FALSE WHERE memory_id = %s AND agent_id = %s",
+                        (next_prev, next_hash, mid, self.agent_id),
+                    )
+                    next_prev = next_hash
+                    resealed += 1
+
+                cur.execute(
+                    "INSERT INTO agent_audit (agent_id, workflow_id, action, details) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (
+                        self.agent_id,
+                        str(uuid.uuid4()),
+                        "memory_correct",
+                        json.dumps({
+                            "memory_id": memory_id,
+                            "previous_hash": prev_hash,
+                            "new_hash": new_hash,
+                            "resealed_successors": resealed,
+                        }),
+                    ),
                 )
                 return MemoryRecord.from_row(row)
             return self._retry_write(conn, _op)
@@ -2401,7 +2465,7 @@ class BastionMemory:
 
             def _op(cur):
                 cur.execute(
-                    "SELECT memory_id, metadata, previous_hash FROM agent_memory "
+                    "SELECT memory_id, metadata, previous_hash, created_at FROM agent_memory "
                     "WHERE memory_id = %s AND agent_id = %s",
                     (memory_id, self.agent_id),
                 )
@@ -2410,6 +2474,7 @@ class BastionMemory:
                     return None
                 current_metadata = dict(row[1]) if row[1] else {}
                 prev_hash = row[2]
+                target_created_at = row[3]
                 fixed_ops = []
                 for op in patch_ops:
                     if op.get("op") == "replace":
@@ -2443,21 +2508,42 @@ class BastionMemory:
                     "WHERE memory_id = %s AND agent_id = %s",
                     (patched_json, new_hash, memory_id, self.agent_id),
                 )
-                # Invalidate downstream hashes (same pattern as _correct_memory_real)
+                # Re-seal the suffix immediately (same pattern as
+                # _correct_memory_real) so the chain stays verifiable.
                 cur.execute(
-                    "UPDATE agent_memory SET needs_verification = TRUE "
-                    "WHERE agent_id = %s AND created_at > (SELECT created_at FROM agent_memory "
-                    "WHERE memory_id = %s)",
-                    (self.agent_id, memory_id),
+                    "SELECT memory_id, content, metadata FROM agent_memory "
+                    "WHERE agent_id = %s AND (created_at > %s "
+                    "OR (created_at = %s AND memory_id > %s)) "
+                    "ORDER BY created_at ASC, memory_id ASC",
+                    (self.agent_id, target_created_at, target_created_at, memory_id),
                 )
-                downstream_count = cur.rowcount
-                if downstream_count > 0:
-                    logger.warning(
-                        "Metadata patched — %d downstream records flagged for hash re-verification. "
-                        "Run 'memory_heal' to reseal.",
-                        downstream_count,
+                resealed = 0
+                next_prev = new_hash
+                for mid, content, meta in cur.fetchall():
+                    meta_dict = dict(meta) if meta else {}
+                    meta_dict.pop("_precomputed_embedding", None)
+                    meta_dict.pop("_trust_level", None)
+                    meta_dict.pop("_source_provenance", None)
+                    next_hash = compute_hash(content or "", meta_dict, next_prev)
+                    cur.execute(
+                        "UPDATE agent_memory SET previous_hash = %s, cryptographic_hash = %s, "
+                        "needs_verification = FALSE WHERE memory_id = %s AND agent_id = %s",
+                        (next_prev, next_hash, mid, self.agent_id),
                     )
-                return {"memory_id": memory_id, "metadata": patched}
+                    next_prev = next_hash
+                    resealed += 1
+
+                if resealed > 0:
+                    logger.info(
+                        "Metadata patched — %d downstream records re-sealed at memory_id=%s",
+                        resealed,
+                        memory_id,
+                    )
+                return {
+                    "memory_id": memory_id,
+                    "metadata": patched,
+                    "resealed_successors": resealed,
+                }
             return self._retry_write(conn, _op)
         finally:
             pool.release(conn)

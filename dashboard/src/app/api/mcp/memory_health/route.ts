@@ -1,5 +1,5 @@
 import { safeQuery } from "@/lib/db";
-import { apiSuccess, apiError } from "@/lib/api-response";
+import { apiSuccess } from "@/lib/api-response";
 import { requireAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {

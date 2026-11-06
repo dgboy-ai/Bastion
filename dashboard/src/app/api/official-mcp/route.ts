@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from "@/lib/api-auth";
 
 const MANAGED_MCP_URL = 'https://cockroachlabs.cloud/mcp';
-const CLUSTER_ID = process.env.COCKROACHDB_MCP_CLUSTER_ID || '9a423301-d502-42f4-a5e5-1e7664e4e025';
+const CLUSTER_ID =
+  process.env.COCKROACHDB_MCP_CLUSTER_ID || process.env.COCKROACHDB_CLUSTER_ID || '';
 
 const READ_TOOLS = [
   'list_clusters',
@@ -67,9 +68,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const text = await response.text();
       return NextResponse.json(
-        { error: `MCP server returned ${response.status}`, details: text },
+        { error: `MCP server returned ${response.status}` },
         { status: response.status }
       );
     }
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
       { error: 'Failed to call managed MCP server' },
       { status: 500 }
@@ -111,17 +111,8 @@ export async function GET(request: NextRequest) {
     status: 'ok',
     endpoint: MANAGED_MCP_URL,
     auth: 'OAuth (recommended) or API key via service account (Advanced plan)',
-    clusterId: CLUSTER_ID,
+    configured: Boolean(CLUSTER_ID && process.env.COCKROACHDB_MCP_API_KEY),
     tools: [...READ_TOOLS, ...(ALLOW_WRITES ? WRITE_TOOLS : [])],
-    oauthConfig: {
-      url: 'https://cockroachlabs.cloud/mcp',
-      clusterId: CLUSTER_ID,
-      header: 'mcp-cluster-id',
-      note: 'Add mcp-cluster-id header to scope queries to our cluster. OAuth flow works on all plans.',
-    },
-    plan: 'Basic (OAuth browser flow)',
-    note: 'Proxies to the official CockroachDB Cloud Managed MCP. OAuth flow opens in browser.',
-    clusterName: 'bastion-memory',
-    region: 'aws-ap-south-1',
+    note: 'Proxies to the official CockroachDB Cloud Managed MCP. Cluster identity is held server-side.',
   });
 }

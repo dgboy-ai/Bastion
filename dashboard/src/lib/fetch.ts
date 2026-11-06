@@ -15,16 +15,9 @@ export async function fetchWithTimeout(
   const method = (init?.method || "GET").toUpperCase();
   const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
-  let savedConn = "";
-  if (typeof window !== "undefined") {
-    try {
-      savedConn = sessionStorage.getItem("bastion_db_conn") || "";
-    } catch {}
-  }
-
-  // Cache is scoped to the selected database so results can never cross
-  // connections/tenants.
-  const cacheKey = `${urlStr}::${savedConn}`;
+  // The selected database lives in an encrypted HttpOnly cookie, so cached
+  // reads cannot leak across connections within this browser session.
+  const cacheKey = urlStr;
 
   // Client-side cache for GET requests to speed up page transitions
   if (method === "GET" && typeof window !== "undefined") {
@@ -49,10 +42,6 @@ export async function fetchWithTimeout(
   const headers = new Headers(init?.headers);
 
   if (typeof window !== "undefined") {
-    if (savedConn && !headers.has("x-bastion-conn")) {
-      headers.set("x-bastion-conn", savedConn);
-    }
-
     if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
       const csrfToken = getCsrfToken();
       if (csrfToken && !headers.has("x-csrf-token")) {
@@ -69,11 +58,15 @@ export async function fetchWithTimeout(
       credentials: "include",
     });
 
-    if (method === "GET" && res.ok && typeof window !== "undefined") {
-      const cloned = res.clone();
-      cloned.json().then(data => {
-        globalCache.set(cacheKey, { data, expiry: Date.now() + 5000 }); // 5s cache
-      }).catch(() => {});
+    if (method === "GET" && res.ok && typeof window !== "undefined" && typeof res.clone === "function") {
+      try {
+        const cloned = res.clone();
+        cloned.json().then(data => {
+          globalCache.set(cacheKey, { data, expiry: Date.now() + 5000 }); // 5s cache
+        }).catch(() => {});
+      } catch {
+        // ignore clone error
+      }
     }
 
     return res;

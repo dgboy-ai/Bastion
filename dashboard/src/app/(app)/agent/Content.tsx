@@ -465,8 +465,19 @@ function CdcLiveFeed() {
       }
     };
     load();
-    const iv = setInterval(load, 5000);
-    return () => { active = false; clearInterval(iv); };
+    const iv = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      load();
+    }, 15000);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   return (

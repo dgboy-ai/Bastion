@@ -51,21 +51,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         const json = await res.json();
         const mockActive = json.meta?.mock === true;
         setIsMock(mockActive);
-        
-        const currentConn = sessionStorage.getItem("bastion_db_conn");
-        if (!mockActive && currentConn) {
-          try {
-            const urlStr = currentConn.replace("postgresql://", "http://");
-            const parsed = new URL(urlStr);
-            setDbName(parsed.hostname.slice(0, 16) + (parsed.hostname.length > 16 ? "..." : ""));
-          } catch {
-            setDbName("Live CockroachDB");
-          }
-        } else if (!mockActive) {
-          setDbName("CockroachDB Serverless");
-        } else {
-          setDbName("Simulated DB");
-        }
+        setDbName(mockActive ? "Simulated DB" : "CockroachDB Serverless");
       }
     } catch (e) {
       console.error("Failed to fetch database health status:", e);
@@ -79,14 +65,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     // the async function boundary.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     checkConnectionStatus();
-    
-    try {
-      const saved = sessionStorage.getItem("bastion_db_conn");
-      if (saved) {
-        setDbConnInput(saved);
-        setHasSavedConn(true);
-      }
-    } catch {} // sessionStorage unavailable in private browsing
+
+    fetchWithTimeout("/api/connection")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json?.data?.connected) {
+          setHasSavedConn(true);
+          if (json.data.label) setDbName(json.data.label);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleSaveConnection = async (e: React.FormEvent) => {
@@ -97,7 +86,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     setAuthError("");
 
     if (!dbConnInput.trim()) {
-      try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
+      await fetchWithTimeout("/api/connection", { method: "DELETE" }).catch(() => {});
+      setHasSavedConn(false);
       setTestingConn(false);
       setIsModalOpen(false);
       window.location.reload();
@@ -111,8 +101,20 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // Save temporarily so fetchWithTimeout sends x-bastion-conn header
-      sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+      const saveRes = await fetchWithTimeout("/api/connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionString: dbConnInput.trim() }),
+      });
+      const saveJson = await saveRes.json().catch(() => ({}));
+      if (saveRes.status === 401 || saveJson.code === "UNAUTHORIZED") {
+        setNeedsAuth(true);
+        setTestingConn(false);
+        return;
+      }
+      if (!saveRes.ok || saveJson.success === false) {
+        throw new Error(saveJson.error || "Could not save connection");
+      }
 
       // Fresh clusters need to run all schema migrations on first connect, so
       // allow extra time for the health check to complete.
@@ -137,7 +139,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       setIsModalOpen(false);
       window.location.reload();
     } catch (err: unknown) {
-      try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
+      await fetchWithTimeout("/api/connection", { method: "DELETE" }).catch(() => {});
       setHasSavedConn(false);
       setConnError(err instanceof Error ? err.message : "Connection failed");
       setTestingConn(false);
@@ -166,8 +168,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       // Retry the connection test
       setTestingConn(true);
       try {
-        // Save temporarily so fetchWithTimeout sends x-bastion-conn header
-        sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
+        const saveRes = await fetchWithTimeout("/api/connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionString: dbConnInput.trim() }),
+        });
+        const saveJson = await saveRes.json().catch(() => ({}));
+        if (!saveRes.ok || saveJson.success === false) {
+          throw new Error(saveJson.error || "Could not save connection");
+        }
 
         const healthRes = await fetchWithTimeout("/api/health");
         const healthJson = await healthRes.json();
@@ -177,13 +186,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         if (healthJson.meta?.mock) {
           throw new Error("API fallback to mock data — connection string invalid or unreachable");
         }
-        sessionStorage.setItem("bastion_db_conn", dbConnInput.trim());
         setHasSavedConn(true);
         setTestingConn(false);
         setIsModalOpen(false);
         window.location.reload();
       } catch (retryErr: unknown) {
-        try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
+        await fetchWithTimeout("/api/connection", { method: "DELETE" }).catch(() => {});
         setHasSavedConn(false);
         setConnError(retryErr instanceof Error ? retryErr.message : "Connection failed after auth");
         setTestingConn(false);
@@ -194,8 +202,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleClearConnection = () => {
-    try { sessionStorage.removeItem("bastion_db_conn"); } catch {}
+  const handleClearConnection = async () => {
+    await fetchWithTimeout("/api/connection", { method: "DELETE" }).catch(() => {});
     setHasSavedConn(false);
     setDbConnInput("");
     setIsModalOpen(false);

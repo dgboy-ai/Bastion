@@ -115,8 +115,35 @@ export async function GET(request: Request) {
     },
   };
 
-  const corsOrigins = (process.env.CORS_ALLOW_ORIGINS || "").split(",").map(o => o.trim()).filter(Boolean);
-  const corsHeader = corsOrigins.length > 0 ? corsOrigins[0] : "null";
-  return apiSuccess(agentCard, 'static', undefined, { "Access-Control-Allow-Origin": corsHeader });
+  const corsOrigin = getCorsOrigin();
+  return apiSuccess(
+    agentCard,
+    'static',
+    undefined,
+    corsOrigin ? { "Access-Control-Allow-Origin": corsOrigin } : undefined,
+  );
+}
+
+function getCorsOrigin(): string | null {
+  const configured = (process.env.CORS_ALLOW_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return configured.length > 0 ? configured[0] : null;
+}
+
+export async function OPTIONS() {
+  const origin = getCorsOrigin();
+  if (!origin) return new Response(null, { status: 204 });
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID",
+      "Access-Control-Max-Age": "86400",
+      Vary: "Origin",
+    },
+  });
 }
 

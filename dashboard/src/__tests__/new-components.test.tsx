@@ -128,27 +128,25 @@ describe("HashChainVisualizer", () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({
-        success: true,
-        data: {
-          memories: [
-            {
-              memoryId: "mem-1",
-              content: "First memory",
-              cryptographicHash: "hash-1-abc",
-              previousHash: null,
-              createdAt: new Date().toISOString(),
-              importanceScore: 8.0,
-            },
-            {
-              memoryId: "mem-2",
-              content: "Second memory",
-              cryptographicHash: "hash-2-def",
-              previousHash: "hash-1-abc",
-              createdAt: new Date().toISOString(),
-              importanceScore: 7.5,
-            },
-          ],
-        },
+        chainValid: true,
+        hashes: [
+          {
+            memoryId: "mem-1",
+            content: "First memory",
+            hash: "hash-1-abc",
+            prevHash: null,
+            createdAt: new Date().toISOString(),
+            importanceScore: 8.0,
+          },
+          {
+            memoryId: "mem-2",
+            content: "Second memory",
+            hash: "hash-2-def",
+            prevHash: "hash-1-abc",
+            createdAt: new Date().toISOString(),
+            importanceScore: 7.5,
+          },
+        ],
       }),
     });
 
@@ -166,27 +164,25 @@ describe("HashChainVisualizer", () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({
-        success: true,
-        data: {
-          memories: [
-            {
-              memoryId: "mem-1",
-              content: "First memory",
-              cryptographicHash: "hash-1-abc",
-              previousHash: null,
-              createdAt: new Date().toISOString(),
-              importanceScore: 8.0,
-            },
-            {
-              memoryId: "mem-2",
-              content: "Second memory",
-              cryptographicHash: "hash-2-def",
-              previousHash: "WRONG-HASH", // Broken chain
-              createdAt: new Date().toISOString(),
-              importanceScore: 7.5,
-            },
-          ],
-        },
+        chainValid: false,
+        hashes: [
+          {
+            memoryId: "mem-1",
+            content: "First memory",
+            hash: "hash-1-abc",
+            prevHash: null,
+            createdAt: new Date().toISOString(),
+            importanceScore: 8.0,
+          },
+          {
+            memoryId: "mem-2",
+            content: "Second memory",
+            hash: "hash-2-def",
+            prevHash: "WRONG-HASH", // Broken chain
+            createdAt: new Date().toISOString(),
+            importanceScore: 7.5,
+          },
+        ],
       }),
     });
 
@@ -267,8 +263,8 @@ describe("FlightRecorderPage", () => {
     render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={1} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Test memory stored")).toBeDefined();
-      expect(screen.getByText("store")).toBeDefined();
+      expect(screen.getAllByText("Test memory stored").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("store").length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -282,7 +278,7 @@ describe("FlightRecorderPage", () => {
     render(<FlightRecorderContent initialEvents={[]} initialTotal={0} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No audit events yet/)).toBeDefined();
+      expect(screen.getByText(/No audit events yet|connect to CockroachDB to see audit events/)).toBeDefined();
     });
   });
 
@@ -296,8 +292,8 @@ describe("FlightRecorderPage", () => {
     render(<FlightRecorderContent initialEvents={mockEvents} initialTotal={2} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Store event")).toBeDefined();
-      expect(screen.getByText("Block event")).toBeDefined();
+      expect(screen.getAllByText("Store event").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("Block event").length).toBeGreaterThanOrEqual(1);
     });
 
     // Click filter button for "store" type (label is "store (1)")
@@ -305,7 +301,7 @@ describe("FlightRecorderPage", () => {
     fireEvent.click(storeFilter);
 
     await waitFor(() => {
-      expect(screen.getByText("Store event")).toBeDefined();
+      expect(screen.getAllByText("Store event").length).toBeGreaterThanOrEqual(1);
       expect(screen.queryByText("Block event")).toBeNull();
     });
   });

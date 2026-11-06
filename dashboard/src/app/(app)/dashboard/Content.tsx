@@ -669,9 +669,20 @@ function SecurityFeed({ blockedCount }: { blockedCount: number }) {
         .catch(() => setLoading(false));
     });
 
-    const iv = setInterval(loadCdc, 12000);
+    const iv = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadCdc();
+    }, 20000);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) loadCdc();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
-    return () => { active = false; clearInterval(iv); };
+    return () => {
+      active = false;
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   if (loading && events.length === 0) {
@@ -1930,8 +1941,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(fetchData, 12000);
-    return () => { clearInterval(iv); cancelAnimationFrame(countupRaf.current); };
+    const iv = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetchData();
+    }, 20000);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) fetchData();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+      cancelAnimationFrame(countupRaf.current);
+    };
   }, [fetchData]);
 
   // Real audit events are fetched via /api/audit in SecurityFeed component

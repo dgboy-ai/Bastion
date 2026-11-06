@@ -5,6 +5,62 @@ import { randomUUID } from "crypto";
 import { computeHmacHash } from "@/lib/hash-chain";
 import { embedToVectorString } from "@/lib/embeddings";
 
+type MemoryMetadata = Record<string, unknown> | null;
+
+function normalizeMetadata(value: unknown): MemoryMetadata {
+  let parsed: unknown = value;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch { return null; }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const meta = { ...(parsed as Record<string, unknown>) };
+  delete meta._precomputed_embedding;
+  delete meta._trust_level;
+  delete meta._source_provenance;
+  return meta;
+}
+
+/**
+ * Recompute every downstream link after a row's hash changes. The hash chain
+ * is content-addressed, so changing or removing one row invalidates every
+ * later cryptographic_hash until it is re-sealed.
+ */
+async function resealSuccessors(
+  agentId: string,
+  targetCreatedAt: string,
+  targetMemoryId: string,
+  previousHash: string,
+): Promise<number> {
+  const successors = await safeQuery(
+    `SELECT memory_id, content, metadata
+     FROM agent_memory
+     WHERE agent_id = $1
+       AND (created_at > $2::timestamptz
+            OR (created_at = $2::timestamptz AND memory_id > $3::uuid))
+     ORDER BY created_at ASC, memory_id ASC`,
+    [agentId, targetCreatedAt, targetMemoryId],
+  );
+
+  let prev = previousHash || "";
+  let resealed = 0;
+  for (const row of successors.rows) {
+    const newHash = computeHmacHash(
+      String(row.content ?? ""),
+      normalizeMetadata(row.metadata),
+      prev,
+    );
+    await safeQuery(
+      `UPDATE agent_memory
+       SET previous_hash = $1, cryptographic_hash = $2, needs_verification = false
+       WHERE memory_id = $3 AND agent_id = $4`,
+      [prev, newHash, row.memory_id, agentId],
+    );
+    prev = newHash;
+    resealed += 1;
+  }
+  return resealed;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ tool: string }> }
@@ -28,7 +84,6 @@ export async function POST(
       pinPriority = 2,
       memoryId,
       query,
-      interval,
       limit,
     } = body;
 
@@ -131,58 +186,104 @@ export async function POST(
       }, "dynamic");
     }
 
-    // 4. memory_delete: Delete a memory (requires confirmation, matches engine)
+    // 4. memory_delete: Delete a memory and re-seal the remaining chain.
     if (tool === "memory_delete") {
       const targetId = memoryId || query || body.query;
       if (!targetId) return apiError("memoryId is required for deletion", 400);
       if (!body.confirmed) {
         return apiError("Deletion requires confirmed=true", 400);
       }
+
+      const target = await safeQuery(
+        "SELECT previous_hash, created_at FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
+        [targetId, agentId],
+      );
+      if (target.rows.length === 0) {
+        return apiError(`Memory ${targetId} not found`, 404);
+      }
+      const prevHash = (target.rows[0].previous_hash as string | null) || "";
+      const targetCreatedAt = target.rows[0].created_at as string;
+
       const deleteRes = await safeQuery(
         "DELETE FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
-        [targetId, agentId]
+        [targetId, agentId],
       );
+      if (deleteRes.rowCount === 0) {
+        return apiError(`Memory ${targetId} not found`, 404);
+      }
+
+      const resealed = await resealSuccessors(
+        agentId,
+        targetCreatedAt,
+        String(targetId),
+        prevHash,
+      );
+
+      await safeQuery(
+        `INSERT INTO agent_audit (agent_id, action, details)
+         VALUES ($1, $2, $3::jsonb)`,
+        [agentId, "memory_delete", JSON.stringify({
+          memory_id: targetId,
+          prev_hash: prevHash || null,
+          resealed_successors: resealed,
+        })],
+      );
+
       return apiSuccess({
         tool: "memory_delete",
         deletedId: targetId,
         rowsAffected: deleteRes.rowCount,
+        resealedSuccessors: resealed,
         latency: (Date.now() - startTime) + "ms",
         sql: `DELETE FROM agent_memory WHERE memory_id = $1 AND agent_id = $2`,
       }, "dynamic");
     }
 
-    // 5. memory_correct: Correct content of a memory
+    // 5. memory_correct: Correct content and re-seal every downstream hash.
     if (tool === "memory_correct") {
       const targetId = memoryId || body.id;
       const newContent = content || body.newContent || query;
       if (!targetId || !newContent) return apiError("memoryId and content/newContent are required", 400);
 
-      // Recompute the hash over the NEW content (metadata preserved from the
-      // stored row so the chain remains verifiable).
       const existingRow = await safeQuery(
-        "SELECT previous_hash, metadata::text AS meta, cryptographic_hash FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
-        [targetId, agentId]
+        "SELECT previous_hash, metadata, created_at FROM agent_memory WHERE memory_id = $1 AND agent_id = $2",
+        [targetId, agentId],
       );
       if (existingRow.rows.length === 0) {
         return apiError(`Memory ${targetId} not found`, 404);
       }
+
       const prevHash = existingRow.rows[0].previous_hash as string | null;
-      let metaJson: Record<string, unknown> | null = null;
-      try {
-        metaJson = JSON.parse((existingRow.rows[0].meta as string) || "null");
-      } catch {
-        metaJson = null;
-      }
+      const targetCreatedAt = existingRow.rows[0].created_at as string;
+      const metaJson = normalizeMetadata(existingRow.rows[0].metadata);
       const newHash = computeHmacHash(newContent, metaJson, prevHash);
 
       const updateRes = await safeQuery(
-        "UPDATE agent_memory SET content = $1, cryptographic_hash = $2, overwrite_count = overwrite_count + 1 WHERE memory_id = $3 AND agent_id = $4",
-        [newContent, newHash, targetId, agentId]
+        "UPDATE agent_memory SET content = $1, cryptographic_hash = $2, overwrite_count = overwrite_count + 1, needs_verification = false WHERE memory_id = $3 AND agent_id = $4",
+        [newContent, newHash, targetId, agentId],
       );
 
       if (updateRes.rowCount === 0) {
         return apiError(`Memory ${targetId} not found`, 404);
       }
+
+      const resealed = await resealSuccessors(
+        agentId,
+        targetCreatedAt,
+        String(targetId),
+        newHash,
+      );
+
+      await safeQuery(
+        `INSERT INTO agent_audit (agent_id, action, details)
+         VALUES ($1, $2, $3::jsonb)`,
+        [agentId, "memory_correct", JSON.stringify({
+          memory_id: targetId,
+          previous_hash: prevHash,
+          new_hash: newHash,
+          resealed_successors: resealed,
+        })],
+      );
 
       return apiSuccess({
         tool: "memory_correct",
@@ -191,6 +292,7 @@ export async function POST(
         previousHash: (prevHash || "").slice(0, 20) + "...",
         cryptographicHash: newHash.slice(0, 20) + "...",
         rowsAffected: updateRes.rowCount,
+        resealedSuccessors: resealed,
         latency: (Date.now() - startTime) + "ms",
         sql: `UPDATE agent_memory SET content = $1, cryptographic_hash = $2, overwrite_count = overwrite_count + 1 WHERE memory_id = $3 AND agent_id = $4`,
       }, "dynamic");

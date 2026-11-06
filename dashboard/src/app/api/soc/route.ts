@@ -192,7 +192,6 @@ async function stepAnalyst(alert: {
       step: "analyst",
       timestamp: new Date().toISOString(),
       error: "Failed to store memory in CockroachDB",
-      details: err instanceof Error ? err.message : "Unknown error",
     };
   }
 

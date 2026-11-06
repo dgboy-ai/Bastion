@@ -1,6 +1,7 @@
-import { safeQuery, isMockMode } from "@/lib/db";
+import { safeQueryStatic, isMockMode } from "@/lib/db";
 import { getMockStats } from "@/lib/mock-data";
 import { apiSuccess, apiError } from "@/lib/api-response";
+import { checkRateLimit } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,12 @@ export const dynamic = "force-dynamic";
  * Deliberately returns aggregate counts only — never memory content,
  * hashes, agents or audit details.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  // Public counters still need basic abuse protection: each call runs several
+  // aggregate COUNT(*) scans.
+  const limited = checkRateLimit(request);
+  if (limited) return limited;
+
   if (isMockMode()) {
     const s = getMockStats();
     return apiSuccess(
@@ -27,10 +33,10 @@ export async function GET() {
 
   try {
     const [memRes, auditRes, entityRes, anchorRes] = await Promise.all([
-      safeQuery("SELECT COUNT(*) as count FROM agent_memory"),
-      safeQuery("SELECT COUNT(*) as count FROM agent_audit"),
-      safeQuery("SELECT COUNT(*) as count FROM agent_entities"),
-      safeQuery(`
+      safeQueryStatic("SELECT COUNT(*) as count FROM agent_memory"),
+      safeQueryStatic("SELECT COUNT(*) as count FROM agent_audit"),
+      safeQueryStatic("SELECT COUNT(*) as count FROM agent_entities"),
+      safeQueryStatic(`
         SELECT left(cryptographic_hash::text, 16) as anchor
         FROM agent_memory
         WHERE cryptographic_hash IS NOT NULL

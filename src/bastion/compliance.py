@@ -223,10 +223,17 @@ class VerifiableUnlearning:
             conn = pool.acquire(timeout=30.0)
             try:
                 with conn.cursor() as cur:
-                    # Physical hard delete (GDPR Art 17 — right to erasure)
-                    # Note: This breaks the hash chain for subsequent records.
-                    # The audit trail records the deletion, and hash chain
-                    # verification stops at the last intact record.
+                    # Physical hard delete (GDPR Art 17 — right to erasure).
+                    from bastion.crypto import compute_hash
+
+                    cur.execute(
+                        "SELECT memory_id, previous_hash, created_at FROM agent_memory "
+                        "WHERE memory_id = ANY(%s) AND agent_id = %s "
+                        "ORDER BY created_at ASC, memory_id ASC",
+                        (memory_ids, agent_id),
+                    )
+                    targets = cur.fetchall()
+
                     cur.execute(
                         "DELETE FROM agent_memory WHERE memory_id = ANY(%s) AND agent_id = %s RETURNING memory_id",
                         (memory_ids, agent_id),
@@ -234,7 +241,32 @@ class VerifiableUnlearning:
                     deleted_ids = [row[0] for row in cur.fetchall()]
                     not_found_ids = [mid for mid in memory_ids if mid not in deleted_ids]
 
-                    # Audit trail in same transaction
+                    if targets:
+                        first_prev = targets[0][1]
+                        cutoff_created = targets[0][2]
+                        cutoff_id = targets[0][0]
+                        cur.execute(
+                            "SELECT memory_id, content, metadata FROM agent_memory "
+                            "WHERE agent_id = %s AND (created_at > %s "
+                            "OR (created_at = %s AND memory_id > %s)) "
+                            "ORDER BY created_at ASC, memory_id ASC",
+                            (agent_id, cutoff_created, cutoff_created, cutoff_id),
+                        )
+                        next_prev = first_prev or ""
+                        for mid, content, metadata in cur.fetchall():
+                            meta_dict = dict(metadata) if metadata else {}
+                            meta_dict.pop("_precomputed_embedding", None)
+                            meta_dict.pop("_trust_level", None)
+                            meta_dict.pop("_source_provenance", None)
+                            new_hash = compute_hash(content or "", meta_dict, next_prev)
+                            cur.execute(
+                                "UPDATE agent_memory SET previous_hash = %s, "
+                                "cryptographic_hash = %s, needs_verification = FALSE "
+                                "WHERE memory_id = %s AND agent_id = %s",
+                                (next_prev, new_hash, mid, agent_id),
+                            )
+                            next_prev = new_hash
+
                     for mid in deleted_ids:
                         cur.execute(
                             "INSERT INTO agent_audit (agent_id, action, details, recorded_at) "
@@ -245,6 +277,7 @@ class VerifiableUnlearning:
                                 json.dumps({"memory_id": mid, "compliance": "gdpr_art17"}),
                             ),
                         )
+
                 conn.commit()
             except Exception as e:
                 conn.rollback()

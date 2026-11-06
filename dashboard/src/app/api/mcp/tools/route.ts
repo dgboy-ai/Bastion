@@ -57,9 +57,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ tools: unique });
   } catch (err) {
-    return NextResponse.json({
-      tools: [],
-      error: err instanceof Error ? err.message : String(err),
-    });
+    console.error("[api/mcp/tools] failed:", err instanceof Error ? err.message : "Unknown error");
+    return NextResponse.json(
+      { tools: [], error: "MCP server unavailable" },
+      { status: 503 },
+    );
   }
 }

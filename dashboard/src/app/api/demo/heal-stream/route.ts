@@ -166,7 +166,8 @@ export async function POST(request: Request) {
 
         controller.close();
       } catch (err) {
-        send("error", { message: err instanceof Error ? err.message : "Unknown error" });
+        console.error("[api/demo/heal-stream] failed:", err instanceof Error ? err.message : "Unknown error");
+        send("error", { message: "Heal stream failed" });
         controller.close();
       }
     },

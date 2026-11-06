@@ -33,8 +33,12 @@ export async function POST(request: Request) {
     const taskId = crypto.randomUUID();
     const startTime = Date.now();
 
-    // ─── Local execution (fallback when A2A server unreachable) ─────
-    if (process.env.NODE_ENV === "development" || !(await isServerReachable(A2A_URL))) {
+    // ─── Require the real A2A server outside development ─────────
+    const reachable = await isServerReachable(A2A_URL);
+    if (!reachable && process.env.NODE_ENV !== "development") {
+      return apiError("A2A server unavailable", 503, "A2A_UNAVAILABLE");
+    }
+    if (!reachable) {
       return apiSuccess({
         taskId,
         agentId,
@@ -90,7 +94,14 @@ export async function POST(request: Request) {
         mode: "a2a-server",
         latency: (Date.now() - startTime) + "ms",
       }, "dynamic");
-    } catch {
+    } catch (err) {
+      if (process.env.NODE_ENV !== "development") {
+        console.error(
+          "[api/a2a-orchestrate] A2A request failed:",
+          err instanceof Error ? err.message : "Unknown error",
+        );
+        return apiError("A2A server request failed", 502, "A2A_REQUEST_FAILED");
+      }
       return apiSuccess({
         taskId,
         agentId,

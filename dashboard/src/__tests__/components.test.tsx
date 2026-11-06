@@ -1,7 +1,7 @@
 import { expect, test, describe, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import OverviewPage from '@/app/page'
-import LogsPage from '@/app/(app)/logs/page'
+import LogsContent from '@/app/(app)/logs/Content'
 import GraphPage from '@/app/(app)/graph/page'
 import CompliancePage from '@/app/(app)/compliance/page'
 
@@ -194,14 +194,14 @@ describe.skip('OverviewPage', () => {
 describe('LogsPage', () => {
   test('renders loading state on mount', () => {
     mockFetch.mockImplementation(() => new Promise(() => {}))
-    render(<LogsPage />)
+    render(<LogsContent initialMemories={[]} initialTotal={0} />)
     expect(screen.getByText(/Memory Chain/)).toBeDefined()
   })
 
   test('renders search input after successful fetch', async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => mockMemories })
 
-    render(<LogsPage />)
+    render(<LogsContent initialMemories={[]} initialTotal={0} />)
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Search memories.../i)).toBeDefined()
@@ -211,7 +211,7 @@ describe('LogsPage', () => {
   test('handles empty results', async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ memories: [], total: 0, page: 1 }) })
 
-    render(<LogsPage />)
+    render(<LogsContent initialMemories={[]} initialTotal={0} />)
 
     await waitFor(() => {
       expect(screen.getByText(/No memories in chain|connect to CockroachDB/i)).toBeDefined()
@@ -221,7 +221,7 @@ describe('LogsPage', () => {
   test('handles fetch error gracefully', async () => {
     mockFetch.mockRejectedValueOnce(new Error('Network error'))
 
-    render(<LogsPage />)
+    render(<LogsContent initialMemories={[]} initialTotal={0} />)
 
     await waitFor(() => {
       expect(screen.getByText(/Memory Chain/)).toBeDefined()

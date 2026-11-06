@@ -59,7 +59,7 @@ export default function MemoryGuardPanel() {
 
   useEffect(() => {
     fetchGuardReport();
-    const interval = setInterval(fetchGuardReport, 5000);
+    const interval = setInterval(fetchGuardReport, 20000);
     return () => clearInterval(interval);
   }, []);
 

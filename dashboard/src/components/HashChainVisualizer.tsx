@@ -21,24 +21,28 @@ export default function HashChainVisualizer() {
 
   const fetchChain = async () => {
     try {
-      const res = await fetchWithTimeout("/api/memories?limit=10");
+      const res = await fetchWithTimeout("/api/agent/chain");
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const data = await res.json();
-      // Handle the apiSuccess envelope: { success: true, data: { memories: [...] } }
-      const memories = data?.data?.memories || data?.memories || [];
-      setChain(memories);
-
-      // Verify chain integrity
-      let valid = true;
-      for (let i = 1; i < memories.length; i++) {
-        if (memories[i].previousHash !== memories[i - 1].cryptographicHash) {
-          valid = false;
-          break;
-        }
-      }
-      setChainValid(memories.length > 1 ? valid : true);
+      const entries: HashChainEntry[] = (data?.hashes || []).map((h: {
+        memoryId?: string;
+        hash?: string;
+        prevHash?: string | null;
+        content?: string;
+        createdAt?: string;
+        importanceScore?: number;
+      }) => ({
+        memoryId: h.memoryId || h.hash || "unknown",
+        content: h.content || "",
+        cryptographicHash: h.hash || "",
+        previousHash: h.prevHash || null,
+        createdAt: h.createdAt || "",
+        importanceScore: Number(h.importanceScore) || 0,
+      }));
+      setChain(entries);
+      setChainValid(entries.length > 1 ? data?.chainValid !== false : true);
     } catch (err) {
       console.error("Failed to fetch chain:", err);
       setError(err instanceof Error ? err.message : "Failed to load chain");
@@ -49,7 +53,7 @@ export default function HashChainVisualizer() {
 
   useEffect(() => {
     fetchChain();
-    const interval = setInterval(fetchChain, 3000);
+    const interval = setInterval(fetchChain, 15000);
     return () => clearInterval(interval);
   }, []);
 
